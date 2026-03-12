@@ -149,6 +149,8 @@ impl FromRequestParts<AppState> for AuthUser {
         {
             let user_id = Uuid::parse_str(&dev_id)
                 .map_err(|_| AppError::Unauthorized("Invalid DEV_USER_ID format".into()))?;
+            // Ensure the auth_user row exists so tenant_member FK won't fail.
+            let _ = state.db.ensure_dev_user(user_id).await;
             return Ok(AuthUser(user_id));
         }
 
@@ -162,6 +164,8 @@ impl FromRequestParts<AppState> for AuthUser {
         {
             let user_id = Uuid::parse_str(dev_header)
                 .map_err(|_| AppError::Unauthorized("Invalid X-Dev-User-Id format".into()))?;
+            // Ensure the auth_user row exists so tenant_member FK won't fail.
+            let _ = state.db.ensure_dev_user(user_id).await;
             return Ok(AuthUser(user_id));
         }
 

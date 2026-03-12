@@ -54,6 +54,7 @@
       "priceCurrency": "USD"
     },
     "sameAs": [
+      "https://github.com/diraigent/diraigent",
       "https://discord.gg/tfaYmvTw"
     ]
   }
@@ -76,6 +77,7 @@
       <a href="#how-it-works">how it works</a>
       <a href="#why">why</a>
       <a href="#get-started">get started</a>
+      <a href="https://github.com/diraigent/diraigent" target="_blank" rel="noopener">github</a>
       <a href="https://discord.gg/tfaYmvTw" target="_blank" rel="noopener">discord</a>
     </nav>
   </header>
@@ -229,74 +231,20 @@
     <h2 class="section-title">get started</h2>
     <p class="section-intro">
       run diraigent on your own infrastructure in minutes.<br>
-      works best with <a href="https://docs.anthropic.com/en/docs/claude-code" target="_blank" rel="noopener">claude code</a> &mdash;
+      requires currently <a href="https://docs.anthropic.com/en/docs/claude-code" target="_blank" rel="noopener">claude code</a> &mdash;
       the orchestra spawns claude code workers in isolated git worktrees for each task.
     </p>
     <div class="get-started-steps">
-      <pre><code>curl -LO https://www.diraigent.com/get/docker-compose.yml
-curl -LO https://www.diraigent.com/get/start.sh
-curl -LO https://www.diraigent.com/get/.env.example
-cp .env.example .env    # edit .env for your setup
-chmod +x start.sh
-./start.sh              # registers agent, seeds playbooks, starts everything</code></pre>
+      <pre><code>
+        curl -LO https://github.com/diraigent/diraigent/blob/main/startup/docker-compose.yml
+        curl -LO https://github.com/diraigent/diraigent/blob/main/startup/start.sh
+        curl -LO https://github.com/diraigent/diraigent/blob/main/startup/.env.example
+        cp .env.example .env    # edit .env for your setup
+        chmod +x start.sh
+        ./start.sh              # registers agent, seeds playbooks, starts everything
+      </code></pre>
     </div>
 
-    <h3 class="code-heading">docker-compose.yml</h3>
-    <div class="get-started-code">
-      <pre><code>services:
-  postgres:
-    image: postgres:18-alpine
-    environment:
-      POSTGRES_DB: diraigent
-      POSTGRES_USER: diraigent
-      POSTGRES_PASSWORD: diraigent
-    ports:
-      - "5433:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-
-  api:
-    image: diraigent/api:latest
-    ports:
-      - "8082:8082"
-    environment:
-      HOST: 0.0.0.0
-      PORT: 8082
-      DATABASE_URL: postgres://diraigent:diraigent@postgres:5432/diraigent
-      DEV_USER_ID: ${DEV_USER_ID:-}
-      AUTH_JWKS_URL: ${AUTH_JWKS_URL:-}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
-    depends_on:
-      postgres: { condition: service_healthy }
-
-  web:
-    image: diraigent/web:latest
-    ports:
-      - "8080:80"
-    depends_on:
-      api: { condition: service_healthy }
-
-  orchestra:
-    image: diraigent/orchestra:latest
-    environment:
-      AGENT_ID: ${AGENT_ID}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      DIRAIGENT_API_URL: http://api:8082/v1
-    volumes:
-      - projects:/projects
-    depends_on:
-      api: { condition: service_healthy }
-
-volumes:
-  pgdata:
-  projects:</code></pre>
-    </div>
-
-    <div class="get-started-links">
-      <a href="/get/start.sh" class="btn">download start.sh</a>
-      <a href="/get/docker-compose.yml" class="btn btn-secondary">download docker-compose.yml</a>
-      <a href="/get/.env.example" class="btn btn-secondary">download .env.example</a>
-    </div>
   </section>
 
   <!-- Footer -->
@@ -306,7 +254,7 @@ volumes:
       <span>diraigent</span>
     </div>
     <p class="footer-copy">
-      built by <a href="https://zivue.com">zivue</a> &middot; <a href="https://discord.gg/tfaYmvTw" target="_blank" rel="noopener">discord</a>
+      built by <a href="https://zivue.com">zivue</a> &middot; <a href="https://github.com/diraigent/diraigent" target="_blank" rel="noopener">github</a> &middot; <a href="https://discord.gg/tfaYmvTw" target="_blank" rel="noopener">discord</a>
     </p>
   </footer>
 

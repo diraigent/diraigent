@@ -46,8 +46,10 @@ RUN addgroup --system --gid 1001 appgroup && \
     touch /var/run/nginx.pid && \
     chown appuser:appgroup /var/run/nginx.pid
 
-# Copy custom nginx config
+# Copy custom nginx config and entrypoint
 COPY --chown=appuser:appgroup nginx.conf /etc/nginx/nginx.conf
+COPY --chown=appuser:appgroup docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
 # Copy built application from builder
 COPY --from=builder --chown=appuser:appgroup /app/dist/diraigent-web/browser/ /usr/share/nginx/html/
@@ -71,4 +73,4 @@ EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --quiet --tries=1 --spider http://localhost/health || exit 1
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["/docker-entrypoint.sh"]

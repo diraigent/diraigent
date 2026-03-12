@@ -21,6 +21,10 @@ services:
 
   api:
     image: diraigent/api:latest
+    networks:
+      default:
+        aliases:
+          - diraigent-api
     ports:
       - "8082:8082"
     environment:
@@ -49,7 +53,12 @@ services:
   web:
     image: diraigent/web:latest
     ports:
-      - "8080:80"
+      - "4200:80"
+    environment:
+      API_SERVER: ${API_SERVER:-http://localhost:8082/v1}
+      AUTH_PROVIDER_BASE: ${AUTH_PROVIDER_BASE:-}
+      AUTH_ISSUER: ${AUTH_ISSUER:-}
+      AUTH_CLIENT_ID: ${AUTH_CLIENT_ID:-}
     depends_on:
       api:
         condition: service_healthy
@@ -64,7 +73,6 @@ services:
       MAX_WORKERS: ${MAX_WORKERS:-3}
       PROJECTS_PATH: /projects
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
     volumes:
       - projects:/projects
     depends_on:

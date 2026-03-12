@@ -1110,6 +1110,24 @@ impl DiraigentDb for PostgresDb {
         Ok(user_id)
     }
 
+    async fn ensure_dev_user(&self, user_id: Uuid) -> Result<(), AppError> {
+        // Create an auth_user row with the explicit user_id if one doesn't exist.
+        // Uses the stringified user_id as auth_user_id so it's deterministic.
+        // Both user_id (PK) and auth_user_id (UNIQUE) may conflict independently,
+        // so we check existence first to avoid partial-conflict errors.
+        sqlx::query(
+            "INSERT INTO diraigent.auth_user (user_id, auth_user_id)
+             VALUES ($1, $2)
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(user_id)
+        .bind(user_id.to_string())
+        .execute(&self.0)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+        Ok(())
+    }
+
     // ── Tenants ───────────────────────────────────────────────────────────────
     async fn create_tenant(&self, req: &CreateTenant) -> Result<Tenant, AppError> {
         repository::create_tenant(&self.0, req).await

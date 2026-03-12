@@ -55,10 +55,14 @@ if [ -z "${AGENT_ID:-}" ]; then
     | python3 -c "import sys,json; agents=[a for a in json.load(sys.stdin) if a['name']=='orchestra-docker']; print(agents[0]['id'] if agents else '')" 2>/dev/null || true)
 
   if [ -z "$AGENT_ID" ]; then
-    AGENT_ID=$(curl -sf -X POST "$API/agents" \
+    RESP=$(curl -s -X POST "$API/agents" \
       -H 'Content-Type: application/json' \
       -H "X-Dev-User-Id: $DEV_USER" \
-      -d '{"name": "orchestra-docker", "kind": "claude"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+      -d '{"name": "orchestra-docker", "kind": "claude"}')
+    AGENT_ID=$(echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null || true)
+    if [ -z "$AGENT_ID" ]; then
+      echo "Failed to register agent: $RESP" >&2; exit 1
+    fi
     echo "Registered agent: $AGENT_ID"
   else
     echo "Found existing agent: $AGENT_ID"
