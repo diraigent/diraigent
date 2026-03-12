@@ -248,18 +248,26 @@ pub async fn resolve_strategy(
 /// `None` otherwise.
 async fn resolve_goal_branch(api: &crate::api::ProjectsApi, task: &Value) -> Option<String> {
     let task_id = task["id"].as_str()?;
-    match api.get_task_goals(task_id).await {
-        Ok(goals) if !goals.is_empty() => {
-            // Use the first goal's title, slugified
-            let title = goals[0]["title"].as_str().unwrap_or("unnamed");
-            Some(format!("goal/{}", slugify(title)))
-        }
+    let goal_ids = match api.get_task_goals(task_id).await {
+        Ok(ids) if !ids.is_empty() => ids,
         Ok(_) => {
             tracing::warn!("feature_branch strategy but task {task_id} has no linked goals");
-            None
+            return None;
         }
         Err(e) => {
-            tracing::warn!("failed to fetch goals for task {task_id}: {e}");
+            tracing::warn!("failed to fetch goal IDs for task {task_id}: {e}");
+            return None;
+        }
+    };
+
+    // Fetch the first goal's details to get its title
+    match api.get_goal(&goal_ids[0]).await {
+        Ok(goal) => {
+            let title = goal["title"].as_str().unwrap_or("unnamed");
+            Some(format!("goal/{}", slugify(title)))
+        }
+        Err(e) => {
+            tracing::warn!("failed to fetch goal {} for branch name: {e}", goal_ids[0]);
             None
         }
     }

@@ -308,6 +308,10 @@ impl ProjectsApi {
         Ok(as_array(&val))
     }
 
+    pub async fn get_goal(&self, goal_id: &str) -> Result<Value> {
+        self.get(&format!("/goals/{goal_id}")).await
+    }
+
     pub async fn get_goal_progress(&self, goal_id: &str) -> Result<Value> {
         self.get(&format!("/goals/{goal_id}/progress")).await
     }
