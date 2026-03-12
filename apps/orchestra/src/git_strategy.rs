@@ -261,13 +261,20 @@ async fn resolve_goal_branch(api: &crate::api::ProjectsApi, task: &Value) -> Opt
     };
 
     // Fetch the first goal's details to get its title
-    match api.get_goal(&goal_ids[0]).await {
+    let goal_id = goal_ids[0].as_str().unwrap_or_else(|| {
+        tracing::warn!("goal ID is not a string: {}", goal_ids[0]);
+        ""
+    });
+    if goal_id.is_empty() {
+        return None;
+    }
+    match api.get_goal(goal_id).await {
         Ok(goal) => {
             let title = goal["title"].as_str().unwrap_or("unnamed");
             Some(format!("goal/{}", slugify(title)))
         }
         Err(e) => {
-            tracing::warn!("failed to fetch goal {} for branch name: {e}", goal_ids[0]);
+            tracing::warn!("failed to fetch goal {goal_id} for branch name: {e}");
             None
         }
     }
