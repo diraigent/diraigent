@@ -17,13 +17,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Fix volume permissions for non-root containers (uid 1001)
-  init-projects:
-    image: alpine:3.21
-    command: chown 1001:1001 /projects
-    volumes:
-      - projects:/projects
-
   # ── Diraigent ─────────────────────────────────────────────────────
 
   api:
@@ -47,7 +40,7 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4200}
       PROJECTS_PATH: /projects
     volumes:
-      - projects:/projects
+      - ${PROJECTS_PATH:-~/diraigent/projects}:/projects
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,11 +77,10 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
     volumes:
-      - projects:/projects
+      - ${PROJECTS_PATH:-~/diraigent/projects}:/projects
     depends_on:
       api:
         condition: service_healthy
 
 volumes:
   pgdata:
-  projects:

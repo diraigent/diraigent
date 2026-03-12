@@ -138,7 +138,14 @@ impl WorktreeManager {
         self.fetch_if_stale();
         let db = &self.default_branch;
         if let Err(e) = self.git(&["checkout", db]) {
+            // Default branch doesn't exist locally — create it from HEAD
             warn!("failed to checkout {db} for fast-forward: {e}");
+            if self.git(&["rev-parse", "--verify", db]).is_err() {
+                info!("default branch {db} does not exist, creating from HEAD");
+                if let Err(e2) = self.git(&["checkout", "-b", db]) {
+                    warn!("failed to create default branch {db}: {e2}");
+                }
+            }
         } else if let Err(e) = self.run_git(
             &["merge", "--ff-only", &format!("origin/{db}")],
             GIT_NET_TIMEOUT_SECS,
