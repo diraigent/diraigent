@@ -212,9 +212,22 @@ type SortDir = 'asc' | 'desc';
                   <span class="text-text-secondary text-xs">#{{ task.number }}</span>
                   @if (task.reverted_at) {
                     <span class="text-ctp-peach text-xs" [title]="t('tasks.reverted')">↩</span>
-                  } @else if (flaggedIds().has(task.id)) {
-                    <span class="text-ctp-yellow text-xs" [title]="t('tasks.flagged')">⚠</span>
                   }
+                  <button class="shrink-0 p-0 border-0 bg-transparent cursor-pointer transition-colors hover:text-ctp-yellow"
+                          [class.text-ctp-yellow]="task.flagged"
+                          [class.text-transparent]="!task.flagged"
+                          [title]="task.flagged ? t('tasks.unflag') : t('tasks.flag')"
+                          (click)="onFlagToggle($event, task)">
+                    @if (task.flagged) {
+                      <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M5 2a1 1 0 00-1 1v18a1 1 0 001.65.76L12 16.27l6.35 5.49A1 1 0 0020 21V3a1 1 0 00-1-1H5z" />
+                      </svg>
+                    } @else {
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M5 3a1 1 0 011-1h12a1 1 0 011 1v18l-7-4.5L5 21V3z" />
+                      </svg>
+                    }
+                  </button>
                   <span class="text-text-primary text-sm font-medium truncate">{{ task.title }}</span>
                 </div>
                 <!-- Mobile-only: badges below title -->
@@ -431,6 +444,7 @@ export class TaskListComponent {
   pageChange = output<number>();
   bulkTransition = output<{ taskIds: string[]; state: string }>();
   bulkDelete = output<{ taskIds: string[] }>();
+  flagToggle = output<{ task: SpTask; flagged: boolean }>();
 
   // Detail event outputs (bubbled from TaskDetailComponent)
   detailTransition = output<string>();
@@ -562,6 +576,13 @@ export class TaskListComponent {
       this.bulkDelete.emit({ taskIds });
       this.clearSelection();
     }
+  }
+
+  // Flag toggle
+
+  onFlagToggle(event: Event, task: SpTask): void {
+    event.stopPropagation();
+    this.flagToggle.emit({ task, flagged: !task.flagged });
   }
 
   // Accordion expand/collapse

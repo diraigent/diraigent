@@ -513,6 +513,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                           (detailPostComment)="onLinkedTaskPostComment($event)"
                           (detailDelete)="onLinkedTaskDelete()"
                           (detailInlineUpdate)="onLinkedTaskInlineUpdate($event)"
+                          (flagToggle)="onLinkedTaskFlagToggle($event.task, $event.flagged)"
                           (detailAddDep)="onLinkedTaskAddDep($event)"
                           (detailRemoveDep)="onLinkedTaskRemoveDep($event)"
                           (detailPlaybookChange)="onLinkedTaskPlaybookChange($event)"
@@ -1281,6 +1282,15 @@ export class GoalsPage {
     const task = this.selectedLinkedTask();
     if (!task) return;
     this.tasksApi.update(task.id, data).subscribe({
+      next: () => {
+        const sel = this.selected();
+        if (sel) this.loadLinkedTasks(sel.id);
+      },
+    });
+  }
+
+  onLinkedTaskFlagToggle(task: SpTask, flagged: boolean): void {
+    this.tasksApi.update(task.id, { flagged }).subscribe({
       next: () => {
         const sel = this.selected();
         if (sel) this.loadLinkedTasks(sel.id);

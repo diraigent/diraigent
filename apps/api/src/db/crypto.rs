@@ -247,6 +247,7 @@ impl DiraigentDb for CryptoDb {
                 required_capabilities: req.required_capabilities.clone(),
                 playbook_step: req.playbook_step,
                 playbook_id: req.playbook_id,
+                flagged: req.flagged,
             };
             let mut task = self.inner.update_task(task_id, &encrypted_req).await?;
             Self::decrypt_task(dek, &mut task)?;

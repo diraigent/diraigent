@@ -219,10 +219,11 @@ pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Resu
         .as_ref()
         .unwrap_or(&existing.required_capabilities);
     let playbook_step = req.playbook_step.or(existing.playbook_step);
+    let flagged = req.flagged.unwrap_or(existing.flagged);
 
     let task = sqlx::query_as::<_, Task>(
         "UPDATE diraigent.task
-         SET title = $2, kind = $3, priority = $4, context = $5, required_capabilities = $6, playbook_step = $7, playbook_id = $8
+         SET title = $2, kind = $3, priority = $4, context = $5, required_capabilities = $6, playbook_step = $7, playbook_id = $8, flagged = $9
          WHERE id = $1 RETURNING *",
     )
     .bind(task_id)
@@ -233,6 +234,7 @@ pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Resu
     .bind(capabilities)
     .bind(playbook_step)
     .bind(playbook_id)
+    .bind(flagged)
     .fetch_one(pool)
     .await?;
 
@@ -289,20 +291,13 @@ pub async fn list_blocked_task_ids(pool: &PgPool, project_id: Uuid) -> Result<Ve
     Ok(ids.into_iter().map(|(id,)| id).collect())
 }
 
-/// Returns task IDs that have at least one "blocker" type task_update (indicates implementation problems).
-/// Only considers active tasks (not done/cancelled) so the flagged set stays relevant.
+/// Returns task IDs that have been flagged (bookmarked) by a user.
 pub async fn list_flagged_task_ids(pool: &PgPool, project_id: Uuid) -> Result<Vec<Uuid>, AppError> {
-    let ids: Vec<(Uuid,)> = sqlx::query_as(
-        "SELECT DISTINCT tu.task_id
-         FROM diraigent.task_update tu
-         JOIN diraigent.task t ON tu.task_id = t.id
-         WHERE t.project_id = $1
-           AND tu.kind = 'blocker'
-           AND t.state NOT IN ('done', 'cancelled')",
-    )
-    .bind(project_id)
-    .fetch_all(pool)
-    .await?;
+    let ids: Vec<(Uuid,)> =
+        sqlx::query_as("SELECT id FROM diraigent.task WHERE project_id = $1 AND flagged = true")
+            .bind(project_id)
+            .fetch_all(pool)
+            .await?;
     Ok(ids.into_iter().map(|(id,)| id).collect())
 }
 
