@@ -23,12 +23,12 @@ export CLAUDE_CODE_OAUTH_TOKEN="$TOKEN"
 echo "Claude Max token loaded"
 
 DEV_USER="${DEV_USER_ID:-00000000-0000-0000-0000-000000000001}"
-API="http://localhost:8082/v1"
+API="http://localhost:3000/v1"
 
 wait_for_api() {
   echo "Waiting for API..."
   for _ in $(seq 1 30); do
-    if curl -sf http://localhost:8082/health/live >/dev/null 2>&1; then return 0; fi
+    if curl -sf http://localhost:3000/health/live >/dev/null 2>&1; then return 0; fi
     sleep 1
   done
   echo "API did not start in time"; exit 1
