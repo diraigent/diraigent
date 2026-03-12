@@ -243,11 +243,7 @@
     "todoPlaceholder": "Aufgabe hinzufügen...",
     "addTodo": "Hinzufügen",
     "todosEmpty": "Noch keine Aufgaben. Oben eine hinzufügen.",
-    "clearDone": "Erledigte löschen",
-    "comments": "Notizen",
-    "commentPlaceholder": "Notiz hinzufügen...",
-    "post": "Senden",
-    "noComments": "Noch keine Notizen"
+    "clearDone": "Erledigte löschen"
   },
   "decisions": {
     "create": "Neue Entscheidung",

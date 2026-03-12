@@ -8,7 +8,6 @@ import { ProjectContext } from '../../core/services/project-context.service';
 import {
   GoalsApiService,
   SpGoal,
-  SpGoalComment,
   GoalStatus,
   GoalType,
   GoalTodo,
@@ -522,38 +521,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                     }
                   </div>
 
-                  <!-- Comments / Notes -->
-                  <div class="pt-3 border-t border-border mb-3">
-                    <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">{{ t('goals.comments') }}</h3>
-                    <div class="flex gap-2 mb-3">
-                      <input type="text" [(ngModel)]="newComment" [placeholder]="t('goals.commentPlaceholder')"
-                        class="flex-1 bg-surface text-text-primary text-xs rounded px-2 py-1.5 border border-border
-                               focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary"
-                        (keydown.enter)="postComment()" />
-                      <button (click)="postComment()" [disabled]="!newComment.trim()"
-                        class="px-3 py-1.5 bg-accent text-bg rounded-lg text-xs font-medium hover:opacity-90 disabled:opacity-30">
-                        {{ t('goals.post') }}
-                      </button>
-                    </div>
-                    @if (commentsLoading()) {
-                      <p class="text-text-muted text-xs">{{ t('common.loading') }}</p>
-                    } @else {
-                      <div class="space-y-2 max-h-48 overflow-y-auto">
-                        @for (comment of comments(); track comment.id) {
-                          <div class="text-xs">
-                            <div class="flex items-center gap-2 mb-0.5">
-                              <span class="text-text-muted">{{ formatTime(comment.created_at) }}</span>
-                              <span class="font-medium text-ctp-mauve">{{ comment.agent_id ? 'assistant' : 'human' }}</span>
-                            </div>
-                            <p class="text-text-primary break-words">{{ comment.content }}</p>
-                          </div>
-                        } @empty {
-                          <p class="text-text-muted text-xs">{{ t('goals.noComments') }}</p>
-                        }
-                      </div>
-                    }
-                  </div>
-
                   <div class="text-xs text-text-secondary">
                     {{ t('goals.updatedAt') }}: {{ goal.updated_at | date:'medium' }}
                   </div>
@@ -772,11 +739,6 @@ export class GoalsPage {
   private nextTodoId = 1;
   hasDoneTodos = computed(() => this.goalTodos().some(todo => todo.done));
 
-  // Comments
-  comments = signal<SpGoalComment[]>([]);
-  commentsLoading = signal(false);
-  newComment = '';
-
   // Linked tasks
   linkedTasks = signal<SpTask[]>([]);
   linkedTasksLoading = signal(false);
@@ -938,7 +900,6 @@ export class GoalsPage {
       this.loadTodos(goal);
       this.loadStatsAndChildren(goal.id);
       this.loadLinkedTasks(goal.id);
-      this.loadComments(goal.id);
       this.loadMarkedTasks(goal.id);
     } else {
       this.markedTaskIds.set(new Set());
@@ -1143,38 +1104,6 @@ export class GoalsPage {
         sel.metadata = metadata;
       },
     });
-  }
-
-  // --- Comments ---
-
-  private loadComments(goalId: string): void {
-    this.commentsLoading.set(true);
-    this.api.listComments(goalId).subscribe({
-      next: (comments) => {
-        this.comments.set(comments);
-        this.commentsLoading.set(false);
-      },
-      error: () => {
-        this.comments.set([]);
-        this.commentsLoading.set(false);
-      },
-    });
-  }
-
-  postComment(): void {
-    const content = this.newComment.trim();
-    const sel = this.selected();
-    if (!content || !sel) return;
-    this.api.createComment(sel.id, content).subscribe({
-      next: () => {
-        this.newComment = '';
-        this.loadComments(sel.id);
-      },
-    });
-  }
-
-  formatTime(iso: string): string {
-    return iso?.substring(11, 16) ?? '??:??';
   }
 
   // --- Linked tasks ---

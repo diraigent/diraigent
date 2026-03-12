@@ -266,11 +266,7 @@
     "todoPlaceholder": "Add a todo item...",
     "addTodo": "Add",
     "todosEmpty": "No todos yet. Add one above.",
-    "clearDone": "Clear done",
-    "comments": "Notes",
-    "commentPlaceholder": "Add a note...",
-    "post": "Post",
-    "noComments": "No notes yet"
+    "clearDone": "Clear done"
   },
   "decisions": {
     "create": "New Decision",
