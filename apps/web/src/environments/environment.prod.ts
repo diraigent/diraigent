@@ -1,4 +1,4 @@
-const w = (globalThis as any).__env || {};
+const w = (globalThis as unknown as Record<string, Record<string, string>>).__env || {};
 
 export const environment = {
   production: true,

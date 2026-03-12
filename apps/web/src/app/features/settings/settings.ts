@@ -535,7 +535,9 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations';
             <div class="grid gap-4 max-w-4xl">
               @for (integration of integrations(); track integration.id) {
                 <div class="bg-surface border border-border rounded-lg p-4 hover:border-accent/50 transition-colors cursor-pointer"
-                     (click)="navigateToIntegration(integration.id)">
+                     role="button" tabindex="0"
+                     (click)="navigateToIntegration(integration.id)"
+                     (keydown.enter)="navigateToIntegration(integration.id)">
                   <div class="flex items-center justify-between">
                     <div class="flex items-center gap-3">
                       <div class="w-10 h-10 rounded-lg bg-bg-subtle flex items-center justify-center text-text-secondary">
