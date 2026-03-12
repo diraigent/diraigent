@@ -106,6 +106,7 @@ pub async fn build_user_prompt(
         .unwrap_or_default()
         .into_iter()
         .next()
+        .and_then(|v| v["id"].as_str().map(|s| s.to_string()))
         .unwrap_or_default();
     let task_comments = comments_res.unwrap_or_default();
     let task_updates = updates_res.unwrap_or_default();
