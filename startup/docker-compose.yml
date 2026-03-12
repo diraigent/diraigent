@@ -17,6 +17,13 @@ services:
       timeout: 5s
       retries: 5
 
+  # Fix volume permissions for non-root containers (uid 1001)
+  init-projects:
+    image: alpine:3.21
+    command: chown 1001:1001 /projects
+    volumes:
+      - projects:/projects
+
   # ── Diraigent ─────────────────────────────────────────────────────
 
   api:
@@ -44,6 +51,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      init-projects:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health/live"]
       interval: 10s
