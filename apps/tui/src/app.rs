@@ -1,7 +1,8 @@
 use crate::client::{
-    Agent, AuditEntry, ChangedFile, Decision, GitTaskStatus, Goal, GoalProgress, GoalStats,
-    Integration, IntegrationAccess, KnowledgeEntry, LogEntry, Member, Observation, Playbook,
-    Project, Role, Task, TaskComment, TaskDependencies, TaskUpdate, Verification,
+    Agent, AuditEntry, BranchInfo, ChangedFile, ChatMessage, Decision, GitTaskStatus, Goal,
+    GoalProgress, GoalStats, Integration, IntegrationAccess, KnowledgeEntry, LogEntry,
+    MainPushStatus, Member, Observation, Playbook, Project, Role, SearchResult, Task, TaskComment,
+    TaskDependencies, TaskUpdate, TreeEntry, Verification,
 };
 use ratatui::widgets::ListState;
 use uuid::Uuid;
@@ -21,6 +22,10 @@ pub enum View {
     Logs,
     ProjectSettings,
     Verifications,
+    Git,
+    Search,
+    Chat,
+    Source,
 }
 
 pub const ALL_VIEWS: &[View] = &[
@@ -36,6 +41,10 @@ pub const ALL_VIEWS: &[View] = &[
     View::Audit,
     View::Logs,
     View::Verifications,
+    View::Git,
+    View::Search,
+    View::Chat,
+    View::Source,
 ];
 
 impl View {
@@ -54,6 +63,10 @@ impl View {
             View::Logs => "Logs",
             View::ProjectSettings => "Project Settings",
             View::Verifications => "Verifications",
+            View::Git => "Git",
+            View::Search => "Search",
+            View::Chat => "Chat",
+            View::Source => "Source",
         }
     }
 
@@ -72,6 +85,10 @@ impl View {
             View::Logs => "`",
             View::ProjectSettings => "S",
             View::Verifications => "V",
+            View::Git => "G",
+            View::Search => "F",
+            View::Chat => "C",
+            View::Source => "B",
         }
     }
 }
@@ -101,6 +118,8 @@ pub enum Modal {
     VerificationKindFilter,
     VerificationStatusFilter,
     GoalTaskPicker,
+    GlobalSearch,
+    ChatInput,
 }
 
 pub const TIME_RANGES: &[(&str, i64)] = &[
@@ -562,6 +581,33 @@ pub struct App {
     pub bulk_selected: std::collections::HashSet<uuid::Uuid>,
     pub bulk_mode: bool,
 
+    // Git view
+    pub branches: Vec<BranchInfo>,
+    pub current_branch: String,
+    pub main_push_status: Option<MainPushStatus>,
+    pub selected_branch: Option<usize>,
+    pub git_action_result: Option<String>,
+
+    // Search view
+    pub search_results: Vec<SearchResult>,
+    pub search_total: i64,
+    pub search_executed_query: String,
+    pub selected_search_result: Option<usize>,
+
+    // Chat view
+    pub chat_messages: Vec<ChatMessage>,
+    pub chat_input: String,
+    pub chat_streaming: bool,
+    pub chat_scroll: u16,
+
+    // Source browser
+    pub source_entries: Vec<TreeEntry>,
+    pub source_current_path: String,
+    pub source_selected: Option<usize>,
+    pub source_blob_content: Option<String>,
+    pub source_blob_path: Option<String>,
+    pub source_blob_scroll: u16,
+
     // Error flash
     pub last_error: Option<String>,
 }
@@ -649,6 +695,25 @@ impl App {
             show_changed_files: false,
             bulk_selected: std::collections::HashSet::new(),
             bulk_mode: false,
+            branches: vec![],
+            current_branch: String::new(),
+            main_push_status: None,
+            selected_branch: None,
+            git_action_result: None,
+            search_results: vec![],
+            search_total: 0,
+            search_executed_query: String::new(),
+            selected_search_result: None,
+            chat_messages: vec![],
+            chat_input: String::new(),
+            chat_streaming: false,
+            chat_scroll: 0,
+            source_entries: vec![],
+            source_current_path: String::new(),
+            source_selected: None,
+            source_blob_content: None,
+            source_blob_path: None,
+            source_blob_scroll: 0,
             last_error: None,
         }
     }
@@ -668,6 +733,10 @@ impl App {
             View::Logs => self.log_entries.len(),
             View::ProjectSettings => 0, // No list in settings view
             View::Verifications => self.filtered_verifications().len(),
+            View::Git => self.branches.len(),
+            View::Search => self.search_results.len(),
+            View::Chat => self.chat_messages.len(),
+            View::Source => self.source_entries.len(),
         }
     }
 
@@ -686,6 +755,10 @@ impl App {
             View::Logs => None, // Logs use scroll, not selection
             View::ProjectSettings => None,
             View::Verifications => self.selected_verification,
+            View::Git => self.selected_branch,
+            View::Search => self.selected_search_result,
+            View::Chat => None,
+            View::Source => self.source_selected,
         }
     }
 
@@ -708,6 +781,10 @@ impl App {
             View::Logs => {}            // Logs use scroll, not selection
             View::ProjectSettings => {} // No list in settings view
             View::Verifications => self.selected_verification = idx,
+            View::Git => self.selected_branch = idx,
+            View::Search => self.selected_search_result = idx,
+            View::Chat => {}
+            View::Source => self.source_selected = idx,
         }
     }
 

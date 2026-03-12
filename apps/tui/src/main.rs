@@ -63,6 +63,14 @@ enum ApiMsg {
     GoalTasksList(Vec<client::Task>),
     GoalUnlinkedTasks(Vec<client::Task>),
     GoalBulkLinked,
+    Branches(client::BranchListResponse),
+    MainStatus(client::MainPushStatus),
+    GitActionResult(String),
+    SearchResults(client::SearchResponse),
+    ChatResponse(String),
+    ChatError(String),
+    SourceTree(Vec<client::TreeEntry>),
+    SourceBlob { path: String, content: String },
     Error(String),
 }
 
@@ -400,6 +408,63 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 ApiMsg::GitTaskStatus(status) => app.git_task_status = Some(status),
                 ApiMsg::ChangedFiles(files) => app.changed_files = files,
+                ApiMsg::Branches(resp) => {
+                    app.current_branch = resp.current_branch;
+                    app.branches = resp.branches;
+                    if app.selected_branch.is_none() && !app.branches.is_empty() {
+                        app.selected_branch = Some(0);
+                    }
+                }
+                ApiMsg::MainStatus(status) => app.main_push_status = Some(status),
+                ApiMsg::GitActionResult(msg) => app.git_action_result = Some(msg),
+                ApiMsg::SearchResults(resp) => {
+                    app.search_results = resp.results;
+                    app.search_total = resp.total;
+                    app.search_executed_query = resp.query;
+                    if !app.search_results.is_empty() {
+                        app.selected_search_result = Some(0);
+                    }
+                }
+                ApiMsg::ChatResponse(content) => {
+                    app.chat_streaming = false;
+                    if !content.is_empty() {
+                        app.chat_messages.push(client::ChatMessage {
+                            role: "assistant".into(),
+                            content,
+                        });
+                    }
+                }
+                ApiMsg::ChatError(e) => {
+                    app.chat_streaming = false;
+                    app.chat_messages.push(client::ChatMessage {
+                        role: "assistant".into(),
+                        content: format!("Error: {}", e),
+                    });
+                }
+                ApiMsg::SourceTree(entries) => {
+                    app.source_entries = entries;
+                    if !app.source_entries.is_empty() {
+                        let offset = if app.source_current_path.is_empty() {
+                            0
+                        } else {
+                            1
+                        };
+                        app.source_selected = Some(offset);
+                    } else {
+                        app.source_selected = if app.source_current_path.is_empty() {
+                            None
+                        } else {
+                            Some(0)
+                        };
+                    }
+                    app.source_blob_content = None;
+                    app.source_blob_path = None;
+                }
+                ApiMsg::SourceBlob { path, content } => {
+                    app.source_blob_content = Some(content);
+                    app.source_blob_path = Some(path);
+                    app.source_blob_scroll = 0;
+                }
                 ApiMsg::Error(e) => app.last_error = Some(e),
             }
         }
@@ -460,6 +525,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     views::project_settings::render(f, main_layout[1], &mut app)
                 }
                 View::Verifications => views::verifications::render(f, main_layout[1], &mut app),
+                View::Git => views::git::render(f, main_layout[1], &mut app),
+                View::Search => views::search::render(f, main_layout[1], &mut app),
+                View::Chat => views::chat::render(f, main_layout[1], &mut app),
+                View::Source => views::source::render(f, main_layout[1], &mut app),
             }
 
             // Footer
@@ -617,6 +686,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Modal::Reply
                 | Modal::Comment
                 | Modal::Search
+                | Modal::GlobalSearch
                 | Modal::LogQuery
                 | Modal::LogFilter => {
                     let title = if app.modal == Modal::LogQuery {
@@ -625,6 +695,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "Filter Log Output"
                     } else if app.modal == Modal::Search {
                         "Search"
+                    } else if app.modal == Modal::GlobalSearch {
+                        "Global Search"
                     } else if app.modal == Modal::Comment {
                         "Comment"
                     } else if app
@@ -641,6 +713,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             title,
                             text: &app.input_text,
                             cursor: app.input_cursor,
+                        },
+                        size,
+                    );
+                }
+                Modal::ChatInput => {
+                    f.render_widget(
+                        widgets::popup::InputPopup {
+                            title: "Chat Message",
+                            text: &app.chat_input,
+                            cursor: app.chat_input.len(),
                         },
                         size,
                     );
@@ -4549,6 +4631,105 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             _ => {}
                         },
+                        Modal::GlobalSearch => match key.code {
+                            KeyCode::Esc => {
+                                app.modal = Modal::None;
+                                app.input_text.clear();
+                                app.input_cursor = 0;
+                            }
+                            KeyCode::Enter => {
+                                let query = app.input_text.clone();
+                                app.modal = Modal::None;
+                                app.view = View::Search;
+                                app.input_text.clear();
+                                app.input_cursor = 0;
+                                if !query.is_empty() {
+                                    if let Some(pid) = app.current_project {
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            match api.search(pid, &query, None).await {
+                                                Ok(resp) => {
+                                                    let _ =
+                                                        tx.send(ApiMsg::SearchResults(resp)).await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::Error(format!("Search: {e}")))
+                                                        .await;
+                                                }
+                                            }
+                                        });
+                                    }
+                                }
+                            }
+                            KeyCode::Backspace => {
+                                if app.input_cursor > 0 {
+                                    app.input_cursor -= 1;
+                                    let byte_pos = app
+                                        .input_text
+                                        .char_indices()
+                                        .nth(app.input_cursor)
+                                        .map(|(i, _)| i)
+                                        .unwrap_or(app.input_text.len());
+                                    app.input_text.remove(byte_pos);
+                                }
+                            }
+                            KeyCode::Char(c) => {
+                                let byte_pos = app
+                                    .input_text
+                                    .char_indices()
+                                    .nth(app.input_cursor)
+                                    .map(|(i, _)| i)
+                                    .unwrap_or(app.input_text.len());
+                                app.input_text.insert(byte_pos, c);
+                                app.input_cursor += 1;
+                            }
+                            _ => {}
+                        },
+                        Modal::ChatInput => match key.code {
+                            KeyCode::Esc => {
+                                app.modal = Modal::None;
+                            }
+                            KeyCode::Enter => {
+                                let msg = app.chat_input.trim().to_string();
+                                app.modal = Modal::None;
+                                if !msg.is_empty() {
+                                    app.chat_messages.push(client::ChatMessage {
+                                        role: "user".into(),
+                                        content: msg,
+                                    });
+                                    app.chat_input.clear();
+                                    app.chat_streaming = true;
+                                    let messages = app.chat_messages.clone();
+                                    if let Some(pid) = app.current_project {
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            match api.send_chat(pid, messages).await {
+                                                Ok(content) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::ChatResponse(content))
+                                                        .await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::ChatError(format!("{e}")))
+                                                        .await;
+                                                }
+                                            }
+                                        });
+                                    }
+                                }
+                            }
+                            KeyCode::Backspace => {
+                                app.chat_input.pop();
+                            }
+                            KeyCode::Char(c) => {
+                                app.chat_input.push(c);
+                            }
+                            _ => {}
+                        },
                         Modal::ObservationStatus => match key.code {
                             KeyCode::Esc => app.modal = Modal::None,
                             KeyCode::Up | KeyCode::Char('k') => {
@@ -5415,6 +5596,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 app.view = View::Verifications;
                                 app.detail_scroll = 0;
                             }
+                            KeyCode::Char('C') => {
+                                app.view = View::Chat;
+                                app.detail_scroll = 0;
+                            }
                             KeyCode::Up | KeyCode::Char('k') => {
                                 if app.view == View::Logs {
                                     app.scroll_logs(-1);
@@ -5468,6 +5653,74 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         });
                                     }
+                                } else if app.view == View::Source {
+                                    if let Some(sel) = app.source_selected {
+                                        let offset = if app.source_current_path.is_empty() {
+                                            0
+                                        } else {
+                                            1
+                                        };
+                                        if sel == 0 && offset == 1 {
+                                            // Go up
+                                            let new_path = app
+                                                .source_current_path
+                                                .rfind('/')
+                                                .map(|i| app.source_current_path[..i].to_string())
+                                                .unwrap_or_default();
+                                            app.source_current_path = new_path.clone();
+                                            if let Some(pid) = app.current_project {
+                                                let api = api.clone();
+                                                let tx = tx.clone();
+                                                tokio::spawn(async move {
+                                                    if let Ok(resp) =
+                                                        api.source_tree(pid, &new_path, None).await
+                                                    {
+                                                        let _ = tx
+                                                            .send(ApiMsg::SourceTree(resp.entries))
+                                                            .await;
+                                                    }
+                                                });
+                                            }
+                                        } else if let Some(entry) =
+                                            app.source_entries.get(sel - offset)
+                                        {
+                                            let entry_path = entry.path.clone();
+                                            let entry_kind = entry.kind.clone();
+                                            if let Some(pid) = app.current_project {
+                                                let api = api.clone();
+                                                let tx = tx.clone();
+                                                if entry_kind == "dir" {
+                                                    app.source_current_path = entry_path.clone();
+                                                    tokio::spawn(async move {
+                                                        if let Ok(resp) = api
+                                                            .source_tree(pid, &entry_path, None)
+                                                            .await
+                                                        {
+                                                            let _ = tx
+                                                                .send(ApiMsg::SourceTree(
+                                                                    resp.entries,
+                                                                ))
+                                                                .await;
+                                                        }
+                                                    });
+                                                } else {
+                                                    tokio::spawn(async move {
+                                                        if let Ok(resp) = api
+                                                            .source_blob(pid, &entry_path, None)
+                                                            .await
+                                                        {
+                                                            let _ = tx
+                                                                .send(ApiMsg::SourceBlob {
+                                                                    path: entry_path,
+                                                                    content: resp.content,
+                                                                })
+                                                                .await;
+                                                        }
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                             KeyCode::Char('t') => {
@@ -5496,6 +5749,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.modal = Modal::Reply;
                                     app.input_text.clear();
                                     app.input_cursor = 0;
+                                } else if app.view == View::Git {
+                                    app.git_action_result = None;
+                                    if let Some(pid) = app.current_project {
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            if let Ok(resp) = api.list_branches(pid, None).await {
+                                                let _ = tx.send(ApiMsg::Branches(resp)).await;
+                                            }
+                                            if let Ok(status) = api.main_status(pid).await {
+                                                let _ = tx.send(ApiMsg::MainStatus(status)).await;
+                                            }
+                                        });
+                                    }
                                 }
                             }
                             KeyCode::Char('/') => {
@@ -5503,6 +5770,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.modal = Modal::LogFilter;
                                     app.input_text = app.log_filter.clone();
                                     app.input_cursor = app.input_text.chars().count();
+                                } else if app.view == View::Search {
+                                    app.modal = Modal::GlobalSearch;
+                                    app.input_text.clear();
+                                    app.input_cursor = 0;
                                 } else {
                                     app.modal = Modal::Search;
                                     app.input_text.clear();
@@ -5798,6 +6069,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         app.input_text = obs.title.clone();
                                         app.input_cursor = app.input_text.chars().count();
                                     }
+                                } else if app.view == View::Git {
+                                    // Push selected branch
+                                    if let (Some(pid), Some(idx)) =
+                                        (app.current_project, app.selected_branch)
+                                    {
+                                        if let Some(branch) = app.branches.get(idx) {
+                                            let branch_name = branch.name.clone();
+                                            let api = api.clone();
+                                            let tx = tx.clone();
+                                            tokio::spawn(async move {
+                                                match api.push_branch(pid, &branch_name).await {
+                                                    Ok(resp) => {
+                                                        let _ = tx
+                                                            .send(ApiMsg::GitActionResult(
+                                                                resp.message,
+                                                            ))
+                                                            .await;
+                                                    }
+                                                    Err(e) => {
+                                                        let _ = tx
+                                                            .send(ApiMsg::GitActionResult(format!(
+                                                                "Push error: {e}"
+                                                            )))
+                                                            .await;
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    }
                                 }
                             }
                             // Tasks view: a = claim/assign task
@@ -5979,6 +6279,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             });
                                         }
                                     }
+                                } else if app.view == View::Git {
+                                    if let Some(pid) = app.current_project {
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            match api.resolve_and_push_main(pid).await {
+                                                Ok(resp) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::GitActionResult(resp.message))
+                                                        .await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::GitActionResult(format!(
+                                                            "Resolve+push error: {e}"
+                                                        )))
+                                                        .await;
+                                                }
+                                            }
+                                        });
+                                    }
                                 }
                             }
                             // v = toggle bulk selection / multi-select (Tasks view)
@@ -6054,7 +6375,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                            // G = git status for task (Tasks view)
+                            // G = git status for task (Tasks view) or switch to Git view
                             KeyCode::Char('G') => {
                                 if app.view == View::Tasks {
                                     if let Some(tid) = app.selected_task_id() {
@@ -6077,6 +6398,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         });
                                     }
+                                } else {
+                                    app.view = View::Git;
+                                    app.detail_scroll = 0;
+                                    app.git_action_result = None;
+                                    if let Some(pid) = app.current_project {
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            if let Ok(resp) = api.list_branches(pid, None).await {
+                                                let _ = tx.send(ApiMsg::Branches(resp)).await;
+                                            }
+                                            if let Ok(status) = api.main_status(pid).await {
+                                                let _ = tx.send(ApiMsg::MainStatus(status)).await;
+                                            }
+                                        });
+                                    }
                                 }
                             }
                             // i = delegate task (Tasks view)
@@ -6093,6 +6430,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         app.transition_selected = 0;
                                         app.modal = Modal::DelegateTask;
                                     }
+                                } else if app.view == View::Chat {
+                                    app.modal = Modal::ChatInput;
                                 }
                             }
                             // w = add dependency (Tasks view)
@@ -6477,6 +6816,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 if app.view == View::Logs {
                                     app.log_direction_idx =
                                         (app.log_direction_idx + 1) % LOG_DIRECTIONS.len();
+                                } else {
+                                    app.view = View::Source;
+                                    app.detail_scroll = 0;
+                                    app.source_current_path = String::new();
+                                    app.source_blob_content = None;
+                                    app.source_blob_path = None;
+                                    app.source_blob_scroll = 0;
+                                    if let Some(pid) = app.current_project {
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            if let Ok(resp) = api.source_tree(pid, "", None).await {
+                                                let _ =
+                                                    tx.send(ApiMsg::SourceTree(resp.entries)).await;
+                                            }
+                                        });
+                                    }
                                 }
                             }
                             // PageUp/PageDown for fast scrolling in Logs
@@ -6504,6 +6860,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             KeyCode::Char('L') => {
                                 theme::toggle();
+                            }
+                            KeyCode::Backspace => {
+                                if app.view == View::Source && !app.source_current_path.is_empty() {
+                                    let new_path = app
+                                        .source_current_path
+                                        .rfind('/')
+                                        .map(|i| app.source_current_path[..i].to_string())
+                                        .unwrap_or_default();
+                                    app.source_current_path = new_path.clone();
+                                    if let Some(pid) = app.current_project {
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            if let Ok(resp) =
+                                                api.source_tree(pid, &new_path, None).await
+                                            {
+                                                let _ =
+                                                    tx.send(ApiMsg::SourceTree(resp.entries)).await;
+                                            }
+                                        });
+                                    }
+                                }
+                            }
+                            KeyCode::Char('P') => {
+                                if app.view == View::Git {
+                                    if let Some(pid) = app.current_project {
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            match api.push_main(pid).await {
+                                                Ok(resp) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::GitActionResult(resp.message))
+                                                        .await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::GitActionResult(format!(
+                                                            "Push main error: {e}"
+                                                        )))
+                                                        .await;
+                                                }
+                                            }
+                                        });
+                                    }
+                                }
                             }
                             _ => {}
                         },
