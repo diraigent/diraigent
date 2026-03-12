@@ -269,6 +269,9 @@ impl DiraigentDb for PostgresDb {
     ) -> Result<Vec<Uuid>, AppError> {
         repository::list_auto_status_goal_ids_for_task(&self.0, task_id).await
     }
+    async fn get_goal_ids_for_task(&self, task_id: Uuid) -> Result<Vec<Uuid>, AppError> {
+        repository::get_goal_ids_for_task(&self.0, task_id).await
+    }
     async fn list_goals_for_task(&self, task_id: Uuid) -> Result<Vec<Goal>, AppError> {
         repository::list_goals_for_task(&self.0, task_id).await
     }

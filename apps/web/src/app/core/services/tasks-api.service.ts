@@ -39,6 +39,7 @@ export interface SpTask {
   updated_at: string;
   completed_at: string | null;
   reverted_at: string | null;
+  flagged: boolean;
   /** Enriched field — only present on GET /tasks/:id */
   decision?: SpDecisionSummary | null;
   input_tokens: number;
@@ -124,6 +125,7 @@ export interface UpdateTaskRequest {
   required_capabilities?: string[];
   playbook_id?: string | null;
   playbook_step?: number | null;
+  flagged?: boolean;
 }
 
 export interface CreateTaskUpdateRequest {

@@ -9,10 +9,11 @@ import { ProjectContext } from '../../core/services/project-context.service';
 import { TeamApiService, SpRole, SpMember, SpRoleCreate, SpMemberCreate } from '../../core/services/team-api.service';
 import { AgentsApiService, SpAgent, SpAgentRegistered, SpAgentTask } from '../../core/services/agents-api.service';
 import { TasksApiService } from '../../core/services/tasks-api.service';
-import { taskStateColor, taskTransitions } from '../../shared/ui-constants';
+import { taskStateColor, taskTransitions, INTEGRATION_KIND_COLORS } from '../../shared/ui-constants';
+import { IntegrationsApiService, Integration, IntegrationKind } from '../../core/services/integrations-api.service';
 import { CreateAgentModalComponent } from '../agents/create-agent-modal';
 
-type SettingsTab = 'general' | 'agents' | 'team';
+type SettingsTab = 'general' | 'agents' | 'team' | 'integrations';
 
 @Component({
   selector: 'app-settings',
@@ -60,6 +61,16 @@ type SettingsTab = 'general' | 'agents' | 'team';
               [class.hover:text-text-secondary]="activeTab() !== 'team'">
               {{ t('nav.team') }}
             </button>
+            <button
+              (click)="activeTab.set('integrations')"
+              class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"
+              [class.bg-bg]="activeTab() === 'integrations'"
+              [class.text-text-primary]="activeTab() === 'integrations'"
+              [class.shadow-sm]="activeTab() === 'integrations'"
+              [class.text-text-muted]="activeTab() !== 'integrations'"
+              [class.hover:text-text-secondary]="activeTab() !== 'integrations'">
+              {{ t('nav.integrations') }}
+            </button>
           </div>
 
           @if (activeTab() === 'agents') {
@@ -71,6 +82,11 @@ type SettingsTab = 'general' | 'agents' | 'team';
             <button (click)="showRoleForm()"
               class="px-4 py-2 text-sm font-medium bg-accent text-bg rounded-lg hover:opacity-90 transition-opacity">
               + {{ t('team.addRole') }}
+            </button>
+          } @else if (activeTab() === 'integrations') {
+            <button (click)="navigateToNewIntegration()"
+              class="px-4 py-2 text-sm font-medium bg-accent text-bg rounded-lg hover:opacity-90 transition-opacity">
+              {{ t('integrations.create') }}
             </button>
           }
         </div>
@@ -497,6 +513,74 @@ type SettingsTab = 'general' | 'agents' | 'team';
           }
         }
 
+        <!-- ── INTEGRATIONS TAB ── -->
+        @if (activeTab() === 'integrations') {
+          @if (integrationsLoading()) {
+            <p class="text-text-secondary text-sm">{{ t('common.loading') }}</p>
+          } @else if (integrationsError()) {
+            <p class="text-ctp-red text-sm">{{ t('common.error') }}</p>
+          } @else if (integrations().length === 0) {
+            <div class="text-center py-12">
+              <svg class="w-12 h-12 mx-auto text-text-secondary mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                      d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+              </svg>
+              <p class="text-text-secondary mb-4">{{ t('integrations.empty') }}</p>
+              <button (click)="navigateToNewIntegration()"
+                class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90 transition-opacity">
+                {{ t('integrations.create') }}
+              </button>
+            </div>
+          } @else {
+            <div class="grid gap-4 max-w-4xl">
+              @for (integration of integrations(); track integration.id) {
+                <div class="bg-surface border border-border rounded-lg p-4 hover:border-accent/50 transition-colors cursor-pointer"
+                     (click)="navigateToIntegration(integration.id)">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                      <div class="w-10 h-10 rounded-lg bg-bg-subtle flex items-center justify-center text-text-secondary">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                        </svg>
+                      </div>
+                      <div>
+                        <div class="flex items-center gap-2">
+                          <span class="font-medium text-text-primary">{{ integration.name }}</span>
+                          <span class="text-xs px-2 py-0.5 rounded-full {{ integrationKindColor(integration.kind) }}">
+                            {{ integration.kind }}
+                          </span>
+                        </div>
+                        <p class="text-sm text-text-secondary">{{ integration.provider }} · {{ integration.base_url }}</p>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs px-2 py-1 rounded-full"
+                            [class]="integration.enabled ? 'bg-ctp-green/20 text-ctp-green' : 'bg-ctp-overlay0/20 text-ctp-overlay0'">
+                        {{ integration.enabled ? t('integrations.enabled') : t('integrations.disabled') }}
+                      </span>
+                      <button (click)="toggleIntegrationEnabled($event, integration)"
+                              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+                              [class]="integration.enabled ? 'bg-accent' : 'bg-ctp-overlay0'"
+                              [attr.aria-label]="integration.enabled ? t('integrations.disable') : t('integrations.enable')">
+                        <span class="inline-block h-4 w-4 rounded-full bg-white transition-transform"
+                              [class]="integration.enabled ? 'translate-x-6' : 'translate-x-1'"></span>
+                      </button>
+                    </div>
+                  </div>
+                  @if (integration.capabilities.length > 0) {
+                    <div class="mt-2 flex flex-wrap gap-1">
+                      @for (cap of integration.capabilities; track cap) {
+                        <span class="text-xs px-1.5 py-0.5 rounded bg-bg-subtle text-text-secondary">{{ cap }}</span>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          }
+        }
+
         <!-- ── TEAM TAB ── -->
         @if (activeTab() === 'team') {
           @if (teamLoading()) {
@@ -764,6 +848,7 @@ export class SettingsPage implements OnInit, OnDestroy {
   private teamApi = inject(TeamApiService);
   private agentsApi = inject(AgentsApiService);
   private tasksApi = inject(TasksApiService);
+  private integrationsApi = inject(IntegrationsApiService);
   private destroyRef = inject(DestroyRef);
 
   // Tab state
@@ -826,6 +911,11 @@ export class SettingsPage implements OnInit, OnDestroy {
   addingMember = signal(false);
   memberAgentId = signal('');
 
+  // Integrations tab state
+  integrations = signal<Integration[]>([]);
+  integrationsLoading = signal(false);
+  integrationsError = signal(false);
+
   private savedTimer: ReturnType<typeof setTimeout> | null = null;
   private claudeSavedTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -836,6 +926,7 @@ export class SettingsPage implements OnInit, OnDestroy {
       this.loadClaudeMd(pid);
       this.loadPackages();
       this.loadSettings();
+      this.loadIntegrations(pid);
     } else {
       this.loading.set(false);
       this.project.set(null);
@@ -1003,6 +1094,47 @@ export class SettingsPage implements OnInit, OnDestroy {
       },
       error: () => this.deletingProject.set(false),
     });
+  }
+
+  // ── Integration methods ──
+
+  private loadIntegrations(projectId: string): void {
+    this.integrationsLoading.set(true);
+    this.integrationsError.set(false);
+    this.integrationsApi.list(projectId).subscribe({
+      next: (data) => {
+        this.integrations.set(data);
+        this.integrationsLoading.set(false);
+      },
+      error: () => {
+        this.integrationsError.set(true);
+        this.integrationsLoading.set(false);
+      },
+    });
+  }
+
+  toggleIntegrationEnabled(event: Event, integration: Integration): void {
+    event.stopPropagation();
+    const newEnabled = !integration.enabled;
+    this.integrationsApi.update(integration.id, { enabled: newEnabled }).subscribe({
+      next: (updated) => {
+        this.integrations.update(list =>
+          list.map(i => (i.id === updated.id ? updated : i)),
+        );
+      },
+    });
+  }
+
+  integrationKindColor(kind: IntegrationKind): string {
+    return INTEGRATION_KIND_COLORS[kind] ?? INTEGRATION_KIND_COLORS['custom'];
+  }
+
+  navigateToIntegration(id: string): void {
+    this.router.navigate(['/integrations', id]);
+  }
+
+  navigateToNewIntegration(): void {
+    this.router.navigate(['/integrations', 'new']);
   }
 
   // ── Team data loading ──

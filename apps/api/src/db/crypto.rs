@@ -247,6 +247,7 @@ impl DiraigentDb for CryptoDb {
                 required_capabilities: req.required_capabilities.clone(),
                 playbook_step: req.playbook_step,
                 playbook_id: req.playbook_id,
+                flagged: req.flagged,
             };
             let mut task = self.inner.update_task(task_id, &encrypted_req).await?;
             Self::decrypt_task(dek, &mut task)?;
@@ -498,10 +499,12 @@ impl DiraigentDb for CryptoDb {
     ) -> Result<Vec<Uuid>, AppError> {
         delegate!(self, list_auto_status_goal_ids_for_task, task_id)
     }
+    async fn get_goal_ids_for_task(&self, task_id: Uuid) -> Result<Vec<Uuid>, AppError> {
+        delegate!(self, get_goal_ids_for_task, task_id)
+    }
     async fn list_goals_for_task(&self, task_id: Uuid) -> Result<Vec<Goal>, AppError> {
         delegate!(self, list_goals_for_task, task_id)
     }
-
     // ── Goal Comments ──
     async fn create_goal_comment(
         &self,

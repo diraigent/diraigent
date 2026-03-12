@@ -266,11 +266,7 @@
     "todoPlaceholder": "Add a todo item...",
     "addTodo": "Add",
     "todosEmpty": "No todos yet. Add one above.",
-    "clearDone": "Clear done",
-    "comments": "Notes",
-    "commentPlaceholder": "Add a note...",
-    "post": "Post",
-    "noComments": "No notes yet"
+    "clearDone": "Clear done"
   },
   "decisions": {
     "create": "New Decision",
@@ -605,7 +601,9 @@
     "noPlaybook": "None",
     "dependencies": "Dependencies",
     "blocked": "Blocked by dependencies",
-    "flagged": "Had implementation issues",
+    "flagged": "Flagged",
+    "flag": "Flag this task",
+    "unflag": "Remove flag",
     "linkedToGoal": "Linked to a goal",
     "dependsOn": "Depends on",
     "blocks": "Blocks",

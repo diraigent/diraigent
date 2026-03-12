@@ -59,6 +59,7 @@ pub fn routes() -> Router<AppState> {
             "/tasks/{task_id}/comments",
             get(list_task_comments).post(create_task_comment),
         )
+        .route("/tasks/{task_id}/goals", get(list_task_goals))
         .route("/tasks/{task_id}/cost", post(record_task_cost))
         .route("/tasks/{task_id}/goals", get(list_task_goals))
 }
@@ -176,6 +177,19 @@ async fn list_goal_linked_task_ids(
 ) -> Result<Json<Vec<Uuid>>, AppError> {
     require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
     let ids = state.db.list_goal_linked_task_ids(project_id).await?;
+    Ok(Json(ids))
+}
+
+/// Return all goal IDs linked to a task.
+async fn list_task_goals(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
+    Path(task_id): Path<Uuid>,
+) -> Result<Json<Vec<Uuid>>, AppError> {
+    let task = state.db.get_task_by_id(task_id).await?;
+    require_membership(state.db.as_ref(), agent_id, user_id, task.project_id).await?;
+    let ids = state.db.get_goal_ids_for_task(task_id).await?;
     Ok(Json(ids))
 }
 

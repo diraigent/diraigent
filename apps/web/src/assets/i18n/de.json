@@ -243,11 +243,7 @@
     "todoPlaceholder": "Aufgabe hinzufügen...",
     "addTodo": "Hinzufügen",
     "todosEmpty": "Noch keine Aufgaben. Oben eine hinzufügen.",
-    "clearDone": "Erledigte löschen",
-    "comments": "Notizen",
-    "commentPlaceholder": "Notiz hinzufügen...",
-    "post": "Senden",
-    "noComments": "Noch keine Notizen"
+    "clearDone": "Erledigte löschen"
   },
   "decisions": {
     "create": "Neue Entscheidung",
@@ -583,7 +579,9 @@
     "dependsOn": "Hängt ab von",
     "blocks": "Blockiert",
     "blocked": "Durch Abhängigkeiten blockiert",
-    "flagged": "Hatte Implementierungsprobleme",
+    "flagged": "Markiert",
+    "flag": "Aufgabe markieren",
+    "unflag": "Markierung entfernen",
     "linkedToGoal": "Mit einem Ziel verknüpft",
     "depIdPlaceholder": "Aufgaben-UUID als Abhängigkeit",
     "addDep": "Hinzufügen",

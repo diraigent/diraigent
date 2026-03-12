@@ -80,6 +80,7 @@ pub async fn build_user_prompt(
         comments_res,
         updates_res,
         verifications_res,
+        task_goal_ids,
     ) = tokio::join!(
         api.get_project(project_id),
         api.get_task(task_id),
@@ -94,10 +95,18 @@ pub async fn build_user_prompt(
         api.get_task_comments(task_id),
         api.get_task_updates(task_id),
         api.get_verifications(project_id, task_id),
+        api.get_task_goals(task_id),
     );
 
     let project_json = project_res.ok();
     let task_json = task_res.ok();
+    // First goal ID linked to this task (if any) — used for goal inheritance
+    // when the agent creates subtasks. Empty string when the task has no goal.
+    let first_goal_id = task_goal_ids
+        .unwrap_or_default()
+        .into_iter()
+        .next()
+        .unwrap_or_default();
     let task_comments = comments_res.unwrap_or_default();
     let task_updates = updates_res.unwrap_or_default();
     let verifications = verifications_res.unwrap_or_default();
@@ -306,6 +315,7 @@ pub async fn build_user_prompt(
         review_feedback: &review_feedback,
         decompose_mode,
         project_json: project_json.as_ref(),
+        goal_id: &first_goal_id,
     });
 
     let step_desc_line = if step_description.is_empty() {
@@ -541,6 +551,9 @@ struct WorkflowParams<'a> {
     /// Full project JSON — used for `{{project.<key>}}` substitution.
     /// Top-level fields (default_branch, slug, etc.) and metadata fields are both available.
     project_json: Option<&'a serde_json::Value>,
+    /// First goal ID linked to this task (empty string if none).
+    /// Used for goal inheritance: subtasks inherit the parent's goal.
+    goal_id: &'a str,
 }
 
 /// Substitute `{{variable}}` placeholders in a step description template.
@@ -575,7 +588,8 @@ fn substitute_description(
         .replace("{{agent_id}}", agent_id)
         .replace("{{playbook_id}}", p.playbook_id)
         .replace("{{branch}}", &branch)
-        .replace("{{review_feedback}}", p.review_feedback);
+        .replace("{{review_feedback}}", p.review_feedback)
+        .replace("{{goal_id}}", p.goal_id);
 
     // Apply project vars: {{project.<key>}}
     // Resolution order: top-level project fields first, then metadata fields.
@@ -633,6 +647,12 @@ fn build_workflow(p: &WorkflowParams<'_>) -> String {
         let task_id = p.task_id;
         let project_id = p.project_id;
         let playbook_id = p.playbook_id;
+        // Include goal_id in subtask creation so subtasks inherit the parent's goal.
+        let goal_id_field = if p.goal_id.is_empty() {
+            String::new()
+        } else {
+            format!(r#""goal_id": "{}", "#, p.goal_id)
+        };
         return format!(
             r#"## Your Job: DECOMPOSE INTO SUBTASKS
 
@@ -644,7 +664,7 @@ Instead, analyze the spec and break it into smaller, well-scoped subtasks.
 3. **Analyze the spec**: Identify logical units of work that can be implemented independently.
 4. **Create subtasks**: For each unit, create a task with a clear spec, files, test_cmd, and acceptance_criteria:
    ```
-   {agent_cli} create {project_id} '{{"title": "...", "kind": "feature", "priority": 3, "playbook_id": "{playbook_id}", "context": {{"spec": "...", "files": ["..."], "test_cmd": "...", "acceptance_criteria": ["..."]}}}}'
+   {agent_cli} create {project_id} '{{{goal_id_field}"title": "...", "kind": "feature", "priority": 3, "playbook_id": "{playbook_id}", "context": {{"spec": "...", "files": ["..."], "test_cmd": "...", "acceptance_criteria": ["..."]}}}}'
    ```
 5. **Wire dependencies**: If subtask B depends on subtask A:
    ```
@@ -831,6 +851,7 @@ mod tests {
             review_feedback,
             decompose_mode: false,
             project_json: None,
+            goal_id: "",
         }
     }
 
@@ -1372,6 +1393,7 @@ mod tests {
             review_feedback: "",
             decompose_mode: true,
             project_json: None,
+            goal_id: "",
         };
         let output = build_workflow(&params);
         assert!(
@@ -1381,6 +1403,61 @@ mod tests {
         assert!(
             !output.contains("Custom step description"),
             "decompose mode should NOT contain the original step description"
+        );
+    }
+
+    #[test]
+    fn decompose_mode_includes_goal_id_when_present() {
+        let root = PathBuf::from("/tmp/test-repo");
+        let mut params = make_params("implement", "", &root);
+        params.decompose_mode = true;
+        params.goal_id = "gggggggg-hhhh-iiii-jjjj-kkkkkkkkkkkk";
+        let output = build_workflow(&params);
+        assert!(
+            output.contains(r#""goal_id": "gggggggg-hhhh-iiii-jjjj-kkkkkkkkkkkk""#),
+            "decompose mode with goal should include goal_id in create command, got: {output}"
+        );
+    }
+
+    #[test]
+    fn decompose_mode_omits_goal_id_when_absent() {
+        let root = PathBuf::from("/tmp/test-repo");
+        let mut params = make_params("implement", "", &root);
+        params.decompose_mode = true;
+        params.goal_id = "";
+        let output = build_workflow(&params);
+        assert!(
+            !output.contains("goal_id"),
+            "decompose mode without goal should NOT include goal_id, got: {output}"
+        );
+    }
+
+    #[test]
+    fn goal_id_template_variable_substituted() {
+        let root = PathBuf::from("/tmp/test-repo");
+        let step_json = serde_json::json!({
+            "description": "Create subtask with goal: {{goal_id}}"
+        });
+        let params = WorkflowParams {
+            step_name: "implement",
+            step_description: "Create subtask with goal: {{goal_id}}",
+            step_json: Some(&step_json),
+            agent_cli: "/usr/bin/agent-cli",
+            task_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            project_id: "11111111-2222-3333-4444-555555555555",
+            short_id: "aaaaaaaa-bbb",
+            repo_root: &root,
+            api_base: "http://localhost:8082",
+            playbook_id: "pppppppp-qqqq-rrrr-ssss-tttttttttttt",
+            review_feedback: "",
+            decompose_mode: false,
+            project_json: None,
+            goal_id: "gggggggg-hhhh-iiii-jjjj-kkkkkkkkkkkk",
+        };
+        let output = build_workflow(&params);
+        assert!(
+            output.contains("Create subtask with goal: gggggggg-hhhh-iiii-jjjj-kkkkkkkkkkkk"),
+            "{{{{goal_id}}}} template variable should be substituted, got: {output}"
         );
     }
 }
