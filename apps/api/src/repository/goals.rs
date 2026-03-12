@@ -414,3 +414,15 @@ pub async fn list_auto_status_goal_ids_for_task(
 
     Ok(ids.into_iter().map(|r| r.0).collect())
 }
+
+/// Return all goal IDs linked to a task (no auto_status filter).
+pub async fn get_goal_ids_for_task(pool: &PgPool, task_id: Uuid) -> Result<Vec<Uuid>, AppError> {
+    let ids = sqlx::query_as::<_, (Uuid,)>(
+        "SELECT tg.goal_id FROM diraigent.task_goal tg WHERE tg.task_id = $1",
+    )
+    .bind(task_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(ids.into_iter().map(|r| r.0).collect())
+}

@@ -173,6 +173,8 @@ pub trait DiraigentDb: Send + Sync {
         &self,
         task_id: Uuid,
     ) -> Result<Vec<Uuid>, AppError>;
+    /// Return all goal IDs linked to a task (no auto_status filter).
+    async fn get_goal_ids_for_task(&self, task_id: Uuid) -> Result<Vec<Uuid>, AppError>;
 
     // ── Goal Comments ──────────────────────────────────────────────────────────
     async fn create_goal_comment(
