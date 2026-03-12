@@ -397,6 +397,8 @@ pub struct Task {
     pub completed_at: Option<DateTime<Utc>>,
     /// Timestamp when the task's changes were reverted from the default branch.
     pub reverted_at: Option<DateTime<Utc>>,
+    /// User-toggleable flag (bookmark) for tracking tasks of interest.
+    pub flagged: bool,
     /// Accumulated LLM input tokens across all completed steps.
     pub input_tokens: i64,
     /// Accumulated LLM output tokens across all completed steps.
@@ -556,6 +558,8 @@ pub struct UpdateTask {
     /// Double-Option: None = don't change, Some(None) = clear, Some(Some(id)) = set.
     #[serde(default, deserialize_with = "deserialize_double_option")]
     pub playbook_id: Option<Option<Uuid>>,
+    /// User-toggleable flag (bookmark).
+    pub flagged: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

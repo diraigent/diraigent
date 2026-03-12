@@ -120,6 +120,7 @@ import { TaskFormComponent } from './components/task-form/task-form';
         (pageChange)="onPageChange($event)"
         (bulkTransition)="onBulkTransition($event.taskIds, $event.state)"
         (bulkDelete)="onBulkDelete($event.taskIds)"
+        (flagToggle)="onFlagToggle($event.task, $event.flagged)"
         (detailTransition)="onTransition(selectedTask()!, $event)"
         (detailClaim)="onClaim(selectedTask()!)"
         (detailRelease)="onRelease(selectedTask()!)"
@@ -616,6 +617,12 @@ export class TasksPage {
 
   onPlaybookChange(task: SpTask, playbookId: string | null): void {
     this.api.update(task.id, { playbook_id: playbookId, playbook_step: playbookId ? 0 : null }).subscribe({
+      next: () => this.reload(),
+    });
+  }
+
+  onFlagToggle(task: SpTask, flagged: boolean): void {
+    this.api.update(task.id, { flagged }).subscribe({
       next: () => this.reload(),
     });
   }
