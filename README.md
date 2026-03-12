@@ -40,10 +40,10 @@ Images are published on Docker Hub: [`diraigent/api`](https://hub.docker.com/r/d
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  Web (8080) │────▶│  API (8082) │◀────│  Orchestra  │
+│  Web (4200) │────▶│  API (8082) │◀────│  Orchestra  │
 │  Angular 21 │     │  Rust/Axum  │     │  Rust + CC  │
-└─────────────┘     └──────┬──────┘     └──────┬──────┘
-                           │                    │
+└─────────────┘     └──────┬──────┘     └─────────────┘
+                           │                    
                     ┌──────┴──────┐
                     │  PostgreSQL │
                     │    (5433)   │

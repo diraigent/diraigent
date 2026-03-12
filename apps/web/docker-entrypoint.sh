@@ -1,18 +1,24 @@
 #!/bin/sh
 # Generate runtime config from environment variables.
-# Any env var left unset produces no key, so the Angular defaults apply.
+# Only non-empty vars are emitted, so the Angular defaults apply otherwise.
 
-cat > /usr/share/nginx/html/config.js <<EOF
+JS=/usr/share/nginx/html/config.js
+
+cat > "$JS" <<'HEADER'
 (function(){
   var e = {};
-  ${API_SERVER:+e.API_SERVER = "$API_SERVER";}
-  ${AUTH_PROVIDER_BASE:+e.AUTH_PROVIDER_BASE = "$AUTH_PROVIDER_BASE";}
-  ${AUTH_ISSUER:+e.AUTH_ISSUER = "$AUTH_ISSUER";}
-  ${AUTH_CLIENT_ID:+e.AUTH_CLIENT_ID = "$AUTH_CLIENT_ID";}
-  ${AUTH_REDIRECT_PATH:+e.AUTH_REDIRECT_PATH = "$AUTH_REDIRECT_PATH";}
-  ${AUTH_REDIRECT_URI:+e.AUTH_REDIRECT_URI = "$AUTH_REDIRECT_URI";}
+HEADER
+
+[ -n "$API_SERVER" ]        && echo "  e.API_SERVER = \"$API_SERVER\";" >> "$JS"
+[ -n "$AUTH_PROVIDER_BASE" ] && echo "  e.AUTH_PROVIDER_BASE = \"$AUTH_PROVIDER_BASE\";" >> "$JS"
+[ -n "$AUTH_ISSUER" ]       && echo "  e.AUTH_ISSUER = \"$AUTH_ISSUER\";" >> "$JS"
+[ -n "$AUTH_CLIENT_ID" ]    && echo "  e.AUTH_CLIENT_ID = \"$AUTH_CLIENT_ID\";" >> "$JS"
+[ -n "$AUTH_REDIRECT_PATH" ] && echo "  e.AUTH_REDIRECT_PATH = \"$AUTH_REDIRECT_PATH\";" >> "$JS"
+[ -n "$AUTH_REDIRECT_URI" ] && echo "  e.AUTH_REDIRECT_URI = \"$AUTH_REDIRECT_URI\";" >> "$JS"
+
+cat >> "$JS" <<'FOOTER'
   globalThis.__env = e;
 })();
-EOF
+FOOTER
 
 exec nginx -g "daemon off;"
