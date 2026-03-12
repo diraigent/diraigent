@@ -9,9 +9,14 @@ export const routes: Routes = [
     loadComponent: () => import('./features/dashboard/dashboard').then(m => m.DashboardPage),
   },
   {
-    path: 'tasks',
+    path: 'work',
     canActivate: [AuthGuard],
-    loadComponent: () => import('./features/tasks/tasks').then(m => m.TasksPage),
+    loadComponent: () => import('./features/goals/goals').then(m => m.WorkPage),
+  },
+  {
+    path: 'tasks',
+    redirectTo: 'work',
+    pathMatch: 'full',
   },
   {
     path: 'review',
@@ -55,8 +60,8 @@ export const routes: Routes = [
   },
   {
     path: 'goals',
-    canActivate: [AuthGuard],
-    loadComponent: () => import('./features/goals/goals').then(m => m.GoalsPage),
+    redirectTo: 'work',
+    pathMatch: 'full',
   },
   {
     path: 'observations',
