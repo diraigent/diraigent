@@ -42,21 +42,60 @@
 
   <!-- Navigation -->
   <nav class="flex-1 overflow-y-auto py-2 px-2" *transloco="let t">
-    @for (item of navItems; track item.path) {
-      <a [routerLink]="item.path"
-         routerLinkActive="bg-surface text-accent"
-         class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
-         (click)="closeMobile()">
-        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" [attr.d]="item.icon"/>
-        </svg>
-        <span class="flex-1 min-w-0 truncate">{{ t(item.labelKey) }}</span>
-        @if (item.badge && item.badge() > 0) {
-          <span class="ml-auto shrink-0 min-w-[1.25rem] h-5 px-1 rounded-full bg-ctp-red/20 text-ctp-red text-[10px] font-semibold flex items-center justify-center leading-none">
-            {{ item.badge() > 99 ? '99+' : item.badge() }}
-          </span>
+    @for (entry of navEntries; track $index) {
+      @if (isNavGroup(entry)) {
+        @let group = asGroup(entry);
+        <!-- Group header -->
+        <button (click)="toggleGroup(group.labelKey)"
+                class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors"
+                [class.text-accent]="isGroupActive(group)"
+                [class.text-text-secondary]="!isGroupActive(group)"
+                [class.hover:text-text-primary]="!isGroupActive(group)"
+                [class.hover:bg-surface-hover]="true">
+          <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" [attr.d]="group.icon"/>
+          </svg>
+          <span class="flex-1 min-w-0 truncate text-left">{{ t(group.labelKey) }}</span>
+          <svg class="w-4 h-4 shrink-0 transition-transform" [class.rotate-90]="isGroupExpanded(group.labelKey) || isGroupActive(group)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
+        <!-- Group children -->
+        @if (isGroupExpanded(group.labelKey) || isGroupActive(group)) {
+          @for (child of group.children; track child.path) {
+            <a [routerLink]="child.path"
+               routerLinkActive="bg-surface text-accent"
+               class="flex items-center gap-3 pl-8 pr-3 py-1.5 rounded-lg text-sm text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
+               (click)="closeMobile()">
+              <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" [attr.d]="child.icon"/>
+              </svg>
+              <span class="flex-1 min-w-0 truncate">{{ t(child.labelKey) }}</span>
+              @if (child.badge && child.badge() > 0) {
+                <span class="ml-auto shrink-0 min-w-[1.25rem] h-5 px-1 rounded-full bg-ctp-red/20 text-ctp-red text-[10px] font-semibold flex items-center justify-center leading-none">
+                  {{ child.badge() > 99 ? '99+' : child.badge() }}
+                </span>
+              }
+            </a>
+          }
         }
-      </a>
+      } @else {
+        @let item = asItem(entry);
+        <a [routerLink]="item.path"
+           routerLinkActive="bg-surface text-accent"
+           class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
+           (click)="closeMobile()">
+          <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" [attr.d]="item.icon"/>
+          </svg>
+          <span class="flex-1 min-w-0 truncate">{{ t(item.labelKey) }}</span>
+          @if (item.badge && item.badge() > 0) {
+            <span class="ml-auto shrink-0 min-w-[1.25rem] h-5 px-1 rounded-full bg-ctp-red/20 text-ctp-red text-[10px] font-semibold flex items-center justify-center leading-none">
+              {{ item.badge() > 99 ? '99+' : item.badge() }}
+            </span>
+          }
+        </a>
+      }
     }
   </nav>
 
