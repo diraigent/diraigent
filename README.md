@@ -1,6 +1,8 @@
 # Diraigent
 
-Self-hosted platform for running AI coding agents through structured, auditable pipelines. Define playbooks, let agents claim and execute tasks, review everything before it ships.
+**The conductor for your software orchestra.**
+
+A self-hosted software factory — define what you want built, agents handle the rest. Structured, auditable pipelines with full control over every step.
 
 ## Why Diraigent?
 
