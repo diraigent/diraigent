@@ -215,7 +215,7 @@ type SortDir = 'asc' | 'desc';
                   }
                   <button class="shrink-0 p-0 border-0 bg-transparent cursor-pointer transition-colors hover:text-ctp-yellow"
                           [class.text-ctp-yellow]="task.flagged"
-                          [class.text-transparent]="!task.flagged"
+                          [class.text-text-muted]="!task.flagged"
                           [title]="task.flagged ? t('tasks.unflag') : t('tasks.flag')"
                           (click)="onFlagToggle($event, task)">
                     @if (task.flagged) {
