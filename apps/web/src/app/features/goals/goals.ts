@@ -451,6 +451,11 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                         <button (click)="openTaskPicker()" class="px-3 py-1.5 text-xs bg-accent text-bg rounded hover:opacity-90">
                           {{ t('goals.linkTasksBtn') }}
                         </button>
+                        @if (statsMap().get(selected()!.id)?.backlog_count) {
+                          <button (click)="startAllBacklogTasks()" class="px-3 py-1.5 text-xs bg-ctp-blue text-bg rounded hover:opacity-90">
+                            {{ t('goals.startAllBtn') }}
+                          </button>
+                        }
                       </div>
                     </div>
                     @if (linkedTasksLoading()) {
@@ -1164,6 +1169,23 @@ export class GoalsPage {
 
   onLinkedTaskStateChange(task: SpTask, target: string): void {
     this.tasksApi.transition(task.id, target).subscribe({
+      next: () => {
+        const sel = this.selected();
+        if (sel) {
+          this.loadLinkedTasks(sel.id);
+          this.loadAllProgress([sel]);
+          this.loadStatsAndChildren(sel.id);
+        }
+      },
+    });
+  }
+
+  startAllBacklogTasks(): void {
+    const backlogIds = this.linkedTasks()
+      .filter(t => t.state === 'backlog')
+      .map(t => t.id);
+    if (backlogIds.length === 0) return;
+    this.tasksApi.bulkTransition(backlogIds, 'ready').subscribe({
       next: () => {
         const sel = this.selected();
         if (sel) {
