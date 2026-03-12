@@ -1,0 +1,26 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "flux": {
+    "fileMatch": ["apps/cloud-manager/clusters/.+\\.ya?ml$"]
+  },
+  "helm-values": {
+    "fileMatch": ["apps/cloud-manager/clusters/.+helmrelease\\.ya?ml$"]
+  },
+  "kubernetes": {
+    "fileMatch": ["apps/cloud-manager/clusters/.+\\.ya?ml$"]
+  },
+  "packageRules": [
+    {
+      "description": "Automerge patch updates",
+      "matchUpdateTypes": ["patch", "pin", "digest"],
+      "automerge": true,
+      "automergeType": "branch"
+    },
+    {
+      "description": "PRs for minor and major updates",
+      "matchUpdateTypes": ["minor", "major"],
+      "automerge": false
+    }
+  ]
+}

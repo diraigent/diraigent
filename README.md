@@ -1,0 +1,161 @@
+# Diraigent
+
+Self-hosted platform for running AI coding agents through structured, auditable pipelines. Define playbooks, let agents claim and execute tasks, review everything before it ships.
+
+## Why Diraigent?
+
+Most AI coding tools are either unstructured ("just let the AI go") or black-box SaaS you can't inspect. Diraigent gives you:
+
+- **Control** — runs on your infra, your repos, your rules
+- **Structure** — playbooks define repeatable multi-step workflows with a validated state machine
+- **Auditability** — full trail of what every agent did, why, and what it produced
+
+## Quickstart
+
+Prerequisites: Docker and Docker Compose.
+
+```bash
+# 1. Get the compose file and env template
+curl -LO https://www.diraigent.com/get/docker-compose.yml
+curl -LO https://www.diraigent.com/get/.env.example
+
+# 2. Configure
+cp .env.example .env
+#    Edit .env — at minimum set ANTHROPIC_API_KEY and GIT_REPO_URL
+
+# 3. Start the platform
+docker compose up -d
+
+# 4. Open the dashboard
+open http://localhost:8080
+
+# 5. (Optional) Start the orchestra to run AI agents
+docker compose --profile agent up -d
+```
+
+Images are published on Docker Hub: [`diraigent/api`](https://hub.docker.com/r/diraigent/api), [`diraigent/web`](https://hub.docker.com/r/diraigent/web), [`diraigent/orchestra`](https://hub.docker.com/r/diraigent/orchestra).
+
+### First steps after startup
+
+1. **Create a project** — via the dashboard or `POST /v1/projects`
+2. **Add a playbook** — via the dashboard or `POST /v1/playbooks`
+3. **Create a task** — attach your playbook, fill in `spec` and `acceptance_criteria`
+4. **Register an agent** — `POST /v1/agents`, then copy the returned UUID into `.env` as `AGENT_ID`
+5. **Start the orchestra** — `docker compose --profile agent up -d` — it claims the task and begins working
+
+## Architecture
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  Web (8080) │────▶│  API (8082) │◀────│  Orchestra  │
+│  Angular 21 │     │  Rust/Axum  │     │  Rust + CC  │
+└─────────────┘     └──────┬──────┘     └──────┬──────┘
+                           │                    │
+                    ┌──────┴──────┐
+                    │  PostgreSQL │
+                    │    (5433)   │
+                    └─────────────┘
+```
+
+| Component | Description |
+|-----------|-------------|
+| **API** | Rust/Axum REST API. PostgreSQL backend (sqlx). JWT JWKS auth. WebSocket agent communication. |
+| **Orchestra** | Polls API for ready tasks, spawns Claude Code workers in isolated git worktrees, auto-advances playbook pipelines. |
+| **Web** | Angular 21 + Tailwind CSS 4 + Catppuccin themes. Full project management dashboard. |
+| **TUI** | Ratatui terminal interface (experimental). |
+
+## Core Concepts
+
+### Tasks and the State Machine
+
+Tasks advance through playbook steps automatically. Each step is a full claim → work → done cycle.
+
+```
+backlog → ready → <step_name> → done
+                             ↘ cancelled
+done → ready (pipeline advance to next step)
+done → human_review → done | ready | backlog
+```
+
+Step names come from the task's playbook (e.g. `implement`, `review`, `dream`). Tasks carry structured context: `spec`, `files`, `test_cmd`, `acceptance_criteria`, `notes`. Transitions are validated — agents can't skip steps.
+
+### Playbooks
+
+Reusable multi-step workflows attached to tasks. The orchestra auto-advances tasks through pipeline steps. Each step can configure: model, budget, tool preset (`full`/`readonly`), MCP servers, sub-agents, and environment variables.
+
+Playbooks use a `git_strategy` metadata field (e.g. `merge_to_default`) to control how completed work is integrated.
+
+### Projects, Roles, and Knowledge
+
+Projects nest hierarchically — agents at a parent level inherit authority over all children. Agents are assigned to projects through roles, each granting a combination of six authorities: `execute`, `delegate`, `review`, `create`, `decide`, `manage`.
+
+The platform also tracks structured knowledge (architecture docs, conventions, patterns), ADR-style decisions, observations (things agents notice that may become tasks), integrations (external tools with per-agent access control), and events (CI results, deploys, errors).
+
+## Configuration
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DEV_USER_ID` | No | Bypass JWT auth in dev (set to a UUID) |
+| `AUTH_ISSUER` | Prod | OIDC issuer URL |
+| `AUTH_JWKS_URL` | Prod | JWKS endpoint for JWT validation |
+| `CORS_ORIGINS` | No | Comma-separated allowed origins |
+| `LOKI_URL` | No | Loki push endpoint for log shipping |
+| `LOKI_ENV` | No | Environment label for Loki (default: `dev`) |
+| `AGENT_ID` | Orchestra | Agent UUID (register via `POST /agents`) |
+| `ANTHROPIC_API_KEY` | Orchestra | Anthropic API key for Claude Code workers |
+| `GIT_REPO_URL` | Orchestra | Git repo URL cloned into the worker volume |
+| `MAX_WORKERS` | No | Concurrent Claude Code workers (default: `3`) |
+
+## CLI Reference
+
+The `agent-cli` binary provides direct API interaction:
+
+```bash
+agent-cli ready <project_id>              # list ready tasks
+agent-cli claim <task_id>                 # claim a task
+agent-cli transition <task_id> <state>    # move task state
+agent-cli progress <task_id> "msg"        # post progress update
+agent-cli artifact <task_id> "output"     # post artifact
+agent-cli observation <project_id> JSON   # file observation
+agent-cli knowledge <project_id> JSON     # contribute knowledge
+agent-cli decision <project_id> JSON      # propose decision
+agent-cli context <project_id>            # full project context
+```
+
+## API Reference
+
+The OpenAPI spec is served at runtime: `GET /v1/openapi.json`
+
+## Development
+
+### Building from source
+
+```bash
+# API
+cargo check -p diraigent-api
+cargo test -p diraigent-api
+cargo run -p diraigent-api
+
+# Orchestra
+cargo run --bin orchestra
+cargo run --bin agent-cli -- ready <project_id>
+
+# Web
+cd apps/web
+npm install
+ng serve    # http://localhost:4200
+
+# Lint
+cargo fmt && cargo clippy --all --quiet
+cd apps/web && npm run lint
+```
+
+### Running with PostgreSQL
+
+```bash
+DATABASE_URL=postgres://diraigent:diraigent@localhost:5433/diraigent cargo run -p diraigent-api
+```
+
+## License
+
+SSPL. See [LICENSE](LICENSE) for terms.

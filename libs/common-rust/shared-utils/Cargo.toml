@@ -1,0 +1,35 @@
+[package]
+name = "shared-utils"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { workspace = true }
+axum = { workspace = true, optional = true }
+dotenvy = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry-otlp = { workspace = true, features = ["tonic", "grpc-tonic"] }
+opentelemetry_sdk = { workspace = true, features = ["rt-tokio"] }
+reqwest = { workspace = true, optional = true, features = ["json"] }
+serde = { workspace = true }
+serde_json = { workspace = true, optional = true }
+sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres"] }
+tokio = { workspace = true, features = ["full"] }
+tonic = { workspace = true, optional = true }
+tonic-reflection = { workspace = true, optional = true }
+tower-http = { workspace = true, features = ["cors", "trace"], optional = true }
+tracing = { workspace = true }
+urlencoding = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+tracing-loki = { workspace = true }
+csv = { workspace = true }
+once_cell = { workspace = true }
+uuid = { workspace = true, features = ["v4", "serde"] }
+
+[features]
+default = []
+grpc = ["tonic"]
+grpc-reflection = ["grpc", "tonic-reflection"]
+rest = ["axum", "tower-http", "serde_json"]
+http-client = ["reqwest", "serde_json", "urlencoding"]
+testing = []

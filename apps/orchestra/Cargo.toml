@@ -1,0 +1,45 @@
+[package]
+name = "diraigent-orchestra"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "orchestra"
+path = "src/main.rs"
+
+[[bin]]
+name = "agent-cli"
+path = "src/cli.rs"
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+reqwest.workspace = true
+tokio-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs"] }
+http = "1"
+futures-util = "0.3"
+diraigent-types.workspace = true
+clap = { version = "4", features = ["derive"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-loki = { version = "0.2", default-features = false, features = ["rustls", "compat-0-2-1"] }
+url = "2"
+dotenvy.workspace = true
+libc = "0.2"
+sha2 = "0.10"
+urlencoding = "2"
+# Crypto (per-tenant encryption)
+aes-gcm = "0.10"
+aes-kw = "0.2"
+hkdf = "0.12"
+zeroize = { version = "1", features = ["derive"] }
+base64 = "0.22"
+
+[dev-dependencies]
+wiremock = "0.6"
+tempfile = "3"

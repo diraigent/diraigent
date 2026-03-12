@@ -1,0 +1,95 @@
+<!-- Mobile hamburger -->
+<button (click)="toggleMobile()"
+        class="lg:hidden fixed top-3 left-3 z-50 p-2 rounded-lg bg-surface text-text-secondary hover:text-text-primary">
+  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+  </svg>
+</button>
+
+<!-- Overlay -->
+@if (mobileOpen()) {
+  <div class="lg:hidden fixed inset-0 z-30 bg-black/50"
+       role="button" tabindex="0" aria-label="Close sidebar"
+       (click)="closeMobile()" (keydown.enter)="closeMobile()"></div>
+}
+
+<!-- Sidebar -->
+<aside [class.translate-x-0]="mobileOpen()"
+       [class.-translate-x-full]="!mobileOpen()"
+       class="fixed inset-y-0 left-0 z-40 w-64 bg-bg-subtle border-r border-border flex flex-col
+              transition-transform lg:translate-x-0">
+
+  <!-- Header -->
+  <div class="h-14 px-4 flex items-center justify-between border-b border-border">
+    <a routerLink="/" class="flex items-center gap-2 text-lg font-semibold text-accent" (click)="closeMobile()">
+      <svg class="w-7 h-7 shrink-0" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="50" cy="50" r="50" fill="currentColor"/>
+        <path d="M50 0 L52.5 33.38 L50 48.30 L47.5 33.38 L50 0 Z" fill="var(--catppuccin-color-red, #f38ba8)"/>
+        <path d="M2.44717 34.5491 H38.7743 L50 50 L61.2257 34.5491 H97.5528 L68.1636 55.9017 L79.3893 90 L50 69 L20.6107 90.4509 L31.8364 55.9017 Z" fill="var(--catppuccin-color-base, #1e1e2e)"/>
+      </svg>
+      Diraigent
+    </a>
+    <span class="flex items-center gap-2">
+      <app-health-indicator />
+      <app-agent-indicator />
+    </span>
+  </div>
+
+  <!-- Project switcher -->
+  <div class="px-3 py-2 border-b border-border">
+    <app-project-switcher />
+  </div>
+
+  <!-- Navigation -->
+  <nav class="flex-1 overflow-y-auto py-2 px-2" *transloco="let t">
+    @for (item of navItems; track item.path) {
+      <a [routerLink]="item.path"
+         routerLinkActive="bg-surface text-accent"
+         class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
+         (click)="closeMobile()">
+        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" [attr.d]="item.icon"/>
+        </svg>
+        <span class="flex-1 min-w-0 truncate">{{ t(item.labelKey) }}</span>
+        @if (item.badge && item.badge() > 0) {
+          <span class="ml-auto shrink-0 min-w-[1.25rem] h-5 px-1 rounded-full bg-ctp-red/20 text-ctp-red text-[10px] font-semibold flex items-center justify-center leading-none">
+            {{ item.badge() > 99 ? '99+' : item.badge() }}
+          </span>
+        }
+      </a>
+    }
+  </nav>
+
+  <!-- Footer -->
+  <div class="px-3 py-3 border-t border-border space-y-2" *transloco="let t">
+    <a routerLink="/tenant-settings"
+       routerLinkActive="bg-surface text-accent"
+       class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
+       (click)="closeMobile()">
+      <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+      </svg>
+      {{ t('nav.tenantSettings') }}
+    </a>
+    <app-theme-toggle />
+    @if (!auth.isAuthDisabled()) {
+      @if (auth.isLoggedIn()) {
+        <button (click)="logout()"
+                class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+          </svg>
+          Logout
+        </button>
+      } @else {
+        <button (click)="login()"
+                class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-accent hover:bg-surface-hover transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+          </svg>
+          Login
+        </button>
+      }
+    }
+  </div>
+</aside>

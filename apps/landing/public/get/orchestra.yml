@@ -1,0 +1,23 @@
+# Orchestra agent — connects to a hosted Diraigent instance.
+#
+# Usage:
+#   1. Create an agent at web.diraigent.com/agents and copy the API key
+#   2. Create a .env file:
+#        DIRAIGENT_API_TOKEN=dak_...
+#        AGENT_ID=<uuid from web UI>
+#        ANTHROPIC_API_KEY=sk-ant-...
+#   3. docker compose -f orchestra.yml up -d
+
+services:
+  orchestra:
+    image: diraigent/orchestra:latest
+    env_file: .env
+    environment:
+      DIRAIGENT_API_URL: ${DIRAIGENT_API_URL:-https://api.diraigent.com/v1}
+      MAX_WORKERS: ${MAX_WORKERS:-3}
+      PROJECTS_PATH: /projects
+    volumes:
+      - projects:/projects
+
+volumes:
+  projects:

@@ -1,0 +1,74 @@
+# syntax=docker/dockerfile:1
+
+# =============================================================================
+# Stage 1: Dependencies (cached layer)
+# =============================================================================
+FROM node:25.6.0-alpine AS deps
+
+WORKDIR /app
+
+# Copy package files first for layer caching
+COPY package.json package-lock.json ./
+
+# Install dependencies with cache mount
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefer-offline --no-audit
+
+# =============================================================================
+# Stage 2: Build
+# =============================================================================
+FROM node:25.6.0-alpine AS builder
+
+WORKDIR /app
+
+# Copy dependencies from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy source code and config files
+COPY package.json package-lock.json ./
+COPY angular.json tsconfig*.json .postcssrc.json ./
+COPY public/ public/
+COPY src/ src/
+
+# Build production bundle
+RUN npm run build:prod
+
+# =============================================================================
+# Stage 3: Runtime
+# =============================================================================
+FROM nginx:1.29.5-alpine AS runtime
+
+# Security: create non-root user and set up directories
+RUN addgroup --system --gid 1001 appgroup && \
+    adduser --system --uid 1001 --ingroup appgroup appuser && \
+    mkdir -p /var/cache/nginx /var/log/nginx /var/run && \
+    chown -R appuser:appgroup /var/cache/nginx /var/log/nginx /var/run /usr/share/nginx/html && \
+    touch /var/run/nginx.pid && \
+    chown appuser:appgroup /var/run/nginx.pid
+
+# Copy custom nginx config
+COPY --chown=appuser:appgroup nginx.conf /etc/nginx/nginx.conf
+
+# Copy built application from builder
+COPY --from=builder --chown=appuser:appgroup /app/dist/diraigent-web/browser/ /usr/share/nginx/html/
+
+# Handle index.csr.html rename if present
+RUN if [ -f /usr/share/nginx/html/index.csr.html ]; then \
+        mv /usr/share/nginx/html/index.csr.html /usr/share/nginx/html/index.html; \
+    fi && chown appuser:appgroup /usr/share/nginx/html/index.html 2>/dev/null || true
+
+# Switch to non-root user
+USER appuser
+
+LABEL org.opencontainers.image.title="diraigent-web" \
+      org.opencontainers.image.description="Diraigent web dashboard — Angular 21 SPA" \
+      org.opencontainers.image.vendor="Zivue AS" \
+      org.opencontainers.image.url="https://www.diraigent.com" \
+      org.opencontainers.image.source="https://www.diraigent.com"
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --quiet --tries=1 --spider http://localhost/health || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

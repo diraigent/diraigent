@@ -1,0 +1,179 @@
+name: Release Diraigent
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+concurrency:
+  group: release-diraigent-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────
+  # API
+  # ──────────────────────────────────────────────────────────────────
+  api:
+    name: API
+    runs-on: docker
+    container: rust:1.93-bookworm
+    steps:
+      - name: Install Node.js
+        run: |
+          curl -fsSL https://nodejs.org/dist/v25.6.1/node-v25.6.1-linux-x64.tar.xz \
+            | tar xJ -C /usr/local --strip-components=1
+
+      - uses: actions/checkout@v4
+
+      - name: Install Docker CLI + Buildx
+        run: |
+          apt-get update && apt-get install -y ca-certificates curl gnupg
+          install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable" \
+            > /etc/apt/sources.list.d/docker.list
+          apt-get update && apt-get install -y docker-ce-cli docker-buildx-plugin
+
+      - name: Set up QEMU for multi-arch
+        run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+
+      - name: Create buildx builder
+        run: |
+          docker buildx create --name multiarch --driver docker-container --use
+          docker buildx inspect --bootstrap
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Docker Hub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Login to Forgejo Container Registry
+        run: docker login ${{ vars.REGISTRY_URL }} -u ${{ github.repository_owner }} -p ${{ secrets.FORGEJO_TOKEN }}
+
+      - name: Build and push
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            -f apps/api/Containerfile \
+            -t "diraigent/api:${VERSION}" \
+            -t "diraigent/api:latest" \
+            -t "${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/api:${VERSION}" \
+            -t "${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/api:latest" \
+            --push .
+
+  # ──────────────────────────────────────────────────────────────────
+  # Orchestra
+  # ──────────────────────────────────────────────────────────────────
+  orchestra:
+    name: Orchestra
+    runs-on: docker
+    container: node:22-slim
+    steps:
+      - name: Install Node.js
+        run: |
+          if command -v node >/dev/null 2>&1; then exit 0; fi
+          apt-get update && apt-get install -y --no-install-recommends ca-certificates curl xz-utils
+          curl -fsSL https://nodejs.org/dist/v25.6.1/node-v25.6.1-linux-x64.tar.xz \
+            | tar xJ -C /usr/local --strip-components=1
+
+      - uses: actions/checkout@v4
+
+      - name: Install Docker CLI + Buildx
+        run: |
+          apt-get update && apt-get install -y ca-certificates curl gnupg
+          install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable" \
+            > /etc/apt/sources.list.d/docker.list
+          apt-get update && apt-get install -y docker-ce-cli docker-buildx-plugin
+
+      - name: Set up QEMU for multi-arch
+        run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+
+      - name: Create buildx builder
+        run: |
+          docker buildx create --name multiarch --driver docker-container --use
+          docker buildx inspect --bootstrap
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Docker Hub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Login to Forgejo Container Registry
+        run: docker login ${{ vars.REGISTRY_URL }} -u ${{ github.repository_owner }} -p ${{ secrets.FORGEJO_TOKEN }}
+
+      - name: Build and push
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            -f apps/orchestra/Containerfile \
+            -t "diraigent/orchestra:${VERSION}" \
+            -t "diraigent/orchestra:latest" \
+            -t "${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/orchestra:${VERSION}" \
+            -t "${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/orchestra:latest" \
+            --push .
+
+  # ──────────────────────────────────────────────────────────────────
+  # Web
+  # ──────────────────────────────────────────────────────────────────
+  web:
+    name: Web
+    runs-on: docker
+    container: node:25.6.1-bookworm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Docker CLI + Buildx
+        run: |
+          apt-get update && apt-get install -y ca-certificates curl gnupg
+          install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable" \
+            > /etc/apt/sources.list.d/docker.list
+          apt-get update && apt-get install -y docker-ce-cli docker-buildx-plugin
+
+      - name: Set up QEMU for multi-arch
+        run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+
+      - name: Create buildx builder
+        run: |
+          docker buildx create --name multiarch --driver docker-container --use
+          docker buildx inspect --bootstrap
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Docker Hub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Login to Forgejo Container Registry
+        run: docker login ${{ vars.REGISTRY_URL }} -u ${{ github.repository_owner }} -p ${{ secrets.FORGEJO_TOKEN }}
+
+      - name: Build and push
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            -f apps/web/Containerfile \
+            -t "diraigent/web:${VERSION}" \
+            -t "diraigent/web:latest" \
+            -t "${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/web:${VERSION}" \
+            -t "${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/web:latest" \
+            --push apps/web/

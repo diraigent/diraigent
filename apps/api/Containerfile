@@ -1,0 +1,46 @@
+FROM rust:1.93-bookworm AS builder
+WORKDIR /build
+
+# Copy workspace manifests
+COPY Cargo.toml Cargo.lock ./
+
+# Copy shared libs
+COPY libs/ libs/
+
+# Copy diraigent source (api + tui share workspace position)
+COPY apps/ apps/
+
+# Rewrite workspace to only include this service (no sibling knowledge needed)
+RUN sed -i '/^members = \[/,/^\]/c\members = ["libs/common-rust/*", "apps/api"]' Cargo.toml && \
+    sed -i '/^exclude = \[/,/^\]/d' Cargo.toml
+
+RUN cargo build --release -p diraigent-api
+
+ARG TARGETARCH
+RUN case "$TARGETARCH" in \
+      amd64) UPX_ARCH=amd64_linux ;; \
+      arm64) UPX_ARCH=arm64_linux ;; \
+      *) echo "Unsupported arch: $TARGETARCH" && exit 1 ;; \
+    esac && \
+    curl -sL "https://github.com/upx/upx/releases/download/v5.1.1/upx-5.1.1-${UPX_ARCH}.tar.xz" \
+      | tar xJ --strip-components=1 "upx-5.1.1-${UPX_ARCH}/upx" && \
+    ./upx --best --lzma target/release/diraigent-api && rm upx
+
+FROM debian:bookworm-slim AS runtime
+RUN groupadd --system --gid 1001 appgroup && \
+    useradd --system --uid 1001 --gid appgroup appuser
+RUN apt-get update && apt-get install -y --no-install-recommends libssl3 ca-certificates wget && rm -rf /var/lib/apt/lists/*
+COPY --from=builder --chown=appuser:appgroup /build/target/release/diraigent-api /usr/local/bin/
+USER appuser
+
+ENV HOST=0.0.0.0 PORT=3000 SERVICE_NAME=diraigent-api
+
+LABEL org.opencontainers.image.title="diraigent-api" \
+      org.opencontainers.image.description="AI agent orchestration API — task state machine, playbooks, knowledge, audit" \
+      org.opencontainers.image.vendor="Zivue AS" \
+      org.opencontainers.image.url="https://www.diraigent.com" \
+      org.opencontainers.image.source="https://www.diraigent.com"
+
+EXPOSE 3000
+HEALTHCHECK CMD wget -q --spider http://localhost:3000/health/live || exit 1
+ENTRYPOINT ["diraigent-api"]

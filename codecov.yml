@@ -1,0 +1,27 @@
+codecov:
+  require_ci_to_pass: false
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 2%
+    patch:
+      default:
+        target: 60%
+
+flags:
+  api:
+    paths:
+      - apps/stareto/backend-api/
+    carryforward: true
+  web:
+    paths:
+      - apps/stareto/web/src/
+    carryforward: true
+
+comment:
+  layout: "header, diff, flags, components"
+  behavior: default
+  require_changes: false

@@ -1,0 +1,64 @@
+# ── Stage 1: build orchestra from Rust source ──────────────
+FROM rust:1.93-bookworm AS builder
+WORKDIR /build
+
+# Copy workspace root and required workspace members
+COPY Cargo.toml Cargo.lock ./
+COPY libs/common-rust/ libs/common-rust/
+COPY apps/orchestra/ apps/orchestra/
+
+# Rewrite workspace to only include these crates
+RUN sed -i '/^members = \[/,/^\]/c\members = ["libs/common-rust/*", "apps/orchestra"]' Cargo.toml && \
+    sed -i '/^exclude = \[/,/^\]/d' Cargo.toml
+
+RUN cargo build --release -p diraigent-orchestra
+
+ARG TARGETARCH
+RUN case "$TARGETARCH" in \
+      amd64) UPX_ARCH=amd64_linux ;; \
+      arm64) UPX_ARCH=arm64_linux ;; \
+      *) echo "Unsupported arch: $TARGETARCH" && exit 1 ;; \
+    esac && \
+    curl -sL "https://github.com/upx/upx/releases/download/v5.1.1/upx-5.1.1-${UPX_ARCH}.tar.xz" \
+      | tar xJ --strip-components=1 "upx-5.1.1-${UPX_ARCH}/upx" && \
+    ./upx --best --lzma target/release/orchestra target/release/agent-cli && rm upx
+
+# ── Stage 2: runtime ──────────────────────────────────────────
+FROM node:22-slim AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash curl git ca-certificates util-linux \
+    && rm -rf /var/lib/apt/lists/*
+
+# Claude Code CLI (still needed — orchestra spawns it as a worker)
+RUN npm install -g @anthropic-ai/claude-code
+
+# Security: run as non-root user
+RUN groupadd --system --gid 1001 appgroup && \
+    useradd --system --uid 1001 --gid appgroup --create-home appuser
+
+WORKDIR /app
+
+# Orchestra and CLI binaries
+COPY --from=builder --chown=appuser:appgroup /build/target/release/orchestra /usr/local/bin/orchestra
+COPY --from=builder --chown=appuser:appgroup /build/target/release/agent-cli /usr/local/bin/agent-cli
+
+# Agent docs
+COPY --from=builder --chown=appuser:appgroup /build/apps/orchestra/CLAUDE.md ./
+RUN chown appuser:appgroup /app && mkdir -p logs /repo && chown appuser:appgroup logs /repo
+
+USER appuser
+
+# Defaults — override at runtime via env or docker-compose
+ENV DIRAIGENT_API_URL=http://api:8082/v1 \
+    MAX_WORKERS=3 \
+    PROJECTS_PATH=/projects \
+    SERVICE_NAME=diraigent-orchestra
+
+LABEL org.opencontainers.image.title="diraigent-orchestra" \
+      org.opencontainers.image.description="AI agent orchestrator — spawns Claude Code workers in isolated git worktrees" \
+      org.opencontainers.image.vendor="Zivue AS" \
+      org.opencontainers.image.url="https://www.diraigent.com" \
+      org.opencontainers.image.source="https://www.diraigent.com"
+
+ENTRYPOINT ["orchestra"]

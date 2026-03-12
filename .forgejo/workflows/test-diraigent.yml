@@ -1,0 +1,100 @@
+name: Test Diraigent
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'apps/**'
+      - 'libs/common-rust/**'
+      - '.forgejo/workflows/test-diraigent.yml'
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: test-diraigent-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────
+  # Rust — lint
+  # ──────────────────────────────────────────────────────────────────
+  rust-lint:
+    name: Rust Lint
+    runs-on: docker
+    container: rust:1.93-bookworm
+    env:
+      SQLX_OFFLINE: "true"
+    steps:
+      - name: Install Node.js (required by JS-based actions)
+        run: |
+          curl -fsSL https://nodejs.org/dist/v25.6.1/node-v25.6.1-linux-x64.tar.xz \
+            | tar xJ -C /usr/local --strip-components=1
+
+      - uses: actions/checkout@v4
+
+      - name: Install protoc
+        run: apt-get update && apt-get install -y protobuf-compiler
+
+      - name: Install Rust components
+        run: rustup component add rustfmt clippy
+
+      - name: Rustfmt
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --exclude diraigent-desktop -- -D warnings
+
+  # ──────────────────────────────────────────────────────────────────
+  # Rust — test
+  # ──────────────────────────────────────────────────────────────────
+  rust-test:
+    name: Rust Test
+    runs-on: docker
+    container: rust:1.93-bookworm
+    env:
+      SQLX_OFFLINE: "true"
+    steps:
+      - name: Install Node.js (required by JS-based actions)
+        run: |
+          curl -fsSL https://nodejs.org/dist/v25.6.1/node-v25.6.1-linux-x64.tar.xz \
+            | tar xJ -C /usr/local --strip-components=1
+
+      - uses: actions/checkout@v4
+
+      - name: Install protoc
+        run: apt-get update && apt-get install -y protobuf-compiler
+
+      - name: Test
+        run: cargo test --workspace --exclude diraigent-desktop --verbose
+
+  # ──────────────────────────────────────────────────────────────────
+  # Web — lint & build
+  # ──────────────────────────────────────────────────────────────────
+  web-lint:
+    name: Web Lint
+    runs-on: docker
+    container: node:25.6.1-bookworm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: npm ci --prefix apps/web
+
+      - name: Lint
+        run: npm run lint --prefix apps/web
+
+  web-build:
+    name: Web Build
+    runs-on: docker
+    container: node:25.6.1-bookworm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: npm ci --prefix apps/web
+
+      - name: Build
+        run: npm run build:prod --prefix apps/web

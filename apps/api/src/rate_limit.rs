@@ -1,0 +1,218 @@
+use axum::{
+    body::Body,
+    http::{Request, Response, StatusCode},
+    middleware::Next,
+};
+use dashmap::DashMap;
+use std::{net::IpAddr, sync::LazyLock, time::Instant};
+use uuid::Uuid;
+
+struct Entry {
+    count: u32,
+    window_start: Instant,
+}
+
+// ── IP-based limit ────────────────────────────────────────────────────────────
+static IP_MAP: LazyLock<DashMap<IpAddr, Entry>> = LazyLock::new(DashMap::new);
+const IP_MAX: u32 = 600;
+
+// ── Per-agent limit ───────────────────────────────────────────────────────────
+static AGENT_MAP: LazyLock<DashMap<Uuid, Entry>> = LazyLock::new(DashMap::new);
+/// Per-agent-ID ceiling: 200 req / 60 s.
+const AGENT_MAX: u32 = 200;
+
+// ── Per-project limit ─────────────────────────────────────────────────────────
+static PROJECT_MAP: LazyLock<DashMap<Uuid, Entry>> = LazyLock::new(DashMap::new);
+/// Per-project-ID ceiling: 1000 req / 60 s.
+const PROJECT_MAX: u32 = 1_000;
+
+const WINDOW_SECS: u64 = 60;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+fn extract_ip(req: &Request<Body>) -> IpAddr {
+    // Prefer the actual TCP peer address from ConnectInfo if available.
+    // This cannot be spoofed by clients (unlike X-Forwarded-For / X-Real-IP).
+    // Requires `into_make_service_with_connect_info::<SocketAddr>()` on the server.
+    if let Some(connect_info) = req
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+    {
+        return connect_info.0.ip();
+    }
+
+    // Fallback: proxy headers. These are spoofable unless the reverse proxy (e.g.
+    // nginx with `set_real_ip_from`) strips/overwrites them. When deploying behind
+    // a trusted proxy, ensure the proxy is configured to set these headers and that
+    // direct client connections are not accepted.
+    if let Some(xff) = req.headers().get("x-forwarded-for")
+        && let Ok(val) = xff.to_str()
+        && let Some(first) = val.split(',').next()
+        && let Ok(ip) = first.trim().parse()
+    {
+        return ip;
+    }
+    if let Some(xri) = req.headers().get("x-real-ip")
+        && let Ok(val) = xri.to_str()
+        && let Ok(ip) = val.trim().parse()
+    {
+        return ip;
+    }
+    // Fallback to loopback
+    IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+}
+
+/// Reads the `X-Agent-Id` header and parses it as a UUID.
+fn extract_agent_id(req: &Request<Body>) -> Option<Uuid> {
+    req.headers()
+        .get("x-agent-id")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| Uuid::parse_str(s).ok())
+}
+
+/// Extracts the first UUID segment from the request path.
+///
+/// Routes like `/v1/{project_id}/tasks` carry the project UUID as
+/// the first UUID segment after the prefix. We scan all path segments and return
+/// the first one that is a valid UUID.
+fn extract_project_id(req: &Request<Body>) -> Option<Uuid> {
+    req.uri()
+        .path()
+        .split('/')
+        .find_map(|seg| Uuid::parse_str(seg).ok())
+}
+
+/// Check (and consume) one slot in a generic `DashMap<K, Entry>` rate limiter.
+/// Returns `true` if the request is allowed, `false` if it should be rejected.
+fn check<K: std::hash::Hash + Eq + Copy>(
+    map: &DashMap<K, Entry>,
+    key: K,
+    max: u32,
+    now: Instant,
+) -> bool {
+    let mut entry = map.entry(key).or_insert(Entry {
+        count: 0,
+        window_start: now,
+    });
+    if now.duration_since(entry.window_start).as_secs() >= WINDOW_SECS {
+        entry.count = 1;
+        entry.window_start = now;
+        true
+    } else if entry.count < max {
+        entry.count += 1;
+        true
+    } else {
+        false
+    }
+}
+
+fn rate_limited_response() -> Response<Body> {
+    Response::builder()
+        .status(StatusCode::TOO_MANY_REQUESTS)
+        .header("content-type", "application/json")
+        .header("retry-after", "60")
+        .body(Body::from(r#"{"error":"rate limit exceeded"}"#))
+        .unwrap()
+}
+
+// ── Middleware ────────────────────────────────────────────────────────────────
+
+pub async fn rate_limit(request: Request<Body>, next: Next) -> Response<Body> {
+    let now = Instant::now();
+
+    // 1. IP-based limit
+    let ip = extract_ip(&request);
+    if !check(&IP_MAP, ip, IP_MAX, now) {
+        crate::metrics::record_rate_limit();
+        return rate_limited_response();
+    }
+
+    // 2. Per-agent-ID limit (only when header is present)
+    if let Some(agent_id) = extract_agent_id(&request)
+        && !check(&AGENT_MAP, agent_id, AGENT_MAX, now)
+    {
+        crate::metrics::record_rate_limit();
+        return rate_limited_response();
+    }
+
+    // 3. Per-project-ID limit (derived from URL path)
+    if let Some(project_id) = extract_project_id(&request)
+        && !check(&PROJECT_MAP, project_id, PROJECT_MAX, now)
+    {
+        crate::metrics::record_rate_limit();
+        return rate_limited_response();
+    }
+
+    next.run(request).await
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::Uri;
+
+    #[test]
+    fn extract_project_id_from_path() {
+        let project = Uuid::new_v4();
+        let uri: Uri = format!("/v1/{project}/tasks").parse().unwrap();
+        let req = Request::builder().uri(uri).body(Body::empty()).unwrap();
+        assert_eq!(extract_project_id(&req), Some(project));
+    }
+
+    #[test]
+    fn extract_project_id_none_for_no_uuid() {
+        let req = Request::builder()
+            .uri("/v1/agents")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(extract_project_id(&req), None);
+    }
+
+    #[test]
+    fn extract_agent_id_from_header() {
+        let agent = Uuid::new_v4();
+        let req = Request::builder()
+            .header("x-agent-id", agent.to_string())
+            .uri("/v1/heartbeat")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(extract_agent_id(&req), Some(agent));
+    }
+
+    #[test]
+    fn extract_agent_id_missing_header() {
+        let req = Request::builder()
+            .uri("/v1/heartbeat")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(extract_agent_id(&req), None);
+    }
+
+    #[test]
+    fn rate_check_allows_up_to_max() {
+        let map: DashMap<u32, Entry> = DashMap::new();
+        let now = Instant::now();
+        for _ in 0..3 {
+            assert!(check(&map, 42u32, 3, now));
+        }
+        assert!(!check(&map, 42u32, 3, now));
+    }
+
+    #[test]
+    fn rate_check_resets_after_window() {
+        let map: DashMap<u32, Entry> = DashMap::new();
+        let old = Instant::now() - std::time::Duration::from_secs(61);
+        // Manually insert an exhausted entry from an old window
+        map.insert(
+            99u32,
+            Entry {
+                count: 100,
+                window_start: old,
+            },
+        );
+        // Should be allowed — window has expired
+        assert!(check(&map, 99u32, 3, Instant::now()));
+    }
+}

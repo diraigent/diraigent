@@ -1,0 +1,464 @@
+/* Catppuccin Mocha */
+:root {
+  --ctp-base: #1e1e2e;
+  --ctp-mantle: #181825;
+  --ctp-crust: #11111b;
+  --ctp-surface0: #313244;
+  --ctp-surface1: #45475a;
+  --ctp-surface2: #585b70;
+  --ctp-overlay0: #6c7086;
+  --ctp-overlay1: #7f849c;
+  --ctp-text: #cdd6f4;
+  --ctp-subtext0: #a6adc8;
+  --ctp-subtext1: #bac2de;
+  --ctp-red: #f38ba8;
+  --ctp-green: #a6e3a1;
+  --ctp-blue: #89b4fa;
+  --ctp-yellow: #f9e2af;
+  --ctp-mauve: #cba6f7;
+  --ctp-teal: #94e2d5;
+  --ctp-peach: #fab387;
+  --ctp-lavender: #b4befe;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--ctp-crust);
+  font-family: "Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px;
+  color: var(--ctp-text);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.6;
+}
+
+/* ── Page ──────────────────────────────────── */
+
+.page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+/* ── Header ────────────────────────────────── */
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2rem 0;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.header-logo {
+  width: 36px;
+  height: 36px;
+}
+
+.header-name {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--ctp-text);
+  letter-spacing: -0.02em;
+}
+
+.header-nav {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.header-nav a {
+  color: var(--ctp-overlay1);
+  text-decoration: none;
+  font-size: 0.9rem;
+  transition: color 0.2s;
+}
+
+.header-nav a:hover {
+  color: var(--ctp-text);
+}
+
+/* ── Hero ──────────────────────────────────── */
+
+.hero {
+  padding: 4rem 0 5rem;
+  text-align: center;
+}
+
+.hero h1 {
+  font-size: 2.75rem;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  color: var(--ctp-text);
+}
+
+.hero-sub {
+  margin-top: 1.25rem;
+  font-size: 1.15rem;
+  color: var(--ctp-overlay1);
+  font-weight: 400;
+  line-height: 1.7;
+}
+
+.hero-tags {
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+/* ── Tags ──────────────────────────────────── */
+
+.tag {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 6px;
+  background: var(--ctp-surface0);
+  color: var(--ctp-subtext1);
+}
+
+/* ── Section Title ─────────────────────────── */
+
+.section-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--ctp-text);
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.section-intro {
+  text-align: center;
+  color: var(--ctp-overlay1);
+  font-size: 1.05rem;
+  line-height: 1.7;
+  max-width: 640px;
+  margin: -0.5rem auto 2rem;
+}
+
+/* ── Features ──────────────────────────────── */
+
+.features {
+  padding-bottom: 5rem;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+}
+
+.feature-card {
+  padding: 2rem;
+  background: var(--ctp-base);
+  border: 1px solid var(--ctp-surface0);
+  border-radius: 16px;
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+
+.feature-card:hover {
+  border-color: var(--ctp-surface1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+
+.feature-icon {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+  color: var(--ctp-blue);
+}
+
+.feature-card h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--ctp-text);
+  margin-bottom: 0.5rem;
+}
+
+.feature-card p {
+  color: var(--ctp-subtext0);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+/* ── How It Works ──────────────────────────── */
+
+.how-it-works {
+  padding-bottom: 5rem;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.step {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.step-number {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ctp-surface0);
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ctp-blue);
+}
+
+.step-body h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--ctp-text);
+  margin-bottom: 0.25rem;
+}
+
+.step-body p {
+  color: var(--ctp-subtext0);
+  font-size: 0.9rem;
+}
+
+/* ── Architecture ──────────────────────────── */
+
+.architecture {
+  padding-bottom: 5rem;
+}
+
+.arch-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.25rem;
+}
+
+.arch-grid-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.arch-card {
+  padding: 2rem;
+  background: var(--ctp-base);
+  border: 1px solid var(--ctp-surface0);
+  border-radius: 16px;
+  transition: border-color 0.25s;
+}
+
+.arch-card:hover {
+  border-color: var(--ctp-surface1);
+}
+
+.arch-card h3 {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--ctp-text);
+  margin-bottom: 0.25rem;
+}
+
+.arch-tech {
+  font-size: 0.8rem;
+  color: var(--ctp-overlay0);
+  margin-bottom: 0.75rem;
+}
+
+.arch-card p:last-child {
+  color: var(--ctp-subtext0);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+/* ── Footer ────────────────────────────────── */
+
+.footer {
+  padding: 2.5rem 0;
+  border-top: 1px solid var(--ctp-surface0);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.footer-logo {
+  width: 24px;
+  height: 24px;
+}
+
+.footer-copy {
+  color: var(--ctp-surface2);
+  font-size: 0.8rem;
+}
+
+.footer-copy a {
+  color: var(--ctp-overlay1);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.footer-copy a:hover {
+  color: var(--ctp-text);
+}
+
+/* ── Get Started ───────────────────────────── */
+
+.get-started {
+  padding: 4rem 0;
+  text-align: center;
+}
+
+.get-started-steps {
+  max-width: 640px;
+  margin: 0 auto 1.5rem;
+  text-align: left;
+}
+
+.get-started-steps pre {
+  background: var(--ctp-mantle);
+  border: 1px solid var(--ctp-surface0);
+  border-radius: 12px;
+  padding: 1.5rem;
+  overflow-x: auto;
+  font-family: "JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code", monospace;
+  font-size: 0.9rem;
+  line-height: 1.8;
+  color: var(--ctp-text);
+}
+
+.code-heading {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ctp-text);
+  text-align: center;
+  margin: 2rem auto 0.75rem;
+}
+
+.get-started-code {
+  max-width: 800px;
+  margin: 0 auto 1.5rem;
+  text-align: left;
+}
+
+.get-started-code pre {
+  background: var(--ctp-mantle);
+  border: 1px solid var(--ctp-surface0);
+  border-radius: 12px;
+  padding: 1.5rem;
+  overflow-x: auto;
+  font-family: "JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code", monospace;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--ctp-text);
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.get-started-links {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.2s, color 0.2s;
+  background: var(--ctp-mauve);
+  color: var(--ctp-base);
+}
+
+.btn:hover {
+  background: var(--ctp-lavender);
+}
+
+.btn-secondary {
+  background: var(--ctp-surface0);
+  color: var(--ctp-text);
+}
+
+.btn-secondary:hover {
+  background: var(--ctp-surface1);
+}
+
+/* ── Mobile ────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .feature-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .arch-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .header {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+
+  .hero {
+    padding: 2.5rem 0 3rem;
+  }
+
+  .hero h1 {
+    font-size: 1.75rem;
+  }
+
+  .hero-sub {
+    font-size: 1rem;
+  }
+
+  .hero-tags {
+    flex-wrap: wrap;
+  }
+
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .arch-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .footer {
+    flex-direction: column;
+    gap: 1rem;
+    text-align: center;
+  }
+}

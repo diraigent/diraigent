@@ -1,0 +1,51 @@
+name: deploy-diraigent-api
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'apps/api/**'
+      - 'libs/common-rust/**'
+      - '.forgejo/workflows/deploy-diraigent-api.yml'
+
+concurrency:
+  group: deploy-diraigent-api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build & Push
+    runs-on: docker
+    container: rust:1.93-bookworm
+    steps:
+      - name: Install Node.js
+        run: |
+          curl -fsSL https://nodejs.org/dist/v25.6.1/node-v25.6.1-linux-x64.tar.xz \
+            | tar xJ -C /usr/local --strip-components=1
+
+      - uses: actions/checkout@v4
+
+      - name: Install Docker CLI + Buildx
+        run: |
+          apt-get update && apt-get install -y ca-certificates curl gnupg
+          install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable" \
+            > /etc/apt/sources.list.d/docker.list
+          apt-get update && apt-get install -y docker-ce-cli docker-buildx-plugin
+
+      - name: Login to Forgejo Container Registry
+        run: docker login ${{ vars.REGISTRY_URL }} -u ${{ github.repository_owner }} -p ${{ secrets.FORGEJO_TOKEN }}
+
+      - name: Build and push image
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: |
+          COMMIT_SHA=$(echo "${{ github.sha }}" | head -c 7)
+          TIMESTAMP=$(date -u +%Y%m%d-%H%M%S)
+          IMAGE="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/api"
+          docker build -f apps/api/Containerfile -t "${IMAGE}:latest" -t "${IMAGE}:main-${TIMESTAMP}-${COMMIT_SHA}" .
+          docker push "${IMAGE}:latest"
+          docker push "${IMAGE}:main-${TIMESTAMP}-${COMMIT_SHA}"

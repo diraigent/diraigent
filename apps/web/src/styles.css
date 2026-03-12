@@ -1,0 +1,137 @@
+@import "tailwindcss";
+@source "../src/**/*.{ts,html}";
+@import "@catppuccin/tailwindcss/mocha.css";
+
+/* Semantic theme tokens */
+@theme inline {
+  /* Backgrounds */
+  --color-bg: var(--theme-bg);
+  --color-bg-deep: var(--theme-bg-deep);
+  --color-bg-subtle: var(--theme-bg-subtle);
+
+  /* Surfaces */
+  --color-surface: var(--theme-surface);
+  --color-surface-hover: var(--theme-surface-hover);
+
+  /* Text */
+  --color-text-primary: var(--theme-text-primary);
+  --color-text-secondary: var(--theme-text-secondary);
+  --color-text-tertiary: var(--theme-text-tertiary);
+  --color-text-muted: var(--theme-text-muted);
+
+  /* Accents */
+  --color-accent: var(--theme-accent);
+  --color-interactive: var(--theme-interactive);
+  --color-accent-secondary: var(--theme-accent-secondary);
+
+  /* Feedback */
+  --color-error: var(--theme-error);
+  --color-warning: var(--theme-warning);
+
+  /* Border */
+  --color-border: var(--theme-surface);
+
+  /* Font */
+  --font-family-mono: 'Roboto Mono', monospace;
+}
+
+/* Catppuccin → semantic token mapping */
+:root {
+  --theme-bg: var(--catppuccin-color-base);
+  --theme-bg-deep: var(--catppuccin-color-crust);
+  --theme-bg-subtle: var(--catppuccin-color-mantle);
+  --theme-surface: var(--catppuccin-color-surface0);
+  --theme-surface-hover: var(--catppuccin-color-surface1);
+  --theme-text-primary: var(--catppuccin-color-text);
+  --theme-text-secondary: var(--catppuccin-color-subtext0);
+  --theme-text-tertiary: var(--catppuccin-color-subtext1);
+  --theme-text-muted: var(--catppuccin-color-overlay0);
+  --theme-accent: var(--catppuccin-color-blue);
+  --theme-interactive: var(--catppuccin-color-blue);
+  --theme-accent-secondary: var(--catppuccin-color-teal);
+  --theme-error: var(--catppuccin-color-red);
+  --theme-warning: var(--catppuccin-color-yellow);
+}
+
+/* Accent color overrides — set via data-accent attribute on <html> */
+[data-accent="rosewater"] {
+  --theme-accent: var(--catppuccin-color-rosewater);
+  --theme-interactive: var(--catppuccin-color-rosewater);
+}
+[data-accent="flamingo"] {
+  --theme-accent: var(--catppuccin-color-flamingo);
+  --theme-interactive: var(--catppuccin-color-flamingo);
+}
+[data-accent="pink"] {
+  --theme-accent: var(--catppuccin-color-pink);
+  --theme-interactive: var(--catppuccin-color-pink);
+}
+[data-accent="mauve"] {
+  --theme-accent: var(--catppuccin-color-mauve);
+  --theme-interactive: var(--catppuccin-color-mauve);
+}
+[data-accent="red"] {
+  --theme-accent: var(--catppuccin-color-red);
+  --theme-interactive: var(--catppuccin-color-red);
+}
+[data-accent="maroon"] {
+  --theme-accent: var(--catppuccin-color-maroon);
+  --theme-interactive: var(--catppuccin-color-maroon);
+}
+[data-accent="peach"] {
+  --theme-accent: var(--catppuccin-color-peach);
+  --theme-interactive: var(--catppuccin-color-peach);
+}
+[data-accent="yellow"] {
+  --theme-accent: var(--catppuccin-color-yellow);
+  --theme-interactive: var(--catppuccin-color-yellow);
+}
+[data-accent="green"] {
+  --theme-accent: var(--catppuccin-color-green);
+  --theme-interactive: var(--catppuccin-color-green);
+}
+[data-accent="teal"] {
+  --theme-accent: var(--catppuccin-color-teal);
+  --theme-interactive: var(--catppuccin-color-teal);
+}
+[data-accent="sky"] {
+  --theme-accent: var(--catppuccin-color-sky);
+  --theme-interactive: var(--catppuccin-color-sky);
+}
+[data-accent="sapphire"] {
+  --theme-accent: var(--catppuccin-color-sapphire);
+  --theme-interactive: var(--catppuccin-color-sapphire);
+}
+[data-accent="blue"] {
+  --theme-accent: var(--catppuccin-color-blue);
+  --theme-interactive: var(--catppuccin-color-blue);
+}
+[data-accent="lavender"] {
+  --theme-accent: var(--catppuccin-color-lavender);
+  --theme-interactive: var(--catppuccin-color-lavender);
+}
+
+/* Accessibility: focus indicators */
+:focus-visible {
+  outline: 2px solid var(--theme-accent, var(--color-accent));
+  outline-offset: 2px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+html {
+  font-family: 'Roboto Mono', monospace;
+}

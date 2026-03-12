@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en" data-theme="catppuccin-mocha" class="mocha">
+<head>
+  <meta charset="utf-8">
+  <title>Diraigent</title>
+  <base href="/">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/svg+xml" sizes="any" href="favicon.svg">
+  <script>
+    (function() {
+      var pref = localStorage.getItem('zivue-theme') || 'system';
+      var resolved = pref;
+      if (pref === 'system') {
+        resolved = window.matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'catppuccin-mocha' : 'catppuccin-latte';
+      }
+      var el = document.documentElement;
+      el.setAttribute('data-theme', resolved);
+      var flavors = ['latte','frappe','macchiato','mocha'];
+      flavors.forEach(function(f) { el.classList.remove(f); });
+      var flavor = resolved.replace('catppuccin-', '');
+      if (flavors.indexOf(flavor) !== -1) el.classList.add(flavor);
+      var dark = ['catppuccin-frappe','catppuccin-macchiato','catppuccin-mocha'];
+      el.style.colorScheme = dark.indexOf(resolved) !== -1 ? 'dark' : 'light';
+      // Apply accent color to prevent FOUC
+      var accent = localStorage.getItem('zivue-accent') || 'blue';
+      el.setAttribute('data-accent', accent);
+    })();
+  </script>
+</head>
+<body class="bg-bg text-text-primary antialiased">
+  <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-accent focus:text-bg focus:rounded focus:font-medium">
+    Skip to main content
+  </a>
+  <app-root></app-root>
+</body>
+</html>

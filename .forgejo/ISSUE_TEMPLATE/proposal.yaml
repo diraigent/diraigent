@@ -1,0 +1,47 @@
+name: Proposal
+about: Propose a significant architectural or product change
+labels:
+  - decision
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One-paragraph overview of what you're proposing.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What's the current limitation or pain point?
+    validations:
+      required: true
+  - type: textarea
+    id: approach
+    attributes:
+      label: Proposed approach
+      description: How would you solve it? Include alternatives considered.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: What changes? What breaks? What gets easier?
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - Low
+        - Medium
+        - High
+        - Critical
+  - type: textarea
+    id: tasks
+    attributes:
+      label: Implementation steps
+      placeholder: |
+        - [ ] Step 1
+        - [ ] Step 2

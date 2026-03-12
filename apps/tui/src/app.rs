@@ -1,0 +1,833 @@
+use crate::client::{
+    Agent, AuditEntry, ChangedFile, Decision, GitTaskStatus, Goal, GoalProgress, GoalStats,
+    Integration, IntegrationAccess, KnowledgeEntry, LogEntry, Member, Observation, Playbook,
+    Project, Role, Task, TaskComment, TaskDependencies, TaskUpdate, Verification,
+};
+use ratatui::widgets::ListState;
+use uuid::Uuid;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum View {
+    Tasks,
+    Agents,
+    Knowledge,
+    Decisions,
+    Playbooks,
+    Goals,
+    Observations,
+    Team,
+    Integrations,
+    Audit,
+    Logs,
+    ProjectSettings,
+    Verifications,
+}
+
+pub const ALL_VIEWS: &[View] = &[
+    View::Tasks,
+    View::Agents,
+    View::Knowledge,
+    View::Decisions,
+    View::Playbooks,
+    View::Goals,
+    View::Observations,
+    View::Team,
+    View::Integrations,
+    View::Audit,
+    View::Logs,
+    View::Verifications,
+];
+
+impl View {
+    pub fn label(self) -> &'static str {
+        match self {
+            View::Tasks => "Tasks",
+            View::Agents => "Agents",
+            View::Knowledge => "Knowledge",
+            View::Decisions => "Decisions",
+            View::Playbooks => "Playbooks",
+            View::Goals => "Goals",
+            View::Observations => "Observations",
+            View::Team => "Team",
+            View::Integrations => "Integrations",
+            View::Audit => "Audit",
+            View::Logs => "Logs",
+            View::ProjectSettings => "Project Settings",
+            View::Verifications => "Verifications",
+        }
+    }
+
+    pub fn shortcut(self) -> &'static str {
+        match self {
+            View::Tasks => "1",
+            View::Agents => "2",
+            View::Knowledge => "3",
+            View::Decisions => "4",
+            View::Playbooks => "5",
+            View::Goals => "6",
+            View::Observations => "7",
+            View::Team => "8",
+            View::Integrations => "9",
+            View::Audit => "0",
+            View::Logs => "`",
+            View::ProjectSettings => "S",
+            View::Verifications => "V",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Modal {
+    None,
+    Transition,
+    Reply,
+    Comment,
+    Search,
+    GoalLink,
+    GoalStatus,
+    Promote,
+    DependencyAdd,
+    LogQuery,
+    LogFilter,
+    ObservationStatus,
+    DecisionSupersede,
+    IntegrationAccess,
+    ViewPicker,
+    ClaimTask,
+    DelegateTask,
+    BulkTransition,
+    BulkDelete,
+    VerificationStatus,
+    VerificationKindFilter,
+    VerificationStatusFilter,
+    GoalTaskPicker,
+}
+
+pub const TIME_RANGES: &[(&str, i64)] = &[
+    ("15m", 15 * 60),
+    ("1h", 3600),
+    ("3h", 3 * 3600),
+    ("6h", 6 * 3600),
+    ("12h", 12 * 3600),
+    ("24h", 24 * 3600),
+    ("3d", 3 * 86400),
+    ("7d", 7 * 86400),
+];
+
+pub const LOG_LIMITS: &[u32] = &[50, 100, 200, 500, 1000];
+
+pub const LOG_DIRECTIONS: &[&str] = &["backward", "forward"];
+
+pub const TASK_KINDS: &[&str] = &[
+    "feature", "bug", "chore", "research", "spike", "refactor", "docs", "test",
+];
+
+pub const VERIFICATION_KINDS: &[&str] = &["test", "acceptance", "sign_off"];
+pub const VERIFICATION_STATUSES: &[&str] = &["pass", "fail", "pending", "skipped"];
+
+pub struct TaskForm {
+    pub title: String,
+    pub kind_index: usize,
+    pub priority: u8,
+    pub spec: String,
+    pub playbook_index: usize, // 0 = None, 1+ = playbook from list
+    pub active_field: usize,   // 0=title, 1=kind, 2=priority, 3=playbook, 4=spec
+    pub cursor: usize,
+}
+
+impl Default for TaskForm {
+    fn default() -> Self {
+        Self {
+            title: String::new(),
+            kind_index: 0,
+            priority: 3,
+            spec: String::new(),
+            playbook_index: 0,
+            active_field: 0,
+            cursor: 0,
+        }
+    }
+}
+
+pub struct VerificationForm {
+    pub task_index: usize,   // Index into tasks list (for task_id picker)
+    pub kind_index: usize,   // Index into VERIFICATION_KINDS
+    pub status_index: usize, // Index into VERIFICATION_STATUSES
+    pub title: String,
+    pub detail: String,
+    pub evidence: String,    // JSON string
+    pub active_field: usize, // 0=task, 1=kind, 2=status, 3=title, 4=detail, 5=evidence
+    pub cursor: usize,
+    pub editing_id: Option<uuid::Uuid>, // None for create, Some for edit
+}
+
+impl Default for VerificationForm {
+    fn default() -> Self {
+        Self {
+            task_index: 0,
+            kind_index: 0,
+            status_index: 0,
+            title: String::new(),
+            detail: String::new(),
+            evidence: String::new(),
+            active_field: 3, // Start on title field
+            cursor: 0,
+            editing_id: None,
+        }
+    }
+}
+
+pub const ON_COMPLETE_OPTIONS: &[&str] = &["next", "done", "human_review"];
+pub const STEP_MODEL_OPTIONS: &[&str] = &["", "sonnet", "opus", "haiku"];
+
+#[derive(Clone, Default)]
+pub struct PlaybookStepForm {
+    pub name: String,
+    pub description: String,
+    pub on_complete_index: usize, // index into ON_COMPLETE_OPTIONS
+    pub timeout_minutes: String,
+    pub model_index: usize, // index into STEP_MODEL_OPTIONS (0 = default/none)
+}
+
+#[derive(Default)]
+pub struct PlaybookForm {
+    pub title: String,
+    pub trigger: String,
+    pub tags: String, // comma-separated
+    pub steps: Vec<PlaybookStepForm>,
+    pub active_field: usize, // 0=title, 1=trigger, 2=tags, 3=steps
+    pub cursor: usize,
+    pub editing_id: Option<uuid::Uuid>, // None for create, Some for edit
+    // Step management state
+    pub selected_step: usize,
+    pub editing_step: bool, // true when editing step detail fields
+    pub step_field: usize,  // 0=name, 1=desc, 2=on_complete, 3=timeout, 4=model
+}
+
+impl PlaybookForm {
+    /// Parse steps from a serde_json::Value (JSON array) into PlaybookStepForm vec
+    pub fn steps_from_json(steps: &serde_json::Value) -> Vec<PlaybookStepForm> {
+        let Some(arr) = steps.as_array() else {
+            return Vec::new();
+        };
+        let mut result: Vec<PlaybookStepForm> = arr
+            .iter()
+            .map(|step| {
+                let name = step
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let description = step
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let on_complete = step
+                    .get("on_complete")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("next");
+                let on_complete_index = ON_COMPLETE_OPTIONS
+                    .iter()
+                    .position(|o| *o == on_complete)
+                    .unwrap_or(0);
+                let timeout = step
+                    .get("timeout_minutes")
+                    .and_then(|v| v.as_i64())
+                    .map(|v| v.to_string())
+                    .unwrap_or_default();
+                let model = step.get("model").and_then(|v| v.as_str()).unwrap_or("");
+                let model_index = STEP_MODEL_OPTIONS
+                    .iter()
+                    .position(|o| *o == model)
+                    .unwrap_or(0);
+                PlaybookStepForm {
+                    name,
+                    description,
+                    on_complete_index,
+                    timeout_minutes: timeout,
+                    model_index,
+                }
+            })
+            .collect();
+        // Sort by step order from JSON
+        // (steps are already in order in the array, but let's be safe)
+        result.sort_by_key(|_| 0); // preserve original order
+        result
+    }
+
+    /// Convert steps back to JSON array
+    pub fn steps_to_json(&self) -> serde_json::Value {
+        let arr: Vec<serde_json::Value> = self
+            .steps
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                // Normalize step name to snake_case (match web behaviour):
+                // trim, lowercase, collapse whitespace to underscores.
+                let raw = s.name.trim().to_lowercase();
+                let normalized: String = raw.split_whitespace().collect::<Vec<_>>().join("_");
+                let name = if normalized.is_empty() {
+                    format!("step_{i}")
+                } else {
+                    normalized
+                };
+                let mut obj = serde_json::json!({
+                    "step": i,
+                    "name": name,
+                    "description": s.description,
+                    "on_complete": ON_COMPLETE_OPTIONS[s.on_complete_index],
+                });
+                if let Ok(mins) = s.timeout_minutes.parse::<i64>() {
+                    obj["timeout_minutes"] = serde_json::json!(mins);
+                }
+                let model = STEP_MODEL_OPTIONS[s.model_index];
+                if !model.is_empty() {
+                    obj["model"] = serde_json::json!(model);
+                }
+                obj
+            })
+            .collect();
+        serde_json::Value::Array(arr)
+    }
+}
+
+/// Task edit form — used for editing existing task properties
+pub struct TaskEditForm {
+    pub task_id: uuid::Uuid,
+    pub title: String,
+    pub kind_index: usize,
+    pub priority: u8,
+    pub spec: String,
+    pub active_field: usize, // 0=title, 1=kind, 2=priority, 3=spec
+    pub cursor: usize,
+}
+
+/// Fields: 0=name, 1=description, 2=repo_url, 3=repo_path,
+///         4=default_branch, 5=service_name, 6=playbook, 7=claude_md
+pub const SETTINGS_FIELD_COUNT: usize = 8;
+
+pub struct ProjectSettingsForm {
+    pub name: String,
+    pub description: String,
+    pub repo_url: String,
+    pub repo_path: String,
+    pub default_branch: String,
+    pub service_name: String,
+    pub playbook_index: usize, // 0=None, 1+=playbook from list
+    pub claude_md: String,
+    pub active_field: usize,
+    pub cursor: usize,
+    pub dirty: bool, // track unsaved changes
+}
+
+impl ProjectSettingsForm {
+    pub fn field_text(&self) -> &str {
+        match self.active_field {
+            0 => &self.name,
+            1 => &self.description,
+            2 => &self.repo_url,
+            3 => &self.repo_path,
+            4 => &self.default_branch,
+            5 => &self.service_name,
+            7 => &self.claude_md,
+            _ => "",
+        }
+    }
+
+    pub fn field_text_mut(&mut self) -> Option<&mut String> {
+        match self.active_field {
+            0 => Some(&mut self.name),
+            1 => Some(&mut self.description),
+            2 => Some(&mut self.repo_url),
+            3 => Some(&mut self.repo_path),
+            4 => Some(&mut self.default_branch),
+            5 => Some(&mut self.service_name),
+            7 => Some(&mut self.claude_md),
+            _ => None,
+        }
+    }
+}
+
+pub const GOAL_STATUSES: &[&str] = &["active", "achieved", "paused", "abandoned"];
+pub const GOAL_TYPES: &[&str] = &["epic", "feature", "milestone", "sprint", "initiative"];
+
+pub struct GoalForm {
+    pub title: String,
+    pub description: String,
+    pub success_criteria: String,
+    pub target_date: String,    // YYYY-MM-DD
+    pub status_index: usize,    // index into GOAL_STATUSES
+    pub goal_type_index: usize, // index into GOAL_TYPES
+    pub priority: String,       // numeric string
+    pub auto_status: bool,
+    pub active_field: usize, // 0=title, 1=desc, 2=criteria, 3=date, 4=status, 5=type, 6=priority, 7=auto_status
+    pub cursor: usize,
+    pub editing_id: Option<Uuid>, // None for create, Some for edit
+}
+
+impl Default for GoalForm {
+    fn default() -> Self {
+        Self {
+            title: String::new(),
+            description: String::new(),
+            success_criteria: String::new(),
+            target_date: String::new(),
+            status_index: 0,
+            goal_type_index: 0,
+            priority: "0".to_string(),
+            auto_status: false,
+            active_field: 0,
+            cursor: 0,
+            editing_id: None,
+        }
+    }
+}
+
+pub const OBSERVATION_KINDS: &[&str] = &[
+    "insight",
+    "risk",
+    "smell",
+    "improvement",
+    "opportunity",
+    "inconsistency",
+];
+pub const OBSERVATION_SEVERITIES: &[&str] = &["info", "low", "medium", "high", "critical"];
+
+pub struct ObservationForm {
+    pub title: String,
+    pub description: String,
+    pub kind_index: usize,     // index into OBSERVATION_KINDS
+    pub severity_index: usize, // index into OBSERVATION_SEVERITIES
+    pub active_field: usize,   // 0=title, 1=kind, 2=severity, 3=description
+    pub cursor: usize,
+}
+
+impl Default for ObservationForm {
+    fn default() -> Self {
+        Self {
+            title: String::new(),
+            description: String::new(),
+            kind_index: 0,
+            severity_index: 2, // default to "medium"
+            active_field: 0,
+            cursor: 0,
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct DecisionForm {
+    pub title: String,
+    pub context: String,
+    pub decision: String,
+    pub rationale: String,
+    pub alternatives: String, // free-text, one per line
+    pub active_field: usize,  // 0=title, 1=context, 2=decision, 3=rationale, 4=alternatives
+    pub cursor: usize,
+}
+
+pub const KNOWLEDGE_CATEGORIES: &[&str] = &[
+    "architecture",
+    "convention",
+    "pattern",
+    "anti_pattern",
+    "setup",
+    "general",
+];
+
+#[derive(Default)]
+pub struct KnowledgeForm {
+    pub title: String,
+    pub category_index: usize, // index into KNOWLEDGE_CATEGORIES
+    pub content: String,
+    pub tags: String,        // comma-separated
+    pub active_field: usize, // 0=title, 1=category, 2=content, 3=tags
+    pub cursor: usize,
+    pub editing_id: Option<Uuid>, // None for create, Some for edit
+}
+
+pub const INTEGRATION_KINDS: &[&str] = &["ci", "monitoring", "logging", "vcs", "chat", "custom"];
+pub const INTEGRATION_AUTH_TYPES: &[&str] = &["none", "token", "basic", "oauth2"];
+
+#[derive(Default)]
+pub struct IntegrationForm {
+    pub name: String,
+    pub kind_index: usize, // index into INTEGRATION_KINDS
+    pub provider: String,
+    pub base_url: String,
+    pub auth_type_index: usize, // index into INTEGRATION_AUTH_TYPES
+    pub active_field: usize,    // 0=name, 1=kind, 2=provider, 3=base_url, 4=auth_type
+    pub cursor: usize,
+}
+
+pub struct App {
+    pub show_help: bool,
+    pub task_form: Option<TaskForm>,
+    pub task_edit_form: Option<TaskEditForm>,
+    pub playbook_form: Option<PlaybookForm>,
+    pub settings_form: Option<ProjectSettingsForm>,
+    pub verification_form: Option<VerificationForm>,
+    pub goal_form: Option<GoalForm>,
+    pub observation_form: Option<ObservationForm>,
+    pub decision_form: Option<DecisionForm>,
+    pub knowledge_form: Option<KnowledgeForm>,
+    pub integration_form: Option<IntegrationForm>,
+    pub connected: bool,
+    pub view: View,
+    pub modal: Modal,
+    pub focus: usize, // 0=left, 1=right
+
+    // Data
+    pub projects: Vec<Project>,
+    pub current_project: Option<Uuid>,
+    pub tasks: Vec<Task>,
+    pub task_updates: Vec<TaskUpdate>,
+    pub task_comments: Vec<TaskComment>,
+    pub task_dependencies: TaskDependencies,
+    pub agents: Vec<Agent>,
+    pub knowledge: Vec<KnowledgeEntry>,
+    pub decisions: Vec<Decision>,
+    pub playbooks: Vec<Playbook>,
+    pub goals: Vec<Goal>,
+    pub goal_progress: Option<GoalProgress>,
+    pub goal_stats: Option<GoalStats>,
+    pub goal_children: Vec<Goal>,
+    pub observations: Vec<Observation>,
+    pub roles: Vec<Role>,
+    pub members: Vec<Member>,
+    pub integrations: Vec<Integration>,
+    pub integration_access: Vec<IntegrationAccess>,
+    pub audit_log: Vec<AuditEntry>,
+    pub verifications: Vec<Verification>,
+
+    // Goal task picker
+    pub goal_tasks: Vec<Task>,
+    pub goal_unlinked_tasks: Vec<Task>,
+    pub goal_picker_selected: usize,
+    pub goal_picker_checked: std::collections::HashSet<usize>,
+    pub goal_picker_loading: bool,
+
+    // Verification filters
+    pub verification_kind_filter: Option<String>,
+    pub verification_status_filter: Option<String>,
+
+    // Logs view data
+    pub log_entries: Vec<LogEntry>,
+    pub log_labels: Vec<String>,
+    pub log_query: String,
+    pub log_filter: String,
+    pub log_time_range_idx: usize, // index into TIME_RANGES
+    pub log_limit_idx: usize,      // index into LOG_LIMITS
+    pub log_direction_idx: usize,  // index into LOG_DIRECTIONS
+    pub log_loading: bool,
+    pub log_scroll: u16,
+
+    // Selection indices
+    pub selected_task: Option<usize>,
+    pub task_list_state: ListState,
+    pub selected_agent: Option<usize>,
+    pub selected_knowledge: Option<usize>,
+    pub selected_decision: Option<usize>,
+    pub selected_playbook: Option<usize>,
+    pub selected_goal: Option<usize>,
+    pub selected_observation: Option<usize>,
+    pub selected_role: Option<usize>,
+    pub selected_member: Option<usize>,
+    pub selected_integration: Option<usize>,
+    pub selected_audit: Option<usize>,
+    pub selected_verification: Option<usize>,
+
+    // Team view focus: 0=roles, 1=members, 2=detail
+    pub team_focus: usize,
+
+    // Search filter
+    pub search_query: String,
+
+    // Detail panel scroll offset (vertical)
+    pub detail_scroll: u16,
+
+    // Modal state
+    pub transition_options: Vec<String>,
+    pub transition_selected: usize,
+    pub input_text: String,
+    pub input_cursor: usize,
+
+    // Git integration
+    pub git_task_status: Option<GitTaskStatus>,
+    pub changed_files: Vec<ChangedFile>,
+    pub show_changed_files: bool,
+
+    // Bulk selection
+    pub bulk_selected: std::collections::HashSet<uuid::Uuid>,
+    pub bulk_mode: bool,
+
+    // Error flash
+    pub last_error: Option<String>,
+}
+
+impl App {
+    pub fn new() -> Self {
+        Self {
+            connected: false,
+            show_help: false,
+            task_form: None,
+            task_edit_form: None,
+            playbook_form: None,
+            settings_form: None,
+            verification_form: None,
+            goal_form: None,
+            observation_form: None,
+            decision_form: None,
+            knowledge_form: None,
+            integration_form: None,
+            view: View::Tasks,
+            modal: Modal::None,
+            focus: 0,
+            projects: vec![],
+            current_project: None,
+            tasks: vec![],
+            task_updates: vec![],
+            task_comments: vec![],
+            task_dependencies: TaskDependencies {
+                depends_on: vec![],
+                blocks: vec![],
+            },
+            agents: vec![],
+            knowledge: vec![],
+            decisions: vec![],
+            playbooks: vec![],
+            goals: vec![],
+            goal_progress: None,
+            goal_stats: None,
+            goal_children: vec![],
+            observations: vec![],
+            roles: vec![],
+            members: vec![],
+            integrations: vec![],
+            integration_access: vec![],
+            audit_log: vec![],
+            verifications: vec![],
+            goal_tasks: vec![],
+            goal_unlinked_tasks: vec![],
+            goal_picker_selected: 0,
+            goal_picker_checked: std::collections::HashSet::new(),
+            goal_picker_loading: false,
+            verification_kind_filter: None,
+            verification_status_filter: None,
+            log_entries: vec![],
+            log_labels: vec![],
+            log_query: String::from("{app=~\".+\"}"),
+            log_filter: String::new(),
+            log_time_range_idx: 1, // 1h default
+            log_limit_idx: 1,      // 100 default
+            log_direction_idx: 0,  // backward default
+            log_loading: false,
+            log_scroll: 0,
+            selected_task: None,
+            task_list_state: ListState::default(),
+            selected_agent: None,
+            selected_knowledge: None,
+            selected_decision: None,
+            selected_playbook: None,
+            selected_goal: None,
+            selected_observation: None,
+            selected_role: None,
+            selected_member: None,
+            selected_integration: None,
+            selected_audit: None,
+            selected_verification: None,
+            team_focus: 0,
+            search_query: String::new(),
+            detail_scroll: 0,
+            transition_options: vec![],
+            transition_selected: 0,
+            input_text: String::new(),
+            input_cursor: 0,
+            git_task_status: None,
+            changed_files: vec![],
+            show_changed_files: false,
+            bulk_selected: std::collections::HashSet::new(),
+            bulk_mode: false,
+            last_error: None,
+        }
+    }
+
+    pub fn list_len(&self) -> usize {
+        match self.view {
+            View::Tasks => self.tasks.len(),
+            View::Agents => self.agents.len(),
+            View::Knowledge => self.knowledge.len(),
+            View::Decisions => self.decisions.len(),
+            View::Playbooks => self.playbooks.len(),
+            View::Goals => self.goals.len(),
+            View::Observations => self.observations.len(),
+            View::Team => self.roles.len(),
+            View::Integrations => self.integrations.len(),
+            View::Audit => self.audit_log.len(),
+            View::Logs => self.log_entries.len(),
+            View::ProjectSettings => 0, // No list in settings view
+            View::Verifications => self.filtered_verifications().len(),
+        }
+    }
+
+    pub fn selected(&self) -> Option<usize> {
+        match self.view {
+            View::Tasks => self.selected_task,
+            View::Agents => self.selected_agent,
+            View::Knowledge => self.selected_knowledge,
+            View::Decisions => self.selected_decision,
+            View::Playbooks => self.selected_playbook,
+            View::Goals => self.selected_goal,
+            View::Observations => self.selected_observation,
+            View::Team => self.selected_role,
+            View::Integrations => self.selected_integration,
+            View::Audit => self.selected_audit,
+            View::Logs => None, // Logs use scroll, not selection
+            View::ProjectSettings => None,
+            View::Verifications => self.selected_verification,
+        }
+    }
+
+    pub fn set_selected(&mut self, idx: Option<usize>) {
+        self.detail_scroll = 0;
+        match self.view {
+            View::Tasks => {
+                self.selected_task = idx;
+                self.task_list_state.select(idx);
+            }
+            View::Agents => self.selected_agent = idx,
+            View::Knowledge => self.selected_knowledge = idx,
+            View::Decisions => self.selected_decision = idx,
+            View::Playbooks => self.selected_playbook = idx,
+            View::Goals => self.selected_goal = idx,
+            View::Observations => self.selected_observation = idx,
+            View::Team => self.selected_role = idx,
+            View::Integrations => self.selected_integration = idx,
+            View::Audit => self.selected_audit = idx,
+            View::Logs => {}            // Logs use scroll, not selection
+            View::ProjectSettings => {} // No list in settings view
+            View::Verifications => self.selected_verification = idx,
+        }
+    }
+
+    pub fn move_selection(&mut self, delta: i32) {
+        let len = self.list_len();
+        if len == 0 {
+            return;
+        }
+        let current = self.selected().unwrap_or(0) as i32;
+        let next = (current + delta).clamp(0, len as i32 - 1) as usize;
+        self.set_selected(Some(next));
+    }
+
+    pub fn scroll_detail(&mut self, delta: i32) {
+        let new = self.detail_scroll as i32 + delta;
+        self.detail_scroll = new.max(0) as u16;
+    }
+
+    pub fn default_playbook_index(&self) -> usize {
+        self.playbooks
+            .iter()
+            .position(|pb| pb.metadata.get("default").and_then(|v| v.as_bool()) == Some(true))
+            .map(|i| i + 1) // 0 = None, 1+ = playbook index
+            .unwrap_or(0)
+    }
+
+    pub fn status_summary(&self) -> String {
+        let active = self
+            .tasks
+            .iter()
+            .filter(|t| !matches!(t.state.as_str(), "backlog" | "ready" | "done" | "cancelled"))
+            .count();
+        let ready = self.tasks.iter().filter(|t| t.state == "ready").count();
+        let _idle_agents = self.agents.iter().filter(|a| a.status == "idle").count();
+        let project_name = self
+            .current_project
+            .and_then(|pid| self.projects.iter().find(|p| p.id == pid))
+            .map(|p| p.name.as_str())
+            .unwrap_or("–");
+        format!(
+            "Connected: {}  Project: {} [{}/{}]  Tasks: {} ({} active, {} ready)",
+            if self.connected { "✓" } else { "✗" },
+            project_name,
+            self.projects
+                .iter()
+                .position(|p| Some(p.id) == self.current_project)
+                .map(|i| i + 1)
+                .unwrap_or(0),
+            self.projects.len(),
+            self.tasks.len(),
+            active,
+            ready,
+        )
+    }
+
+    pub fn selected_task_id(&self) -> Option<Uuid> {
+        self.selected_task
+            .and_then(|i| self.tasks.get(i).map(|t| t.id))
+    }
+
+    /// Returns indices of tasks matching the current search_query (case-insensitive).
+    /// Matches against title, kind, and state.
+    pub fn filtered_task_indices(&self) -> Vec<usize> {
+        if self.search_query.is_empty() {
+            return (0..self.tasks.len()).collect();
+        }
+        let q = self.search_query.to_lowercase();
+        self.tasks
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| {
+                t.title.to_lowercase().contains(&q)
+                    || t.state.to_lowercase().contains(&q)
+                    || t.kind.to_lowercase().contains(&q)
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// Scroll the log view.
+    pub fn scroll_logs(&mut self, delta: i32) {
+        let new = self.log_scroll as i32 + delta;
+        self.log_scroll = new.max(0) as u16;
+    }
+
+    /// Returns verifications filtered by current kind and status filters.
+    pub fn filtered_verifications(&self) -> Vec<&Verification> {
+        self.verifications
+            .iter()
+            .filter(|v| {
+                if let Some(ref k) = self.verification_kind_filter {
+                    if v.kind != *k {
+                        return false;
+                    }
+                }
+                if let Some(ref s) = self.verification_status_filter {
+                    if v.status != *s {
+                        return false;
+                    }
+                }
+                true
+            })
+            .collect()
+    }
+
+    /// Move task selection respecting the search filter.
+    pub fn move_task_selection(&mut self, delta: i32) {
+        let visible = self.filtered_task_indices();
+        if visible.is_empty() {
+            return;
+        }
+        // Find current position in the filtered list
+        let current_pos = self
+            .selected_task
+            .and_then(|sel| visible.iter().position(|&i| i == sel))
+            .unwrap_or(0);
+        let next_pos = (current_pos as i32 + delta).clamp(0, visible.len() as i32 - 1) as usize;
+        let new_idx = visible[next_pos];
+        self.detail_scroll = 0;
+        self.selected_task = Some(new_idx);
+        self.task_list_state.select(Some(next_pos));
+    }
+}

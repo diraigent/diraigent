@@ -1,0 +1,35 @@
+**/target/
+
+### IDE ###
+.idea
+.vscode/
+*.iws
+*.iml
+*.ipr
+.DS_Store
+/**/.DS_Store
+
+### Build artifacts ###
+/**/dist
+/**/dist-*/
+/**/build
+/**/node_modules
+
+### Environment ###
+.env
+.env.local
+.env.prod
+
+### Agent ###
+apps/orchestra/.env.orchestra
+apps/orchestra/logs/
+apps/orchestra/.orchestra.pid
+
+### Claude Code ###
+.claude/worktrees/
+
+### Misc ###
+NOTES.md
+data/
+
+secrets
