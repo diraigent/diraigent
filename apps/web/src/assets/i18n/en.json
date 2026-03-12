@@ -18,7 +18,8 @@
     "review": "Review Queue",
     "reports": "Reports",
     "reference": "Reference",
-    "stepTemplates": "Step Templates"
+    "stepTemplates": "Step Templates",
+    "work": "Work"
   },
   "review": {
     "awaitingReview": "Awaiting Review",
@@ -269,6 +270,13 @@
     "addTodo": "Add",
     "todosEmpty": "No todos yet. Add one above.",
     "clearDone": "Clear done"
+  },
+  "work": {
+    "activeGoals": "Active Goals",
+    "activeTasks": "Active Tasks",
+    "backlog": "Backlog",
+    "completed": "Completed",
+    "archived": "Archived"
   },
   "decisions": {
     "create": "New Decision",

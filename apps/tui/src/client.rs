@@ -405,6 +405,94 @@ pub struct ChangedFile {
     pub deletions: i32,
 }
 
+// ── Git branch types ─────────────────────────────────────────
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BranchInfo {
+    pub name: String,
+    pub commit: String,
+    #[serde(default)]
+    pub is_pushed: bool,
+    #[serde(default)]
+    pub ahead_remote: i32,
+    #[serde(default)]
+    pub behind_remote: i32,
+    pub task_id_prefix: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BranchListResponse {
+    pub current_branch: String,
+    pub branches: Vec<BranchInfo>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct MainPushStatus {
+    #[serde(default)]
+    pub ahead: i32,
+    #[serde(default)]
+    pub behind: i32,
+    pub last_commit: Option<String>,
+    pub last_commit_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PushResponse {
+    #[serde(default)]
+    pub success: bool,
+    #[serde(default)]
+    pub message: String,
+}
+
+// ── Search types ─────────────────────────────────────────────
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SearchResult {
+    pub entity_type: String,
+    pub id: Uuid,
+    pub title: String,
+    pub snippet: Option<String>,
+    #[serde(default)]
+    pub relevance: f32,
+    pub created_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SearchResponse {
+    pub results: Vec<SearchResult>,
+    #[serde(default)]
+    pub total: i64,
+    #[serde(default)]
+    pub query: String,
+}
+
+// ── Chat types ───────────────────────────────────────────────
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+// ── Source browser types ─────────────────────────────────────
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TreeEntry {
+    pub name: String,
+    pub path: String,
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TreeResponse {
+    pub entries: Vec<TreeEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BlobResponse {
+    pub content: String,
+    #[serde(default)]
+    pub encoding: String,
+    #[serde(default)]
+    pub size: usize,
+}
+
 #[allow(dead_code)]
 impl ApiClient {
     pub fn new() -> Self {
@@ -1454,6 +1542,167 @@ impl ApiClient {
         let req = self
             .client
             .get(format!("{}/tasks/{}/changed-files", self.base_url, task_id));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    // ── Git branch operations ────────────────────────────────
+
+    pub async fn list_branches(
+        &self,
+        project_id: Uuid,
+        prefix: Option<&str>,
+    ) -> Result<BranchListResponse, reqwest::Error> {
+        let mut url = format!("{}/{}/git/branches", self.base_url, project_id);
+        if let Some(p) = prefix {
+            url.push_str(&format!("?prefix={}", urlencoding::encode(p)));
+        }
+        let req = self.client.get(&url);
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn main_status(&self, project_id: Uuid) -> Result<MainPushStatus, reqwest::Error> {
+        let req = self
+            .client
+            .get(format!("{}/{}/git/main-status", self.base_url, project_id));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn push_main(&self, project_id: Uuid) -> Result<PushResponse, reqwest::Error> {
+        let req = self
+            .client
+            .post(format!("{}/{}/git/push-main", self.base_url, project_id));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn resolve_and_push_main(
+        &self,
+        project_id: Uuid,
+    ) -> Result<PushResponse, reqwest::Error> {
+        let req = self.client.post(format!(
+            "{}/{}/git/resolve-and-push-main",
+            self.base_url, project_id
+        ));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn push_branch(
+        &self,
+        project_id: Uuid,
+        branch: &str,
+    ) -> Result<PushResponse, reqwest::Error> {
+        let req = self
+            .client
+            .post(format!("{}/{}/git/push", self.base_url, project_id))
+            .json(&serde_json::json!({"branch": branch}));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn revert_task(
+        &self,
+        project_id: Uuid,
+        task_id: Uuid,
+    ) -> Result<PushResponse, reqwest::Error> {
+        let req = self.client.post(format!(
+            "{}/{}/git/revert-task/{}",
+            self.base_url, project_id, task_id
+        ));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    // ── Search ───────────────────────────────────────────────
+
+    pub async fn search(
+        &self,
+        project_id: Uuid,
+        q: &str,
+        limit: Option<i64>,
+    ) -> Result<SearchResponse, reqwest::Error> {
+        let lim = limit.unwrap_or(50);
+        let url = format!(
+            "{}/{}/search?q={}&limit={}",
+            self.base_url,
+            project_id,
+            urlencoding::encode(q),
+            lim
+        );
+        let req = self.client.get(&url);
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    // ── Chat ─────────────────────────────────────────────────
+
+    pub async fn send_chat(
+        &self,
+        project_id: Uuid,
+        messages: Vec<ChatMessage>,
+    ) -> Result<String, reqwest::Error> {
+        let req = self
+            .client
+            .post(format!("{}/{}/chat", self.base_url, project_id))
+            .json(&serde_json::json!({"messages": messages}));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        // Collect SSE stream into a single text response
+        let body = resp.text().await?;
+        // Parse SSE events to extract text content
+        let mut result = String::new();
+        for line in body.lines() {
+            if let Some(data) = line.strip_prefix("data: ") {
+                if let Ok(obj) = serde_json::from_str::<serde_json::Value>(data) {
+                    if let Some(content) = obj.get("content").and_then(|c| c.as_str()) {
+                        result.push_str(content);
+                    }
+                }
+            }
+        }
+        Ok(result)
+    }
+
+    // ── Source browser ───────────────────────────────────────
+
+    pub async fn source_tree(
+        &self,
+        project_id: Uuid,
+        path: &str,
+        git_ref: Option<&str>,
+    ) -> Result<TreeResponse, reqwest::Error> {
+        let mut url = format!(
+            "{}/{}/source/tree?path={}",
+            self.base_url,
+            project_id,
+            urlencoding::encode(path)
+        );
+        if let Some(r) = git_ref {
+            url.push_str(&format!("&ref={}", urlencoding::encode(r)));
+        }
+        let req = self.client.get(&url);
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn source_blob(
+        &self,
+        project_id: Uuid,
+        path: &str,
+        git_ref: Option<&str>,
+    ) -> Result<BlobResponse, reqwest::Error> {
+        let mut url = format!(
+            "{}/{}/source/blob?path={}",
+            self.base_url,
+            project_id,
+            urlencoding::encode(path)
+        );
+        if let Some(r) = git_ref {
+            url.push_str(&format!("&ref={}", urlencoding::encode(r)));
+        }
+        let req = self.client.get(&url);
         let resp = self.auth(req).send().await?.error_for_status()?;
         resp.json().await
     }

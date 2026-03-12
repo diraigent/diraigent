@@ -11,3 +11,8 @@ pub mod project_settings;
 pub mod tasks;
 pub mod team;
 pub mod verifications;
+
+pub mod chat;
+pub mod git;
+pub mod search;
+pub mod source;

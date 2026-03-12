@@ -17,7 +17,8 @@
     "review": "Review-Warteschlange",
     "reports": "Berichte",
     "reference": "Referenz",
-    "stepTemplates": "Schrittvorlagen"
+    "stepTemplates": "Schrittvorlagen",
+    "work": "Arbeit"
   },
   "review": {
     "awaitingReview": "Wartet auf Review",
@@ -246,6 +247,13 @@
     "addTodo": "Hinzufügen",
     "todosEmpty": "Noch keine Aufgaben. Oben eine hinzufügen.",
     "clearDone": "Erledigte löschen"
+  },
+  "work": {
+    "activeGoals": "Aktive Ziele",
+    "activeTasks": "Aktive Aufgaben",
+    "backlog": "Backlog",
+    "completed": "Abgeschlossen",
+    "archived": "Archiviert"
   },
   "decisions": {
     "create": "Neue Entscheidung",
