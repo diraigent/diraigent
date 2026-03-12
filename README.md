@@ -15,22 +15,12 @@ Most AI coding tools are either unstructured ("just let the AI go") or black-box
 Prerequisites: Docker and Docker Compose.
 
 ```bash
-# 1. Get the compose file and env template
-curl -LO https://www.diraigent.com/get/docker-compose.yml
-curl -LO https://www.diraigent.com/get/.env.example
-
-# 2. Configure
-cp .env.example .env
-#    Edit .env — at minimum set ANTHROPIC_API_KEY and GIT_REPO_URL
-
-# 3. Start the platform
-docker compose up -d
-
-# 4. Open the dashboard
-open http://localhost:8080
-
-# 5. (Optional) Start the orchestra to run AI agents
-docker compose --profile agent up -d
+curl -LO https://github.com/diraigent/diraigent/blob/main/startup/docker-compose.yml
+curl -LO https://github.com/diraigent/diraigent/blob/main/startup/start.sh
+curl -LO https://github.com/diraigent/diraigent/blob/main/startup/.env.example
+cp .env.example .env    # edit .env for your setup
+chmod +x start.sh
+./start.sh              # registers agent, seeds playbooks, starts everything
 ```
 
 Images are published on Docker Hub: [`diraigent/api`](https://hub.docker.com/r/diraigent/api), [`diraigent/web`](https://hub.docker.com/r/diraigent/web), [`diraigent/orchestra`](https://hub.docker.com/r/diraigent/orchestra).

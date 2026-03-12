@@ -1490,6 +1490,10 @@ impl DiraigentDb for CryptoDb {
         self.inner.resolve_or_create_user(auth_user_id).await
     }
 
+    async fn ensure_dev_user(&self, user_id: Uuid) -> Result<(), AppError> {
+        self.inner.ensure_dev_user(user_id).await
+    }
+
     // ── Webhook dispatch (internal) ──
     async fn list_webhooks_enabled(&self, project_id: Uuid) -> anyhow::Result<Vec<Webhook>> {
         self.inner.list_webhooks_enabled(project_id).await

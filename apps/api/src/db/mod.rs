@@ -594,6 +594,10 @@ pub trait DiraigentDb: Send + Sync {
     // ── Auth User ────────────────────────────────────────────────────────────
     async fn resolve_or_create_user(&self, auth_user_id: &str) -> Result<Uuid, AppError>;
 
+    /// Ensure an auth_user row exists for a specific user_id (used by dev auth
+    /// bypasses where the user_id is known but may not have a DB record yet).
+    async fn ensure_dev_user(&self, user_id: Uuid) -> Result<(), AppError>;
+
     // ── Webhook dispatch (internal use) ──────────────────────────────────────
     async fn list_webhooks_enabled(&self, project_id: Uuid) -> anyhow::Result<Vec<Webhook>>;
     async fn record_webhook_delivery(

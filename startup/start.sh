@@ -1,22 +1,26 @@
 #!/bin/bash
-# Diraigent quick-start script.
-# Downloads playbooks, registers an agent, and starts all services.
+# Start diraigent with Claude Max subscription token from macOS Keychain.
 # Usage: ./start.sh
 
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Load .env
-if [ ! -f .env ]; then
-  echo "No .env file found. Copy .env.example to .env and fill in values first."
+# Load .env if it exists
+if [ -f .env ]; then
+  set -a; source .env; set +a
+fi
+
+# Extract OAuth token from macOS Keychain
+CREDS=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null || true)
+if [ -z "$CREDS" ]; then
+  echo "No Claude Code credentials found in Keychain."
+  echo "Run 'claude login' first."
   exit 1
 fi
-set -a; source .env; set +a
 
-# Verify required vars
-if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-  echo "ANTHROPIC_API_KEY is not set in .env"; exit 1
-fi
+TOKEN=$(echo "$CREDS" | python3 -c "import sys,json; print(json.load(sys.stdin)['claudeAiOauth']['accessToken'])")
+export CLAUDE_CODE_OAUTH_TOKEN="$TOKEN"
+echo "Claude Max token loaded"
 
 DEV_USER="${DEV_USER_ID:-00000000-0000-0000-0000-000000000001}"
 API="http://localhost:8082/v1"
@@ -76,7 +80,7 @@ if [ -z "${AGENT_ID:-}" ]; then
 
   # Persist to .env
   if grep -q '^AGENT_ID=' .env 2>/dev/null; then
-    sed -i.bak "s/^AGENT_ID=.*/AGENT_ID=$AGENT_ID/" .env && rm -f .env.bak
+    sed -i '' "s/^AGENT_ID=.*/AGENT_ID=$AGENT_ID/" .env
   else
     echo "AGENT_ID=$AGENT_ID" >> .env
   fi
@@ -86,8 +90,4 @@ fi
 # Start all containers
 docker compose up -d
 
-echo ""
-echo "All services started."
-echo "  Web UI:  http://localhost:8080"
-echo "  API:     http://localhost:8082"
-echo "  Logs:    docker compose logs -f"
+echo "All services started. Use 'docker compose logs -f' to follow logs."

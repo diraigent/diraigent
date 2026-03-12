@@ -233,12 +233,14 @@
       the orchestra spawns claude code workers in isolated git worktrees for each task.
     </p>
     <div class="get-started-steps">
-      <pre><code>curl -LO https://www.diraigent.com/get/docker-compose.yml
-curl -LO https://www.diraigent.com/get/start.sh
-curl -LO https://www.diraigent.com/get/.env.example
-cp .env.example .env    # edit .env for your setup
-chmod +x start.sh
-./start.sh              # registers agent, seeds playbooks, starts everything</code></pre>
+      <pre><code>
+        curl -LO https://github.com/diraigent/diraigent/blob/main/startup/docker-compose.yml
+        curl -LO https://github.com/diraigent/diraigent/blob/main/startup/start.sh
+        curl -LO https://github.com/diraigent/diraigent/blob/main/startup/.env.example
+        cp .env.example .env    # edit .env for your setup
+        chmod +x start.sh
+        ./start.sh              # registers agent, seeds playbooks, starts everything
+      </code></pre>
     </div>
 
     <h3 class="code-heading">docker-compose.yml</h3>
