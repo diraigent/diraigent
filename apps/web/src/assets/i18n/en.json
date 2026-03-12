@@ -229,6 +229,7 @@
     "linkedTasks": "Linked Tasks",
     "linkTasksBtn": "Link Tasks",
     "createTaskBtn": "Create Task",
+    "startAllBtn": "Start All",
     "noLinkedTasks": "No tasks linked to this goal",
     "pickTasks": "Pick Tasks to Link",
     "pickerSearchPlaceholder": "Search tasks...",
