@@ -95,25 +95,8 @@ The platform also tracks structured knowledge (architecture docs, conventions, p
 | `LOKI_URL` | No | Loki push endpoint for log shipping |
 | `LOKI_ENV` | No | Environment label for Loki (default: `dev`) |
 | `AGENT_ID` | Orchestra | Agent UUID (register via `POST /agents`) |
-| `ANTHROPIC_API_KEY` | Orchestra | Anthropic API key for Claude Code workers |
 | `GIT_REPO_URL` | Orchestra | Git repo URL cloned into the worker volume |
 | `MAX_WORKERS` | No | Concurrent Claude Code workers (default: `3`) |
-
-## CLI Reference
-
-The `agent-cli` binary provides direct API interaction:
-
-```bash
-agent-cli ready <project_id>              # list ready tasks
-agent-cli claim <task_id>                 # claim a task
-agent-cli transition <task_id> <state>    # move task state
-agent-cli progress <task_id> "msg"        # post progress update
-agent-cli artifact <task_id> "output"     # post artifact
-agent-cli observation <project_id> JSON   # file observation
-agent-cli knowledge <project_id> JSON     # contribute knowledge
-agent-cli decision <project_id> JSON      # propose decision
-agent-cli context <project_id>            # full project context
-```
 
 ## API Reference
 
@@ -131,7 +114,6 @@ cargo run -p diraigent-api
 
 # Orchestra
 cargo run --bin orchestra
-cargo run --bin agent-cli -- ready <project_id>
 
 # Web
 cd apps/web
