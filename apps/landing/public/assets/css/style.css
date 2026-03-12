@@ -381,6 +381,27 @@ body {
   overflow-y: auto;
 }
 
+.section-subtitle {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--ctp-text);
+  margin: 2rem 0 0.75rem;
+}
+
+.after-startup-steps {
+  max-width: 640px;
+  margin: 0 auto;
+  text-align: left;
+  list-style: decimal;
+  padding-left: 1.5rem;
+  color: var(--ctp-subtext0);
+  line-height: 2;
+}
+
+.after-startup-steps strong {
+  color: var(--ctp-text);
+}
+
 .get-started-links {
   display: flex;
   gap: 1rem;

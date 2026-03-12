@@ -30,8 +30,8 @@ Images are published on Docker Hub: [`diraigent/api`](https://hub.docker.com/r/d
 
 ### First steps after startup
 
-1. **Create a project** — via the dashboard or `POST /v1/projects`
-2. **Add a playbook** — via the dashboard or `POST /v1/playbooks`
+1. **Create a project** — via the dashboard or `POST /v1/projects`. Point it at a git repo with a main branch.
+2. **Clone a playbook** — pick one of the seeded defaults and clone it into your project
 3. **Create a task** — attach your playbook, fill in `spec` and `acceptance_criteria`
 4. **Register an agent** — `POST /v1/agents`, then copy the returned UUID into `.env` as `AGENT_ID`
 5. **Start the orchestra** — `docker compose --profile agent up -d` — it claims the task and begins working
