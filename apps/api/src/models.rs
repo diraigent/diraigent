@@ -1611,26 +1611,6 @@ pub struct TenantFilters {
     pub offset: Option<i64>,
 }
 
-// ── Scratchpad ─────────────────────────────────────────────────────────────
-
-/// Per-user, per-project scratchpad storing notes (markdown) and todos (JSON).
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct Scratchpad {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub project_id: Uuid,
-    pub notes: String,
-    pub todos: serde_json::Value,
-    pub updated_at: DateTime<Utc>,
-}
-
-/// Request body for creating or updating a scratchpad.
-#[derive(Debug, Deserialize)]
-pub struct UpsertScratchpad {
-    pub notes: String,
-    pub todos: serde_json::Value,
-}
-
 // ── Reports ──
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]

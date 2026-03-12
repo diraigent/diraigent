@@ -1273,21 +1273,4 @@ impl DiraigentDb for PostgresDb {
     async fn get_task_log_by_id(&self, id: Uuid) -> Result<TaskLog, AppError> {
         repository::get_task_log_by_id(&self.0, id).await
     }
-
-    // ── Scratchpad ──────────────────────────────────────────────────────────
-    async fn get_scratchpad(
-        &self,
-        user_id: Uuid,
-        project_id: Uuid,
-    ) -> Result<Option<Scratchpad>, AppError> {
-        repository::get_scratchpad(&self.0, user_id, project_id).await
-    }
-    async fn upsert_scratchpad(
-        &self,
-        user_id: Uuid,
-        project_id: Uuid,
-        req: &UpsertScratchpad,
-    ) -> Result<Scratchpad, AppError> {
-        repository::upsert_scratchpad(&self.0, user_id, project_id, req).await
-    }
 }

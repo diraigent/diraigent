@@ -710,17 +710,4 @@ pub trait DiraigentDb: Send + Sync {
         filters: &TaskLogFilters,
     ) -> Result<i64, AppError>;
     async fn get_task_log_by_id(&self, id: Uuid) -> Result<TaskLog, AppError>;
-
-    // ── Scratchpad ────────────────────────────────────────────────────────────
-    async fn get_scratchpad(
-        &self,
-        user_id: Uuid,
-        project_id: Uuid,
-    ) -> Result<Option<Scratchpad>, AppError>;
-    async fn upsert_scratchpad(
-        &self,
-        user_id: Uuid,
-        project_id: Uuid,
-        req: &UpsertScratchpad,
-    ) -> Result<Scratchpad, AppError>;
 }

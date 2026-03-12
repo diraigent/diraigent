@@ -20,7 +20,6 @@ mod playbooks;
 mod projects;
 mod reports;
 mod roles;
-mod scratchpad;
 mod search;
 mod settings;
 mod source;
@@ -99,7 +98,6 @@ pub fn router() -> Router<AppState> {
         .merge(tenants::routes())
         .merge(settings::routes())
         .merge(step_templates::routes())
-        .merge(scratchpad::routes())
         .merge(reports::routes())
         .merge(task_logs::routes())
         .merge(ws::routes())

@@ -59,11 +59,6 @@ export const routes: Routes = [
     loadComponent: () => import('./features/goals/goals').then(m => m.GoalsPage),
   },
   {
-    path: 'scratchpad',
-    canActivate: [AuthGuard],
-    loadComponent: () => import('./features/scratchpad/scratchpad').then(m => m.ScratchpadPage),
-  },
-  {
     path: 'observations',
     canActivate: [AuthGuard],
     loadComponent: () => import('./features/observations/observations').then(m => m.ObservationsPage),

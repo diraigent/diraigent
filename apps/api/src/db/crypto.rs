@@ -1690,21 +1690,4 @@ impl DiraigentDb for CryptoDb {
     async fn get_task_log_by_id(&self, id: Uuid) -> Result<TaskLog, AppError> {
         delegate!(self, get_task_log_by_id, id)
     }
-
-    // ── Scratchpad (no encrypted fields, plain delegation) ───────────────────
-    async fn get_scratchpad(
-        &self,
-        user_id: Uuid,
-        project_id: Uuid,
-    ) -> Result<Option<Scratchpad>, AppError> {
-        delegate!(self, get_scratchpad, user_id, project_id)
-    }
-    async fn upsert_scratchpad(
-        &self,
-        user_id: Uuid,
-        project_id: Uuid,
-        req: &UpsertScratchpad,
-    ) -> Result<Scratchpad, AppError> {
-        delegate!(self, upsert_scratchpad, user_id, project_id, req)
-    }
 }

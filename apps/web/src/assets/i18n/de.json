@@ -6,7 +6,6 @@
     "decisions": "Entscheidungen",
     "playbooks": "Playbooks",
     "goals": "Ziele",
-    "scratchpad": "Notizen",
     "observations": "Beobachtungen",
     "team": "Team",
     "integrations": "Integrationen",
@@ -561,24 +560,6 @@
     "open": "Öffnen",
     "changeState": "Status ändern",
     "close": "Schließen"
-  },
-  "scratchpad": {
-    "title": "Notizen",
-    "subtitle": "Notizen, Ideen und To-do-Listen — mit dem Server synchronisiert und lokal zwischengespeichert.",
-    "saved": "Gespeichert",
-    "tabNotes": "Notizen",
-    "tabTodos": "Aufgaben",
-    "notesPlaceholder": "Notizen, Ideen oder beliebigen Text in Markdown schreiben...",
-    "markdownHint": "Markdown unterstützt. Wird automatisch gespeichert.",
-    "todoPlaceholder": "Neues To-do hinzufügen...",
-    "addTodo": "Hinzufügen",
-    "todosComplete": "erledigt",
-    "clearDone": "Erledigte löschen",
-    "todosEmpty": "Noch keine To-dos. Füge oben etwas hinzu.",
-    "deleteTodo": "Löschen",
-    "promoteToTask": "Zur Aufgabe befördern",
-    "viewTask": "Verknüpfte Aufgabe anzeigen",
-    "newTask": "Neue Aufgabe"
   },
   "tasks": {
     "create": "Neue Aufgabe",

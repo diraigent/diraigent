@@ -18,6 +18,7 @@ type SortDir = 'asc' | 'desc';
   imports: [TranslocoModule, FormsModule, SlicePipe, DatePipe, TaskDetailComponent],
   template: `
     <div *transloco="let t">
+      @if (!compact()) {
       <!-- Filters -->
       <div class="flex flex-wrap gap-3 mb-4">
         <input
@@ -70,9 +71,10 @@ type SortDir = 'asc' | 'desc';
           }
         </button>
       </div>
+      }
 
       <!-- Bulk action toolbar -->
-      @if (selectedIds().size > 0) {
+      @if (!compact() && selectedIds().size > 0) {
         <div class="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 px-3 sm:px-4 py-2.5 bg-accent/10 border border-accent/30 rounded-lg text-sm">
           <span class="text-text-primary font-medium">
             {{ selectedIds().size }} {{ t('tasks.bulk.selected') }}
@@ -112,6 +114,7 @@ type SortDir = 'asc' | 'desc';
         </div>
       }
 
+      @if (!compact()) {
       <!-- Sort & select-all bar -->
       <div class="flex items-center gap-2 px-1 mb-2">
         <input type="checkbox"
@@ -147,6 +150,7 @@ type SortDir = 'asc' | 'desc';
           {{ sortDir() === 'asc' ? '▲' : '▼' }}
         </button>
       </div>
+      }
 
       <!-- Accordion task list -->
       <div class="space-y-1">
@@ -159,11 +163,13 @@ type SortDir = 'asc' | 'desc';
             <!-- Accordion header — always visible -->
             <div class="flex items-center gap-2 md:gap-3 px-3 py-2.5 cursor-pointer" tabindex="0" role="button"
                  (click)="taskSelect.emit(task)" (keydown.enter)="taskSelect.emit(task)">
+              @if (!compact()) {
               <input type="checkbox"
                 [checked]="selectedIds().has(task.id)"
                 (change)="toggleSelect(task.id)"
                 (click)="$event.stopPropagation()"
                 class="accent-accent cursor-pointer shrink-0" />
+              }
               <!-- Title area -->
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-1.5 flex-wrap">
@@ -360,7 +366,7 @@ type SortDir = 'asc' | 'desc';
       </div>
 
       <!-- Pagination -->
-      @if (total() > 0) {
+      @if (!compact() && total() > 0) {
         <div class="flex items-center justify-between mt-3 text-sm text-text-secondary">
           <span>{{ t('tasks.showing') }} {{ offset() + 1 }}–{{ Math.min(offset() + limit(), total()) }} {{ t('tasks.of') }} {{ total() }}</span>
           <div class="flex gap-2">
@@ -384,6 +390,7 @@ type SortDir = 'asc' | 'desc';
 })
 export class TaskListComponent {
   tasks = input.required<SpTask[]>();
+  compact = input(false);
   loading = input(false);
   selectedId = input<string | null>(null);
   blockedIds = input<Set<string>>(new Set());

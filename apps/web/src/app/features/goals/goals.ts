@@ -1,7 +1,9 @@
-import { Component, inject, signal, computed, effect, HostListener } from '@angular/core';
-import { DatePipe, SlicePipe } from '@angular/common';
+import { Component, inject, signal, computed, effect } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TranslocoModule } from '@jsverse/transloco';
+import { forkJoin, of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import { ProjectContext } from '../../core/services/project-context.service';
 import {
   GoalsApiService,
@@ -14,9 +16,20 @@ import {
   SpGoalProgress,
   SpGoalStats,
 } from '../../core/services/goals-api.service';
-import { TasksApiService, SpTask, CreateTaskRequest, UpdateTaskRequest } from '../../core/services/tasks-api.service';
+import {
+  TasksApiService,
+  SpTask,
+  SpTaskUpdate,
+  SpTaskComment,
+  SpTaskDependencies,
+  ChangedFileSummary,
+  CreateTaskRequest,
+  UpdateTaskRequest,
+} from '../../core/services/tasks-api.service';
 import { TaskFormComponent } from '../tasks/components/task-form/task-form';
-import { taskStateColor as sharedTaskStateColor, taskTransitions, TASK_PRIORITY_LABELS } from '../../shared/ui-constants';
+import { TaskListComponent } from '../tasks/pages/task-list/task-list';
+import { VerificationsApiService, SpVerification } from '../../core/services/verifications-api.service';
+import { PlaybooksApiService, SpPlaybook } from '../../core/services/playbooks-api.service';
 
 const STATUSES: GoalStatus[] = ['active', 'achieved', 'paused', 'abandoned'];
 
@@ -49,7 +62,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
 @Component({
   selector: 'app-goals',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, DatePipe, SlicePipe, TaskFormComponent],
+  imports: [TranslocoModule, FormsModule, DatePipe, TaskFormComponent, TaskListComponent],
   template: `
     <div class="p-3 sm:p-6" *transloco="let t">
       <!-- Header -->
@@ -452,102 +465,58 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                           ({{ filteredLinkedTasks().length }}/{{ linkedTasks().length }})
                         </p>
                       }
-                      <div class="space-y-1 max-h-[500px] overflow-y-auto">
-                        @for (task of filteredLinkedTasks(); track task.id) {
-                          <div class="rounded-lg border border-border overflow-hidden transition-colors group"
-                               [class.ring-1]="expandedTaskIds().has(task.id)"
-                               [class.ring-accent]="expandedTaskIds().has(task.id)">
-                            <!-- Accordion header -->
-                            <div class="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-surface-hover"
-                                 role="button"
-                                 tabindex="0"
-                                 (click)="toggleTaskExpand(task.id)"
-                                 (keydown.enter)="toggleTaskExpand(task.id)"
-                                 (keydown.space)="$event.preventDefault(); toggleTaskExpand(task.id)">
-                              <svg class="w-3.5 h-3.5 text-text-secondary shrink-0 transition-transform duration-150"
-                                   [class.rotate-90]="expandedTaskIds().has(task.id)"
-                                   fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                      <div class="max-h-[600px] overflow-y-auto">
+                        @if (selectedLinkedTask()) {
+                          <div class="flex items-center gap-1 mb-2">
+                            <button (click)="toggleMarkTask(selectedLinkedTask()!.id)"
+                              class="p-1.5 rounded border border-border hover:bg-surface-hover transition-colors cursor-pointer"
+                              [class.text-ctp-yellow]="markedTaskIds().has(selectedLinkedTask()!.id)"
+                              [class.text-text-secondary]="!markedTaskIds().has(selectedLinkedTask()!.id)"
+                              [title]="markedTaskIds().has(selectedLinkedTask()!.id) ? t('goals.unmarkTask') : t('goals.markTask')">
+                              <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                                @if (markedTaskIds().has(selectedLinkedTask()!.id)) {
+                                  <path d="M5 2h14a1 1 0 011 1v19.143a.5.5 0 01-.766.424L12 18.03l-7.234 4.536A.5.5 0 014 22.143V3a1 1 0 011-1z" />
+                                } @else {
+                                  <path d="M5 2h14a1 1 0 011 1v19.143a.5.5 0 01-.766.424L12 18.03l-7.234 4.536A.5.5 0 014 22.143V3a1 1 0 011-1zm1 2v15.432l6-3.761 6 3.761V4H6z" />
+                                }
                               </svg>
-                              <span class="text-text-muted text-xs shrink-0">#{{ task.number }}</span>
-                              <span class="text-text-primary text-sm truncate flex-1 min-w-0">{{ task.title }}</span>
-                              <span class="px-1.5 py-0.5 rounded-full text-xs shrink-0 bg-ctp-blue/20 text-ctp-blue">{{ task.kind }}</span>
-                              <!-- State badge (clickable for transitions) -->
-                              <div class="relative shrink-0">
-                                <button class="px-1.5 py-0.5 rounded-full text-xs font-medium cursor-pointer hover:ring-1 hover:ring-accent {{ taskStateColor(task.state) }}"
-                                        (click)="toggleTaskStateMenu($event, task.id)">
-                                  {{ task.state }}
-                                </button>
-                                @if (openTaskMenuId() === task.id) {
-                                  <div class="absolute z-50 mt-1 right-0 bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[120px]">
-                                    @for (target of getTaskTransitions(task.state); track target) {
-                                      <button (click)="onTaskTransition($event, task, target)"
-                                        class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover transition-colors flex items-center gap-2 cursor-pointer">
-                                        <span class="w-2 h-2 rounded-full {{ taskStateColor(target) }}"></span>
-                                        <span class="text-text-primary">{{ target }}</span>
-                                      </button>
-                                    } @empty {
-                                      <span class="px-3 py-1.5 text-xs text-text-muted">{{ t('tasks.noTransitions') }}</span>
-                                    }
-                                  </div>
-                                }
-                              </div>
-                              <span class="text-xs shrink-0 {{ taskPriorityInfo(task.priority).color }}">
-                                {{ taskPriorityInfo(task.priority).label }}
-                              </span>
-                              <!-- Edit button -->
-                              <button (click)="editTask($event, task)"
-                                class="p-1 text-text-secondary hover:text-accent shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                                [title]="t('common.edit')">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                  <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                </svg>
-                              </button>
-                              <!-- Mark/bookmark button -->
-                              <button (click)="toggleMarkTask(task.id); $event.stopPropagation()"
-                                class="p-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                                [class.text-ctp-yellow]="markedTaskIds().has(task.id)"
-                                [class.opacity-100]="markedTaskIds().has(task.id)"
-                                [class.text-text-secondary]="!markedTaskIds().has(task.id)"
-                                [title]="markedTaskIds().has(task.id) ? t('goals.unmarkTask') : t('goals.markTask')">
-                                <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                                  @if (markedTaskIds().has(task.id)) {
-                                    <path d="M5 2h14a1 1 0 011 1v19.143a.5.5 0 01-.766.424L12 18.03l-7.234 4.536A.5.5 0 014 22.143V3a1 1 0 011-1z" />
-                                  } @else {
-                                    <path d="M5 2h14a1 1 0 011 1v19.143a.5.5 0 01-.766.424L12 18.03l-7.234 4.536A.5.5 0 014 22.143V3a1 1 0 011-1zm1 2v15.432l6-3.761 6 3.761V4H6z" />
-                                  }
-                                </svg>
-                              </button>
-                              <!-- Unlink button -->
-                              <button (click)="unlinkSingleTask(task.id); $event.stopPropagation()"
-                                class="p-1 text-text-secondary hover:text-ctp-red shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                                [title]="t('goals.unlink')">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                  <path d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                              </button>
-                            </div>
-                            <!-- Expanded detail -->
-                            @if (expandedTaskIds().has(task.id)) {
-                              <div class="px-3 pb-3 ml-6 space-y-1.5 border-t border-border pt-2.5 text-xs">
-                                <div class="flex justify-between">
-                                  <span class="text-text-muted">{{ t('tasks.created') }}</span>
-                                  <span class="text-text-secondary">{{ task.created_at | date:'MMM d, y HH:mm' }}</span>
-                                </div>
-                                <div class="flex justify-between">
-                                  <span class="text-text-muted">{{ t('tasks.agent') }}</span>
-                                  <span class="text-text-secondary font-mono">{{ task.assigned_agent_id ? (task.assigned_agent_id | slice:0:8) + '...' : '—' }}</span>
-                                </div>
-                                @if (task.context?.['spec']) {
-                                  <div class="mt-2">
-                                    <span class="text-text-muted">{{ t('tasks.spec') }}</span>
-                                    <p class="text-text-secondary mt-0.5 whitespace-pre-line line-clamp-4">{{ task.context['spec'] }}</p>
-                                  </div>
-                                }
-                              </div>
-                            }
+                            </button>
+                            <button (click)="unlinkSingleTask(selectedLinkedTask()!.id)"
+                              class="px-2 py-1 text-xs rounded border border-border text-text-secondary hover:text-ctp-red hover:border-ctp-red/30 transition-colors cursor-pointer"
+                              [title]="t('goals.unlink')">
+                              <svg class="w-3.5 h-3.5 inline-block" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
                           </div>
                         }
+                        <app-task-list
+                          [compact]="true"
+                          [tasks]="filteredLinkedTasks()"
+                          [loading]="linkedTasksLoading()"
+                          [selectedId]="selectedLinkedTask()?.id ?? null"
+                          [detailUpdates]="taskDetailUpdates()"
+                          [detailComments]="taskDetailComments()"
+                          [detailDependencies]="taskDetailDependencies()"
+                          [detailVerifications]="taskDetailVerifications()"
+                          [detailChangedFiles]="taskDetailChangedFiles()"
+                          [detailGitStatus]="taskDetailGitStatus()"
+                          [detailPlaybooks]="goalPlaybooks()"
+                          [detailPushing]="taskDetailPushing()"
+                          [detailReverting]="taskDetailReverting()"
+                          [detailResolving]="taskDetailResolving()"
+                          [detailLoading]="taskDetailLoading()"
+                          (taskSelect)="selectLinkedTask($event)"
+                          (stateChange)="onLinkedTaskStateChange($event.task, $event.target)"
+                          (detailTransition)="onLinkedTaskStateChange(selectedLinkedTask()!, $event)"
+                          (detailPostUpdate)="onLinkedTaskPostUpdate($event)"
+                          (detailPostComment)="onLinkedTaskPostComment($event)"
+                          (detailDelete)="onLinkedTaskDelete()"
+                          (detailInlineUpdate)="onLinkedTaskInlineUpdate($event)"
+                          (detailAddDep)="onLinkedTaskAddDep($event)"
+                          (detailRemoveDep)="onLinkedTaskRemoveDep($event)"
+                          (detailPlaybookChange)="onLinkedTaskPlaybookChange($event)"
+                          (detailPlaybookStepChange)="onLinkedTaskPlaybookStepChange($event)" />
                       </div>
                     }
                   </div>
@@ -768,6 +737,8 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
 export class GoalsPage {
   private api = inject(GoalsApiService);
   private tasksApi = inject(TasksApiService);
+  private verificationsApi = inject(VerificationsApiService);
+  private playbooksApi = inject(PlaybooksApiService);
   private ctx = inject(ProjectContext);
 
   readonly statuses = STATUSES;
@@ -825,9 +796,19 @@ export class GoalsPage {
   pickerStateFilter = '';
   pickerUnlinkedOnly = true;
 
-  // Accordion state for linked tasks
-  expandedTaskIds = signal<Set<string>>(new Set());
-  openTaskMenuId = signal<string | null>(null);
+  // Task detail data for linked task expansion (shared TaskListComponent)
+  selectedLinkedTask = signal<SpTask | null>(null);
+  taskDetailUpdates = signal<SpTaskUpdate[]>([]);
+  taskDetailComments = signal<SpTaskComment[]>([]);
+  taskDetailDependencies = signal<SpTaskDependencies>({ depends_on: [], blocks: [] });
+  taskDetailVerifications = signal<SpVerification[]>([]);
+  taskDetailChangedFiles = signal<ChangedFileSummary[]>([]);
+  taskDetailGitStatus = signal<import('../../core/services/git-api.service').TaskBranchStatus | null>(null);
+  taskDetailLoading = signal(false);
+  taskDetailPushing = signal(false);
+  taskDetailReverting = signal(false);
+  taskDetailResolving = signal(false);
+  goalPlaybooks = signal<SpPlaybook[]>([]);
   editingTask = signal<SpTask | null>(null);
 
   filtered = computed(() => {
@@ -870,7 +851,12 @@ export class GoalsPage {
     effect(() => {
       this.ctx.projectId();
       this.selected.set(null);
+      this.selectedLinkedTask.set(null);
       this.loadGoals();
+      // Load playbooks for task detail panel
+      this.playbooksApi.list().subscribe({
+        next: (pbs) => this.goalPlaybooks.set(pbs),
+      });
     });
   }
 
@@ -938,6 +924,7 @@ export class GoalsPage {
   selectItem(goal: SpGoal): void {
     this.selected.set(goal.id === this.selected()?.id ? null : goal);
     this.statsFilter.set('');
+    this.selectedLinkedTask.set(null);
     if (this.selected()) {
       // Populate inline edit fields
       this.formTitle = goal.title;
@@ -998,10 +985,6 @@ export class GoalsPage {
 
   typeColor(type: GoalType): string {
     return TYPE_COLORS[type] ?? '';
-  }
-
-  taskStateColor(state: string): string {
-    return sharedTaskStateColor(state);
   }
 
   setStatsFilter(state: string): void {
@@ -1207,31 +1190,49 @@ export class GoalsPage {
     });
   }
 
-  // --- Task Accordion ---
+  // --- Task List (shared TaskListComponent) ---
 
-  @HostListener('document:click')
-  closeTaskMenu(): void {
-    this.openTaskMenuId.set(null);
-  }
-
-  toggleTaskExpand(taskId: string): void {
-    const next = new Set(this.expandedTaskIds());
-    if (next.has(taskId)) {
-      next.delete(taskId);
-    } else {
-      next.add(taskId);
+  selectLinkedTask(task: SpTask): void {
+    if (task && this.selectedLinkedTask()?.id === task.id) {
+      this.selectedLinkedTask.set(null);
+      return;
     }
-    this.expandedTaskIds.set(next);
+    this.selectedLinkedTask.set(task);
+    this.taskDetailUpdates.set([]);
+    this.taskDetailComments.set([]);
+    this.taskDetailDependencies.set({ depends_on: [], blocks: [] });
+    this.taskDetailVerifications.set([]);
+    this.taskDetailChangedFiles.set([]);
+    this.taskDetailGitStatus.set(null);
+    if (task) {
+      this.loadLinkedTaskDetail(task.id);
+    }
   }
 
-  toggleTaskStateMenu(event: Event, taskId: string): void {
-    event.stopPropagation();
-    this.openTaskMenuId.set(this.openTaskMenuId() === taskId ? null : taskId);
+  private loadLinkedTaskDetail(taskId: string): void {
+    this.taskDetailLoading.set(true);
+    forkJoin({
+      updates: this.tasksApi.listUpdates(taskId).pipe(catchError(() => of([] as SpTaskUpdate[]))),
+      comments: this.tasksApi.listComments(taskId).pipe(catchError(() => of([] as SpTaskComment[]))),
+      dependencies: this.tasksApi.listDependencies(taskId).pipe(catchError(() => of({ depends_on: [], blocks: [] } as SpTaskDependencies))),
+      changedFiles: this.tasksApi.listChangedFiles(taskId).pipe(catchError(() => of([] as ChangedFileSummary[]))),
+      verifications: this.verificationsApi.list({ task_id: taskId, limit: 20 }).pipe(
+        catchError(() => of({ data: [] as SpVerification[], total: 0, limit: 20, offset: 0, has_more: false })),
+      ),
+    }).subscribe({
+      next: ({ updates, comments, dependencies, changedFiles, verifications }) => {
+        this.taskDetailUpdates.set(updates);
+        this.taskDetailComments.set(comments);
+        this.taskDetailDependencies.set(dependencies);
+        this.taskDetailChangedFiles.set(changedFiles);
+        this.taskDetailVerifications.set(verifications.data);
+        this.taskDetailLoading.set(false);
+      },
+      error: () => this.taskDetailLoading.set(false),
+    });
   }
 
-  onTaskTransition(event: Event, task: SpTask, target: string): void {
-    event.stopPropagation();
-    this.openTaskMenuId.set(null);
+  onLinkedTaskStateChange(task: SpTask, target: string): void {
     this.tasksApi.transition(task.id, target).subscribe({
       next: () => {
         const sel = this.selected();
@@ -1244,10 +1245,85 @@ export class GoalsPage {
     });
   }
 
-  editTask(event: Event, task: SpTask): void {
-    event.stopPropagation();
-    this.editingTask.set(task);
-    this.showTaskForm.set(true);
+  onLinkedTaskPostUpdate(event: { kind: string; content: string }): void {
+    const task = this.selectedLinkedTask();
+    if (!task) return;
+    this.tasksApi.createUpdate(task.id, event).subscribe({
+      next: () => this.loadLinkedTaskDetail(task.id),
+    });
+  }
+
+  onLinkedTaskPostComment(content: string): void {
+    const task = this.selectedLinkedTask();
+    if (!task) return;
+    this.tasksApi.createComment(task.id, { content }).subscribe({
+      next: () => this.loadLinkedTaskDetail(task.id),
+    });
+  }
+
+  onLinkedTaskDelete(): void {
+    const task = this.selectedLinkedTask();
+    if (!task) return;
+    this.tasksApi.delete(task.id).subscribe({
+      next: () => {
+        this.selectedLinkedTask.set(null);
+        const sel = this.selected();
+        if (sel) {
+          this.loadLinkedTasks(sel.id);
+          this.loadAllProgress([sel]);
+          this.loadStatsAndChildren(sel.id);
+        }
+      },
+    });
+  }
+
+  onLinkedTaskInlineUpdate(data: UpdateTaskRequest): void {
+    const task = this.selectedLinkedTask();
+    if (!task) return;
+    this.tasksApi.update(task.id, data).subscribe({
+      next: () => {
+        const sel = this.selected();
+        if (sel) this.loadLinkedTasks(sel.id);
+      },
+    });
+  }
+
+  onLinkedTaskAddDep(depId: string): void {
+    const task = this.selectedLinkedTask();
+    if (!task) return;
+    this.tasksApi.addDependency(task.id, depId).subscribe({
+      next: () => this.loadLinkedTaskDetail(task.id),
+    });
+  }
+
+  onLinkedTaskRemoveDep(depId: string): void {
+    const task = this.selectedLinkedTask();
+    if (!task) return;
+    this.tasksApi.removeDependency(task.id, depId).subscribe({
+      next: () => this.loadLinkedTaskDetail(task.id),
+    });
+  }
+
+  onLinkedTaskPlaybookChange(playbookId: string | null): void {
+    const task = this.selectedLinkedTask();
+    if (!task) return;
+    this.tasksApi.update(task.id, { playbook_id: playbookId, playbook_step: playbookId ? 0 : null }).subscribe({
+      next: () => {
+        const sel = this.selected();
+        if (sel) this.loadLinkedTasks(sel.id);
+      },
+    });
+  }
+
+  onLinkedTaskPlaybookStepChange(step: number): void {
+    const task = this.selectedLinkedTask();
+    if (!task) return;
+    this.tasksApi.update(task.id, { playbook_step: step }).subscribe({
+      next: () => {
+        const sel = this.selected();
+        if (sel) this.loadLinkedTasks(sel.id);
+      },
+    });
   }
 
   onUpdateTaskForGoal(event: { id: string; data: UpdateTaskRequest }): void {
@@ -1260,12 +1336,6 @@ export class GoalsPage {
         }
       },
     });
-  }
-
-  protected readonly getTaskTransitions = taskTransitions;
-
-  taskPriorityInfo(priority: number): { label: string; color: string } {
-    return TASK_PRIORITY_LABELS[priority] ?? { label: String(priority), color: 'text-text-secondary' };
   }
 
   // --- Task Picker ---

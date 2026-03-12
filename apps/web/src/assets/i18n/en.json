@@ -6,7 +6,6 @@
     "decisions": "Decisions",
     "playbooks": "Playbooks",
     "goals": "Goals",
-    "scratchpad": "Scratchpad",
     "observations": "Observations",
     "team": "Team",
     "integrations": "Integrations",
@@ -585,24 +584,6 @@
     "open": "Open",
     "changeState": "Change state",
     "close": "Close"
-  },
-  "scratchpad": {
-    "title": "Scratchpad",
-    "subtitle": "Notes, ideas, and todo lists — synced to the server and cached locally.",
-    "saved": "Saved",
-    "tabNotes": "Notes",
-    "tabTodos": "Todos",
-    "notesPlaceholder": "Write notes, ideas, or anything in Markdown...",
-    "markdownHint": "Markdown supported. Auto-saved.",
-    "todoPlaceholder": "Add a new todo item...",
-    "addTodo": "Add",
-    "todosComplete": "complete",
-    "clearDone": "Clear done",
-    "todosEmpty": "No todos yet. Add something above.",
-    "deleteTodo": "Delete",
-    "promoteToTask": "Promote to task",
-    "viewTask": "View linked task",
-    "newTask": "New Task"
   },
   "tasks": {
     "create": "New Task",
