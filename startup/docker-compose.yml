@@ -73,6 +73,7 @@ services:
       MAX_WORKERS: ${MAX_WORKERS:-3}
       PROJECTS_PATH: /projects
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
     volumes:
       - projects:/projects
     depends_on:
