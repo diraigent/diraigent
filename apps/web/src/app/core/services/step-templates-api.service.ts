@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
+import { EMPTY, Observable } from 'rxjs';
 import { BaseApiService } from './base-crud-api.service';
 
 // ── Interfaces ──
@@ -77,27 +77,37 @@ export interface SpUpdateStepTemplate {
 
 @Injectable({ providedIn: 'root' })
 export class StepTemplatesApiService extends BaseApiService {
+  private get projectId(): string {
+    return localStorage.getItem('diraigent-project') ?? '';
+  }
+
   list(): Observable<SpStepTemplate[]> {
-    return this.http.get<SpStepTemplate[]>(`${this.baseUrl}/step-templates`);
+    if (!this.projectId) return EMPTY as Observable<SpStepTemplate[]>;
+    return this.http.get<SpStepTemplate[]>(`${this.baseUrl}/${this.projectId}/step-templates`);
   }
 
   get(id: string): Observable<SpStepTemplate> {
-    return this.http.get<SpStepTemplate>(`${this.baseUrl}/step-templates/${id}`);
+    if (!this.projectId) return EMPTY as Observable<SpStepTemplate>;
+    return this.http.get<SpStepTemplate>(`${this.baseUrl}/${this.projectId}/step-templates/${id}`);
   }
 
   create(data: SpCreateStepTemplate): Observable<SpStepTemplate> {
-    return this.http.post<SpStepTemplate>(`${this.baseUrl}/step-templates`, data);
+    if (!this.projectId) return EMPTY as Observable<SpStepTemplate>;
+    return this.http.post<SpStepTemplate>(`${this.baseUrl}/${this.projectId}/step-templates`, data);
   }
 
   update(id: string, data: SpUpdateStepTemplate): Observable<SpStepTemplate> {
-    return this.http.put<SpStepTemplate>(`${this.baseUrl}/step-templates/${id}`, data);
+    if (!this.projectId) return EMPTY as Observable<SpStepTemplate>;
+    return this.http.put<SpStepTemplate>(`${this.baseUrl}/${this.projectId}/step-templates/${id}`, data);
   }
 
   delete(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/step-templates/${id}`);
+    if (!this.projectId) return EMPTY as Observable<void>;
+    return this.http.delete<void>(`${this.baseUrl}/${this.projectId}/step-templates/${id}`);
   }
 
   fork(id: string): Observable<SpStepTemplate> {
-    return this.http.post<SpStepTemplate>(`${this.baseUrl}/step-templates/${id}/fork`, {});
+    if (!this.projectId) return EMPTY as Observable<SpStepTemplate>;
+    return this.http.post<SpStepTemplate>(`${this.baseUrl}/${this.projectId}/step-templates/${id}/fork`, {});
   }
 }
