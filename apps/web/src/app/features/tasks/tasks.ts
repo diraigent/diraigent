@@ -622,8 +622,23 @@ export class TasksPage {
   }
 
   onFlagToggle(task: SpTask, flagged: boolean): void {
+    // Optimistic update — toggle immediately in the local task list
+    this.tasks.set(this.tasks().map(t => t.id === task.id ? { ...t, flagged } : t));
+
+    // Also update the selected task if it's the one being flagged
+    const sel = this.selectedTask();
+    if (sel && sel.id === task.id) {
+      this.selectedTask.set({ ...sel, flagged });
+    }
+
+    // Update flaggedIds set
+    const nextFlagged = new Set(this.flaggedIds());
+    if (flagged) { nextFlagged.add(task.id); } else { nextFlagged.delete(task.id); }
+    this.flaggedIds.set(nextFlagged);
+
+    // Persist to server — revert on failure
     this.api.update(task.id, { flagged }).subscribe({
-      next: () => this.reload(),
+      error: () => this.reload(),
     });
   }
 
