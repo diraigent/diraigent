@@ -257,33 +257,43 @@ async fn connect_and_run(
                                 .as_ref()
                                 .and_then(|p| p["default_branch"].as_str())
                                 .unwrap_or("main");
-
-                            // Auto-provision repo if it doesn't exist yet
-                            if !working_dir.join(".git").exists() {
-                                info!(
-                                    project_id = %project_id,
-                                    working_dir = %working_dir.display(),
-                                    "git request: repo not found, provisioning..."
-                                );
-                                if let Some(ref project) = project_data {
-                                    let repo_url = project["repo_url"].as_str().unwrap_or("");
-                                    let slug = project["slug"].as_str().unwrap_or("");
-                                    crate::git_provisioner::provision_repo(
-                                        &working_dir,
-                                        repo_url,
-                                        default_branch,
-                                        slug,
-                                    );
-                                }
-                            }
-
-                            let auto_push = project_data
+                            let git_mode = project_data
                                 .as_ref()
-                                .and_then(|p| p["metadata"]["auto_push"].as_bool())
-                                .unwrap_or(false);
+                                .and_then(|p| p["git_mode"].as_str())
+                                .unwrap_or("standalone");
 
-                            let wm = WorktreeManager::with_branch(&working_dir, default_branch);
-                            wm.set_auto_push(auto_push);
+                            // For git_mode=none, skip all git operations
+                            let wm = if git_mode == "none" {
+                                WorktreeManager::disabled(&working_dir)
+                            } else {
+                                // Auto-provision repo if it doesn't exist yet
+                                if !working_dir.join(".git").exists() {
+                                    info!(
+                                        project_id = %project_id,
+                                        working_dir = %working_dir.display(),
+                                        "git request: repo not found, provisioning..."
+                                    );
+                                    if let Some(ref project) = project_data {
+                                        let repo_url = project["repo_url"].as_str().unwrap_or("");
+                                        let slug = project["slug"].as_str().unwrap_or("");
+                                        crate::git_provisioner::provision_repo(
+                                            &working_dir,
+                                            repo_url,
+                                            default_branch,
+                                            slug,
+                                        );
+                                    }
+                                }
+
+                                let auto_push = project_data
+                                    .as_ref()
+                                    .and_then(|p| p["metadata"]["auto_push"].as_bool())
+                                    .unwrap_or(false);
+
+                                let m = WorktreeManager::with_branch(&working_dir, default_branch);
+                                m.set_auto_push(auto_push);
+                                m
+                            };
                             let response = crate::git_handler::handle_git_request(
                                 &wm,
                                 &query_type,

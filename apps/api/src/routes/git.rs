@@ -349,6 +349,43 @@ pub(crate) async fn git_ws_request(
 ) -> Result<serde_json::Value, AppError> {
     let project = state.db.get_project_by_id(project_id).await?;
 
+    // git_mode=none: return empty/default responses without hitting the orchestra
+    if project.git_mode == "none" {
+        return Ok(match params.query_type {
+            "list_branches" => serde_json::json!({
+                "current_branch": "",
+                "branches": []
+            }),
+            "task_branch_status" => serde_json::json!({
+                "branch": "",
+                "exists": false,
+                "is_pushed": false,
+                "ahead_remote": 0,
+                "behind_remote": 0,
+                "last_commit": null,
+                "last_commit_message": null,
+                "behind_default": 0,
+                "has_conflict": false
+            }),
+            "main_status" => serde_json::json!({
+                "ahead": 0,
+                "behind": 0,
+                "last_commit": null,
+                "last_commit_message": null
+            }),
+            "source_tree" => serde_json::json!({ "entries": [] }),
+            "source_blob" => {
+                serde_json::json!({ "not_found": true, "error": "Git disabled for this project" })
+            }
+            "push_main" | "resolve_and_push_main" | "push" => {
+                return Err(AppError::Validation(
+                    "Git operations are disabled for this project".into(),
+                ));
+            }
+            _ => serde_json::json!({}),
+        });
+    }
+
     // Resolve git_ref to the project's default_branch when not provided.
     // This is primarily used by source_tree/source_blob endpoints so the API
     // is the single source-of-truth for the default ref.
