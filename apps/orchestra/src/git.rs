@@ -7,7 +7,7 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Shared fetch timestamp — one per repo root.
 type FetchTimestamp = Arc<Mutex<Option<Instant>>>;
@@ -1064,7 +1064,7 @@ impl WorktreeManager {
         // If remote ref is missing, try a targeted fetch of just this branch
         // in case the throttled fetch didn't run or failed.
         if !has_remote {
-            info!("main_push_status: {remote_ref} not found, trying targeted fetch of '{db}'");
+            debug!("main_push_status: {remote_ref} not found, trying targeted fetch of '{db}'");
             if self
                 .run_git(&["fetch", "origin", db, "--quiet"], GIT_NET_TIMEOUT_SECS)
                 .is_ok()
@@ -1076,12 +1076,17 @@ impl WorktreeManager {
         let (ahead, behind) = if has_remote {
             self.get_ahead_behind(db, &remote_ref)
         } else {
-            // Remote branch genuinely doesn't exist — we can't determine
-            // push status. Return 0 instead of counting the entire branch
-            // history, which produces misleading counts (e.g. 500 "ahead"
-            // when local and remote are actually in sync after a push).
-            warn!("main_push_status: {remote_ref} does not exist even after fetch — returning 0/0");
-            (0, 0)
+            // Remote branch doesn't exist yet — count local commits as "ahead"
+            // so the UI shows there's unpushed work. `git push` will create it.
+            let ahead = self
+                .git_output(&["rev-list", "--count", db])
+                .ok()
+                .and_then(|s| s.trim().parse::<i32>().ok())
+                .unwrap_or(0);
+            debug!(
+                "main_push_status: {remote_ref} does not exist on remote — {ahead} local commit(s) ahead"
+            );
+            (ahead, 0)
         };
 
         let last_commit = self
