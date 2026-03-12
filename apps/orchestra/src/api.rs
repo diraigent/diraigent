@@ -316,17 +316,10 @@ impl ProjectsApi {
         self.get(&format!("/goals/{goal_id}/progress")).await
     }
 
-    /// Return all goal IDs linked to a specific task.
-    pub async fn get_task_goals(&self, task_id: &str) -> Result<Vec<String>> {
+    /// Return all goals linked to a specific task (full goal objects).
+    pub async fn get_task_goals(&self, task_id: &str) -> Result<Vec<Value>> {
         let val = self.get(&format!("/tasks/{task_id}/goals")).await?;
-        Ok(val
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect()
-            })
-            .unwrap_or_default())
+        Ok(as_array(&val))
     }
 
     // ── Verification operations ────────────────────────────────
