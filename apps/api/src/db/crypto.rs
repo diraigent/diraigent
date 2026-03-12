@@ -498,6 +498,9 @@ impl DiraigentDb for CryptoDb {
     ) -> Result<Vec<Uuid>, AppError> {
         delegate!(self, list_auto_status_goal_ids_for_task, task_id)
     }
+    async fn list_goals_for_task(&self, task_id: Uuid) -> Result<Vec<Goal>, AppError> {
+        delegate!(self, list_goals_for_task, task_id)
+    }
 
     // ── Goal Comments ──
     async fn create_goal_comment(

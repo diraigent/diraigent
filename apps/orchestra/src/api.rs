@@ -312,6 +312,11 @@ impl ProjectsApi {
         self.get(&format!("/goals/{goal_id}/progress")).await
     }
 
+    pub async fn get_task_goals(&self, task_id: &str) -> Result<Vec<Value>> {
+        let val = self.get(&format!("/tasks/{task_id}/goals")).await?;
+        Ok(as_array(&val))
+    }
+
     // ── Verification operations ────────────────────────────────
 
     pub async fn get_verifications(&self, project_id: &str, task_id: &str) -> Result<Vec<Value>> {

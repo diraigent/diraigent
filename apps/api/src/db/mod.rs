@@ -173,6 +173,7 @@ pub trait DiraigentDb: Send + Sync {
         &self,
         task_id: Uuid,
     ) -> Result<Vec<Uuid>, AppError>;
+    async fn list_goals_for_task(&self, task_id: Uuid) -> Result<Vec<Goal>, AppError>;
 
     // ── Goal Comments ──────────────────────────────────────────────────────────
     async fn create_goal_comment(

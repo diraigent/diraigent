@@ -160,9 +160,10 @@ async fn sync(
 async fn git_strategies() -> Json<serde_json::Value> {
     Json(serde_json::json!([
         {
-            "id": "merge_to_default",
-            "name": "Merge to Default Branch",
-            "description": "Branch from default, merge back when done. Standard autonomous workflow.",
+            "id": "merge",
+            "name": "Merge",
+            "description": "Branch from target (default branch unless overridden), merge back when done. Standard autonomous workflow.",
+            "fields": { "git_target_branch": "string (optional, defaults to project default branch)" },
         },
         {
             "id": "branch_only",
@@ -170,10 +171,9 @@ async fn git_strategies() -> Json<serde_json::Value> {
             "description": "Branch from default, push branch to origin. No automatic merge. For PR-based workflows.",
         },
         {
-            "id": "branch_to_target",
-            "name": "Merge to Target Branch",
-            "description": "Branch from and merge to a specified target branch (e.g. develop, staging).",
-            "fields": { "git_target_branch": "string" },
+            "id": "feature_branch",
+            "name": "Feature Branch (Goal-based)",
+            "description": "Tasks branch from and merge into a goal branch. The goal branch merges to default when the goal is completed.",
         },
         {
             "id": "no_git",

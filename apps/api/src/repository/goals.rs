@@ -399,6 +399,20 @@ pub async fn list_goal_comments(
     Ok(comments)
 }
 
+pub async fn list_goals_for_task(pool: &PgPool, task_id: Uuid) -> Result<Vec<Goal>, AppError> {
+    let goals = sqlx::query_as::<_, Goal>(
+        "SELECT g.* FROM diraigent.goal g
+         JOIN diraigent.task_goal tg ON tg.goal_id = g.id
+         WHERE tg.task_id = $1
+         ORDER BY g.priority DESC, g.created_at ASC",
+    )
+    .bind(task_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(goals)
+}
+
 pub async fn list_auto_status_goal_ids_for_task(
     pool: &PgPool,
     task_id: Uuid,

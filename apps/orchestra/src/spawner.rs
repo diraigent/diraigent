@@ -240,15 +240,24 @@ pub async fn spawn_worker(
     let handle = tokio::task::spawn_blocking(move || {
         let rt = tokio::runtime::Handle::current();
         rt.block_on(async {
-            // Use strategy's base_branch (falls back to default_branch for MergeToDefault)
+            // Use strategy's base_branch (falls back to default_branch for Merge)
             let base = git_strategy
                 .base_branch(&default_branch)
                 .unwrap_or(&default_branch);
-            let wm = if git_mode == "none" || git_strategy == crate::git_strategy::GitStrategy::NoGit
-            {
+            let wm = if git_mode == "none" || git_strategy == crate::git_strategy::GitStrategy::NoGit {
                 WorktreeManager::disabled(&working_dir)
             } else if let Some(ref root) = git_root {
-                WorktreeManager::with_branch(root, base)
+                let m = WorktreeManager::with_branch(root, base);
+                // For feature_branch, ensure the goal branch exists before creating worktrees
+                if let crate::git_strategy::GitStrategy::FeatureBranch { goal_branch } =
+                    &git_strategy
+                    && let Err(e) = m.ensure_branch(goal_branch)
+                {
+                    warn!(
+                        "spawn: failed to ensure goal branch {goal_branch} for task {task_id_owned}: {e}"
+                    );
+                }
+                m
             } else {
                 WorktreeManager::disabled(&working_dir)
             };

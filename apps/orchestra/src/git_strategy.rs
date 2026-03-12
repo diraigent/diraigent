@@ -34,17 +34,19 @@ impl GitAction {
 /// Predefined git workflow strategy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitStrategy {
-    /// Branch from `default_branch`, merge back on completion.
+    /// Branch from a target (defaults to `default_branch`), merge back on completion.
     /// Push controlled by project's `auto_push` setting.
-    MergeToDefault,
+    /// When `target_branch` is None, merges to default_branch.
+    Merge { target_branch: Option<String> },
 
     /// Branch from `default_branch`, push task branch only (no merge).
     /// For PR-based workflows where a human reviews before merging.
     BranchOnly,
 
-    /// Branch from a specific target branch (e.g. `develop`, `staging`),
-    /// merge back to that same branch on completion.
-    BranchToTarget { target_branch: String },
+    /// Goal-based feature branches. Tasks branch from and merge into a goal branch
+    /// (e.g. `goal/<slug>`). The goal branch itself is merged to default when the
+    /// goal is completed.
+    FeatureBranch { goal_branch: String },
 
     /// No git operations. Plain directory, no branching/merging/pushing.
     NoGit,
@@ -54,36 +56,70 @@ impl GitStrategy {
     /// Strategy ID as stored in playbook metadata.
     pub fn id(&self) -> &'static str {
         match self {
-            GitStrategy::MergeToDefault => "merge_to_default",
+            GitStrategy::Merge { .. } => "merge",
             GitStrategy::BranchOnly => "branch_only",
-            GitStrategy::BranchToTarget { .. } => "branch_to_target",
+            GitStrategy::FeatureBranch { .. } => "feature_branch",
             GitStrategy::NoGit => "no_git",
         }
     }
 
     /// Resolve strategy from playbook metadata JSON.
     ///
-    /// Falls back to `MergeToDefault` for git-enabled projects,
+    /// Falls back to `Merge` (to default) for git-enabled projects,
     /// `NoGit` when `project_git_mode` is `"none"`.
-    pub fn from_playbook_metadata(metadata: &Value, project_git_mode: &str) -> Self {
+    ///
+    /// `goal_branch` is provided externally (from task→goal lookup) and
+    /// only used when the strategy is `feature_branch`.
+    pub fn from_playbook_metadata(
+        metadata: &Value,
+        project_git_mode: &str,
+        goal_branch: Option<String>,
+    ) -> Self {
         if project_git_mode == "none" {
             return GitStrategy::NoGit;
         }
         match metadata.get("git_strategy").and_then(|v| v.as_str()) {
-            Some("merge_to_default") | None => GitStrategy::MergeToDefault,
+            // Accept both old and new names for backwards compat
+            Some("merge") | Some("merge_to_default") | None => {
+                let target = metadata
+                    .get("git_target_branch")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                GitStrategy::Merge {
+                    target_branch: target,
+                }
+            }
             Some("branch_only") => GitStrategy::BranchOnly,
+            // Accept old name too
             Some("branch_to_target") => {
                 let target = metadata
                     .get("git_target_branch")
                     .and_then(|v| v.as_str())
                     .unwrap_or("develop")
                     .to_string();
-                GitStrategy::BranchToTarget {
-                    target_branch: target,
+                GitStrategy::Merge {
+                    target_branch: Some(target),
+                }
+            }
+            Some("feature_branch") => {
+                if let Some(branch) = goal_branch {
+                    GitStrategy::FeatureBranch {
+                        goal_branch: branch,
+                    }
+                } else {
+                    // No goal linked — fall back to merge-to-default
+                    tracing::warn!(
+                        "feature_branch strategy but no goal linked to task — falling back to merge"
+                    );
+                    GitStrategy::Merge {
+                        target_branch: None,
+                    }
                 }
             }
             Some("no_git") => GitStrategy::NoGit,
-            Some(_unknown) => GitStrategy::MergeToDefault,
+            Some(_unknown) => GitStrategy::Merge {
+                target_branch: None,
+            },
         }
     }
 
@@ -91,8 +127,14 @@ impl GitStrategy {
     /// Returns `None` for `NoGit`.
     pub fn base_branch<'a>(&'a self, default_branch: &'a str) -> Option<&'a str> {
         match self {
-            GitStrategy::MergeToDefault | GitStrategy::BranchOnly => Some(default_branch),
-            GitStrategy::BranchToTarget { target_branch } => Some(target_branch.as_str()),
+            GitStrategy::Merge {
+                target_branch: Some(t),
+            } => Some(t.as_str()),
+            GitStrategy::Merge {
+                target_branch: None,
+            }
+            | GitStrategy::BranchOnly => Some(default_branch),
+            GitStrategy::FeatureBranch { goal_branch } => Some(goal_branch.as_str()),
             GitStrategy::NoGit => None,
         }
     }
@@ -101,7 +143,7 @@ impl GitStrategy {
     pub fn should_merge(&self) -> bool {
         matches!(
             self,
-            GitStrategy::MergeToDefault | GitStrategy::BranchToTarget { .. }
+            GitStrategy::Merge { .. } | GitStrategy::FeatureBranch { .. }
         )
     }
 
@@ -113,8 +155,13 @@ impl GitStrategy {
     /// The branch to merge into (when `should_merge` is true).
     pub fn merge_target<'a>(&'a self, default_branch: &'a str) -> Option<&'a str> {
         match self {
-            GitStrategy::MergeToDefault => Some(default_branch),
-            GitStrategy::BranchToTarget { target_branch } => Some(target_branch.as_str()),
+            GitStrategy::Merge {
+                target_branch: Some(t),
+            } => Some(t.as_str()),
+            GitStrategy::Merge {
+                target_branch: None,
+            } => Some(default_branch),
+            GitStrategy::FeatureBranch { goal_branch } => Some(goal_branch.as_str()),
             _ => None,
         }
     }
@@ -123,9 +170,10 @@ impl GitStrategy {
     pub fn catalog() -> Vec<Value> {
         vec![
             serde_json::json!({
-                "id": "merge_to_default",
-                "name": "Merge to Default Branch",
-                "description": "Branch from default, merge back when done. Standard autonomous workflow.",
+                "id": "merge",
+                "name": "Merge",
+                "description": "Branch from target (default branch unless overridden), merge back when done. Standard autonomous workflow.",
+                "fields": { "git_target_branch": "string (optional, defaults to project default branch)" },
             }),
             serde_json::json!({
                 "id": "branch_only",
@@ -133,10 +181,9 @@ impl GitStrategy {
                 "description": "Branch from default, push branch to origin. No automatic merge. For PR-based workflows.",
             }),
             serde_json::json!({
-                "id": "branch_to_target",
-                "name": "Merge to Target Branch",
-                "description": "Branch from and merge to a specified target branch (e.g. develop, staging).",
-                "fields": { "git_target_branch": "string (required)" },
+                "id": "feature_branch",
+                "name": "Feature Branch (Goal-based)",
+                "description": "Tasks branch from and merge into a goal branch. The goal branch merges to default when the goal is completed.",
             }),
             serde_json::json!({
                 "id": "no_git",
@@ -149,8 +196,8 @@ impl GitStrategy {
 
 /// Resolve the git strategy for a task by fetching its playbook metadata.
 ///
-/// Returns `MergeToDefault` as fallback when the task has no playbook or
-/// the playbook fetch fails.
+/// Returns `Merge { target_branch: None }` as fallback when the task has no
+/// playbook or the playbook fetch fails.
 pub async fn resolve_strategy(
     api: &crate::api::ProjectsApi,
     task_data: Option<&Value>,
@@ -160,24 +207,81 @@ pub async fn resolve_strategy(
         return GitStrategy::NoGit;
     }
 
+    let default_merge = GitStrategy::Merge {
+        target_branch: None,
+    };
+
     let Some(task) = task_data else {
-        return GitStrategy::MergeToDefault;
+        return default_merge;
     };
 
     let playbook_id = task["playbook_id"].as_str().unwrap_or("");
     if playbook_id.is_empty() {
-        return GitStrategy::MergeToDefault;
+        return default_merge;
     }
 
     match api.get_playbook(playbook_id).await {
         Ok(playbook) => {
             let metadata = &playbook["metadata"];
-            GitStrategy::from_playbook_metadata(metadata, project_git_mode)
+
+            // Only resolve goal branch if strategy is feature_branch
+            let goal_branch = if metadata.get("git_strategy").and_then(|v| v.as_str())
+                == Some("feature_branch")
+            {
+                resolve_goal_branch(api, task).await
+            } else {
+                None
+            };
+
+            GitStrategy::from_playbook_metadata(metadata, project_git_mode, goal_branch)
         }
         Err(e) => {
             tracing::warn!("failed to fetch playbook {playbook_id} for git strategy: {e}");
-            GitStrategy::MergeToDefault
+            default_merge
         }
+    }
+}
+
+/// Derive the goal branch name for a task by looking up its linked goals.
+///
+/// Returns `Some("goal/<slug>")` if the task is linked to a goal,
+/// `None` otherwise.
+async fn resolve_goal_branch(api: &crate::api::ProjectsApi, task: &Value) -> Option<String> {
+    let task_id = task["id"].as_str()?;
+    match api.get_task_goals(task_id).await {
+        Ok(goals) if !goals.is_empty() => {
+            // Use the first goal's title, slugified
+            let title = goals[0]["title"].as_str().unwrap_or("unnamed");
+            Some(format!("goal/{}", slugify(title)))
+        }
+        Ok(_) => {
+            tracing::warn!("feature_branch strategy but task {task_id} has no linked goals");
+            None
+        }
+        Err(e) => {
+            tracing::warn!("failed to fetch goals for task {task_id}: {e}");
+            None
+        }
+    }
+}
+
+/// Simple slugification: lowercase, replace non-alphanumeric with dashes,
+/// collapse multiple dashes, trim dashes, truncate to 50 chars.
+fn slugify(s: &str) -> String {
+    let slug: String = s
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect();
+    let slug = slug
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    if slug.len() > 50 {
+        slug[..50].trim_end_matches('-').to_string()
+    } else {
+        slug
     }
 }
 
@@ -189,16 +293,18 @@ mod tests {
     fn default_when_no_metadata() {
         let meta = serde_json::json!({});
         assert_eq!(
-            GitStrategy::from_playbook_metadata(&meta, "standalone"),
-            GitStrategy::MergeToDefault
+            GitStrategy::from_playbook_metadata(&meta, "standalone", None),
+            GitStrategy::Merge {
+                target_branch: None
+            }
         );
     }
 
     #[test]
     fn no_git_when_project_mode_none() {
-        let meta = serde_json::json!({"git_strategy": "merge_to_default"});
+        let meta = serde_json::json!({"git_strategy": "merge"});
         assert_eq!(
-            GitStrategy::from_playbook_metadata(&meta, "none"),
+            GitStrategy::from_playbook_metadata(&meta, "none", None),
             GitStrategy::NoGit
         );
     }
@@ -207,21 +313,57 @@ mod tests {
     fn branch_only_from_metadata() {
         let meta = serde_json::json!({"git_strategy": "branch_only"});
         assert_eq!(
-            GitStrategy::from_playbook_metadata(&meta, "standalone"),
+            GitStrategy::from_playbook_metadata(&meta, "standalone", None),
             GitStrategy::BranchOnly
         );
     }
 
     #[test]
-    fn branch_to_target_with_explicit_branch() {
+    fn merge_with_target_branch() {
+        let meta = serde_json::json!({
+            "git_strategy": "merge",
+            "git_target_branch": "staging"
+        });
+        assert_eq!(
+            GitStrategy::from_playbook_metadata(&meta, "standalone", None),
+            GitStrategy::Merge {
+                target_branch: Some("staging".to_string())
+            }
+        );
+    }
+
+    #[test]
+    fn merge_without_target_branch() {
+        let meta = serde_json::json!({"git_strategy": "merge"});
+        assert_eq!(
+            GitStrategy::from_playbook_metadata(&meta, "standalone", None),
+            GitStrategy::Merge {
+                target_branch: None
+            }
+        );
+    }
+
+    #[test]
+    fn old_merge_to_default_compat() {
+        let meta = serde_json::json!({"git_strategy": "merge_to_default"});
+        assert_eq!(
+            GitStrategy::from_playbook_metadata(&meta, "standalone", None),
+            GitStrategy::Merge {
+                target_branch: None
+            }
+        );
+    }
+
+    #[test]
+    fn old_branch_to_target_compat() {
         let meta = serde_json::json!({
             "git_strategy": "branch_to_target",
             "git_target_branch": "staging"
         });
         assert_eq!(
-            GitStrategy::from_playbook_metadata(&meta, "standalone"),
-            GitStrategy::BranchToTarget {
-                target_branch: "staging".to_string()
+            GitStrategy::from_playbook_metadata(&meta, "standalone", None),
+            GitStrategy::Merge {
+                target_branch: Some("staging".to_string())
             }
         );
     }
@@ -230,27 +372,68 @@ mod tests {
     fn branch_to_target_defaults_to_develop() {
         let meta = serde_json::json!({"git_strategy": "branch_to_target"});
         assert_eq!(
-            GitStrategy::from_playbook_metadata(&meta, "standalone"),
-            GitStrategy::BranchToTarget {
-                target_branch: "develop".to_string()
+            GitStrategy::from_playbook_metadata(&meta, "standalone", None),
+            GitStrategy::Merge {
+                target_branch: Some("develop".to_string())
             }
         );
     }
 
     #[test]
-    fn unknown_strategy_falls_back_to_default() {
-        let meta = serde_json::json!({"git_strategy": "yolo_deploy"});
+    fn feature_branch_with_goal() {
+        let meta = serde_json::json!({"git_strategy": "feature_branch"});
         assert_eq!(
-            GitStrategy::from_playbook_metadata(&meta, "standalone"),
-            GitStrategy::MergeToDefault
+            GitStrategy::from_playbook_metadata(
+                &meta,
+                "standalone",
+                Some("goal/user-auth".to_string())
+            ),
+            GitStrategy::FeatureBranch {
+                goal_branch: "goal/user-auth".to_string()
+            }
         );
     }
 
     #[test]
-    fn base_branch_merge_to_default() {
-        let s = GitStrategy::MergeToDefault;
+    fn feature_branch_without_goal_falls_back_to_merge() {
+        let meta = serde_json::json!({"git_strategy": "feature_branch"});
+        assert_eq!(
+            GitStrategy::from_playbook_metadata(&meta, "standalone", None),
+            GitStrategy::Merge {
+                target_branch: None
+            }
+        );
+    }
+
+    #[test]
+    fn unknown_strategy_falls_back_to_merge() {
+        let meta = serde_json::json!({"git_strategy": "yolo_deploy"});
+        assert_eq!(
+            GitStrategy::from_playbook_metadata(&meta, "standalone", None),
+            GitStrategy::Merge {
+                target_branch: None
+            }
+        );
+    }
+
+    #[test]
+    fn base_branch_merge_default() {
+        let s = GitStrategy::Merge {
+            target_branch: None,
+        };
         assert_eq!(s.base_branch("main"), Some("main"));
         assert_eq!(s.merge_target("main"), Some("main"));
+        assert!(s.should_merge());
+        assert!(!s.should_push_branch());
+    }
+
+    #[test]
+    fn base_branch_merge_with_target() {
+        let s = GitStrategy::Merge {
+            target_branch: Some("develop".to_string()),
+        };
+        assert_eq!(s.base_branch("main"), Some("develop"));
+        assert_eq!(s.merge_target("main"), Some("develop"));
         assert!(s.should_merge());
         assert!(!s.should_push_branch());
     }
@@ -265,12 +448,12 @@ mod tests {
     }
 
     #[test]
-    fn base_branch_to_target() {
-        let s = GitStrategy::BranchToTarget {
-            target_branch: "develop".to_string(),
+    fn base_branch_feature_branch() {
+        let s = GitStrategy::FeatureBranch {
+            goal_branch: "goal/user-auth".to_string(),
         };
-        assert_eq!(s.base_branch("main"), Some("develop"));
-        assert_eq!(s.merge_target("main"), Some("develop"));
+        assert_eq!(s.base_branch("main"), Some("goal/user-auth"));
+        assert_eq!(s.merge_target("main"), Some("goal/user-auth"));
         assert!(s.should_merge());
         assert!(!s.should_push_branch());
     }
@@ -311,5 +494,21 @@ mod tests {
     fn git_action_from_step_json_unknown_defaults_to_none() {
         let step = serde_json::json!({"name": "implement", "git_action": "yolo"});
         assert_eq!(GitAction::from_step_json(&step), GitAction::None);
+    }
+
+    #[test]
+    fn slugify_basic() {
+        assert_eq!(slugify("User Auth System"), "user-auth-system");
+    }
+
+    #[test]
+    fn slugify_special_chars() {
+        assert_eq!(slugify("Add OAuth 2.0 support!"), "add-oauth-2-0-support");
+    }
+
+    #[test]
+    fn slugify_long_title() {
+        let long = "a".repeat(60);
+        assert!(slugify(&long).len() <= 50);
     }
 }

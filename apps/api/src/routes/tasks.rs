@@ -60,6 +60,7 @@ pub fn routes() -> Router<AppState> {
             get(list_task_comments).post(create_task_comment),
         )
         .route("/tasks/{task_id}/cost", post(record_task_cost))
+        .route("/tasks/{task_id}/goals", get(list_task_goals))
 }
 
 async fn create_task(
@@ -866,6 +867,19 @@ async fn record_task_cost(
         .await?;
 
     Ok(Json(updated))
+}
+
+async fn list_task_goals(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
+    Path(task_id): Path<Uuid>,
+) -> Result<Json<Vec<Goal>>, AppError> {
+    let task = state.db.get_task_by_id(task_id).await?;
+    ensure_member(state.db.as_ref(), agent_id, user_id, task).await?;
+
+    let goals = state.db.list_goals_for_task(task_id).await?;
+    Ok(Json(goals))
 }
 
 /// When a task transitions to `done` or `cancelled`, check if there is a linked

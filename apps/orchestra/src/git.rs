@@ -107,6 +107,37 @@ impl WorktreeManager {
         self.git_root.as_deref()
     }
 
+    /// Ensure a branch exists locally. If it doesn't, create it from the default branch.
+    /// Used by the feature_branch strategy to ensure the goal branch exists before
+    /// creating task worktrees.
+    pub fn ensure_branch(&self, branch: &str) -> Result<()> {
+        if self.git_root.is_none() {
+            return Ok(());
+        }
+
+        // Check if branch already exists
+        if self.git(&["rev-parse", "--verify", branch]).is_ok() {
+            return Ok(());
+        }
+
+        // Check if it exists on remote
+        self.fetch_if_stale();
+        let remote_ref = format!("origin/{branch}");
+        if self.git(&["rev-parse", "--verify", &remote_ref]).is_ok() {
+            info!("creating local branch {branch} from {remote_ref}");
+            self.git(&["branch", branch, &remote_ref])
+                .with_context(|| format!("create branch {branch} from {remote_ref}"))?;
+        } else {
+            info!(
+                "creating branch {branch} from {} (not on remote)",
+                self.default_branch
+            );
+            self.git(&["branch", branch, &self.default_branch])
+                .with_context(|| format!("create branch {branch} from {}", self.default_branch))?;
+        }
+        Ok(())
+    }
+
     fn worktree_path(&self, task_id: &str) -> PathBuf {
         self.worktree_dir
             .join(TaskId::new(task_id).worktree_dir_name())
@@ -241,8 +272,8 @@ impl WorktreeManager {
 
     /// Merge a task branch into a specific target branch.
     ///
-    /// Used by git strategies: `merge_to_default` targets `default_branch`,
-    /// `branch_to_target` targets an arbitrary branch (e.g. `develop`).
+    /// Used by git strategies: `merge` targets the default or configured branch,
+    /// `feature_branch` targets the goal branch.
     pub fn merge_to_branch(&self, task_id: &str, target_branch: &str) -> Result<()> {
         if self.git_root.is_none() {
             info!("git_mode=none, skipping merge for task {}", task_id);
