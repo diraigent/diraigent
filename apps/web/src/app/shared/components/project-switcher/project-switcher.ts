@@ -78,6 +78,9 @@ export class ProjectSwitcherComponent implements OnInit {
           if (!match) {
             this.ctx.select(ps[0].id);
           }
+        } else {
+          // No projects — open create modal for onboarding
+          this.createProjectService.open([]);
         }
       },
       error: () => {
