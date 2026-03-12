@@ -1241,8 +1241,16 @@ export class GoalsPage {
   }
 
   onLinkedTaskFlagToggle(task: SpTask, flagged: boolean): void {
+    // Optimistic update — toggle immediately in the local linked tasks list
+    this.linkedTasks.set(this.linkedTasks().map(t => t.id === task.id ? { ...t, flagged } : t));
+    const selLinked = this.selectedLinkedTask();
+    if (selLinked && selLinked.id === task.id) {
+      this.selectedLinkedTask.set({ ...selLinked, flagged });
+    }
+
+    // Persist to server — reload on failure
     this.tasksApi.update(task.id, { flagged }).subscribe({
-      next: () => {
+      error: () => {
         const sel = this.selected();
         if (sel) this.loadLinkedTasks(sel.id);
       },
