@@ -201,11 +201,22 @@ pub async fn delete_observation(pool: &PgPool, id: Uuid) -> Result<(), AppError>
     super::delete_by_id(pool, Table::Observation, id, "Observation not found").await
 }
 
+/// Default number of days to retain observations when no project-level setting is configured.
+const DEFAULT_OBSERVATION_RETENTION_DAYS: i32 = 30;
+
 pub async fn cleanup_observations(
     pool: &PgPool,
     project_id: Uuid,
 ) -> Result<CleanupObservationsResult, AppError> {
-    let _ = get_project_by_id(pool, project_id).await?;
+    let project = get_project_by_id(pool, project_id).await?;
+
+    // Read retention days from project metadata, falling back to the default.
+    let retention_days = project
+        .metadata
+        .get("observation_retention_days")
+        .and_then(|v| v.as_i64())
+        .map(|d| d as i32)
+        .unwrap_or(DEFAULT_OBSERVATION_RETENTION_DAYS);
 
     let mut tx = pool
         .begin()
@@ -260,6 +271,17 @@ pub async fn cleanup_observations(
     .execute(&mut *tx)
     .await?;
 
+    // 6. Delete observations older than the retention period
+    let r6 = sqlx::query(
+        "DELETE FROM diraigent.observation \
+         WHERE project_id = $1 \
+         AND created_at < NOW() - make_interval(days => $2)",
+    )
+    .bind(project_id)
+    .bind(retention_days)
+    .execute(&mut *tx)
+    .await?;
+
     tx.commit()
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -270,12 +292,38 @@ pub async fn cleanup_observations(
         deleted_acted_on: r3.rows_affected() as i64,
         deleted_resolved: r4.rows_affected() as i64,
         deleted_duplicates: r5.rows_affected() as i64,
+        deleted_old: r6.rows_affected() as i64,
         total_deleted: (r1.rows_affected()
             + r2.rows_affected()
             + r3.rows_affected()
             + r4.rows_affected()
-            + r5.rows_affected()) as i64,
+            + r5.rows_affected()
+            + r6.rows_affected()) as i64,
     })
+}
+
+/// Delete old observations across all projects in a single efficient query.
+///
+/// Each project's `metadata.observation_retention_days` controls how many days
+/// to keep; the global default is used when the key is absent.
+///
+/// Returns the total number of deleted rows.
+pub async fn delete_old_observations_all_projects(
+    pool: &PgPool,
+    default_retention_days: i32,
+) -> Result<u64, AppError> {
+    let result = sqlx::query(
+        "DELETE FROM diraigent.observation o \
+         USING diraigent.project p \
+         WHERE o.project_id = p.id \
+         AND o.created_at < NOW() - make_interval(days => \
+             COALESCE((p.metadata->>'observation_retention_days')::integer, $1))",
+    )
+    .bind(default_retention_days)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected())
 }
 
 pub async fn count_observations(

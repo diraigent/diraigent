@@ -514,6 +514,8 @@
     "uploadLogsHint": "When enabled, the orchestra uploads task execution logs (including token usage and cost) to the API after each worker completes.",
     "doneRetentionDays": "Done Task Retention (days)",
     "doneRetentionDaysHint": "Number of days to keep completed and cancelled tasks visible before hiding them. Set to 0 to hide immediately.",
+    "observationRetentionDays": "Observation Retention (days)",
+    "observationRetentionDaysHint": "Observations older than this many days are automatically deleted. Default: 30 days.",
     "notConfigured": "Not configured",
     "claudeMdNew": "Will be created",
     "claudeMdDescription": "Project instructions for AI agents. This file is read by Claude Code, Cursor, and other AI tools.",

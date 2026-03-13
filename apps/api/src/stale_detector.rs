@@ -9,6 +9,12 @@ use std::time::Duration;
 const DEFAULT_TIMEOUT_SECONDS: i64 = 600;
 const SCAN_INTERVAL_SECONDS: u64 = 60;
 
+/// How often to run the observation retention cleanup (every hour).
+const OBSERVATION_CLEANUP_INTERVAL_SECONDS: u64 = 3600;
+
+/// Default number of days to retain observations when not configured per-project.
+const DEFAULT_OBSERVATION_RETENTION_DAYS: i32 = 30;
+
 /// Default inactivity threshold before an idle/working agent is marked offline.
 /// Heartbeat interval is 60s, so 3× gives two missed heartbeats of slack.
 /// Override via `AGENT_OFFLINE_THRESHOLD_SECONDS` environment variable.
@@ -173,6 +179,45 @@ async fn scan_inactive_agents(db: &dyn DiraigentDb, threshold_seconds: i64) -> a
     }
 
     Ok(())
+}
+
+/// Spawns a background task that periodically deletes observations older than
+/// each project's configured `observation_retention_days` (default: 30 days).
+pub fn spawn_observation_cleaner(db: Arc<dyn DiraigentDb>) {
+    tokio::spawn(async move {
+        // Stagger the first run to avoid thundering herd at startup.
+        tokio::time::sleep(Duration::from_secs(30)).await;
+
+        let retention_days = env::var("OBSERVATION_RETENTION_DAYS")
+            .ok()
+            .and_then(|v| v.parse::<i32>().ok())
+            .filter(|&d| d > 0)
+            .unwrap_or(DEFAULT_OBSERVATION_RETENTION_DAYS);
+
+        tracing::info!(
+            interval_s = OBSERVATION_CLEANUP_INTERVAL_SECONDS,
+            default_retention_days = retention_days,
+            "Observation retention cleaner started",
+        );
+
+        let mut interval =
+            tokio::time::interval(Duration::from_secs(OBSERVATION_CLEANUP_INTERVAL_SECONDS));
+        loop {
+            interval.tick().await;
+            match db
+                .delete_old_observations_all_projects(retention_days)
+                .await
+            {
+                Ok(0) => {}
+                Ok(deleted) => {
+                    tracing::info!(deleted, retention_days, "Deleted old observations");
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "Observation retention cleanup failed");
+                }
+            }
+        }
+    });
 }
 
 async fn scan_stale_agents(db: &dyn DiraigentDb, threshold_days: i64) -> anyhow::Result<()> {

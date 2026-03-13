@@ -299,6 +299,10 @@ pub trait DiraigentDb: Send + Sync {
         &self,
         project_id: Uuid,
     ) -> Result<CleanupObservationsResult, AppError>;
+    async fn delete_old_observations_all_projects(
+        &self,
+        default_retention_days: i32,
+    ) -> Result<u64, AppError>;
 
     // ── Playbooks ─────────────────────────────────────────────────────────────
     async fn create_playbook(

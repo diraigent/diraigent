@@ -1008,6 +1008,7 @@ pub struct CleanupObservationsResult {
     pub deleted_acted_on: i64,
     pub deleted_resolved: i64,
     pub deleted_duplicates: i64,
+    pub deleted_old: i64,
     pub total_deleted: i64,
 }
 

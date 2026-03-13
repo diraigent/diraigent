@@ -233,6 +233,15 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations';
                   <span class="block text-xs text-text-secondary mt-1">{{ t('settings.packageHint') }}</span>
                 </div>
 
+                <!-- Observation Retention -->
+                <label class="block">
+                  <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('settings.observationRetentionDays') }}</span>
+                  <input type="number" [(ngModel)]="formObservationRetentionDays" min="1" max="365"
+                    class="w-full bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                           focus:outline-none focus:ring-1 focus:ring-accent" />
+                  <span class="block text-xs text-text-secondary mt-1">{{ t('settings.observationRetentionDaysHint') }}</span>
+                </label>
+
                 <!-- Save button -->
                 <div class="flex items-center gap-3 pt-2">
                   <button (click)="saveProject()"
@@ -876,6 +885,7 @@ export class SettingsPage implements OnInit, OnDestroy {
   formAutoPush = true;
   formUploadLogs = false;
   formDoneRetentionDays = 1;
+  formObservationRetentionDays = 30;
   savingProject = signal(false);
   projectSaved = signal(false);
 
@@ -988,6 +998,7 @@ export class SettingsPage implements OnInit, OnDestroy {
         this.formAutoPush = (p.metadata?.['auto_push'] as boolean) ?? false;
         this.formUploadLogs = (p.metadata?.['upload_logs'] as boolean) ?? false;
         this.formDoneRetentionDays = (p.metadata?.['done_retention_days'] as number) ?? 1;
+        this.formObservationRetentionDays = (p.metadata?.['observation_retention_days'] as number) ?? 30;
         this.loading.set(false);
       },
       error: () => this.loading.set(false),
@@ -1042,7 +1053,7 @@ export class SettingsPage implements OnInit, OnDestroy {
       git_mode: this.formGitMode,
       git_root: this.formGitRoot || null,
       project_root: this.formProjectRoot || null,
-      metadata: { ...(this.project()?.metadata || {}), auto_push: this.formAutoPush, upload_logs: this.formUploadLogs, done_retention_days: this.formDoneRetentionDays },
+      metadata: { ...(this.project()?.metadata || {}), auto_push: this.formAutoPush, upload_logs: this.formUploadLogs, done_retention_days: this.formDoneRetentionDays, observation_retention_days: this.formObservationRetentionDays },
     };
 
     this.api.updateProject(pid, update).subscribe({

@@ -837,6 +837,16 @@ impl DiraigentDb for CryptoDb {
     ) -> Result<CleanupObservationsResult, AppError> {
         delegate!(self, cleanup_observations, project_id)
     }
+    async fn delete_old_observations_all_projects(
+        &self,
+        default_retention_days: i32,
+    ) -> Result<u64, AppError> {
+        delegate!(
+            self,
+            delete_old_observations_all_projects,
+            default_retention_days
+        )
+    }
 
     // ── Playbooks (no encrypted fields) ──
     async fn create_playbook(
