@@ -514,6 +514,13 @@ impl DiraigentDb for CryptoDb {
     ) -> Result<Vec<Uuid>, AppError> {
         delegate!(self, list_auto_status_goal_ids_for_task, task_id)
     }
+    async fn reorder_goals(
+        &self,
+        project_id: Uuid,
+        goal_ids: &[Uuid],
+    ) -> Result<Vec<Goal>, AppError> {
+        delegate!(self, reorder_goals, project_id, goal_ids)
+    }
     async fn get_goal_ids_for_task(&self, task_id: Uuid) -> Result<Vec<Uuid>, AppError> {
         delegate!(self, get_goal_ids_for_task, task_id)
     }

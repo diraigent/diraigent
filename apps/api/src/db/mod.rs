@@ -177,6 +177,11 @@ pub trait DiraigentDb: Send + Sync {
         &self,
         task_id: Uuid,
     ) -> Result<Vec<Uuid>, AppError>;
+    async fn reorder_goals(
+        &self,
+        project_id: Uuid,
+        goal_ids: &[Uuid],
+    ) -> Result<Vec<Goal>, AppError>;
     /// Return all goal IDs linked to a task (no auto_status filter).
     async fn get_goal_ids_for_task(&self, task_id: Uuid) -> Result<Vec<Uuid>, AppError>;
     async fn list_goals_for_task(&self, task_id: Uuid) -> Result<Vec<Goal>, AppError>;
