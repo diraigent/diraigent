@@ -139,4 +139,8 @@ export class GoalsApiService extends BaseCrudApiService<SpGoal, SpGoalCreate, Sp
   createComment(goalId: string, content: string): Observable<SpGoalComment> {
     return this.http.post<SpGoalComment>(`${this.baseUrl}/goals/${goalId}/comments`, { content });
   }
+
+  reorder(goalIds: string[]): Observable<SpGoal[]> {
+    return this.http.post<SpGoal[]>(`${this.baseUrl}/goals/reorder`, { goal_ids: goalIds });
+  }
 }
