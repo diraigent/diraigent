@@ -56,6 +56,8 @@ pub struct Task {
     #[serde(default)]
     pub updated_at: Option<String>,
     pub completed_at: Option<String>,
+    #[serde(default)]
+    pub flagged: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -87,6 +89,8 @@ pub struct Agent {
     #[serde(default)]
     pub status: String,
     pub last_seen_at: Option<String>,
+    #[serde(default)]
+    pub owner_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -114,6 +118,8 @@ pub struct Decision {
     pub alternatives: Option<Vec<DecisionAlternative>>,
     #[serde(default)]
     pub consequences: Option<String>,
+    #[serde(default)]
+    pub superseded_by: Option<Uuid>,
     #[serde(default)]
     pub tags: Vec<String>,
 }
@@ -223,6 +229,10 @@ pub struct Playbook {
     pub tags: Vec<String>,
     #[serde(default)]
     pub metadata: serde_json::Value,
+    #[serde(default)]
+    pub version: Option<i32>,
+    #[serde(default)]
+    pub parent_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -491,6 +501,332 @@ pub struct BlobResponse {
     pub encoding: String,
     #[serde(default)]
     pub size: usize,
+}
+
+// ── Report types ─────────────────────────────────────────────
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Report {
+    pub id: Uuid,
+    #[serde(default)]
+    pub project_id: Option<Uuid>,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub prompt: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub result: Option<String>,
+    #[serde(default)]
+    pub task_id: Option<Uuid>,
+    #[serde(default)]
+    pub created_by: Option<Uuid>,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+}
+
+// ── Event types ──────────────────────────────────────────────
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Event {
+    pub id: Uuid,
+    #[serde(default)]
+    pub project_id: Option<Uuid>,
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub severity: String,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
+    #[serde(default)]
+    pub related_task_id: Option<Uuid>,
+    #[serde(default)]
+    pub agent_id: Option<Uuid>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+}
+
+// ── Webhook types ────────────────────────────────────────────
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Webhook {
+    pub id: Uuid,
+    #[serde(default)]
+    pub project_id: Option<Uuid>,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub secret: Option<String>,
+    #[serde(default)]
+    pub events: Vec<String>,
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WebhookDelivery {
+    pub id: Uuid,
+    #[serde(default)]
+    pub webhook_id: Option<Uuid>,
+    #[serde(default)]
+    pub event_type: String,
+    #[serde(default)]
+    pub payload: serde_json::Value,
+    #[serde(default)]
+    pub response_status: Option<i32>,
+    #[serde(default)]
+    pub response_body: Option<String>,
+    #[serde(default)]
+    pub delivered_at: Option<String>,
+    #[serde(default)]
+    pub success: bool,
+    #[serde(default)]
+    pub attempt_number: i32,
+}
+
+// ── Step Template types ──────────────────────────────────────
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct StepTemplate {
+    pub id: Uuid,
+    #[serde(default)]
+    pub tenant_id: Option<Uuid>,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub budget: Option<f64>,
+    #[serde(default)]
+    pub allowed_tools: Option<String>,
+    #[serde(default)]
+    pub context_level: Option<String>,
+    #[serde(default)]
+    pub on_complete: Option<String>,
+    #[serde(default)]
+    pub retriable: Option<bool>,
+    #[serde(default)]
+    pub max_cycles: Option<i32>,
+    #[serde(default)]
+    pub timeout_minutes: Option<i32>,
+    #[serde(default)]
+    pub mcp_servers: Option<serde_json::Value>,
+    #[serde(default)]
+    pub agents: Option<serde_json::Value>,
+    #[serde(default)]
+    pub agent: Option<String>,
+    #[serde(default)]
+    pub settings: Option<serde_json::Value>,
+    #[serde(default)]
+    pub env: Option<serde_json::Value>,
+    #[serde(default)]
+    pub vars: Option<serde_json::Value>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
+    #[serde(default)]
+    pub created_by: Option<Uuid>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+}
+
+// ── Task Log types ───────────────────────────────────────────
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TaskLog {
+    pub id: Uuid,
+    #[serde(default)]
+    pub task_id: Option<Uuid>,
+    #[serde(default)]
+    pub project_id: Option<Uuid>,
+    #[serde(default)]
+    pub agent_id: Option<Uuid>,
+    #[serde(default)]
+    pub step_name: String,
+    #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
+    #[serde(default)]
+    pub created_at: Option<String>,
+}
+
+// ── Scratchpad types ─────────────────────────────────────────
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Scratchpad {
+    #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub todos: Option<serde_json::Value>,
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
+}
+
+// ── Metrics types ────────────────────────────────────────────
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ProjectMetrics {
+    #[serde(default)]
+    pub project_id: Option<Uuid>,
+    #[serde(default)]
+    pub range_days: i32,
+    #[serde(default)]
+    pub task_summary: Option<TaskSummary>,
+    #[serde(default)]
+    pub tasks_per_day: Vec<DayCount>,
+    #[serde(default)]
+    pub avg_time_in_state_hours: Vec<StateAvg>,
+    #[serde(default)]
+    pub agent_breakdown: Vec<AgentMetrics>,
+    #[serde(default)]
+    pub playbook_completion: Vec<PlaybookMetrics>,
+    #[serde(default)]
+    pub cost_summary: Option<CostSummary>,
+    #[serde(default)]
+    pub task_costs: Vec<TaskCostRow>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TaskSummary {
+    #[serde(default)]
+    pub total: i64,
+    #[serde(default)]
+    pub done: i64,
+    #[serde(default)]
+    pub cancelled: i64,
+    #[serde(default)]
+    pub in_progress: i64,
+    #[serde(default)]
+    pub ready: i64,
+    #[serde(default)]
+    pub backlog: i64,
+    #[serde(default)]
+    pub human_review: i64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CostSummary {
+    #[serde(default)]
+    pub total_input_tokens: i64,
+    #[serde(default)]
+    pub total_output_tokens: i64,
+    #[serde(default)]
+    pub total_cost_usd: f64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct DayCount {
+    #[serde(default)]
+    pub day: String,
+    #[serde(default)]
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct StateAvg {
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub avg_hours: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AgentMetrics {
+    #[serde(default)]
+    pub agent_id: Option<Uuid>,
+    #[serde(default)]
+    pub agent_name: String,
+    #[serde(default)]
+    pub tasks_completed: i64,
+    #[serde(default)]
+    pub tasks_in_progress: i64,
+    #[serde(default)]
+    pub avg_completion_hours: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PlaybookMetrics {
+    #[serde(default)]
+    pub playbook_id: Option<Uuid>,
+    #[serde(default)]
+    pub playbook_title: String,
+    #[serde(default)]
+    pub total_tasks: i64,
+    #[serde(default)]
+    pub completed_tasks: i64,
+    #[serde(default)]
+    pub completion_rate: f64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TaskCostRow {
+    #[serde(default)]
+    pub task_id: Option<Uuid>,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub cost_usd: f64,
+    #[serde(default)]
+    pub input_tokens: i64,
+    #[serde(default)]
+    pub output_tokens: i64,
+}
+
+// ── Goal Comment types ───────────────────────────────────────
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GoalComment {
+    pub id: Uuid,
+    #[serde(default)]
+    pub goal_id: Option<Uuid>,
+    #[serde(default)]
+    pub agent_id: Option<Uuid>,
+    #[serde(default)]
+    pub user_id: Option<Uuid>,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+}
+
+// ── Observation cleanup types ────────────────────────────────
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CleanupObservationsResult {
+    #[serde(default)]
+    pub deleted_dismissed: i64,
+    #[serde(default)]
+    pub deleted_acknowledged: i64,
+    #[serde(default)]
+    pub deleted_acted_on: i64,
+    #[serde(default)]
+    pub deleted_resolved: i64,
+    #[serde(default)]
+    pub deleted_duplicates: i64,
+    #[serde(default)]
+    pub total_deleted: i64,
 }
 
 #[allow(dead_code)]
@@ -1703,6 +2039,416 @@ impl ApiClient {
             url.push_str(&format!("&ref={}", urlencoding::encode(r)));
         }
         let req = self.client.get(&url);
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    // ── Report operations ───────────────────────────────────────
+
+    pub async fn list_reports(&self, project_id: Uuid) -> Result<Vec<Report>, reqwest::Error> {
+        let req = self
+            .client
+            .get(format!("{}/{}/reports", self.base_url, project_id));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        // API returns PaginatedResponse, extract data field
+        let body: serde_json::Value = resp.json().await?;
+        Ok(serde_json::from_value(
+            body.get("data")
+                .cloned()
+                .unwrap_or(serde_json::Value::Array(vec![])),
+        )
+        .unwrap_or_default())
+    }
+
+    pub async fn create_report(
+        &self,
+        project_id: Uuid,
+        body: serde_json::Value,
+    ) -> Result<Report, reqwest::Error> {
+        let req = self
+            .client
+            .post(format!("{}/{}/reports", self.base_url, project_id));
+        let resp = self
+            .auth(req)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn get_report(&self, id: Uuid) -> Result<Report, reqwest::Error> {
+        let req = self.client.get(format!("{}/reports/{}", self.base_url, id));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn update_report(
+        &self,
+        id: Uuid,
+        body: serde_json::Value,
+    ) -> Result<Report, reqwest::Error> {
+        let req = self.client.put(format!("{}/reports/{}", self.base_url, id));
+        let resp = self
+            .auth(req)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn delete_report(&self, id: Uuid) -> Result<(), reqwest::Error> {
+        let req = self
+            .client
+            .delete(format!("{}/reports/{}", self.base_url, id));
+        self.auth(req).send().await?.error_for_status()?;
+        Ok(())
+    }
+
+    pub async fn complete_report(
+        &self,
+        project_id: Uuid,
+        id: Uuid,
+        body: serde_json::Value,
+    ) -> Result<Report, reqwest::Error> {
+        let req = self.client.post(format!(
+            "{}/{}/reports/{}/complete",
+            self.base_url, project_id, id
+        ));
+        let resp = self
+            .auth(req)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+        resp.json().await
+    }
+
+    // ── Event operations ────────────────────────────────────────
+
+    pub async fn list_events(&self, project_id: Uuid) -> Result<Vec<Event>, reqwest::Error> {
+        let req = self
+            .client
+            .get(format!("{}/{}/events", self.base_url, project_id));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        let body: serde_json::Value = resp.json().await?;
+        Ok(serde_json::from_value(
+            body.get("data")
+                .cloned()
+                .unwrap_or(serde_json::Value::Array(vec![])),
+        )
+        .unwrap_or_default())
+    }
+
+    pub async fn create_event(
+        &self,
+        project_id: Uuid,
+        body: serde_json::Value,
+    ) -> Result<Event, reqwest::Error> {
+        let req = self
+            .client
+            .post(format!("{}/{}/events", self.base_url, project_id));
+        let resp = self
+            .auth(req)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn list_recent_events(&self, project_id: Uuid) -> Result<Vec<Event>, reqwest::Error> {
+        let req = self
+            .client
+            .get(format!("{}/{}/events/recent", self.base_url, project_id));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    // ── Webhook operations ──────────────────────────────────────
+
+    pub async fn list_webhooks(&self, project_id: Uuid) -> Result<Vec<Webhook>, reqwest::Error> {
+        let req = self
+            .client
+            .get(format!("{}/{}/webhooks", self.base_url, project_id));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn create_webhook(
+        &self,
+        project_id: Uuid,
+        body: serde_json::Value,
+    ) -> Result<Webhook, reqwest::Error> {
+        let req = self
+            .client
+            .post(format!("{}/{}/webhooks", self.base_url, project_id));
+        let resp = self
+            .auth(req)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn update_webhook(
+        &self,
+        id: Uuid,
+        body: serde_json::Value,
+    ) -> Result<Webhook, reqwest::Error> {
+        let req = self
+            .client
+            .put(format!("{}/webhooks/{}", self.base_url, id));
+        let resp = self
+            .auth(req)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn delete_webhook(&self, id: Uuid) -> Result<(), reqwest::Error> {
+        let req = self
+            .client
+            .delete(format!("{}/webhooks/{}", self.base_url, id));
+        self.auth(req).send().await?.error_for_status()?;
+        Ok(())
+    }
+
+    pub async fn test_webhook(&self, id: Uuid) -> Result<serde_json::Value, reqwest::Error> {
+        let req = self
+            .client
+            .post(format!("{}/webhooks/{}/test", self.base_url, id));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn list_webhook_deliveries(
+        &self,
+        id: Uuid,
+    ) -> Result<Vec<WebhookDelivery>, reqwest::Error> {
+        let req = self
+            .client
+            .get(format!("{}/webhooks/{}/deliveries", self.base_url, id));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    // ── Step Template operations ────────────────────────────────
+
+    pub async fn list_step_templates(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<StepTemplate>, reqwest::Error> {
+        let req = self
+            .client
+            .get(format!("{}/{}/step-templates", self.base_url, project_id));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn create_step_template(
+        &self,
+        project_id: Uuid,
+        body: serde_json::Value,
+    ) -> Result<StepTemplate, reqwest::Error> {
+        let req = self
+            .client
+            .post(format!("{}/{}/step-templates", self.base_url, project_id));
+        let resp = self
+            .auth(req)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn update_step_template(
+        &self,
+        project_id: Uuid,
+        id: Uuid,
+        body: serde_json::Value,
+    ) -> Result<StepTemplate, reqwest::Error> {
+        let req = self.client.put(format!(
+            "{}/{}/step-templates/{}",
+            self.base_url, project_id, id
+        ));
+        let resp = self
+            .auth(req)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn delete_step_template(
+        &self,
+        project_id: Uuid,
+        id: Uuid,
+    ) -> Result<(), reqwest::Error> {
+        let req = self.client.delete(format!(
+            "{}/{}/step-templates/{}",
+            self.base_url, project_id, id
+        ));
+        self.auth(req).send().await?.error_for_status()?;
+        Ok(())
+    }
+
+    pub async fn fork_step_template(
+        &self,
+        project_id: Uuid,
+        id: Uuid,
+    ) -> Result<StepTemplate, reqwest::Error> {
+        let req = self.client.post(format!(
+            "{}/{}/step-templates/{}/fork",
+            self.base_url, project_id, id
+        ));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    // ── Task Log operations ─────────────────────────────────────
+
+    pub async fn list_task_logs(
+        &self,
+        project_id: Uuid,
+        task_id: Option<Uuid>,
+    ) -> Result<Vec<TaskLog>, reqwest::Error> {
+        let mut url = format!("{}/{}/task-logs", self.base_url, project_id);
+        if let Some(tid) = task_id {
+            url.push_str(&format!("?task_id={}", tid));
+        }
+        let req = self.client.get(&url);
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        let body: serde_json::Value = resp.json().await?;
+        Ok(serde_json::from_value(
+            body.get("data")
+                .cloned()
+                .unwrap_or(serde_json::Value::Array(vec![])),
+        )
+        .unwrap_or_default())
+    }
+
+    pub async fn create_task_log(
+        &self,
+        project_id: Uuid,
+        body: serde_json::Value,
+    ) -> Result<TaskLog, reqwest::Error> {
+        let req = self
+            .client
+            .post(format!("{}/{}/task-logs", self.base_url, project_id));
+        let resp = self
+            .auth(req)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn get_task_log(&self, id: Uuid) -> Result<TaskLog, reqwest::Error> {
+        let req = self
+            .client
+            .get(format!("{}/task-logs/{}", self.base_url, id));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    // ── Scratchpad operations ───────────────────────────────────
+
+    pub async fn get_scratchpad(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Option<Scratchpad>, reqwest::Error> {
+        let req = self
+            .client
+            .get(format!("{}/{}/scratchpad", self.base_url, project_id));
+        let resp = self.auth(req).send().await?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let body = resp.error_for_status()?;
+        Ok(Some(body.json().await?))
+    }
+
+    pub async fn upsert_scratchpad(
+        &self,
+        project_id: Uuid,
+        body: serde_json::Value,
+    ) -> Result<Scratchpad, reqwest::Error> {
+        let req = self
+            .client
+            .put(format!("{}/{}/scratchpad", self.base_url, project_id));
+        let resp = self
+            .auth(req)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+        resp.json().await
+    }
+
+    // ── Metrics operations ──────────────────────────────────────
+
+    pub async fn get_project_metrics(
+        &self,
+        project_id: Uuid,
+        days: Option<i32>,
+    ) -> Result<ProjectMetrics, reqwest::Error> {
+        let mut url = format!("{}/{}/metrics", self.base_url, project_id);
+        if let Some(d) = days {
+            url.push_str(&format!("?days={}", d));
+        }
+        let req = self.client.get(&url);
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    // ── Goal Comment operations ─────────────────────────────────
+
+    pub async fn list_goal_comments(
+        &self,
+        goal_id: Uuid,
+    ) -> Result<Vec<GoalComment>, reqwest::Error> {
+        let req = self
+            .client
+            .get(format!("{}/goals/{}/comments", self.base_url, goal_id));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn create_goal_comment(
+        &self,
+        goal_id: Uuid,
+        body: serde_json::Value,
+    ) -> Result<GoalComment, reqwest::Error> {
+        let req = self
+            .client
+            .post(format!("{}/goals/{}/comments", self.base_url, goal_id));
+        let resp = self
+            .auth(req)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+        resp.json().await
+    }
+
+    // ── Observation Cleanup operations ──────────────────────────
+
+    pub async fn cleanup_observations(
+        &self,
+        project_id: Uuid,
+    ) -> Result<CleanupObservationsResult, reqwest::Error> {
+        let req = self.client.post(format!(
+            "{}/{}/observations/cleanup",
+            self.base_url, project_id
+        ));
         let resp = self.auth(req).send().await?.error_for_status()?;
         resp.json().await
     }

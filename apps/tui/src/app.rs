@@ -26,9 +26,15 @@ pub enum View {
     Search,
     Chat,
     Source,
+    Dashboard,
+    Reports,
+    Events,
+    Webhooks,
+    StepTemplates,
 }
 
 pub const ALL_VIEWS: &[View] = &[
+    View::Dashboard,
     View::Tasks,
     View::Agents,
     View::Knowledge,
@@ -45,6 +51,10 @@ pub const ALL_VIEWS: &[View] = &[
     View::Search,
     View::Chat,
     View::Source,
+    View::Reports,
+    View::Events,
+    View::Webhooks,
+    View::StepTemplates,
 ];
 
 impl View {
@@ -67,6 +77,11 @@ impl View {
             View::Search => "Search",
             View::Chat => "Chat",
             View::Source => "Source",
+            View::Dashboard => "Dashboard",
+            View::Reports => "Reports",
+            View::Events => "Events",
+            View::Webhooks => "Webhooks",
+            View::StepTemplates => "Step Templates",
         }
     }
 
@@ -89,6 +104,11 @@ impl View {
             View::Search => "F",
             View::Chat => "C",
             View::Source => "B",
+            View::Dashboard => "D",
+            View::Reports => "R",
+            View::Events => "E",
+            View::Webhooks => "W",
+            View::StepTemplates => "T",
         }
     }
 }
@@ -737,6 +757,11 @@ impl App {
             View::Search => self.search_results.len(),
             View::Chat => self.chat_messages.len(),
             View::Source => self.source_entries.len(),
+            View::Dashboard
+            | View::Reports
+            | View::Events
+            | View::Webhooks
+            | View::StepTemplates => 0,
         }
     }
 
@@ -759,6 +784,11 @@ impl App {
             View::Search => self.selected_search_result,
             View::Chat => None,
             View::Source => self.source_selected,
+            View::Dashboard
+            | View::Reports
+            | View::Events
+            | View::Webhooks
+            | View::StepTemplates => None,
         }
     }
 
@@ -785,6 +815,11 @@ impl App {
             View::Search => self.selected_search_result = idx,
             View::Chat => {}
             View::Source => self.source_selected = idx,
+            View::Dashboard
+            | View::Reports
+            | View::Events
+            | View::Webhooks
+            | View::StepTemplates => {}
         }
     }
 
