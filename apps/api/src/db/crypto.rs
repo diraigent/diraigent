@@ -509,6 +509,20 @@ impl DiraigentDb for CryptoDb {
     async fn get_goal_ids_for_task(&self, task_id: Uuid) -> Result<Vec<Uuid>, AppError> {
         delegate!(self, get_goal_ids_for_task, task_id)
     }
+    async fn get_agent_inherited_goal_ids(
+        &self,
+        agent_id: Uuid,
+        project_id: Uuid,
+        exclude_task_id: Uuid,
+    ) -> Result<Vec<Uuid>, AppError> {
+        delegate!(
+            self,
+            get_agent_inherited_goal_ids,
+            agent_id,
+            project_id,
+            exclude_task_id
+        )
+    }
     async fn list_goals_for_task(&self, task_id: Uuid) -> Result<Vec<Goal>, AppError> {
         delegate!(self, list_goals_for_task, task_id)
     }

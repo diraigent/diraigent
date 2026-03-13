@@ -491,3 +491,30 @@ pub async fn get_goal_ids_for_task(pool: &PgPool, task_id: Uuid) -> Result<Vec<U
 
     Ok(ids.into_iter().map(|r| r.0).collect())
 }
+
+/// Return distinct goal IDs from all active (non-done/cancelled) tasks
+/// assigned to the given agent in the given project, excluding a specific task.
+/// Used to inherit goal associations when an agent creates subtasks.
+pub async fn get_agent_inherited_goal_ids(
+    pool: &PgPool,
+    agent_id: Uuid,
+    project_id: Uuid,
+    exclude_task_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    let ids = sqlx::query_as::<_, (Uuid,)>(
+        "SELECT DISTINCT tg.goal_id
+         FROM diraigent.task_goal tg
+         JOIN diraigent.task t ON t.id = tg.task_id
+         WHERE t.assigned_agent_id = $1
+           AND t.project_id = $2
+           AND t.state NOT IN ('done', 'cancelled')
+           AND t.id != $3",
+    )
+    .bind(agent_id)
+    .bind(project_id)
+    .bind(exclude_task_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(ids.into_iter().map(|r| r.0).collect())
+}

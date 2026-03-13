@@ -112,6 +112,31 @@ async fn create_task(
         super::goals::refresh_auto_status_goals(&state, task.id, agent_id).await;
     }
 
+    // Inherit goals from the creating agent's active tasks (subtask goal inheritance)
+    if let Some(aid) = agent_id
+        && let Ok(inherited_goal_ids) = state
+            .db
+            .get_agent_inherited_goal_ids(aid, project_id, task.id)
+            .await
+    {
+        for goal_id in inherited_goal_ids {
+            // Skip if already linked via explicit goal_id
+            if req.goal_id == Some(goal_id) {
+                continue;
+            }
+            if let Err(e) = state.db.link_task_goal(goal_id, task.id).await {
+                tracing::warn!(
+                    task_id = %task.id,
+                    goal_id = %goal_id,
+                    error = %e,
+                    "Failed to inherit goal link from agent's active task"
+                );
+            }
+        }
+        // Refresh auto-status for any newly inherited goals
+        super::goals::refresh_auto_status_goals(&state, task.id, agent_id).await;
+    }
+
     Ok(Json(task))
 }
 
