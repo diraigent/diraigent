@@ -290,6 +290,21 @@ pub async fn spawn_worker(
                     let sid = TaskId::new(task_id_owned.as_str());
                     error!("worker {sid} crashed: {e:#}");
 
+                    // Post blocker so humans can see why the task failed
+                    let blocker_msg = format!("Worker crashed: {e:#}");
+                    if let Err(be) = api_clone.post_task_update(&task_id_owned, "blocker", &blocker_msg).await {
+                        warn!("worker {sid}: failed to post blocker: {be}");
+                    }
+
+                    // Transition task to cancelled to prevent infinite crash loop.
+                    // Infrastructure errors (worktree creation, git issues) are not
+                    // transient — re-picking the task will just crash again.
+                    if let Err(te) = api_clone.transition_task(&task_id_owned, "cancelled").await {
+                        warn!("worker {sid}: failed to cancel crashed task: {te}");
+                    } else {
+                        info!("worker {sid}: cancelled crashed task to prevent retry loop");
+                    }
+
                     worker::post_worker_event(
                         &api_clone,
                         &project_id_owned,

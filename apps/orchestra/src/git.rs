@@ -185,6 +185,17 @@ impl WorktreeManager {
             warn!("fast-forward {db} from origin failed: {e} — branching from local state");
         }
 
+        // Verify the default branch is a valid ref before attempting worktree creation.
+        // This catches empty repos where HEAD is unborn and `checkout -b` creates a
+        // branch that isn't backed by any commit.
+        if self.git(&["rev-parse", "--verify", db]).is_err() {
+            bail!(
+                "default branch '{db}' is not a valid reference — \
+                 the repository may have no commits. \
+                 Push at least one commit before assigning tasks."
+            );
+        }
+
         // Clean stale state (safe delete — keeps unmerged branches)
         self.git(&["worktree", "prune"]).ok();
         if self.git(&["branch", "-d", &branch]).is_err() {
