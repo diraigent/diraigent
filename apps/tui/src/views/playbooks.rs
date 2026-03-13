@@ -64,12 +64,27 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 Line::from(""),
             ];
 
+            // Version
+            if let Some(version) = p.version {
+                lines.push(Line::styled(
+                    format!("Version: {}", version),
+                    Style::default().fg(theme::blue()),
+                ));
+            }
+
+            // Git strategy from metadata
+            if let Some(strategy) = p.metadata.get("git_strategy").and_then(|v| v.as_str()) {
+                lines.push(Line::styled(
+                    format!("Git strategy: {}", strategy),
+                    Style::default().fg(theme::green()),
+                ));
+            }
+
             if let Some(trigger) = &p.trigger_description {
                 lines.push(Line::styled(
                     format!("Trigger: {}", trigger),
                     Style::default().fg(theme::subtext0()),
                 ));
-                lines.push(Line::from(""));
             }
 
             if !p.tags.is_empty() {
@@ -77,8 +92,9 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                     format!("Tags: {}", p.tags.join(", ")),
                     Style::default().fg(theme::subtext0()),
                 ));
-                lines.push(Line::from(""));
             }
+
+            lines.push(Line::from(""));
 
             // Render steps
             {
@@ -163,7 +179,68 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                             ));
                         }
 
+                        // Budget and allowed_tools
+                        let budget = step
+                            .get("budget")
+                            .and_then(|v| v.as_f64())
+                            .map(|b| format!("${:.0}", b))
+                            .unwrap_or_default();
+                        let tools = step
+                            .get("allowed_tools")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        if !budget.is_empty() || !tools.is_empty() {
+                            let mut parts = Vec::new();
+                            if !budget.is_empty() {
+                                parts.push(format!("budget: {}", budget));
+                            }
+                            if !tools.is_empty() {
+                                parts.push(format!("tools: {}", tools));
+                            }
+                            lines.push(Line::styled(
+                                format!("     [{}]", parts.join(", ")),
+                                Style::default().fg(theme::overlay0()),
+                            ));
+                        }
+
                         lines.push(Line::from(""));
+                    }
+                }
+            }
+
+            // Step templates hint
+            lines.push(Line::styled(
+                "[T] Browse step templates",
+                Style::default().fg(theme::overlay0()),
+            ));
+
+            // Show fetched step templates if any
+            if !app.step_templates.is_empty() {
+                lines.push(Line::from(""));
+                lines.push(Line::styled(
+                    format!("Step Templates ({}):", app.step_templates.len()),
+                    Style::default().fg(theme::blue()),
+                ));
+                for tmpl in &app.step_templates {
+                    let model = tmpl
+                        .model
+                        .as_deref()
+                        .map(|m| format!(" [{}]", m))
+                        .unwrap_or_default();
+                    let budget = tmpl
+                        .budget
+                        .map(|b| format!(" ${:.0}", b))
+                        .unwrap_or_default();
+                    lines.push(Line::styled(
+                        format!("  • {}{}{}", tmpl.name, model, budget),
+                        Style::default().fg(theme::green()),
+                    ));
+                    if let Some(ref desc) = tmpl.description {
+                        let short: String = desc.chars().take(80).collect();
+                        lines.push(Line::styled(
+                            format!("    {}", short),
+                            Style::default().fg(theme::subtext0()),
+                        ));
                     }
                 }
             }

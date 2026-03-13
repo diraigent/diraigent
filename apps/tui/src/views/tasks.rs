@@ -80,8 +80,22 @@ fn render_task_list(f: &mut Frame, area: Rect, app: &mut App) {
                 ""
             };
 
+            // Flagged marker
+            let flag_marker = if t.flagged { "⚑ " } else { "" };
+
+            // Cost display
+            let cost_str = if t.cost_usd > 0.0 {
+                format!(" ${:.2}", t.cost_usd)
+            } else {
+                String::new()
+            };
+
             ListItem::new(Line::from(vec![
                 Span::styled(bulk_marker.to_string(), Style::default().fg(theme::peach())),
+                Span::styled(
+                    flag_marker.to_string(),
+                    Style::default().fg(theme::yellow()),
+                ),
                 Span::styled(
                     format!(" {} ", timestamp),
                     Style::default().fg(theme::overlay0()),
@@ -91,10 +105,9 @@ fn render_task_list(f: &mut Frame, area: Rect, app: &mut App) {
                     format!("#{} ", t.number),
                     Style::default().fg(theme::overlay1()),
                 ),
-                Span::styled(
-                    format!("{}{}", t.title, agent_tag),
-                    Style::default().fg(theme::text()),
-                ),
+                Span::styled(t.title.clone(), Style::default().fg(theme::text())),
+                Span::styled(agent_tag, Style::default().fg(theme::mauve())),
+                Span::styled(cost_str, Style::default().fg(theme::subtext0())),
             ]))
         })
         .collect();
@@ -195,6 +208,18 @@ fn render_detail(f: &mut Frame, area: Rect, app: &mut App) {
             Line::from(vec![
                 Span::styled("Created: ", Style::default().fg(theme::subtext0())),
                 Span::styled(created, Style::default().fg(theme::text())),
+                if t.flagged {
+                    Span::styled("  ⚑ Flagged", Style::default().fg(theme::yellow()))
+                } else {
+                    Span::styled("", Style::default())
+                },
+            ]),
+            Line::from(vec![
+                Span::styled("Cost: ", Style::default().fg(theme::subtext0())),
+                Span::styled(
+                    format!("${:.4}", t.cost_usd),
+                    Style::default().fg(theme::text()),
+                ),
             ]),
         ];
 

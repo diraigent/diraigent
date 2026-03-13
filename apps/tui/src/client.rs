@@ -57,6 +57,8 @@ pub struct Task {
     pub updated_at: Option<String>,
     pub completed_at: Option<String>,
     #[serde(default)]
+    pub cost_usd: f64,
+    #[serde(default)]
     pub flagged: bool,
 }
 
@@ -2449,6 +2451,14 @@ impl ApiClient {
             "{}/{}/observations/cleanup",
             self.base_url, project_id
         ));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn list_agent_tasks(&self, agent_id: Uuid) -> Result<Vec<Task>, reqwest::Error> {
+        let req = self
+            .client
+            .get(format!("{}/agents/{}/tasks", self.base_url, agent_id));
         let resp = self.auth(req).send().await?.error_for_status()?;
         resp.json().await
     }
