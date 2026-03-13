@@ -37,7 +37,9 @@
     "reworkCommentPlaceholder": "Optional feedback for the agent...",
     "refresh": "Refresh",
     "updatedAt": "Updated",
-    "agent": "Agent"
+    "agent": "Agent",
+    "tabReview": "Human Review",
+    "tabObservations": "Observations"
   },
   "dashboard": {
     "title": "Dashboard",

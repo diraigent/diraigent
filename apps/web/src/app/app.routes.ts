@@ -65,8 +65,8 @@ export const routes: Routes = [
   },
   {
     path: 'observations',
-    canActivate: [AuthGuard],
-    loadComponent: () => import('./features/observations/observations').then(m => m.ObservationsPage),
+    redirectTo: 'review',
+    pathMatch: 'full',
   },
   {
     path: 'reports',

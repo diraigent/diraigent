@@ -26,24 +26,21 @@ const STATUSES: ObservationStatus[] = ['open', 'acknowledged', 'acted_on', 'dism
   standalone: true,
   imports: [TranslocoModule, FormsModule, DatePipe, JsonPipe, SlicePipe, FilterBarComponent, ModalWrapperComponent, ConfirmDialogComponent],
   template: `
-    <div class="p-3 sm:p-6" *transloco="let t">
-      <!-- Header -->
-      <div class="flex items-center justify-between mb-3 sm:mb-6">
-        <h1 class="text-2xl font-semibold text-text-primary">{{ t('nav.observations') }}</h1>
-        <div class="flex items-center gap-2">
-          <button (click)="confirmCleanup()"
-            class="px-4 py-2 bg-ctp-red/20 text-ctp-red rounded-lg text-sm font-medium hover:bg-ctp-red/30"
-            [disabled]="cleaningUp()">
-            @if (cleaningUp()) {
-              {{ t('observations.cleaningUp') }}
-            } @else {
-              {{ t('observations.cleanup') }}
-            }
-          </button>
-          <button (click)="openCreate()" class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90">
-            {{ t('observations.create') }}
-          </button>
-        </div>
+    <div *transloco="let t">
+      <!-- Actions bar -->
+      <div class="flex items-center justify-end gap-2 mb-3 sm:mb-4">
+        <button (click)="confirmCleanup()"
+          class="px-4 py-2 bg-ctp-red/20 text-ctp-red rounded-lg text-sm font-medium hover:bg-ctp-red/30"
+          [disabled]="cleaningUp()">
+          @if (cleaningUp()) {
+            {{ t('observations.cleaningUp') }}
+          } @else {
+            {{ t('observations.cleanup') }}
+          }
+        </button>
+        <button (click)="openCreate()" class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90">
+          {{ t('observations.create') }}
+        </button>
       </div>
 
       <!-- Filters -->
