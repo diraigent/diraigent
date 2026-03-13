@@ -1,8 +1,9 @@
-import { Component, inject, signal, computed, effect } from '@angular/core';
+import { Component, inject, signal, computed, effect, DestroyRef } from '@angular/core';
 import { NgTemplateOutlet, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TranslocoModule } from '@jsverse/transloco';
-import { forkJoin, of } from 'rxjs';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Subscription, forkJoin, of, timer, switchMap } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { ProjectContext } from '../../core/services/project-context.service';
 import {
@@ -29,6 +30,8 @@ import { TaskFormComponent } from '../tasks/components/task-form/task-form';
 import { TaskListComponent } from '../tasks/pages/task-list/task-list';
 import { VerificationsApiService, SpVerification } from '../../core/services/verifications-api.service';
 import { PlaybooksApiService, SpPlaybook } from '../../core/services/playbooks-api.service';
+import { GitApiService, BranchInfo, MainPushStatus } from '../../core/services/git-api.service';
+import { ChatService } from '../../core/services/chat.service';
 
 const STATUSES: GoalStatus[] = ['active', 'achieved', 'paused', 'abandoned'];
 
@@ -68,6 +71,40 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
       <div class="flex items-center justify-between mb-3 sm:mb-6">
         <h1 class="text-2xl font-semibold text-text-primary">{{ t('nav.work') }}</h1>
         <div class="flex items-center gap-3">
+          @if (mainStatus(); as ms) {
+            @if (ms.ahead > 0 && ms.behind > 0) {
+              <button (click)="onResolveAndPushMain()"
+                [disabled]="resolvingMain()"
+                title="Local main and remote have diverged ({{ ms.ahead }} ahead, {{ ms.behind }} behind). Click to rebase and push."
+                class="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg
+                       bg-ctp-red/15 text-ctp-red hover:bg-ctp-red/25 transition-colors
+                       disabled:opacity-50 disabled:cursor-not-allowed">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+                @if (resolvingMain()) {
+                  resolving...
+                } @else {
+                  merge conflict (↑{{ ms.ahead }} ↓{{ ms.behind }})
+                }
+              </button>
+            } @else if (ms.ahead > 0) {
+              <button (click)="onPushMain()"
+                [disabled]="pushingMain()"
+                class="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg
+                       bg-ctp-yellow/15 text-ctp-yellow hover:bg-ctp-yellow/25 transition-colors
+                       disabled:opacity-50 disabled:cursor-not-allowed">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                </svg>
+                @if (pushingMain()) {
+                  pushing...
+                } @else {
+                  push to remote ({{ ms.ahead }})
+                }
+              </button>
+            }
+          }
           <button (click)="openCreateStandaloneTask()" class="px-4 py-2 bg-ctp-green text-ctp-base rounded-lg text-sm font-medium hover:opacity-90">
             {{ t('tasks.create') }}
           </button>
@@ -930,6 +967,9 @@ export class WorkPage {
   private verificationsApi = inject(VerificationsApiService);
   private playbooksApi = inject(PlaybooksApiService);
   private ctx = inject(ProjectContext);
+  private git = inject(GitApiService);
+  private chat = inject(ChatService);
+  private destroyRef = inject(DestroyRef);
 
   readonly statuses = STATUSES;
   readonly goalTypes = GOAL_TYPES;
@@ -1005,6 +1045,13 @@ export class WorkPage {
   goalPlaybooks = signal<SpPlaybook[]>([]);
   editingTask = signal<SpTask | null>(null);
 
+  // Git status
+  mainStatus = signal<MainPushStatus | null>(null);
+  pushingMain = signal(false);
+  resolvingMain = signal(false);
+  branchMap = signal<Map<string, BranchInfo>>(new Map());
+  private gitPollSub?: Subscription;
+
   // --- Computed: goal sections ---
 
   private filteredGoals = computed(() => {
@@ -1071,6 +1118,65 @@ export class WorkPage {
       this.playbooksApi.list().subscribe({
         next: (pbs) => this.goalPlaybooks.set(pbs),
       });
+      this.startGitPolling();
+    });
+  }
+
+  // --- Git polling ---
+
+  private startGitPolling(): void {
+    this.gitPollSub?.unsubscribe();
+    this.gitPollSub = timer(0, 15_000)
+      .pipe(
+        switchMap(() => forkJoin({
+          branches: this.git.listBranches('agent/').pipe(catchError(() => of({ current_branch: '', branches: [] as BranchInfo[] }))),
+          mainStatus: this.git.mainStatus().pipe(catchError(() => of(null as MainPushStatus | null))),
+        })),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe({
+        next: ({ branches, mainStatus }) => {
+          this.mainStatus.set(mainStatus);
+          const map = new Map<string, BranchInfo>();
+          for (const b of branches.branches) {
+            if (b.task_id_prefix) {
+              map.set(b.task_id_prefix, b);
+            }
+          }
+          this.branchMap.set(map);
+        },
+      });
+  }
+
+  onPushMain(): void {
+    this.pushingMain.set(true);
+    this.git.pushMain().subscribe({
+      next: () => {
+        this.pushingMain.set(false);
+        this.mainStatus.set(null);
+      },
+      error: () => this.pushingMain.set(false),
+    });
+  }
+
+  onResolveAndPushMain(): void {
+    this.resolvingMain.set(true);
+    const ms = this.mainStatus();
+    this.git.resolveAndPushMain().subscribe({
+      next: () => {
+        this.resolvingMain.set(false);
+        this.mainStatus.set(null);
+      },
+      error: (err: unknown) => {
+        this.resolvingMain.set(false);
+        const detail = ms ? ` (local is ${ms.ahead} commit(s) ahead, ${ms.behind} behind remote)` : '';
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        const prompt =
+          `There is a merge conflict on the main branch${detail}. ` +
+          `The automatic rebase+push failed with: ${errorMsg}. ` +
+          `Can you resolve this merge conflict and push main to the remote?`;
+        this.chat.openWithMessage(prompt);
+      },
     });
   }
 
