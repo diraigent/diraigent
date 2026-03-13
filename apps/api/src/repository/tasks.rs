@@ -15,7 +15,8 @@ const TASK_FILTERS_WHERE: &str = "WHERE project_id = $1 \
     AND ($4::uuid IS NULL OR assigned_agent_id = $4) \
     AND ($5::text IS NULL OR title ILIKE $5) \
     AND ($6::timestamptz IS NULL OR state NOT IN ('done', 'cancelled') OR COALESCE(completed_at, updated_at) >= $6) \
-    AND ($7::uuid IS NULL OR decision_id = $7)";
+    AND ($7::uuid IS NULL OR decision_id = $7) \
+    AND ($8::uuid IS NULL OR parent_id = $8)";
 
 // ── Tasks ──
 
@@ -51,8 +52,8 @@ pub async fn create_task(
     };
 
     let task = sqlx::query_as::<_, Task>(
-        "INSERT INTO diraigent.task (project_id, title, kind, state, priority, context, required_capabilities, playbook_id, playbook_step, decision_id, created_by, file_scope)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        "INSERT INTO diraigent.task (project_id, title, kind, state, priority, context, required_capabilities, playbook_id, playbook_step, decision_id, created_by, file_scope, parent_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING *",
     )
     .bind(project_id)
@@ -67,6 +68,7 @@ pub async fn create_task(
     .bind(req.decision_id)
     .bind(created_by)
     .bind(&file_scope)
+    .bind(req.parent_id)
     .fetch_one(pool)
     .await?;
 
@@ -111,18 +113,21 @@ pub async fn list_tasks(
     let mut extra_where = String::new();
     if filters.goal_id.is_some() {
         extra_where
-            .push_str(" AND id IN (SELECT task_id FROM diraigent.task_goal WHERE goal_id = $8)");
+            .push_str(" AND id IN (SELECT task_id FROM diraigent.task_goal WHERE goal_id = $9)");
     }
     if filters.unlinked == Some(true) {
         extra_where.push_str(
             " AND NOT EXISTS (SELECT 1 FROM diraigent.task_goal tg WHERE tg.task_id = diraigent.task.id)",
         );
     }
+    if filters.root_only == Some(true) {
+        extra_where.push_str(" AND parent_id IS NULL");
+    }
 
     let (limit_param, offset_param) = if filters.goal_id.is_some() {
-        ("$9", "$10")
+        ("$10", "$11")
     } else {
-        ("$8", "$9")
+        ("$9", "$10")
     };
 
     let sql = format!(
@@ -136,7 +141,8 @@ pub async fn list_tasks(
         .bind(filters.agent_id)
         .bind(&search_pattern)
         .bind(filters.hide_done_before)
-        .bind(filters.decision_id);
+        .bind(filters.decision_id)
+        .bind(filters.parent_id);
 
     if let Some(goal_id) = filters.goal_id {
         query = query.bind(goal_id);
@@ -224,9 +230,15 @@ pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Resu
     let flagged = req.flagged.unwrap_or(existing.flagged);
     let file_scope = req.file_scope.as_ref().unwrap_or(&existing.file_scope);
 
+    // Double-Option: None → keep existing, Some(v) → use v (which may be None to clear).
+    let parent_id = match &req.parent_id {
+        Some(v) => *v,
+        None => existing.parent_id,
+    };
+
     let task = sqlx::query_as::<_, Task>(
         "UPDATE diraigent.task
-         SET title = $2, kind = $3, priority = $4, context = $5, required_capabilities = $6, playbook_step = $7, playbook_id = $8, flagged = $9, file_scope = $10
+         SET title = $2, kind = $3, priority = $4, context = $5, required_capabilities = $6, playbook_step = $7, playbook_id = $8, flagged = $9, file_scope = $10, parent_id = $11
          WHERE id = $1 RETURNING *",
     )
     .bind(task_id)
@@ -239,6 +251,7 @@ pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Resu
     .bind(playbook_id)
     .bind(flagged)
     .bind(file_scope)
+    .bind(parent_id)
     .fetch_one(pool)
     .await?;
 
@@ -293,6 +306,17 @@ pub async fn list_blocked_task_ids(pool: &PgPool, project_id: Uuid) -> Result<Ve
     .fetch_all(pool)
     .await?;
     Ok(ids.into_iter().map(|(id,)| id).collect())
+}
+
+/// List direct children of a task (tasks whose parent_id matches).
+pub async fn list_task_children(pool: &PgPool, parent_id: Uuid) -> Result<Vec<Task>, AppError> {
+    let tasks = sqlx::query_as::<_, Task>(
+        "SELECT * FROM diraigent.task WHERE parent_id = $1 ORDER BY priority ASC, created_at ASC",
+    )
+    .bind(parent_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(tasks)
 }
 
 /// Returns task IDs that have been flagged (bookmarked) by a user.
@@ -603,12 +627,15 @@ pub async fn count_tasks(
     let mut extra_where = String::new();
     if filters.goal_id.is_some() {
         extra_where
-            .push_str(" AND id IN (SELECT task_id FROM diraigent.task_goal WHERE goal_id = $8)");
+            .push_str(" AND id IN (SELECT task_id FROM diraigent.task_goal WHERE goal_id = $9)");
     }
     if filters.unlinked == Some(true) {
         extra_where.push_str(
             " AND NOT EXISTS (SELECT 1 FROM diraigent.task_goal tg WHERE tg.task_id = diraigent.task.id)",
         );
+    }
+    if filters.root_only == Some(true) {
+        extra_where.push_str(" AND parent_id IS NULL");
     }
 
     let sql = format!(
@@ -622,7 +649,8 @@ pub async fn count_tasks(
         .bind(filters.agent_id)
         .bind(&search_pattern)
         .bind(filters.hide_done_before)
-        .bind(filters.decision_id);
+        .bind(filters.decision_id)
+        .bind(filters.parent_id);
 
     if let Some(goal_id) = filters.goal_id {
         query = query.bind(goal_id);

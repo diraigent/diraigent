@@ -97,6 +97,7 @@ pub trait DiraigentDb: Send + Sync {
         &self,
         project_id: Uuid,
     ) -> Result<Vec<Task>, AppError>;
+    async fn list_task_children(&self, parent_id: Uuid) -> Result<Vec<Task>, AppError>;
 
     // ── Task Updates ──────────────────────────────────────────────────────────
     async fn create_task_update(

@@ -181,6 +181,7 @@ impl DiraigentDb for CryptoDb {
                 decision_id: req.decision_id,
                 goal_id: req.goal_id,
                 file_scope: req.file_scope.clone(),
+                parent_id: req.parent_id,
             };
             let mut task = self
                 .inner
@@ -250,6 +251,7 @@ impl DiraigentDb for CryptoDb {
                 playbook_id: req.playbook_id,
                 flagged: req.flagged,
                 file_scope: req.file_scope.clone(),
+                parent_id: req.parent_id,
             };
             let mut task = self.inner.update_task(task_id, &encrypted_req).await?;
             Self::decrypt_task(dek, &mut task)?;
@@ -348,6 +350,18 @@ impl DiraigentDb for CryptoDb {
             .list_tasks_with_blocker_updates(project_id)
             .await?;
         if let Some(dek) = self.dek_for_project(project_id).await? {
+            for t in &mut tasks {
+                Self::decrypt_task(&dek, t)?;
+            }
+        }
+        Ok(tasks)
+    }
+
+    async fn list_task_children(&self, parent_id: Uuid) -> Result<Vec<Task>, AppError> {
+        let mut tasks = self.inner.list_task_children(parent_id).await?;
+        if let Some(first) = tasks.first()
+            && let Some(dek) = self.dek_for_project(first.project_id).await?
+        {
             for t in &mut tasks {
                 Self::decrypt_task(&dek, t)?;
             }

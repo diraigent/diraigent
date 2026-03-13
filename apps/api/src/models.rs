@@ -391,6 +391,8 @@ pub struct Task {
     pub playbook_step: Option<i32>,
     /// FK to the decision that originated this task (nullable).
     pub decision_id: Option<Uuid>,
+    /// FK to a parent task for plan decomposition (nullable, self-referencing).
+    pub parent_id: Option<Uuid>,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -550,6 +552,8 @@ pub struct CreateTask {
     pub goal_id: Option<Uuid>,
     /// File paths this task intends to modify (for branch overlap detection).
     pub file_scope: Option<Vec<String>>,
+    /// Optional parent task ID for plan decomposition (self-referencing FK).
+    pub parent_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -567,6 +571,9 @@ pub struct UpdateTask {
     pub flagged: Option<bool>,
     /// File paths this task intends to modify (for branch overlap detection).
     pub file_scope: Option<Vec<String>>,
+    /// Double-Option: None = don't change, Some(None) = clear, Some(Some(id)) = set parent.
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    pub parent_id: Option<Option<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1376,6 +1383,10 @@ pub struct TaskFilters {
     pub goal_id: Option<Uuid>,
     /// When true, return only tasks not linked to any goal
     pub unlinked: Option<bool>,
+    /// Filter tasks by parent task ID (exact match)
+    pub parent_id: Option<Uuid>,
+    /// When true, return only top-level tasks (parent_id IS NULL)
+    pub root_only: Option<bool>,
 }
 
 // ── Metrics ──
