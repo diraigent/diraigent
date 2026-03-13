@@ -1,8 +1,8 @@
 use crate::client::{
     Agent, AuditEntry, BranchInfo, ChangedFile, ChatMessage, Decision, GitTaskStatus, Goal,
-    GoalProgress, GoalStats, Integration, IntegrationAccess, KnowledgeEntry, LogEntry,
-    MainPushStatus, Member, Observation, Playbook, Project, Role, SearchResult, Task, TaskComment,
-    TaskDependencies, TaskUpdate, TreeEntry, Verification,
+    GoalComment, GoalProgress, GoalStats, Integration, IntegrationAccess, KnowledgeEntry, LogEntry,
+    MainPushStatus, Member, Observation, Playbook, Project, Role, SearchResult, StepTemplate, Task,
+    TaskComment, TaskDependencies, TaskUpdate, TreeEntry, Verification,
 };
 use ratatui::widgets::ListState;
 use uuid::Uuid;
@@ -140,6 +140,7 @@ pub enum Modal {
     GoalTaskPicker,
     GlobalSearch,
     ChatInput,
+    GoalComment,
 }
 
 pub const TIME_RANGES: &[(&str, i64)] = &[
@@ -540,6 +541,15 @@ pub struct App {
     pub audit_log: Vec<AuditEntry>,
     pub verifications: Vec<Verification>,
 
+    // Goal comments
+    pub goal_comments: Vec<GoalComment>,
+
+    // Step templates
+    pub step_templates: Vec<StepTemplate>,
+
+    // Agent tasks (queue view)
+    pub agent_tasks: Vec<Task>,
+
     // Goal task picker
     pub goal_tasks: Vec<Task>,
     pub goal_unlinked_tasks: Vec<Task>,
@@ -674,6 +684,9 @@ impl App {
             integration_access: vec![],
             audit_log: vec![],
             verifications: vec![],
+            goal_comments: vec![],
+            step_templates: vec![],
+            agent_tasks: vec![],
             goal_tasks: vec![],
             goal_unlinked_tasks: vec![],
             goal_picker_selected: 0,

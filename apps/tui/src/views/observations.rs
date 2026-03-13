@@ -94,7 +94,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             // Show available actions hint
             lines.push(Line::from(""));
             lines.push(Line::styled(
-                "Actions: [s] Status  [d] Dismiss  [p] Promote",
+                "Actions: [s] Status  [d] Dismiss  [p] Promote  [C] Cleanup all",
                 Style::default().fg(theme::overlay0()),
             ));
 

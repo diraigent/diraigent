@@ -71,6 +71,10 @@ enum ApiMsg {
     ChatError(String),
     SourceTree(Vec<client::TreeEntry>),
     SourceBlob { path: String, content: String },
+    GoalComments(Vec<client::GoalComment>),
+    StepTemplates(Vec<client::StepTemplate>),
+    AgentTasks(Vec<client::Task>),
+    ObservationsCleanup(client::CleanupObservationsResult),
     Error(String),
 }
 
@@ -465,6 +469,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     app.source_blob_path = Some(path);
                     app.source_blob_scroll = 0;
                 }
+                ApiMsg::GoalComments(comments) => {
+                    app.goal_comments = comments;
+                }
+                ApiMsg::StepTemplates(templates) => {
+                    app.step_templates = templates;
+                }
+                ApiMsg::AgentTasks(tasks) => {
+                    app.agent_tasks = tasks;
+                }
+                ApiMsg::ObservationsCleanup(result) => {
+                    app.last_error = Some(format!(
+                        "Cleanup: {} deleted (dismissed={}, ack={}, acted={}, resolved={}, dup={})",
+                        result.total_deleted,
+                        result.deleted_dismissed,
+                        result.deleted_acknowledged,
+                        result.deleted_acted_on,
+                        result.deleted_resolved,
+                        result.deleted_duplicates,
+                    ));
+                    // Refresh observations list
+                    if let Some(pid) = app.current_project {
+                        let api = api.clone();
+                        let tx = tx.clone();
+                        tokio::spawn(async move {
+                            if let Ok(obs) = api.list_observations(pid).await {
+                                let _ = tx.send(ApiMsg::Observations(obs)).await;
+                            }
+                        });
+                    }
+                }
                 ApiMsg::Error(e) => app.last_error = Some(e),
             }
         }
@@ -511,7 +545,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Main content
             match app.view {
                 View::Tasks => views::tasks::render(f, main_layout[1], &mut app),
-                View::Agents => views::agents::render(f, main_layout[1], &app),
+                View::Agents => views::agents::render(f, main_layout[1], &mut app),
                 View::Knowledge => views::knowledge::render(f, main_layout[1], &mut app),
                 View::Decisions => views::decisions::render(f, main_layout[1], &mut app),
                 View::Playbooks => views::playbooks::render(f, main_layout[1], &mut app),
@@ -666,8 +700,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Span::styled("[[]", Style::default().fg(theme::overlay0())),
                 Span::styled("[]]", Style::default().fg(theme::overlay0())),
                 Span::styled("Project ", Style::default().fg(theme::text())),
-                Span::styled("[c]", Style::default().fg(theme::overlay0())),
-                Span::styled("Comment ", Style::default().fg(theme::text())),
+                // View-specific shortcuts
+                if app.view == View::Tasks {
+                    Span::styled("[f]Flag [F]Files [c]Comment ", Style::default().fg(theme::overlay0()))
+                } else if app.view == View::Goals {
+                    Span::styled("[c]Comment [l]Link ", Style::default().fg(theme::overlay0()))
+                } else if app.view == View::Observations {
+                    Span::styled("[C]Cleanup [p]Promote ", Style::default().fg(theme::overlay0()))
+                } else if app.view == View::Playbooks {
+                    Span::styled("[T]Templates ", Style::default().fg(theme::overlay0()))
+                } else if app.view == View::Agents {
+                    Span::styled("[a]Tasks ", Style::default().fg(theme::overlay0()))
+                } else {
+                    Span::styled("", Style::default())
+                },
                 Span::styled("[/]", Style::default().fg(theme::overlay0())),
                 Span::styled("Search ", Style::default().fg(theme::text())),
                 Span::styled("[q]", Style::default().fg(theme::overlay0())),
@@ -696,6 +742,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Modal::Reply
                 | Modal::Comment
+                | Modal::GoalComment
                 | Modal::Search
                 | Modal::GlobalSearch
                 | Modal::LogQuery
@@ -710,6 +757,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "Global Search"
                     } else if app.modal == Modal::Comment {
                         "Comment"
+                    } else if app.modal == Modal::GoalComment {
+                        "Goal Comment"
                     } else if app
                         .selected_task
                         .and_then(|i| app.tasks.get(i))
@@ -4462,6 +4511,74 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             _ => {}
                         },
+                        Modal::GoalComment => match key.code {
+                            KeyCode::Esc => {
+                                app.modal = Modal::None;
+                                app.input_text.clear();
+                                app.input_cursor = 0;
+                            }
+                            KeyCode::Enter => {
+                                if !app.input_text.is_empty() {
+                                    if let Some(goal) =
+                                        app.selected_goal.and_then(|i| app.goals.get(i))
+                                    {
+                                        let gid = goal.id;
+                                        let content = app.input_text.clone();
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            let _ = api
+                                                .create_goal_comment(
+                                                    gid,
+                                                    serde_json::json!({"content": content}),
+                                                )
+                                                .await;
+                                            if let Ok(comments) = api.list_goal_comments(gid).await
+                                            {
+                                                let _ =
+                                                    tx.send(ApiMsg::GoalComments(comments)).await;
+                                            }
+                                        });
+                                    }
+                                }
+                                app.modal = Modal::None;
+                                app.input_text.clear();
+                                app.input_cursor = 0;
+                            }
+                            KeyCode::Backspace => {
+                                if app.input_cursor > 0 {
+                                    app.input_cursor -= 1;
+                                    let byte_pos = app
+                                        .input_text
+                                        .char_indices()
+                                        .nth(app.input_cursor)
+                                        .map(|(i, _)| i)
+                                        .unwrap_or(app.input_text.len());
+                                    app.input_text.remove(byte_pos);
+                                }
+                            }
+                            KeyCode::Left => {
+                                if app.input_cursor > 0 {
+                                    app.input_cursor -= 1;
+                                }
+                            }
+                            KeyCode::Right => {
+                                if app.input_cursor < app.input_text.chars().count() {
+                                    app.input_cursor += 1;
+                                }
+                            }
+                            KeyCode::Char(c) => {
+                                let byte_pos = app
+                                    .input_text
+                                    .char_indices()
+                                    .nth(app.input_cursor)
+                                    .map(|(i, _)| i)
+                                    .unwrap_or(app.input_text.len());
+                                app.input_text.insert(byte_pos, c);
+                                app.input_cursor += 1;
+                            }
+                            _ => {}
+                        },
                         Modal::LogQuery => match key.code {
                             KeyCode::Esc => {
                                 app.modal = Modal::None;
@@ -5521,6 +5638,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.goal_progress = None;
                                     app.goal_stats = None;
                                     app.goal_children.clear();
+                                    app.goal_comments.clear();
                                     app.observations.clear();
                                     app.roles.clear();
                                     app.members.clear();
@@ -5608,8 +5726,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 app.detail_scroll = 0;
                             }
                             KeyCode::Char('C') => {
-                                app.view = View::Chat;
-                                app.detail_scroll = 0;
+                                if app.view == View::Observations {
+                                    // Cleanup observations
+                                    if let Some(pid) = app.current_project {
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            match api.cleanup_observations(pid).await {
+                                                Ok(result) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::ObservationsCleanup(result))
+                                                        .await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::Error(format!(
+                                                            "Cleanup: {e}"
+                                                        )))
+                                                        .await;
+                                                }
+                                            }
+                                        });
+                                    }
+                                } else {
+                                    app.view = View::Chat;
+                                    app.detail_scroll = 0;
+                                }
                             }
                             KeyCode::Up | KeyCode::Char('k') => {
                                 if app.view == View::Logs {
@@ -5751,6 +5893,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             KeyCode::Char('c') => {
                                 if app.view == View::Tasks && app.selected_task.is_some() {
                                     app.modal = Modal::Comment;
+                                    app.input_text.clear();
+                                    app.input_cursor = 0;
+                                } else if app.view == View::Goals && app.selected_goal.is_some() {
+                                    app.modal = Modal::GoalComment;
                                     app.input_text.clear();
                                     app.input_cursor = 0;
                                 }
@@ -6115,7 +6261,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // Integrations view: a = access management
                             // Decisions view: a = accept
                             KeyCode::Char('a') => {
-                                if app.view == View::Tasks && app.selected_task.is_some() {
+                                if app.view == View::Agents {
+                                    if let Some(agent) =
+                                        app.selected_agent.and_then(|i| app.agents.get(i))
+                                    {
+                                        let agent_id = agent.id;
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            match api.list_agent_tasks(agent_id).await {
+                                                Ok(tasks) => {
+                                                    let _ =
+                                                        tx.send(ApiMsg::AgentTasks(tasks)).await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::Error(format!(
+                                                            "Agent tasks: {e}"
+                                                        )))
+                                                        .await;
+                                                }
+                                            }
+                                        });
+                                    }
+                                } else if app.view == View::Tasks && app.selected_task.is_some() {
                                     // Open claim modal with agent list
                                     let opts: Vec<String> =
                                         app.agents.iter().map(|a| a.name.clone()).collect();
@@ -6357,6 +6526,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.transition_options = opts;
                                     app.transition_selected = 0;
                                     app.modal = Modal::BulkTransition;
+                                }
+                            }
+                            // f = toggle flagged (Tasks view)
+                            KeyCode::Char('f') => {
+                                if app.view == View::Tasks {
+                                    if let Some(task) =
+                                        app.selected_task.and_then(|i| app.tasks.get(i))
+                                    {
+                                        let tid = task.id;
+                                        let new_flagged = !task.flagged;
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        let pid = app.current_project;
+                                        tokio::spawn(async move {
+                                            match api
+                                                .update_task(
+                                                    tid,
+                                                    serde_json::json!({"flagged": new_flagged}),
+                                                )
+                                                .await
+                                            {
+                                                Ok(_) => {
+                                                    if let Some(pid) = pid {
+                                                        if let Ok(resp) = api.list_tasks(pid).await
+                                                        {
+                                                            let _ = tx
+                                                                .send(ApiMsg::Tasks(resp.data))
+                                                                .await;
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::Error(format!("Flag: {e}")))
+                                                        .await;
+                                                }
+                                            }
+                                        });
+                                    }
                                 }
                             }
                             // F = view changed files (Tasks view)
@@ -6794,8 +7002,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             // Logs view controls: T/Y = time range, N/M = limit, B = direction
+                            // Playbooks view: T = fetch step templates
                             KeyCode::Char('T') => {
-                                if app.view == View::Logs {
+                                if app.view == View::Playbooks {
+                                    if let Some(pid) = app.current_project {
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            match api.list_step_templates(pid).await {
+                                                Ok(templates) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::StepTemplates(templates))
+                                                        .await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::Error(format!(
+                                                            "Step templates: {e}"
+                                                        )))
+                                                        .await;
+                                                }
+                                            }
+                                        });
+                                    }
+                                } else if app.view == View::Logs {
                                     if app.log_time_range_idx > 0 {
                                         app.log_time_range_idx -= 1;
                                     } else {
@@ -6971,6 +7201,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             tokio::spawn(async move {
                                 if let Ok(tasks) = api.list_goal_tasks(gid, 50, 0).await {
                                     let _ = tx.send(ApiMsg::GoalTasksList(tasks)).await;
+                                }
+                            });
+                        }
+                        {
+                            let api = api.clone();
+                            let tx = tx.clone();
+                            tokio::spawn(async move {
+                                if let Ok(comments) = api.list_goal_comments(gid).await {
+                                    let _ = tx.send(ApiMsg::GoalComments(comments)).await;
                                 }
                             });
                         }

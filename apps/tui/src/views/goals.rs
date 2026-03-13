@@ -231,9 +231,44 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
 
             lines.push(Line::from(""));
             lines.push(Line::styled(
-                "[l] Link tasks",
+                "[l] Link tasks  [c] Comment",
                 Style::default().fg(theme::overlay0()),
             ));
+
+            // Comments
+            if !app.goal_comments.is_empty() {
+                lines.push(Line::from(""));
+                lines.push(Line::styled(
+                    format!("Comments ({}):", app.goal_comments.len()),
+                    Style::default().fg(theme::peach()),
+                ));
+                for gc in &app.goal_comments {
+                    let time = gc
+                        .created_at
+                        .as_deref()
+                        .and_then(|s| s.get(11..16))
+                        .unwrap_or("??:??");
+                    let author = if gc.agent_id.is_some() {
+                        "agent"
+                    } else {
+                        "human"
+                    };
+                    lines.push(Line::from(vec![
+                        ratatui::text::Span::styled(
+                            format!("{} ", time),
+                            Style::default().fg(theme::overlay0()),
+                        ),
+                        ratatui::text::Span::styled(
+                            format!("[{}] ", author),
+                            Style::default().fg(theme::mauve()),
+                        ),
+                        ratatui::text::Span::styled(
+                            gc.content.clone(),
+                            Style::default().fg(theme::text()),
+                        ),
+                    ]));
+                }
+            }
 
             // Children
             if !app.goal_children.is_empty() {
