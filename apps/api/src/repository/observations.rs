@@ -137,7 +137,7 @@ pub async fn promote_observation(
 
     let task_title = req.title.clone().unwrap_or_else(|| obs.title.clone());
     let kind = req.kind.clone().unwrap_or_else(|| "chore".to_string());
-    let priority = req.priority.unwrap_or(0);
+    let urgent = req.urgent.unwrap_or(false);
 
     // Resolve project defaults before starting the transaction (read-only).
     let project = get_project_by_id(pool, obs.project_id).await?;
@@ -159,7 +159,7 @@ pub async fn promote_observation(
 
     let task = sqlx::query_as::<_, Task>(
         "INSERT INTO diraigent.task
-             (project_id, title, kind, state, priority, context, required_capabilities,
+             (project_id, title, kind, state, urgent, context, required_capabilities,
               playbook_id, playbook_step, decision_id, created_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING *",
@@ -168,7 +168,7 @@ pub async fn promote_observation(
     .bind(&task_title)
     .bind(&kind)
     .bind(&initial_state)
-    .bind(priority)
+    .bind(urgent)
     .bind(&context)
     .bind(&capabilities)
     .bind(playbook_id)

@@ -380,7 +380,7 @@ pub struct Task {
     pub title: String,
     pub kind: String,
     pub state: String,
-    pub priority: i32,
+    pub urgent: bool,
     pub context: serde_json::Value,
     pub assigned_agent_id: Option<Uuid>,
     pub claimed_at: Option<DateTime<Utc>>,
@@ -443,7 +443,7 @@ pub struct TaskSummaryForDecision {
     pub title: String,
     pub kind: String,
     pub state: String,
-    pub priority: i32,
+    pub urgent: bool,
     pub created_at: DateTime<Utc>,
 }
 
@@ -547,7 +547,7 @@ pub struct UpdateProject {
 pub struct CreateTask {
     pub title: String,
     pub kind: Option<String>,
-    pub priority: Option<i32>,
+    pub urgent: Option<bool>,
     pub context: Option<serde_json::Value>,
     pub required_capabilities: Option<Vec<String>>,
     pub playbook_id: Option<Uuid>,
@@ -567,7 +567,7 @@ pub struct CreateTask {
 pub struct UpdateTask {
     pub title: Option<String>,
     pub kind: Option<String>,
-    pub priority: Option<i32>,
+    pub urgent: Option<bool>,
     pub context: Option<serde_json::Value>,
     pub required_capabilities: Option<Vec<String>>,
     pub playbook_step: Option<i32>,
@@ -1084,7 +1084,7 @@ pub struct GoalStats {
 pub struct PromoteObservation {
     pub title: Option<String>,
     pub kind: Option<String>,
-    pub priority: Option<i32>,
+    pub urgent: Option<bool>,
     pub playbook_id: Option<Uuid>,
 }
 
