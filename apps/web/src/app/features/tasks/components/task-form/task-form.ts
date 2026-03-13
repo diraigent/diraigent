@@ -39,17 +39,12 @@ import { DEFAULT_TASK_KINDS } from '../../../../shared/ui-constants';
                   }
                 </select>
               </div>
-              <div>
-                <label for="tf-priority" class="block text-sm text-text-secondary mb-1">{{ t('tasks.priority') }}</label>
-                <select id="tf-priority" [(ngModel)]="formPriority"
-                  class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                         focus:outline-none focus:ring-1 focus:ring-accent">
-                  <option [ngValue]="1">1 — Critical</option>
-                  <option [ngValue]="2">2 — High</option>
-                  <option [ngValue]="3">3 — Medium</option>
-                  <option [ngValue]="4">4 — Low</option>
-                  <option [ngValue]="5">5 — Lowest</option>
-                </select>
+              <div class="flex items-end">
+                <label for="tf-urgent" class="flex items-center gap-2 cursor-pointer select-none h-[42px]">
+                  <input id="tf-urgent" type="checkbox" [(ngModel)]="formUrgent"
+                    class="w-4 h-4 rounded border-border bg-surface text-ctp-red focus:ring-ctp-red focus:ring-1" />
+                  <span class="text-sm text-text-primary">{{ t('tasks.urgent') }}</span>
+                </label>
               </div>
             </div>
             <div>
@@ -115,7 +110,7 @@ export class TaskFormComponent implements OnChanges {
 
   formTitle = '';
   formKind = 'feature';
-  formPriority = 3;
+  formUrgent = false;
   formSpec = '';
   formPlaybookId = '';
   formDecompose = false;
@@ -125,14 +120,14 @@ export class TaskFormComponent implements OnChanges {
     if (task) {
       this.formTitle = task.title;
       this.formKind = task.kind || 'feature';
-      this.formPriority = task.priority;
+      this.formUrgent = task.urgent;
       this.formSpec = (task.context?.['spec'] as string) ?? '';
       this.formPlaybookId = task.playbook_id ?? '';
       this.loadPlaybooks();
     } else if (this.show()) {
       this.formTitle = '';
       this.formKind = 'feature';
-      this.formPriority = 3;
+      this.formUrgent = false;
       this.formSpec = '';
       this.formPlaybookId = this.defaultPlaybookId;
       this.formDecompose = false;
@@ -215,7 +210,7 @@ export class TaskFormComponent implements OnChanges {
         data: {
           title: this.formTitle.trim(),
           kind: this.formKind,
-          priority: this.formPriority,
+          urgent: this.formUrgent,
           context: Object.keys(context).length > 0 ? { ...task.context, ...context } : task.context,
         },
       });
@@ -224,7 +219,7 @@ export class TaskFormComponent implements OnChanges {
       const req: CreateTaskRequest = {
         title: this.formTitle.trim(),
         kind: this.formKind,
-        priority: this.formPriority,
+        urgent: this.formUrgent,
       };
       if (Object.keys(context).length > 0) req.context = context;
       if (this.formPlaybookId.trim()) req.playbook_id = this.formPlaybookId.trim();

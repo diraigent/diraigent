@@ -997,8 +997,8 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                         <div class="flex items-center gap-1.5 mt-0.5">
                           <span class="px-1.5 py-0.5 rounded-full text-xs bg-ctp-blue/20 text-ctp-blue">{{ task.kind }}</span>
                           <span class="px-1.5 py-0.5 rounded-full text-xs bg-ctp-green/20 text-ctp-green">{{ task.state }}</span>
-                          @if (task.priority > 0) {
-                            <span class="text-xs text-text-secondary">P{{ task.priority }}</span>
+                          @if (task.urgent) {
+                            <span class="text-xs text-ctp-red font-medium">Urgent</span>
                           }
                         </div>
                       </div>

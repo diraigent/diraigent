@@ -292,8 +292,8 @@ const KIND_COLORS: Record<VerificationKind, string> = {
               <div class="flex items-center gap-2 mb-4">
                 <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-accent/20 text-accent">{{ previewTask()!.state }}</span>
                 <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-ctp-overlay0/20 text-ctp-overlay0">{{ previewTask()!.kind }}</span>
-                @if (previewTask()!.priority !== null) {
-                  <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-ctp-yellow/20 text-ctp-yellow">P{{ previewTask()!.priority }}</span>
+                @if (previewTask()!.urgent) {
+                  <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-ctp-red/20 text-ctp-red">Urgent</span>
                 }
               </div>
 

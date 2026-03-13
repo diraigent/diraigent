@@ -625,6 +625,7 @@
     "kind": "Art",
     "state": "Status",
     "priority": "Priorität",
+    "urgent": "Dringend",
     "agent": "Agent",
     "spec": "Beschreibung",
     "specField": "Spezifikation / Beschreibung",

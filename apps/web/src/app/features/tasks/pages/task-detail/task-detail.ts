@@ -132,16 +132,12 @@ const VERIFICATION_KIND_COLORS: Record<VerificationKind, string> = {
             }
           </select>
         </div>
-        <div>
-          <span class="text-text-muted text-xs">{{ t('tasks.priority') }}</span>
-          <select (change)="onPriorityChange($event)"
-            class="w-full bg-surface text-text-primary text-xs rounded px-2 py-1 border border-border mt-0.5">
-            <option [value]="1" [selected]="task().priority === 1">1 — Critical</option>
-            <option [value]="2" [selected]="task().priority === 2">2 — High</option>
-            <option [value]="3" [selected]="task().priority === 3">3 — Medium</option>
-            <option [value]="4" [selected]="task().priority === 4">4 — Low</option>
-            <option [value]="5" [selected]="task().priority === 5">5 — Lowest</option>
-          </select>
+        <div class="flex items-end">
+          <label class="flex items-center gap-1.5 cursor-pointer select-none mt-0.5">
+            <input type="checkbox" [checked]="task().urgent" (change)="onUrgentToggle()"
+              class="w-3.5 h-3.5 rounded border-border bg-surface text-ctp-red focus:ring-ctp-red focus:ring-1" />
+            <span class="text-xs" [class]="task().urgent ? 'text-ctp-red font-medium' : 'text-text-secondary'">{{ t('tasks.urgent') }}</span>
+          </label>
         </div>
         <div>
           <span class="text-text-muted text-xs">{{ t('tasks.agent') }}</span>
@@ -696,11 +692,8 @@ export class TaskDetailComponent {
     }
   }
 
-  onPriorityChange(event: Event): void {
-    const value = Number((event.target as HTMLSelectElement).value);
-    if (value !== this.task().priority) {
-      this.inlineUpdate.emit({ priority: value });
-    }
+  onUrgentToggle(): void {
+    this.inlineUpdate.emit({ urgent: !this.task().urgent });
   }
 
   startSpecEdit(): void {

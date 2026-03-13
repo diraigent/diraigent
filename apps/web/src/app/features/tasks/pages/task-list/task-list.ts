@@ -6,10 +6,10 @@ import { SpTask, SpTaskUpdate, SpTaskComment, SpTaskDependencies, ChangedFileSum
 import { BranchInfo, TaskBranchStatus } from '../../../../core/services/git-api.service';
 import { SpVerification } from '../../../../core/services/verifications-api.service';
 import { SpPlaybook } from '../../../../core/services/playbooks-api.service';
-import { TASK_PRIORITY_LABELS, taskStateColor, taskTransitions } from '../../../../shared/ui-constants';
+import { taskStateColor, taskTransitions } from '../../../../shared/ui-constants';
 import { TaskDetailComponent } from '../task-detail/task-detail';
 
-type SortField = 'title' | 'kind' | 'state' | 'priority' | 'created_at' | 'assigned_agent_id';
+type SortField = 'title' | 'kind' | 'state' | 'urgent' | 'created_at' | 'assigned_agent_id';
 type SortDir = 'asc' | 'desc';
 
 @Component({
@@ -142,7 +142,7 @@ type SortDir = 'asc' | 'desc';
           <option value="created_at">{{ t('tasks.created') }}</option>
           <option value="title">{{ t('tasks.title') }}</option>
           <option value="state">{{ t('tasks.state') }}</option>
-          <option value="priority">{{ t('tasks.priority') }}</option>
+          <option value="urgent">{{ t('tasks.urgent') }}</option>
           <option value="kind">{{ t('tasks.kind') }}</option>
         </select>
         <!-- Desktop sort buttons -->
@@ -265,9 +265,9 @@ type SortDir = 'asc' | 'desc';
                         (click)="toggleStateMenu($event, task.id)">
                     {{ task.state }}
                   </button>
-                  <span class="text-xs {{ priorityInfo(task.priority).color }}">
-                    {{ priorityInfo(task.priority).label }}
-                  </span>
+                  @if (task.urgent) {
+                    <span class="text-xs text-ctp-red font-medium">Urgent</span>
+                  }
                   <span class="text-text-secondary text-xs">{{ task.kind }}</span>
                 </div>
               </div>
@@ -292,8 +292,10 @@ type SortDir = 'asc' | 'desc';
                   </div>
                 }
               </div>
-              <span class="hidden md:inline-block text-xs w-20 text-center shrink-0 {{ priorityInfo(task.priority).color }}">
-                {{ priorityInfo(task.priority).label }}
+              <span class="hidden md:inline-block text-xs w-20 text-center shrink-0">
+                @if (task.urgent) {
+                  <span class="text-ctp-red font-medium">Urgent</span>
+                }
               </span>
               <span class="hidden lg:inline-block text-text-muted text-xs w-32 text-right shrink-0 whitespace-nowrap">
                 {{ task.created_at | date:'MMM d, HH:mm' }}
@@ -517,7 +519,7 @@ export class TaskListComponent {
     { field: 'title', label: 'Title' },
     { field: 'kind', label: 'Kind' },
     { field: 'state', label: 'State' },
-    { field: 'priority', label: 'Priority' },
+    { field: 'urgent', label: 'Urgent' },
     { field: 'created_at', label: 'Created' },
     { field: 'assigned_agent_id', label: 'Agent' },
   ];
@@ -544,7 +546,9 @@ export class TaskListComponent {
       if (av == null && bv == null) return 0;
       if (av == null) return 1;
       if (bv == null) return -1;
-      const cmp = typeof av === 'number' ? av - (bv as number) : String(av).localeCompare(String(bv));
+      const cmp = typeof av === 'number' ? av - (bv as unknown as number)
+        : typeof av === 'boolean' ? Number(bv) - Number(av)
+        : String(av).localeCompare(String(bv));
       return dir === 'asc' ? cmp : -cmp;
     });
 
@@ -704,10 +708,6 @@ export class TaskListComponent {
 
   protected readonly stateColor = taskStateColor;
   protected readonly getTransitions = taskTransitions;
-
-  priorityInfo(priority: number): { label: string; color: string } {
-    return TASK_PRIORITY_LABELS[priority] ?? { label: String(priority), color: 'text-text-secondary' };
-  }
 
   getBranch(taskId: string): BranchInfo | undefined {
     // Task ID prefix is the first 12 chars

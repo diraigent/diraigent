@@ -649,6 +649,7 @@
     "kind": "Kind",
     "state": "State",
     "priority": "Priority",
+    "urgent": "Urgent",
     "agent": "Agent",
     "spec": "Description",
     "specField": "Spec / Description",

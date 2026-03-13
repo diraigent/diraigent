@@ -19,7 +19,7 @@ import { FilterBarComponent } from '../../shared/components/filter-bar/filter-ba
 interface SpawnTaskItem {
   title: string;
   kind: string;
-  priority: number;
+  urgent: boolean;
   spec: string;
 }
 
@@ -348,15 +348,11 @@ const STATUSES: DecisionStatus[] = ['proposed', 'accepted', 'rejected', 'superse
                       <option value="spike">Spike</option>
                       <option value="refactor">Refactor</option>
                     </select>
-                    <select [(ngModel)]="task.priority"
-                      class="bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                             focus:outline-none focus:ring-1 focus:ring-accent w-36">
-                      <option [value]="1">P1 – Critical</option>
-                      <option [value]="2">P2 – High</option>
-                      <option [value]="3">P3 – Medium</option>
-                      <option [value]="4">P4 – Low</option>
-                      <option [value]="5">P5 – Backlog</option>
-                    </select>
+                    <label class="flex items-center gap-1.5 cursor-pointer select-none px-3 py-2">
+                      <input type="checkbox" [(ngModel)]="task.urgent"
+                        class="w-4 h-4 rounded border-border bg-surface text-ctp-red focus:ring-ctp-red focus:ring-1" />
+                      <span class="text-sm" [class]="task.urgent ? 'text-ctp-red font-medium' : 'text-text-secondary'">Urgent</span>
+                    </label>
                   </div>
                   <textarea [(ngModel)]="task.spec" [placeholder]="t('decisions.spawnTaskSpec')" rows="3"
                     class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
@@ -624,7 +620,7 @@ export class DecisionsPage extends CrudFeatureBase<SpDecision> {
 
   openSpawnTasks(decision: SpDecision): void {
     const spec = this.buildDecisionSpec(decision);
-    this.spawnTasks.set([{ title: `Implement: ${decision.title}`, kind: 'feature', priority: 3, spec }]);
+    this.spawnTasks.set([{ title: `Implement: ${decision.title}`, kind: 'feature', urgent: false, spec }]);
     this.spawnPlaybookId = '';
     this.spawnSubmitting.set(false);
     this.playbooksApi.list().subscribe({
@@ -638,7 +634,7 @@ export class DecisionsPage extends CrudFeatureBase<SpDecision> {
   }
 
   addSpawnTask(): void {
-    this.spawnTasks.update((tasks) => [...tasks, { title: '', kind: 'feature', priority: 3, spec: '' }]);
+    this.spawnTasks.update((tasks) => [...tasks, { title: '', kind: 'feature', urgent: false, spec: '' }]);
   }
 
   removeSpawnTask(index: number): void {
@@ -656,7 +652,7 @@ export class DecisionsPage extends CrudFeatureBase<SpDecision> {
       const req: CreateTaskRequest = {
         title: t.title.trim(),
         kind: t.kind,
-        priority: t.priority,
+        urgent: t.urgent,
         context: t.spec.trim() ? { spec: t.spec.trim() } : {},
       };
       if (this.spawnPlaybookId) {

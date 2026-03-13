@@ -23,7 +23,7 @@ export interface SpTask {
   title: string;
   kind: string;
   state: string;
-  priority: number;
+  urgent: boolean;
   context: Record<string, unknown>;
   assigned_agent_id: string | null;
   claimed_at: string | null;
@@ -112,7 +112,7 @@ export interface TaskListFilters {
 export interface CreateTaskRequest {
   title: string;
   kind?: string;
-  priority?: number;
+  urgent?: boolean;
   context?: Record<string, unknown>;
   required_capabilities?: string[];
   playbook_id?: string;
@@ -124,7 +124,7 @@ export interface CreateTaskRequest {
 export interface UpdateTaskRequest {
   title?: string;
   kind?: string;
-  priority?: number;
+  urgent?: boolean;
   context?: Record<string, unknown>;
   required_capabilities?: string[];
   playbook_id?: string | null;
