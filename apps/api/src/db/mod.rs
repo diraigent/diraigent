@@ -184,6 +184,13 @@ pub trait DiraigentDb: Send + Sync {
     ) -> Result<Vec<Goal>, AppError>;
     /// Return all goal IDs linked to a task (no auto_status filter).
     async fn get_goal_ids_for_task(&self, task_id: Uuid) -> Result<Vec<Uuid>, AppError>;
+    /// Return distinct goal IDs inherited from an agent's active tasks in a project.
+    async fn get_agent_inherited_goal_ids(
+        &self,
+        agent_id: Uuid,
+        project_id: Uuid,
+        exclude_task_id: Uuid,
+    ) -> Result<Vec<Uuid>, AppError>;
     async fn list_goals_for_task(&self, task_id: Uuid) -> Result<Vec<Goal>, AppError>;
 
     // ── Goal Comments ──────────────────────────────────────────────────────────
