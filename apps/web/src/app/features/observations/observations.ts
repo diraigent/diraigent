@@ -1,7 +1,9 @@
 import { Component, inject, signal, computed, effect } from '@angular/core';
 import { DatePipe, JsonPipe, SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
+import { forkJoin } from 'rxjs';
 import { ProjectContext } from '../../core/services/project-context.service';
 import {
   ObservationsApiService,
@@ -12,6 +14,7 @@ import {
   SpObservationCreate,
   CleanupObservationsResult,
 } from '../../core/services/observations-api.service';
+import { TasksApiService } from '../../core/services/tasks-api.service';
 import { OBSERVATION_KIND_COLORS, OBSERVATION_SEVERITY_COLORS } from '../../shared/ui-constants';
 import { FilterBarComponent } from '../../shared/components/filter-bar/filter-bar';
 import { ModalWrapperComponent } from '../../shared/components/modal-wrapper/modal-wrapper';
@@ -24,7 +27,7 @@ const STATUSES: ObservationStatus[] = ['open', 'acknowledged', 'acted_on', 'dism
 @Component({
   selector: 'app-observations',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, DatePipe, JsonPipe, SlicePipe, FilterBarComponent, ModalWrapperComponent, ConfirmDialogComponent],
+  imports: [TranslocoModule, FormsModule, RouterLink, DatePipe, JsonPipe, SlicePipe, FilterBarComponent, ModalWrapperComponent, ConfirmDialogComponent],
   template: `
     <div class="p-3 sm:p-6" *transloco="let t">
       <!-- Header -->
@@ -129,7 +132,13 @@ const STATUSES: ObservationStatus[] = ['open', 'acknowledged', 'acted_on', 'dism
                   }
                   <div class="flex items-center gap-2 mt-2 ml-6 text-xs text-text-secondary">
                     <span>{{ item.created_at | date:'short' }}</span>
-                    @if (item.source) {
+                    @if (item.source_task_id) {
+                      <a [routerLink]="['/tasks']" [queryParams]="{ id: item.source_task_id }"
+                        (click)="$event.stopPropagation()"
+                        class="px-1.5 py-0.5 bg-ctp-blue/10 text-ctp-blue rounded hover:bg-ctp-blue/20 hover:underline">
+                        {{ taskTitles()[item.source_task_id] ? '#' + taskNumbers()[item.source_task_id] + ' ' + taskTitles()[item.source_task_id] : (item.source ?? item.source_task_id | slice:0:13) }}
+                      </a>
+                    } @else if (item.source) {
                       <span class="px-1.5 py-0.5 bg-ctp-blue/10 text-ctp-blue rounded">{{ item.source }}</span>
                     }
                     @if (item.resolved_task_id) {
@@ -179,13 +188,23 @@ const STATUSES: ObservationStatus[] = ['open', 'acknowledged', 'acted_on', 'dism
                   }
 
                   <!-- Source -->
-                  @if (item.source) {
+                  @if (item.source || item.source_task_id) {
                     <div class="mb-4">
                       <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1">{{ t('observations.fieldSource') }}</h3>
-                      <div class="flex items-center gap-2">
-                        <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-ctp-blue/15 text-ctp-blue">{{ item.source }}</span>
+                      <div class="flex items-center gap-2 flex-wrap">
+                        @if (item.source) {
+                          <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-ctp-blue/15 text-ctp-blue">{{ item.source }}</span>
+                        }
                         @if (item.source_task_id) {
-                          <span class="text-xs text-accent">{{ t('observations.sourceTask') }}: {{ item.source_task_id | slice:0:13 }}</span>
+                          <a [routerLink]="['/tasks']" [queryParams]="{ id: item.source_task_id }"
+                            class="text-xs text-accent hover:underline">
+                            {{ t('observations.sourceTask') }}:
+                            @if (taskTitles()[item.source_task_id]) {
+                              #{{ taskNumbers()[item.source_task_id] }} {{ taskTitles()[item.source_task_id] }}
+                            } @else {
+                              {{ item.source_task_id | slice:0:13 }}
+                            }
+                          </a>
                         }
                       </div>
                     </div>
@@ -338,6 +357,7 @@ const STATUSES: ObservationStatus[] = ['open', 'acknowledged', 'acted_on', 'dism
 })
 export class ObservationsPage {
   private api = inject(ObservationsApiService);
+  private tasksApi = inject(TasksApiService);
   private ctx = inject(ProjectContext);
 
   readonly kinds = KINDS;
@@ -350,6 +370,8 @@ export class ObservationsPage {
   searchQuery = signal('');
   selectedStatus = '';
   selectedKind = '';
+  taskTitles = signal<Record<string, string>>({});
+  taskNumbers = signal<Record<string, number>>({});
 
   showForm = signal(false);
   formTitle = '';
@@ -474,8 +496,36 @@ export class ObservationsPage {
           const still = items.find(i => i.id === this.selected()!.id);
           this.selected.set(still ?? null);
         }
+        this.fetchSourceTaskTitles(items);
       },
       error: () => this.loading.set(false),
+    });
+  }
+
+  /** Fetch titles for all unique source_task_ids that we don't already have cached. */
+  private fetchSourceTaskTitles(items: SpObservation[]): void {
+    const cached = this.taskTitles();
+    const ids = [...new Set(
+      items
+        .map(i => i.source_task_id)
+        .filter((id): id is string => !!id && !cached[id]),
+    )];
+    if (ids.length === 0) return;
+
+    const requests = Object.fromEntries(
+      ids.map(id => [id, this.tasksApi.get(id)]),
+    );
+    forkJoin(requests).subscribe({
+      next: (results) => {
+        const titles = { ...this.taskTitles() };
+        const numbers = { ...this.taskNumbers() };
+        for (const [id, task] of Object.entries(results)) {
+          titles[id] = task.title;
+          numbers[id] = task.number;
+        }
+        this.taskTitles.set(titles);
+        this.taskNumbers.set(numbers);
+      },
     });
   }
 
