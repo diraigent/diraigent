@@ -61,7 +61,6 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/tasks/{task_id}/goals", get(list_task_goals))
         .route("/tasks/{task_id}/cost", post(record_task_cost))
-        .route("/tasks/{task_id}/goals", get(list_task_goals))
 }
 
 async fn create_task(
