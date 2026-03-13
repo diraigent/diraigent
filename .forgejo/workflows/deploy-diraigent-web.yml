@@ -15,18 +15,13 @@ jobs:
   deploy:
     name: Build & Push
     runs-on: docker
-    container: node:25.6.1-bookworm
+    container:
+      image: ${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/ci-deploy:latest
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.FORGEJO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Docker CLI + Buildx
-        run: |
-          apt-get update && apt-get install -y ca-certificates curl gnupg
-          install -m 0755 -d /etc/apt/keyrings
-          curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable" \
-            > /etc/apt/sources.list.d/docker.list
-          apt-get update && apt-get install -y docker-ce-cli docker-buildx-plugin
 
       - name: Login to Forgejo Container Registry
         run: docker login ${{ vars.REGISTRY_URL }} -u ${{ github.repository_owner }} -p ${{ secrets.FORGEJO_TOKEN }}
