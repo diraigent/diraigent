@@ -160,6 +160,41 @@ pub async fn spawn_worker(
         }
     }
 
+    // Extract context.files for file lock acquisition
+    let context_files: Vec<String> = task_data
+        .as_ref()
+        .and_then(|t| t["context"]["files"].as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Acquire file locks if the task declares file scope
+    if !context_files.is_empty() {
+        match api
+            .acquire_file_locks(project_id, task_id, &context_files)
+            .await
+        {
+            Ok(_) => {
+                info!(
+                    "spawn {tid}: acquired file locks for {} path(s)",
+                    context_files.len()
+                );
+            }
+            Err(e) => {
+                let msg = format!("{e:#}");
+                if msg.contains("409") {
+                    info!("Task {tid} skipped: file scope conflicts with active task: {msg}");
+                } else {
+                    warn!("spawn {tid}: failed to acquire file locks: {msg} — skipping spawn");
+                }
+                return;
+            }
+        }
+    }
+
     // Per-task model override from task context
     let task_model = task_data
         .as_ref()
