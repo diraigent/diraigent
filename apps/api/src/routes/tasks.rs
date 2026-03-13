@@ -22,6 +22,10 @@ pub fn routes() -> Router<AppState> {
         .route("/{project_id}/tasks/blocked", get(list_blocked_task_ids))
         .route("/{project_id}/tasks/flagged", get(list_flagged_task_ids))
         .route(
+            "/{project_id}/tasks/with-blockers",
+            get(list_tasks_with_blocker_updates),
+        )
+        .route(
             "/{project_id}/tasks/goal-linked",
             get(list_goal_linked_task_ids),
         )
@@ -112,6 +116,31 @@ async fn create_task(
         super::goals::refresh_auto_status_goals(&state, task.id, agent_id).await;
     }
 
+    // Inherit goals from the creating agent's active tasks (subtask goal inheritance)
+    if let Some(aid) = agent_id
+        && let Ok(inherited_goal_ids) = state
+            .db
+            .get_agent_inherited_goal_ids(aid, project_id, task.id)
+            .await
+    {
+        for goal_id in inherited_goal_ids {
+            // Skip if already linked via explicit goal_id
+            if req.goal_id == Some(goal_id) {
+                continue;
+            }
+            if let Err(e) = state.db.link_task_goal(goal_id, task.id).await {
+                tracing::warn!(
+                    task_id = %task.id,
+                    goal_id = %goal_id,
+                    error = %e,
+                    "Failed to inherit goal link from agent's active task"
+                );
+            }
+        }
+        // Refresh auto-status for any newly inherited goals
+        super::goals::refresh_auto_status_goals(&state, task.id, agent_id).await;
+    }
+
     Ok(Json(task))
 }
 
@@ -177,6 +206,17 @@ async fn list_goal_linked_task_ids(
     require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
     let ids = state.db.list_goal_linked_task_ids(project_id).await?;
     Ok(Json(ids))
+}
+
+async fn list_tasks_with_blocker_updates(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
+    Path(project_id): Path<Uuid>,
+) -> Result<Json<Vec<Task>>, AppError> {
+    require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
+    let tasks = state.db.list_tasks_with_blocker_updates(project_id).await?;
+    Ok(Json(tasks))
 }
 
 /// Return all goal IDs linked to a task.

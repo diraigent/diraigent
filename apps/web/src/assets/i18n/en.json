@@ -39,7 +39,12 @@
     "updatedAt": "Updated",
     "agent": "Agent",
     "tabReview": "Human Review",
-    "tabObservations": "Observations"
+    "tabObservations": "Observations",
+    "blocked": "Blocked",
+    "mergeConflict": "Merge Conflict",
+    "blockers": "Blockers",
+    "resolveConflict": "Resolve Conflict",
+    "resolving": "Resolving..."
   },
   "dashboard": {
     "title": "Dashboard",

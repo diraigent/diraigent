@@ -137,6 +137,12 @@ impl DiraigentDb for PostgresDb {
     async fn list_goal_linked_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError> {
         repository::list_goal_linked_task_ids(&self.0, project_id).await
     }
+    async fn list_tasks_with_blocker_updates(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<Task>, AppError> {
+        repository::list_tasks_with_blocker_updates(&self.0, project_id).await
+    }
 
     // Task Updates
     async fn create_task_update(
@@ -269,8 +275,24 @@ impl DiraigentDb for PostgresDb {
     ) -> Result<Vec<Uuid>, AppError> {
         repository::list_auto_status_goal_ids_for_task(&self.0, task_id).await
     }
+    async fn reorder_goals(
+        &self,
+        project_id: Uuid,
+        goal_ids: &[Uuid],
+    ) -> Result<Vec<Goal>, AppError> {
+        repository::reorder_goals(&self.0, project_id, goal_ids).await
+    }
     async fn get_goal_ids_for_task(&self, task_id: Uuid) -> Result<Vec<Uuid>, AppError> {
         repository::get_goal_ids_for_task(&self.0, task_id).await
+    }
+    async fn get_agent_inherited_goal_ids(
+        &self,
+        agent_id: Uuid,
+        project_id: Uuid,
+        exclude_task_id: Uuid,
+    ) -> Result<Vec<Uuid>, AppError> {
+        repository::get_agent_inherited_goal_ids(&self.0, agent_id, project_id, exclude_task_id)
+            .await
     }
     async fn list_goals_for_task(&self, task_id: Uuid) -> Result<Vec<Goal>, AppError> {
         repository::list_goals_for_task(&self.0, task_id).await

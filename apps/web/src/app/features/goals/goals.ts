@@ -5,6 +5,12 @@ import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subscription, forkJoin, of, timer, switchMap } from 'rxjs';
 import { catchError } from 'rxjs/operators';
+import {
+  CdkDragDrop,
+  CdkDrag,
+  CdkDropList,
+  moveItemInArray,
+} from '@angular/cdk/drag-drop';
 import { ProjectContext } from '../../core/services/project-context.service';
 import {
   GoalsApiService,
@@ -64,7 +70,15 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
 @Component({
   selector: 'app-work',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, DatePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent],
+  imports: [TranslocoModule, FormsModule, DatePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent, CdkDrag, CdkDropList],
+  styles: [`
+    .cdk-drag-animating {
+      transition: transform 250ms cubic-bezier(0, 0, 0.2, 1);
+    }
+    .cdk-drop-list-dragging .cdk-drag:not(.cdk-drag-placeholder) {
+      transition: transform 250ms cubic-bezier(0, 0, 0.2, 1);
+    }
+  `],
   template: `
     <div class="p-3 sm:p-6" *transloco="let t">
       <!-- Header -->
@@ -586,9 +600,20 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               {{ t('work.activeGoals') }}
               <span class="text-xs font-normal">({{ activeGoals().length }})</span>
             </h2>
-            <div class="space-y-2">
+            <div cdkDropList [cdkDropListData]="activeGoals()" (cdkDropListDropped)="dropGoal($event)" class="space-y-2">
               @for (g of activeGoals(); track g.id) {
-                <ng-container *ngTemplateOutlet="goalItem; context: { $implicit: g }"></ng-container>
+                <div cdkDrag class="flex items-stretch gap-0">
+                  <div cdkDragPlaceholder class="rounded-lg border-2 border-dashed border-accent/30 bg-accent/5 h-20 w-full"></div>
+                  <div cdkDragHandle
+                    class="flex items-center px-1.5 cursor-grab active:cursor-grabbing text-text-muted hover:text-text-secondary shrink-0">
+                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm8-16a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/>
+                    </svg>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <ng-container *ngTemplateOutlet="goalItem; context: { $implicit: g }"></ng-container>
+                  </div>
+                </div>
               }
             </div>
           </div>
@@ -1344,6 +1369,25 @@ export class WorkPage {
       current.add(section);
     }
     this.collapsedSections.set(current);
+  }
+
+  // --- Drag & drop ---
+
+  dropGoal(event: CdkDragDrop<SpGoal[]>): void {
+    if (event.previousIndex === event.currentIndex) return;
+    const active = [...this.activeGoals()];
+    moveItemInArray(active, event.previousIndex, event.currentIndex);
+
+    // Rebuild items: reordered active goals + rest in original order
+    const activeIds = new Set(active.map(g => g.id));
+    const rest = this.items().filter(g => !activeIds.has(g.id));
+    this.items.set([...active, ...rest]);
+
+    // Persist to server
+    const goalIds = active.map(g => g.id);
+    this.api.reorder(goalIds).subscribe({
+      error: () => this.loadGoals(),
+    });
   }
 
   // --- Goals ---

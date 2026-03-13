@@ -317,6 +317,26 @@ pub async fn list_goal_linked_task_ids(
     Ok(ids.into_iter().map(|(id,)| id).collect())
 }
 
+/// Returns tasks that have at least one `kind='blocker'` update and are not done/cancelled.
+pub async fn list_tasks_with_blocker_updates(
+    pool: &PgPool,
+    project_id: Uuid,
+) -> Result<Vec<Task>, AppError> {
+    let tasks = sqlx::query_as::<_, Task>(
+        "SELECT DISTINCT ON (t.id) t.*
+         FROM diraigent.task t
+         JOIN diraigent.task_update tu ON tu.task_id = t.id
+         WHERE t.project_id = $1
+           AND tu.kind = 'blocker'
+           AND t.state NOT IN ('done', 'cancelled')
+         ORDER BY t.id, t.updated_at DESC",
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(tasks)
+}
+
 pub async fn add_dependency(
     pool: &PgPool,
     task_id: Uuid,

@@ -16,6 +16,7 @@ use crate::validation;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/{project_id}/goals", post(create_goal).get(list_goals))
+        .route("/{project_id}/goals/reorder", post(reorder_goals))
         .route(
             "/goals/{goal_id}",
             get(get_goal).put(update_goal).delete(delete_goal),
@@ -57,6 +58,18 @@ async fn list_goals(
 ) -> Result<Json<Vec<Goal>>, AppError> {
     require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
     let goals = state.db.list_goals(project_id, &filters).await?;
+    Ok(Json(goals))
+}
+
+async fn reorder_goals(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
+    Path(project_id): Path<Uuid>,
+    Json(req): Json<ReorderGoals>,
+) -> Result<Json<Vec<Goal>>, AppError> {
+    require_authority(state.db.as_ref(), agent_id, user_id, project_id, "decide").await?;
+    let goals = state.db.reorder_goals(project_id, &req.goal_ids).await?;
     Ok(Json(goals))
 }
 
@@ -384,6 +397,7 @@ pub(crate) async fn refresh_auto_status_goals(
             target_date: None,
             success_criteria: None,
             metadata: None,
+            sort_order: None,
         };
 
         match state.db.update_goal(goal_id, &update).await {

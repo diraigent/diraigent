@@ -113,4 +113,17 @@ export class GitApiService {
       {},
     );
   }
+
+  taskBranchStatusForProject(projectId: string, taskId: string): Observable<TaskBranchStatus> {
+    return this.http.get<TaskBranchStatus>(
+      `${this.baseUrl}/${projectId}/git/task-branch/${taskId}`,
+    );
+  }
+
+  resolveTaskBranchForProject(projectId: string, taskId: string): Observable<PushResponse> {
+    return this.http.post<PushResponse>(
+      `${this.baseUrl}/${projectId}/git/resolve-task-branch/${taskId}`,
+      {},
+    );
+  }
 }

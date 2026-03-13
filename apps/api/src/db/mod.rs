@@ -93,6 +93,10 @@ pub trait DiraigentDb: Send + Sync {
     async fn list_blocked_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError>;
     async fn list_flagged_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError>;
     async fn list_goal_linked_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError>;
+    async fn list_tasks_with_blocker_updates(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<Task>, AppError>;
 
     // ── Task Updates ──────────────────────────────────────────────────────────
     async fn create_task_update(
@@ -173,8 +177,20 @@ pub trait DiraigentDb: Send + Sync {
         &self,
         task_id: Uuid,
     ) -> Result<Vec<Uuid>, AppError>;
+    async fn reorder_goals(
+        &self,
+        project_id: Uuid,
+        goal_ids: &[Uuid],
+    ) -> Result<Vec<Goal>, AppError>;
     /// Return all goal IDs linked to a task (no auto_status filter).
     async fn get_goal_ids_for_task(&self, task_id: Uuid) -> Result<Vec<Uuid>, AppError>;
+    /// Return distinct goal IDs inherited from an agent's active tasks in a project.
+    async fn get_agent_inherited_goal_ids(
+        &self,
+        agent_id: Uuid,
+        project_id: Uuid,
+        exclude_task_id: Uuid,
+    ) -> Result<Vec<Uuid>, AppError>;
     async fn list_goals_for_task(&self, task_id: Uuid) -> Result<Vec<Goal>, AppError>;
 
     // ── Goal Comments ──────────────────────────────────────────────────────────

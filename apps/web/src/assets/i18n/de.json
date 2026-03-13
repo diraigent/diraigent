@@ -38,7 +38,12 @@
     "updatedAt": "Aktualisiert",
     "agent": "Agent",
     "tabReview": "Menschliche Überprüfung",
-    "tabObservations": "Beobachtungen"
+    "tabObservations": "Beobachtungen",
+    "blocked": "Blockiert",
+    "mergeConflict": "Merge-Konflikt",
+    "blockers": "Blocker",
+    "resolveConflict": "Konflikt lösen",
+    "resolving": "Wird aufgelöst..."
   },
   "dashboard": {
     "title": "Dashboard",

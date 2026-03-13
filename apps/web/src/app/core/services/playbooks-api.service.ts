@@ -38,7 +38,7 @@ export interface SpPlaybook {
   updated_at: string;
 }
 
-export type GitStrategyId = 'merge_to_default' | 'branch_only' | 'branch_to_target' | 'no_git';
+export type GitStrategyId = 'merge_to_default' | 'branch_only' | 'branch_to_target' | 'feature_branch' | 'no_git';
 
 export interface GitStrategyDef {
   id: GitStrategyId;

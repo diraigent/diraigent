@@ -35,16 +35,6 @@ RUN touch libs/common-rust/diraigent-types/src/lib.rs \
 
 RUN cargo build --release -p diraigent-api
 
-ARG TARGETARCH
-RUN case "$TARGETARCH" in \
-      amd64) UPX_ARCH=amd64_linux ;; \
-      arm64) UPX_ARCH=arm64_linux ;; \
-      *) echo "Unsupported arch: $TARGETARCH" && exit 1 ;; \
-    esac && \
-    curl -sL "https://github.com/upx/upx/releases/download/v5.1.1/upx-5.1.1-${UPX_ARCH}.tar.xz" \
-      | tar xJ --strip-components=1 "upx-5.1.1-${UPX_ARCH}/upx" && \
-    ./upx --best --lzma target/release/diraigent-api && rm upx
-
 FROM debian:bookworm-slim AS runtime
 RUN groupadd --system --gid 1001 appgroup && \
     useradd --system --uid 1001 --gid appgroup appuser
