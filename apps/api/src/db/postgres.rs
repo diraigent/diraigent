@@ -456,6 +456,12 @@ impl DiraigentDb for PostgresDb {
     ) -> Result<CleanupObservationsResult, AppError> {
         repository::cleanup_observations(&self.0, project_id).await
     }
+    async fn delete_old_observations_all_projects(
+        &self,
+        default_retention_days: i32,
+    ) -> Result<u64, AppError> {
+        repository::delete_old_observations_all_projects(&self.0, default_retention_days).await
+    }
 
     // Playbooks
     async fn create_playbook(

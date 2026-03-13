@@ -181,6 +181,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     stale_detector::spawn_stale_detector(database.clone(), webhook_dispatcher);
+    stale_detector::spawn_observation_cleaner(database.clone());
 
     let cors = if let Ok(origins) = env::var("CORS_ORIGINS") {
         let origins: Vec<_> = origins
