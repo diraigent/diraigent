@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, effect, DestroyRef } from '@angular/core';
+import { Component, ChangeDetectorRef, inject, signal, computed, effect, DestroyRef } from '@angular/core';
 import { NgTemplateOutlet, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TranslocoModule } from '@jsverse/transloco';
@@ -8,6 +8,7 @@ import { catchError } from 'rxjs/operators';
 import {
   CdkDragDrop,
   CdkDrag,
+  CdkDragHandle,
   CdkDragPlaceholder,
   CdkDropList,
   moveItemInArray,
@@ -71,7 +72,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
 @Component({
   selector: 'app-work',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, DatePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent, CdkDrag, CdkDragPlaceholder, CdkDropList],
+  imports: [TranslocoModule, FormsModule, DatePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent, CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList],
   styles: [`
     .cdk-drag-animating {
       transition: transform 250ms cubic-bezier(0, 0, 0.2, 1);
@@ -1026,6 +1027,7 @@ export class WorkPage {
   private git = inject(GitApiService);
   private chat = inject(ChatService);
   private destroyRef = inject(DestroyRef);
+  private cdr = inject(ChangeDetectorRef);
 
   readonly statuses = STATUSES;
   readonly goalTypes = GOAL_TYPES;
@@ -1383,6 +1385,11 @@ export class WorkPage {
     const activeIds = new Set(active.map(g => g.id));
     const rest = this.items().filter(g => !activeIds.has(g.id));
     this.items.set([...active, ...rest]);
+
+    // Force immediate DOM update before CDK's post-drop animation setup.
+    // Without this, CDK calculates animation targets from old DOM positions,
+    // then Angular re-renders later and the item snaps back to its old spot.
+    this.cdr.detectChanges();
 
     // Persist to server
     const goalIds = active.map(g => g.id);
