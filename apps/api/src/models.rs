@@ -631,6 +631,7 @@ pub struct Goal {
     pub target_date: Option<DateTime<Utc>>,
     pub success_criteria: serde_json::Value,
     pub metadata: serde_json::Value,
+    pub sort_order: i32,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -791,6 +792,12 @@ pub struct UpdateGoal {
     pub target_date: Option<DateTime<Utc>>,
     pub success_criteria: Option<serde_json::Value>,
     pub metadata: Option<serde_json::Value>,
+    pub sort_order: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReorderGoals {
+    pub goal_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]

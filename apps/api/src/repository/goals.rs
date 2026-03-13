@@ -26,8 +26,9 @@ pub async fn create_goal(
     let auto_status = req.auto_status.unwrap_or(false);
 
     let goal = sqlx::query_as::<_, Goal>(
-        "INSERT INTO diraigent.goal (project_id, title, description, goal_type, priority, parent_goal_id, auto_status, target_date, success_criteria, metadata, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        "INSERT INTO diraigent.goal (project_id, title, description, goal_type, priority, parent_goal_id, auto_status, target_date, success_criteria, metadata, created_by, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                 (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM diraigent.goal WHERE project_id = $1))
          RETURNING *",
     )
     .bind(project_id)
@@ -67,7 +68,7 @@ pub async fn list_goals(
            AND ($3::text IS NULL OR goal_type = $3)
            AND ($4::uuid IS NULL OR parent_goal_id = $4)
            AND (NOT $5 OR parent_goal_id IS NULL)
-         ORDER BY priority DESC, created_at DESC
+         ORDER BY sort_order ASC, created_at DESC
          LIMIT $6 OFFSET $7",
     )
     .bind(project_id)
@@ -115,12 +116,13 @@ pub async fn update_goal(pool: &PgPool, id: Uuid, req: &UpdateGoal) -> Result<Go
         .as_ref()
         .unwrap_or(&existing.success_criteria);
     let metadata = req.metadata.as_ref().unwrap_or(&existing.metadata);
+    let sort_order = req.sort_order.unwrap_or(existing.sort_order);
 
     let goal = sqlx::query_as::<_, Goal>(
         "UPDATE diraigent.goal
          SET title = $2, description = $3, status = $4, goal_type = $5, priority = $6,
              parent_goal_id = $7, auto_status = $8, target_date = $9,
-             success_criteria = $10, metadata = $11
+             success_criteria = $10, metadata = $11, sort_order = $12
          WHERE id = $1 RETURNING *",
     )
     .bind(id)
@@ -134,6 +136,7 @@ pub async fn update_goal(pool: &PgPool, id: Uuid, req: &UpdateGoal) -> Result<Go
     .bind(target_date)
     .bind(success_criteria)
     .bind(metadata)
+    .bind(sort_order)
     .fetch_one(pool)
     .await?;
 
@@ -404,7 +407,7 @@ pub async fn list_goals_for_task(pool: &PgPool, task_id: Uuid) -> Result<Vec<Goa
         "SELECT g.* FROM diraigent.goal g
          JOIN diraigent.task_goal tg ON tg.goal_id = g.id
          WHERE tg.task_id = $1
-         ORDER BY g.priority DESC, g.created_at ASC",
+         ORDER BY g.sort_order ASC, g.created_at ASC",
     )
     .bind(task_id)
     .fetch_all(pool)
@@ -427,6 +430,54 @@ pub async fn list_auto_status_goal_ids_for_task(
     .await?;
 
     Ok(ids.into_iter().map(|r| r.0).collect())
+}
+
+pub async fn reorder_goals(
+    pool: &PgPool,
+    project_id: Uuid,
+    goal_ids: &[Uuid],
+) -> Result<Vec<Goal>, AppError> {
+    if goal_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Validate all goal_ids belong to the given project
+    let count: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM diraigent.goal WHERE id = ANY($1) AND project_id = $2",
+    )
+    .bind(goal_ids)
+    .bind(project_id)
+    .fetch_one(pool)
+    .await?;
+
+    if count.0 != goal_ids.len() as i64 {
+        return Err(AppError::Validation(
+            "Some goal IDs do not belong to this project".into(),
+        ));
+    }
+
+    // Build sort_order updates: goal_ids[i] gets sort_order = i
+    let indexes: Vec<i32> = (0..goal_ids.len() as i32).collect();
+
+    sqlx::query(
+        "UPDATE diraigent.goal SET sort_order = data.new_order
+         FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::int[]) AS new_order) data
+         WHERE diraigent.goal.id = data.id",
+    )
+    .bind(goal_ids)
+    .bind(&indexes)
+    .execute(pool)
+    .await?;
+
+    // Return the updated goals in new sort order
+    let goals = sqlx::query_as::<_, Goal>(
+        "SELECT * FROM diraigent.goal WHERE project_id = $1 ORDER BY sort_order ASC, created_at DESC",
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(goals)
 }
 
 /// Return all goal IDs linked to a task (no auto_status filter).
