@@ -45,7 +45,8 @@ When asked to "pick up a task" or "work on a task":
 7. **Test**: Run the `test_cmd` from the task context
 8. **Post artifacts**: `agent-cli artifact $TASK_ID "test output or code snippet"`
 9. **Verify acceptance**: Check each acceptance criterion is met
-10. **Complete step**: `agent-cli transition $TASK_ID done`
+10. **File observations**: If you encounter out-of-scope findings (architectural insights, code smells, risks, or improvement ideas), file them as observations: `agent-cli observation $PROJECT_ID '{"kind":"<insight|risk|smell|improvement>","title":"...","description":"...","severity":"<info|low|medium|high>"}'`
+11. **Complete step**: `agent-cli transition $TASK_ID done`
 
 ## Task Context Fields
 
