@@ -83,6 +83,9 @@ enum ApiMsg {
     AgentTasks(Vec<client::Task>),
     Subtasks(Vec<client::Task>),
     ObservationsCleanup(client::CleanupObservationsResult),
+    Plans(Vec<client::Plan>),
+    PlanTasksList(Vec<client::Task>),
+    PlanProgressMsg(client::PlanProgress),
     Error(String),
 }
 
@@ -145,6 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             metrics,
             recent_events,
             webhooks,
+            plans,
         ) = tokio::join!(
             api.list_tasks(pid),
             api.list_playbooks(pid),
@@ -162,6 +166,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             api.get_project_metrics(pid, None),
             api.list_recent_events(pid),
             api.list_webhooks(pid),
+            api.list_plans(pid),
         );
         if let Ok(resp) = tasks {
             let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
@@ -210,6 +215,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         if let Ok(resp) = webhooks {
             let _ = tx.send(ApiMsg::Webhooks(resp)).await;
+        }
+        if let Ok(resp) = plans {
+            let _ = tx.send(ApiMsg::Plans(resp)).await;
         }
     }
 
@@ -546,6 +554,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         });
                     }
                 }
+                ApiMsg::Plans(p) => app.plans = p,
+                ApiMsg::PlanTasksList(tasks) => app.plan_tasks = tasks,
+                ApiMsg::PlanProgressMsg(p) => app.plan_progress = Some(p),
                 ApiMsg::Error(e) => app.last_error = Some(e),
             }
         }
@@ -614,6 +625,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 View::Webhooks => views::webhooks::render(f, main_layout[1], &mut app),
                 View::Reports => views::reports::render(f, main_layout[1], &mut app),
                 View::Dashboard => views::dashboard::render(f, main_layout[1], &mut app),
+                View::Plans => views::plans::render(f, main_layout[1], &mut app),
                 View::StepTemplates => {
                     let label = app.view.label();
                     let block = ratatui::widgets::Block::default()
@@ -7825,6 +7837,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             tokio::spawn(async move {
                                 if let Ok(comments) = api.list_goal_comments(gid).await {
                                     let _ = tx.send(ApiMsg::GoalComments(comments)).await;
+                                }
+                            });
+                        }
+                    }
+                }
+
+                // Fetch plan tasks/progress on selection change
+                if app.modal == Modal::None
+                    && app.view == View::Plans
+                    && matches!(
+                        key.code,
+                        KeyCode::Up | KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('k')
+                    )
+                {
+                    if let Some(plan) = app.selected_plan.and_then(|i| app.plans.get(i)) {
+                        let pid = plan.id;
+                        {
+                            let api = api.clone();
+                            let tx = tx.clone();
+                            tokio::spawn(async move {
+                                if let Ok(tasks) = api.get_plan_tasks(pid, 50, 0).await {
+                                    let _ = tx.send(ApiMsg::PlanTasksList(tasks)).await;
+                                }
+                            });
+                        }
+                        {
+                            let api = api.clone();
+                            let tx = tx.clone();
+                            tokio::spawn(async move {
+                                if let Ok(progress) = api.get_plan_progress(pid).await {
+                                    let _ = tx.send(ApiMsg::PlanProgressMsg(progress)).await;
                                 }
                             });
                         }
