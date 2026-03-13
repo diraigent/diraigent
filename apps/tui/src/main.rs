@@ -61,6 +61,8 @@ enum ApiMsg {
     ChangedFiles(Vec<client::ChangedFile>),
     Verifications(Vec<client::Verification>),
     Events(Vec<client::Event>),
+    DashboardMetrics(client::ProjectMetrics),
+    DashboardEvents(Vec<client::Event>),
     Reports(Vec<client::Report>),
     Webhooks(Vec<client::Webhook>),
     WebhookDeliveries(Vec<client::WebhookDelivery>),
@@ -139,6 +141,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             verifications,
             events,
             reports,
+            metrics,
+            recent_events,
             webhooks,
         ) = tokio::join!(
             api.list_tasks(pid),
@@ -154,6 +158,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             api.list_verifications(pid, None, None, None, 100, 0),
             api.list_events(pid, None, None),
             api.list_reports(pid),
+            api.get_project_metrics(pid, None),
+            api.list_recent_events(pid),
             api.list_webhooks(pid),
         );
         if let Ok(resp) = tasks {
@@ -194,6 +200,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         if let Ok(resp) = reports {
             let _ = tx.send(ApiMsg::Reports(resp)).await;
+        }
+        if let Ok(m) = metrics {
+            let _ = tx.send(ApiMsg::DashboardMetrics(m)).await;
+        }
+        if let Ok(ev) = recent_events {
+            let _ = tx.send(ApiMsg::DashboardEvents(ev)).await;
         }
         if let Ok(resp) = webhooks {
             let _ = tx.send(ApiMsg::Webhooks(resp)).await;
@@ -391,6 +403,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::Verifications(v) => app.verifications = v,
                 ApiMsg::Events(e) => app.events = e,
                 ApiMsg::Reports(r) => app.reports = r,
+                ApiMsg::DashboardMetrics(m) => app.dashboard_metrics = Some(m),
+                ApiMsg::DashboardEvents(ev) => app.dashboard_events = ev,
                 ApiMsg::Webhooks(w) => app.webhooks = w,
                 ApiMsg::WebhookDeliveries(d) => app.webhook_deliveries = d,
                 ApiMsg::WebhookTestResult(r) => app.webhook_test_result = Some(r),
@@ -591,7 +605,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 View::Events => views::events::render(f, main_layout[1], &mut app),
                 View::Webhooks => views::webhooks::render(f, main_layout[1], &mut app),
                 View::Reports => views::reports::render(f, main_layout[1], &mut app),
-                View::Dashboard | View::StepTemplates => {
+                View::Dashboard => views::dashboard::render(f, main_layout[1], &mut app),
+                View::StepTemplates => {
                     let label = app.view.label();
                     let block = ratatui::widgets::Block::default()
                         .title(format!(" {} ", label))
@@ -6164,6 +6179,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     tokio::spawn(async move {
                                         if let Ok(resp) = api.list_log_labels().await {
                                             let _ = tx.send(ApiMsg::LogLabels(resp.data)).await;
+                                        }
+                                    });
+                                }
+                            }
+                            KeyCode::Char('H') | KeyCode::Home => {
+                                app.view = View::Dashboard;
+                                app.detail_scroll = 0;
+                                if let Some(pid) = app.current_project {
+                                    let api2 = api.clone();
+                                    let tx2 = tx.clone();
+                                    tokio::spawn(async move {
+                                        if let Ok(m) = api2.get_project_metrics(pid, None).await {
+                                            let _ = tx2.send(ApiMsg::DashboardMetrics(m)).await;
+                                        }
+                                    });
+                                    let api3 = api.clone();
+                                    let tx3 = tx.clone();
+                                    tokio::spawn(async move {
+                                        if let Ok(ev) = api3.list_recent_events(pid).await {
+                                            let _ = tx3.send(ApiMsg::DashboardEvents(ev)).await;
                                         }
                                     });
                                 }

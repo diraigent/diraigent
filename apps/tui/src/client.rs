@@ -710,7 +710,7 @@ pub struct ProjectMetrics {
     pub task_costs: Vec<TaskCostRow>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct TaskSummary {
     #[serde(default)]
     pub total: i64,
@@ -728,7 +728,7 @@ pub struct TaskSummary {
     pub human_review: i64,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct CostSummary {
     #[serde(default)]
     pub total_input_tokens: i64,

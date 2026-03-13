@@ -13,6 +13,7 @@ pub mod team;
 pub mod verifications;
 
 pub mod chat;
+pub mod dashboard;
 pub mod events;
 pub mod git;
 pub mod reports;

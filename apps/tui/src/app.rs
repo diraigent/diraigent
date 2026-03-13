@@ -1,8 +1,8 @@
 use crate::client::{
     Agent, AuditEntry, BranchInfo, ChangedFile, ChatMessage, Decision, GitTaskStatus, Goal,
     GoalComment, GoalProgress, GoalStats, Integration, IntegrationAccess, KnowledgeEntry, LogEntry,
-    MainPushStatus, Member, Observation, Playbook, Project, ProjectEvent, Report, Role,
-    SearchResult, StepTemplate, Task, TaskComment, TaskDependencies, TaskUpdate, TreeEntry,
+    MainPushStatus, Member, Observation, Playbook, Project, ProjectEvent, ProjectMetrics, Report,
+    Role, SearchResult, StepTemplate, Task, TaskComment, TaskDependencies, TaskUpdate, TreeEntry,
     Verification, Webhook, WebhookDelivery,
 };
 use ratatui::widgets::ListState;
@@ -636,6 +636,9 @@ pub struct App {
     pub webhook_test_result: Option<String>,
     pub reports: Vec<Report>,
     pub selected_report: Option<usize>,
+    // Dashboard
+    pub dashboard_metrics: Option<ProjectMetrics>,
+    pub dashboard_events: Vec<ProjectEvent>,
 
     // Goal comments
     pub goal_comments: Vec<GoalComment>,
@@ -793,6 +796,8 @@ impl App {
             webhook_test_result: None,
             reports: vec![],
             selected_report: None,
+            dashboard_metrics: None,
+            dashboard_events: vec![],
             goal_comments: vec![],
             step_templates: vec![],
             agent_tasks: vec![],
