@@ -29,6 +29,7 @@ pub fn routes() -> Router<AppState> {
             "/{project_id}/git/resolve-task-branch/{task_id}",
             post(resolve_task_branch),
         )
+        .route("/{project_id}/git/release", post(release))
 }
 
 // ── Types (unchanged HTTP contract) ──
@@ -82,6 +83,20 @@ pub struct MainPushStatus {
     pub behind: i32,
     pub last_commit: Option<String>,
     pub last_commit_message: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReleaseRequest {
+    /// Source branch to squash-merge from (default: "dev")
+    pub source_branch: Option<String>,
+    /// Commit message (auto-generated from git log if not provided)
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ReleaseResponse {
+    pub success: bool,
+    pub message: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -329,6 +344,39 @@ async fn resolve_task_branch(
     }))
 }
 
+async fn release(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
+    Path(project_id): Path<Uuid>,
+    Json(req): Json<ReleaseRequest>,
+) -> Result<Json<ReleaseResponse>, AppError> {
+    require_authority(state.db.as_ref(), agent_id, user_id, project_id, "manage").await?;
+
+    let data = git_ws_request_with_timeout(
+        &state,
+        project_id,
+        GitWsParams {
+            query_type: "release",
+            branch: req.source_branch,
+            path: req.message,
+            ..Default::default()
+        },
+        60, // Longer timeout: squash merge + push to multiple remotes
+    )
+    .await?;
+
+    let message = data["message"]
+        .as_str()
+        .unwrap_or("Release completed")
+        .to_string();
+
+    Ok(Json(ReleaseResponse {
+        success: true,
+        message,
+    }))
+}
+
 // ── WebSocket request-reply helper ──
 
 #[derive(Default)]
@@ -346,6 +394,15 @@ pub(crate) async fn git_ws_request(
     state: &AppState,
     project_id: Uuid,
     params: GitWsParams<'_>,
+) -> Result<serde_json::Value, AppError> {
+    git_ws_request_with_timeout(state, project_id, params, 10).await
+}
+
+async fn git_ws_request_with_timeout(
+    state: &AppState,
+    project_id: Uuid,
+    params: GitWsParams<'_>,
+    timeout_secs: u64,
 ) -> Result<serde_json::Value, AppError> {
     let project = state.db.get_project_by_id(project_id).await?;
 
@@ -377,7 +434,7 @@ pub(crate) async fn git_ws_request(
             "source_blob" => {
                 serde_json::json!({ "not_found": true, "error": "Git disabled for this project" })
             }
-            "push_main" | "resolve_and_push_main" | "push" => {
+            "push_main" | "resolve_and_push_main" | "push" | "release" => {
                 return Err(AppError::Validation(
                     "Git operations are disabled for this project".into(),
                 ));
@@ -428,7 +485,7 @@ pub(crate) async fn git_ws_request(
         ));
     }
 
-    let response = tokio::time::timeout(std::time::Duration::from_secs(10), rx)
+    let response = tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx)
         .await
         .map_err(|_| {
             AppError::ServiceUnavailable(

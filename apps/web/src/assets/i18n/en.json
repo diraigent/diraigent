@@ -46,6 +46,10 @@
     "resolveConflict": "Resolve Conflict",
     "resolving": "Resolving..."
   },
+  "git": {
+    "release": "Release",
+    "releasing": "Releasing..."
+  },
   "dashboard": {
     "title": "Dashboard",
     "welcome": "Welcome to Diraigent",

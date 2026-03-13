@@ -8,6 +8,7 @@ import { catchError } from 'rxjs/operators';
 import {
   CdkDragDrop,
   CdkDrag,
+  CdkDragPlaceholder,
   CdkDropList,
   moveItemInArray,
 } from '@angular/cdk/drag-drop';
@@ -70,7 +71,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
 @Component({
   selector: 'app-work',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, DatePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent, CdkDrag, CdkDropList],
+  imports: [TranslocoModule, FormsModule, DatePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent, CdkDrag, CdkDragPlaceholder, CdkDropList],
   styles: [`
     .cdk-drag-animating {
       transition: transform 250ms cubic-bezier(0, 0, 0.2, 1);
@@ -603,7 +604,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
             <div cdkDropList [cdkDropListData]="activeGoals()" (cdkDropListDropped)="dropGoal($event)" class="space-y-2">
               @for (g of activeGoals(); track g.id) {
                 <div cdkDrag class="flex items-stretch gap-0">
-                  <div cdkDragPlaceholder class="rounded-lg border-2 border-dashed border-accent/30 bg-accent/5 h-20 w-full"></div>
+                  <div *cdkDragPlaceholder class="rounded-lg border-2 border-dashed border-accent/30 bg-accent/5 h-20 w-full"></div>
                   <div cdkDragHandle
                     class="flex items-center px-1.5 cursor-grab active:cursor-grabbing text-text-muted hover:text-text-secondary shrink-0">
                     <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">

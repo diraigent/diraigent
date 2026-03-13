@@ -1,5 +1,32 @@
 # Changelog
 
+## v20260313-03 — 2026-03-13
+
+### API
+- **Blocker surfacing endpoint**: `GET /{project_id}/tasks/with-blockers` returns active tasks that have `kind=blocker` task updates (excludes done/cancelled)
+- **Per-task review authority check** in `bulk_transition_tasks` for review steps
+- **Retry backoff** unit tests for `retry_api_call`
+
+### Orchestra
+- **Goal-based git strategy** (`feature_branch`): tasks branch from a goal branch (e.g. `goal/<slug>`) and merge back into it; the goal branch merges to default when the goal completes
+- **Goal association inheritance**: subtasks created by agents automatically inherit goal associations
+- **Observation guidance** added to agent CLAUDE.md workflow
+- **UPX removed** from Containerfiles for faster builds
+- Updated blocker handling
+
+### Web Dashboard
+- **Review queue: blocker surfacing** — tasks with blocker updates now appear in the Review Queue tab alongside human_review tasks, with red "Blocked" badge and blocker details in expanded view
+- **Review queue: merge conflict resolution** — "Merge Conflict" badge and "Resolve Conflict" button for tasks with git branch conflicts
+- **Playbook builder: feature branch strategy** — "Feature branch (per goal)" option added to git strategy dropdown with tooltip description
+- **Goal drag-and-drop reordering** with sort_order field and reorder API endpoint
+- i18n keys added for blocker/conflict UI (English + German)
+
+### CI/CD
+- **GitHub Actions release workflow** (`.github/workflows/release-diraigent.yml`) with Docker Buildx, GHA layer cache, and GHCR push
+- GitHub release version bump
+
+---
+
 ## v0.2.0 — 2026-03-12
 
 ### API
