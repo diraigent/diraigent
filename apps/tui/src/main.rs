@@ -1372,14 +1372,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
 
-                // Priority
+                // Urgent toggle
                 {
-                    let val = format!("◀ {} ▶", form.priority);
+                    let val = if form.urgent { "⚡ Urgent" } else { "  Normal" };
                     render_field(
                         f,
                         field_chunks[2],
-                        "Priority:",
-                        &val,
+                        "Urgent:",
+                        val,
                         form.active_field == 2,
                         (0, 0),
                     );
@@ -1531,14 +1531,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
 
-                // Priority
+                // Urgent toggle
                 {
-                    let val = format!("◀ {} ▶", form.priority);
+                    let val = if form.urgent { "⚡ Urgent" } else { "  Normal" };
                     render_field(
                         f,
                         field_chunks[2],
-                        "Priority:",
-                        &val,
+                        "Urgent:",
+                        val,
                         form.active_field == 2,
                         (0, 0),
                     );
@@ -2704,7 +2704,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let task_id = form.task_id;
                                 let title = form.title.clone();
                                 let kind = TASK_KINDS[form.kind_index].to_string();
-                                let priority = form.priority;
+                                let urgent = form.urgent;
                                 let spec = form.spec.clone();
                                 let pid = app.current_project;
                                 app.task_edit_form = None;
@@ -2717,7 +2717,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             serde_json::json!({
                                                 "title": title,
                                                 "kind": kind,
-                                                "priority": priority,
+                                                "urgent": urgent,
                                                 "context": { "spec": spec }
                                             }),
                                         )
@@ -2748,9 +2748,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             2 => {
-                                if form.priority > 1 {
-                                    form.priority -= 1;
-                                }
+                                form.urgent = !form.urgent;
                             }
                             0 => {
                                 if form.cursor > 0 {
@@ -2769,9 +2767,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 form.kind_index = (form.kind_index + 1) % TASK_KINDS.len();
                             }
                             2 => {
-                                if form.priority < 5 {
-                                    form.priority += 1;
-                                }
+                                form.urgent = !form.urgent;
                             }
                             0 => {
                                 if form.cursor < form.title.chars().count() {
@@ -2819,6 +2815,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 form.title.insert(bp, c);
                                 form.cursor += 1;
                             }
+                            2 => {
+                                // Space or Enter toggle urgent
+                                if c == ' ' {
+                                    form.urgent = !form.urgent;
+                                }
+                            }
                             3 => {
                                 let bp = form
                                     .spec
@@ -2853,7 +2855,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if !form.title.is_empty() {
                                 let title = form.title.clone();
                                 let kind = TASK_KINDS[form.kind_index].to_string();
-                                let priority = form.priority;
+                                let urgent = form.urgent;
                                 let spec = form.spec.clone();
                                 let playbook_id = if form.playbook_index > 0 {
                                     app.playbooks.get(form.playbook_index - 1).map(|pb| pb.id)
@@ -2871,7 +2873,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 pid,
                                                 &title,
                                                 &kind,
-                                                priority,
+                                                urgent,
                                                 &spec,
                                                 playbook_id,
                                             )
@@ -2903,9 +2905,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             2 => {
-                                if form.priority > 1 {
-                                    form.priority -= 1;
-                                }
+                                form.urgent = !form.urgent;
                             }
                             3 => {
                                 // Playbook selector: 0=None, 1..=N=playbooks
@@ -2932,9 +2932,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 form.kind_index = (form.kind_index + 1) % TASK_KINDS.len();
                             }
                             2 => {
-                                if form.priority < 5 {
-                                    form.priority += 1;
-                                }
+                                form.urgent = !form.urgent;
                             }
                             3 => {
                                 // Playbook selector
@@ -2986,6 +2984,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     .unwrap_or(form.title.len());
                                 form.title.insert(bp, c);
                                 form.cursor += 1;
+                            }
+                            2 => {
+                                // Space toggles urgent
+                                if c == ' ' {
+                                    form.urgent = !form.urgent;
+                                }
                             }
                             4 => {
                                 let bp = form
@@ -5823,7 +5827,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         let pid = app.current_project;
                                         tokio::spawn(async move {
                                             if let Err(e) = api
-                                                .promote_observation(obs_id, &title, &kind, 3)
+                                                .promote_observation(obs_id, &title, &kind, false)
                                                 .await
                                             {
                                                 let _ = tx
@@ -7299,7 +7303,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             task_id: task.id,
                                             title: task.title.clone(),
                                             kind_index,
-                                            priority: task.priority.clamp(1, 5) as u8,
+                                            urgent: task.urgent,
                                             spec,
                                             active_field: 0,
                                             cursor: task.title.chars().count(),
