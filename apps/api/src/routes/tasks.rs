@@ -64,6 +64,7 @@ pub fn routes() -> Router<AppState> {
             get(list_task_comments).post(create_task_comment),
         )
         .route("/tasks/{task_id}/goals", get(list_task_goals))
+        .route("/tasks/{task_id}/subtasks", get(list_subtasks))
         .route("/tasks/{task_id}/cost", post(record_task_cost))
 }
 
@@ -230,6 +231,27 @@ async fn list_task_goals(
     require_membership(state.db.as_ref(), agent_id, user_id, task.project_id).await?;
     let ids = state.db.get_goal_ids_for_task(task_id).await?;
     Ok(Json(ids))
+}
+
+/// GET /tasks/{task_id}/subtasks — list child tasks of a parent task.
+async fn list_subtasks(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
+    Path(task_id): Path<Uuid>,
+    Query(pagination): Query<Pagination>,
+) -> Result<Json<Vec<Task>>, AppError> {
+    ensure_member(
+        state.db.as_ref(),
+        agent_id,
+        user_id,
+        state.db.get_task_by_id(task_id).await?,
+    )
+    .await?;
+    let limit = pagination.limit.unwrap_or(50).min(100);
+    let offset = pagination.offset.unwrap_or(0);
+    let subtasks = state.db.list_subtasks(task_id, limit, offset).await?;
+    Ok(Json(subtasks))
 }
 
 async fn get_task(

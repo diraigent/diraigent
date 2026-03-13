@@ -399,6 +399,8 @@ pub struct Task {
     pub reverted_at: Option<DateTime<Utc>>,
     /// User-toggleable flag (bookmark) for tracking tasks of interest.
     pub flagged: bool,
+    /// Parent task ID for decomposition tracking (nullable).
+    pub parent_id: Option<Uuid>,
     /// File paths this task intends to modify — used by the orchestra
     /// to detect branch overlap and serialize conflicting work.
     pub file_scope: Vec<String>,
@@ -550,6 +552,8 @@ pub struct CreateTask {
     pub goal_id: Option<Uuid>,
     /// File paths this task intends to modify (for branch overlap detection).
     pub file_scope: Option<Vec<String>>,
+    /// Optional parent task ID for decomposition tracking.
+    pub parent_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -567,6 +571,9 @@ pub struct UpdateTask {
     pub flagged: Option<bool>,
     /// File paths this task intends to modify (for branch overlap detection).
     pub file_scope: Option<Vec<String>>,
+    /// Double-Option: None = don't change, Some(None) = clear, Some(Some(id)) = set.
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    pub parent_id: Option<Option<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]

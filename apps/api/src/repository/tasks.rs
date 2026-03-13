@@ -51,8 +51,8 @@ pub async fn create_task(
     };
 
     let task = sqlx::query_as::<_, Task>(
-        "INSERT INTO diraigent.task (project_id, title, kind, state, priority, context, required_capabilities, playbook_id, playbook_step, decision_id, created_by, file_scope)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        "INSERT INTO diraigent.task (project_id, title, kind, state, priority, context, required_capabilities, playbook_id, playbook_step, decision_id, created_by, file_scope, parent_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING *",
     )
     .bind(project_id)
@@ -67,6 +67,7 @@ pub async fn create_task(
     .bind(req.decision_id)
     .bind(created_by)
     .bind(&file_scope)
+    .bind(req.parent_id)
     .fetch_one(pool)
     .await?;
 
@@ -224,9 +225,15 @@ pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Resu
     let flagged = req.flagged.unwrap_or(existing.flagged);
     let file_scope = req.file_scope.as_ref().unwrap_or(&existing.file_scope);
 
+    // Double-Option: None → keep existing, Some(v) → use v (which may be None to clear).
+    let parent_id = match &req.parent_id {
+        Some(v) => *v,
+        None => existing.parent_id,
+    };
+
     let task = sqlx::query_as::<_, Task>(
         "UPDATE diraigent.task
-         SET title = $2, kind = $3, priority = $4, context = $5, required_capabilities = $6, playbook_step = $7, playbook_id = $8, flagged = $9, file_scope = $10
+         SET title = $2, kind = $3, priority = $4, context = $5, required_capabilities = $6, playbook_step = $7, playbook_id = $8, flagged = $9, file_scope = $10, parent_id = $11
          WHERE id = $1 RETURNING *",
     )
     .bind(task_id)
@@ -239,6 +246,7 @@ pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Resu
     .bind(playbook_id)
     .bind(flagged)
     .bind(file_scope)
+    .bind(parent_id)
     .fetch_one(pool)
     .await?;
 
@@ -630,6 +638,34 @@ pub async fn count_tasks(
 
     let row: (i64,) = query.fetch_one(pool).await?;
 
+    Ok(row.0)
+}
+
+// ── Subtasks (parent-child) ──
+
+pub async fn list_subtasks(
+    pool: &PgPool,
+    parent_id: Uuid,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<Task>, AppError> {
+    let tasks = sqlx::query_as::<_, Task>(
+        "SELECT * FROM diraigent.task WHERE parent_id = $1
+         ORDER BY created_at ASC LIMIT $2 OFFSET $3",
+    )
+    .bind(parent_id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
+    Ok(tasks)
+}
+
+pub async fn count_subtasks(pool: &PgPool, parent_id: Uuid) -> Result<i64, AppError> {
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM diraigent.task WHERE parent_id = $1")
+        .bind(parent_id)
+        .fetch_one(pool)
+        .await?;
     Ok(row.0)
 }
 

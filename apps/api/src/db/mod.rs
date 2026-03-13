@@ -73,6 +73,15 @@ pub trait DiraigentDb: Send + Sync {
     async fn release_task(&self, task_id: Uuid) -> Result<Task, AppError>;
     async fn delete_task(&self, task_id: Uuid) -> Result<(), AppError>;
 
+    // ── Subtasks (parent-child) ─────────────────────────────────────────────
+    async fn list_subtasks(
+        &self,
+        parent_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<Task>, AppError>;
+    async fn count_subtasks(&self, parent_id: Uuid) -> Result<i64, AppError>;
+
     // ── Task Cost Metrics ─────────────────────────────────────────────────────
     async fn update_task_cost(
         &self,
