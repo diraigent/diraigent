@@ -18,7 +18,8 @@
     "reports": "Berichte",
     "reference": "Referenz",
     "stepTemplates": "Schrittvorlagen",
-    "work": "Arbeit"
+    "work": "Arbeit",
+    "plans": "Pläne"
   },
   "review": {
     "awaitingReview": "Wartet auf Review",
@@ -265,6 +266,39 @@
     "backlog": "Backlog",
     "completed": "Abgeschlossen",
     "archived": "Archiviert"
+  },
+  "plans": {
+    "create": "Neuer Plan",
+    "createTitle": "Plan erstellen",
+    "editTitle": "Plan bearbeiten",
+    "searchPlaceholder": "Pläne suchen...",
+    "allStatuses": "Alle Status",
+    "fieldTitle": "Titel",
+    "fieldDescription": "Beschreibung",
+    "progress": "Fortschritt",
+    "tasks": "Aufgaben",
+    "linkedTasks": "Aufgaben",
+    "addTask": "Aufgabe hinzufügen",
+    "taskId": "Aufgaben-ID",
+    "taskIdPlaceholder": "Aufgaben-UUID eingeben...",
+    "add": "Hinzufügen",
+    "noTasks": "Noch keine Aufgaben in diesem Plan.",
+    "viewTasks": "Aufgaben anzeigen",
+    "markComplete": "Abschließen",
+    "reactivate": "Reaktivieren",
+    "inProgress": "in Bearbeitung",
+    "cancelled": "abgebrochen",
+    "updatedAt": "Aktualisiert",
+    "createdAt": "Erstellt",
+    "cancel": "Abbrechen",
+    "save": "Speichern",
+    "edit": "Bearbeiten",
+    "delete": "Löschen",
+    "status": {
+      "active": "Aktiv",
+      "completed": "Abgeschlossen",
+      "cancelled": "Abgebrochen"
+    }
   },
   "decisions": {
     "create": "Neue Entscheidung",
