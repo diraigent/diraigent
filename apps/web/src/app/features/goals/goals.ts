@@ -1,5 +1,5 @@
-import { Component, ChangeDetectorRef, inject, signal, computed, effect, DestroyRef } from '@angular/core';
-import { NgTemplateOutlet, DatePipe } from '@angular/common';
+import { Component, ChangeDetectorRef, inject, signal, computed, effect, DestroyRef, PLATFORM_ID } from '@angular/core';
+import { NgTemplateOutlet, DatePipe, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -602,16 +602,36 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               {{ t('work.activeGoals') }}
               <span class="text-xs font-normal">({{ activeGoals().length }})</span>
             </h2>
-            <div cdkDropList [cdkDropListData]="activeGoals()" (cdkDropListDropped)="dropGoal($event)" class="space-y-2">
-              @for (g of activeGoals(); track g.id) {
-                <div cdkDrag class="flex items-stretch gap-0">
+            <div cdkDropList [cdkDropListData]="activeGoals()" (cdkDropListDropped)="dropGoal($event)" [cdkDropListDisabled]="isTouch()" class="space-y-2">
+              @for (g of activeGoals(); track g.id; let i = $index) {
+                <div cdkDrag [cdkDragDisabled]="isTouch()" class="flex items-stretch gap-0">
                   <div *cdkDragPlaceholder class="rounded-lg border-2 border-dashed border-accent/30 bg-accent/5 h-20 w-full"></div>
-                  <div cdkDragHandle
-                    class="flex items-center px-1.5 cursor-grab active:cursor-grabbing text-text-muted hover:text-text-secondary shrink-0">
-                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm8-16a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/>
-                    </svg>
-                  </div>
+                  @if (!isTouch()) {
+                    <div cdkDragHandle
+                      class="flex items-center px-1.5 cursor-grab active:cursor-grabbing text-text-muted hover:text-text-secondary shrink-0">
+                      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm8-16a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/>
+                      </svg>
+                    </div>
+                  } @else {
+                    <!-- Mobile: up/down reorder buttons instead of drag handle -->
+                    <div class="flex flex-col items-center justify-center px-1 shrink-0 gap-0.5">
+                      @if (i > 0) {
+                        <button (click)="moveGoal(i, -1)" class="p-0.5 text-text-muted hover:text-text-primary">
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 15l7-7 7 7"/></svg>
+                        </button>
+                      } @else {
+                        <div class="w-3.5 h-3.5 p-0.5"></div>
+                      }
+                      @if (i < activeGoals().length - 1) {
+                        <button (click)="moveGoal(i, 1)" class="p-0.5 text-text-muted hover:text-text-primary">
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+                        </button>
+                      } @else {
+                        <div class="w-3.5 h-3.5 p-0.5"></div>
+                      }
+                    </div>
+                  }
                   <div class="flex-1 min-w-0">
                     <ng-container *ngTemplateOutlet="goalItem; context: { $implicit: g }"></ng-container>
                   </div>
@@ -1028,6 +1048,10 @@ export class WorkPage {
   private chat = inject(ChatService);
   private destroyRef = inject(DestroyRef);
   private cdr = inject(ChangeDetectorRef);
+  private platformId = inject(PLATFORM_ID);
+
+  /** True on touch-primary devices — disables CDK drag to preserve mobile scrolling. */
+  isTouch = signal(false);
 
   readonly statuses = STATUSES;
   readonly goalTypes = GOAL_TYPES;
@@ -1168,6 +1192,9 @@ export class WorkPage {
   });
 
   constructor() {
+    if (isPlatformBrowser(this.platformId)) {
+      this.isTouch.set(window.matchMedia('(pointer: coarse)').matches);
+    }
     effect(() => {
       this.ctx.projectId();
       this.selected.set(null);
@@ -1374,7 +1401,25 @@ export class WorkPage {
     this.collapsedSections.set(current);
   }
 
-  // --- Drag & drop ---
+  // --- Drag & drop / reorder ---
+
+  moveGoal(index: number, direction: number): void {
+    const target = index + direction;
+    const active = [...this.activeGoals()];
+    if (target < 0 || target >= active.length) return;
+    [active[index], active[target]] = [active[target], active[index]];
+
+    // Rebuild items: reordered active goals + rest in original order
+    const activeIds = new Set(active.map(g => g.id));
+    const rest = this.items().filter(g => !activeIds.has(g.id));
+    this.items.set([...active, ...rest]);
+
+    // Persist to server
+    const goalIds = active.map(g => g.id);
+    this.api.reorder(goalIds).subscribe({
+      error: () => this.loadGoals(),
+    });
+  }
 
   dropGoal(event: CdkDragDrop<SpGoal[]>): void {
     if (event.previousIndex === event.currentIndex) return;

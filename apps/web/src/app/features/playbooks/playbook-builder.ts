@@ -1,10 +1,12 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, inject, signal, OnInit, PLATFORM_ID } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
 import {
   CdkDragDrop,
   CdkDrag,
+  CdkDragHandle,
   CdkDropList,
   moveItemInArray,
 } from '@angular/cdk/drag-drop';
@@ -23,7 +25,7 @@ import { ProjectContext } from '../../core/services/project-context.service';
 @Component({
   selector: 'app-playbook-builder',
   standalone: true,
-  imports: [FormsModule, TranslocoModule, CdkDrag, CdkDropList],
+  imports: [FormsModule, TranslocoModule, CdkDrag, CdkDragHandle, CdkDropList],
   template: `
     <div class="p-3 sm:p-6 max-w-4xl mx-auto" *transloco="let t">
       <!-- Header -->
@@ -211,19 +213,21 @@ import { ProjectContext } from '../../core/services/project-context.service';
           (cdkDropListDropped)="dropStep($event)"
           class="space-y-3">
           @for (step of steps(); track $index; let i = $index) {
-            <div cdkDrag
+            <div cdkDrag [cdkDragDisabled]="isTouch()"
               class="bg-surface rounded-lg border border-border p-4 transition-colors hover:border-accent/50 cursor-grab active:cursor-grabbing">
               <div cdkDragPlaceholder class="bg-accent/10 rounded-lg border-2 border-dashed border-accent/30 h-32"></div>
 
               <!-- Step header -->
               <div class="flex items-center justify-between mb-3">
                 <div class="flex items-center gap-2">
-                  <!-- Drag handle -->
-                  <span cdkDragHandle class="p-1 text-text-muted hover:text-text-secondary cursor-grab">
-                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm8-16a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/>
-                    </svg>
-                  </span>
+                  <!-- Drag handle (hidden on touch devices) -->
+                  @if (!isTouch()) {
+                    <span cdkDragHandle class="p-1 text-text-muted hover:text-text-secondary cursor-grab">
+                      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm8-16a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/>
+                      </svg>
+                    </span>
+                  }
                   <span class="w-6 h-6 bg-accent/20 text-accent rounded-full text-xs font-bold flex items-center justify-center shrink-0">
                     {{ i + 1 }}
                   </span>
@@ -482,7 +486,10 @@ export class PlaybookBuilderPage implements OnInit {
   private ctx = inject(ProjectContext);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
+  private platformId = inject(PLATFORM_ID);
 
+  /** True on touch-primary devices — disables CDK drag to preserve mobile scrolling. */
+  isTouch = signal(false);
   steps = signal<SpPlaybookStep[]>([]);
   saving = signal(false);
   templates = signal<SpStepTemplate[]>([]);
@@ -502,6 +509,9 @@ export class PlaybookBuilderPage implements OnInit {
   isDefault = false;
 
   ngOnInit(): void {
+    if (isPlatformBrowser(this.platformId)) {
+      this.isTouch.set(window.matchMedia('(pointer: coarse)').matches);
+    }
     this.editId = this.route.snapshot.paramMap.get('id');
     if (this.editId) {
       this.loadPlaybook(this.editId);
