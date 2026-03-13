@@ -684,7 +684,7 @@ Instead, analyze the spec and break it into smaller, well-scoped subtasks.
 3. **Analyze the spec**: Identify logical units of work that can be implemented independently.
 4. **Create subtasks**: For each unit, create a task with a clear spec, files, test_cmd, and acceptance_criteria:
    ```
-   {agent_cli} create {project_id} '{{{goal_id_field}{plan_id_field}"parent_id": "{task_id}", "title": "...", "kind": "feature", "priority": 3, "playbook_id": "{playbook_id}", "context": {{"spec": "...", "files": ["..."], "test_cmd": "...", "acceptance_criteria": ["..."]}}}}'
+   {agent_cli} create {project_id} '{{{goal_id_field}{plan_id_field}"parent_id": "{task_id}", "title": "...", "kind": "feature", "urgent": false, "playbook_id": "{playbook_id}", "context": {{"spec": "...", "files": ["..."], "test_cmd": "...", "acceptance_criteria": ["..."]}}}}'
    ```
 5. **Wire dependencies**: If subtask B depends on subtask A:
    ```
