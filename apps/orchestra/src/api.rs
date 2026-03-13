@@ -389,6 +389,50 @@ impl ProjectsApi {
         self.post(&format!("/{project_id}/decisions"), body).await
     }
 
+    // ── File lock operations ─────────────────────────────────
+
+    /// Acquire file locks for a task. Returns Ok on success, Err on conflict (409)
+    /// or other errors. The error message from a 409 contains details about which
+    /// paths conflict with which existing locks.
+    pub async fn acquire_file_locks(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        paths: &[String],
+    ) -> Result<Value> {
+        let url = format!("{}/{project_id}/locks", self.base_url);
+        let body = serde_json::json!({
+            "task_id": task_id,
+            "paths": paths,
+        });
+        let req = self.build_request(self.client.post(&url)).json(&body);
+        let resp = req.send().await.with_context(|| format!("POST {url}"))?;
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        Self::check_response("POST", &url, status, &text)?;
+        if text.is_empty() {
+            Ok(Value::Null)
+        } else {
+            serde_json::from_str(&text).with_context(|| format!("parse response from POST {url}"))
+        }
+    }
+
+    /// Release all file locks held by a task. Fire-and-forget pattern recommended
+    /// by callers — log warnings on error but don't fail the operation.
+    pub async fn release_file_locks(&self, project_id: &str, task_id: &str) -> Result<Value> {
+        let url = format!("{}/{project_id}/locks/{task_id}", self.base_url);
+        let req = self.build_request(self.client.delete(&url));
+        let resp = req.send().await.with_context(|| format!("DELETE {url}"))?;
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        Self::check_response("DELETE", &url, status, &text)?;
+        if text.is_empty() {
+            Ok(Value::Null)
+        } else {
+            serde_json::from_str(&text).with_context(|| format!("parse response from DELETE {url}"))
+        }
+    }
+
     // ── Setup operations ─────────────────────────────────────
 
     /// Health check — GET {base_url}/../health/live (health is at server root).

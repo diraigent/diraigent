@@ -81,6 +81,9 @@ async fn process_reaped_task(
         }
     };
 
+    // Track project_id for file lock release on terminal outcomes.
+    let mut release_lock_project_id: Option<String> = None;
+
     match outcome {
         StepOutcome::Continue => {
             tracing::debug!("task {tid} pipeline continues");
@@ -150,6 +153,7 @@ async fn process_reaped_task(
             project_id,
             git_strategy,
         } => {
+            release_lock_project_id = Some(project_id.clone());
             let wm = match project_paths::create_project_wm(api, &project_id, projects_path).await {
                 Ok(wm) => wm,
                 Err(e) => {
@@ -209,6 +213,7 @@ async fn process_reaped_task(
             tracing::debug!("task {tid} in human_review — no action needed");
         }
         StepOutcome::Cancelled { project_id } => {
+            release_lock_project_id = Some(project_id.clone());
             info!("task {tid} cancelled — removing worktree (no merge)");
             if let Ok(wm) = project_paths::create_project_wm(api, &project_id, projects_path).await
             {
@@ -226,7 +231,21 @@ async fn process_reaped_task(
         }
         StepOutcome::UnexpectedState(state) => {
             warn!("task {tid} in unexpected state '{state}' — skipping merge, keeping worktree");
+            // Fetch task to get project_id for lock release
+            release_lock_project_id = api
+                .get_task(&task_id)
+                .await
+                .ok()
+                .and_then(|t| t["project_id"].as_str().map(|s| s.to_string()));
         }
+    }
+
+    // Release file locks for terminal outcomes (fire-and-forget).
+    // Continue/ContinueWithGitAction/AlreadyReady keep locks since the task is still in-pipeline.
+    if let Some(pid) = release_lock_project_id
+        && let Err(e) = api.release_file_locks(&pid, &task_id).await
+    {
+        warn!("reap {tid}: failed to release file locks: {e}");
     }
 }
 
