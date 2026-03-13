@@ -399,6 +399,9 @@ pub struct Task {
     pub reverted_at: Option<DateTime<Utc>>,
     /// User-toggleable flag (bookmark) for tracking tasks of interest.
     pub flagged: bool,
+    /// File paths this task intends to modify — used by the orchestra
+    /// to detect branch overlap and serialize conflicting work.
+    pub file_scope: Vec<String>,
     /// Accumulated LLM input tokens across all completed steps.
     pub input_tokens: i64,
     /// Accumulated LLM output tokens across all completed steps.
@@ -545,6 +548,8 @@ pub struct CreateTask {
     pub decision_id: Option<Uuid>,
     /// Optional goal to link the new task to (inserts into task_goal join table).
     pub goal_id: Option<Uuid>,
+    /// File paths this task intends to modify (for branch overlap detection).
+    pub file_scope: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -560,6 +565,8 @@ pub struct UpdateTask {
     pub playbook_id: Option<Option<Uuid>>,
     /// User-toggleable flag (bookmark).
     pub flagged: Option<bool>,
+    /// File paths this task intends to modify (for branch overlap detection).
+    pub file_scope: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]

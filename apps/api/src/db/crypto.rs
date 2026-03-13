@@ -180,6 +180,7 @@ impl DiraigentDb for CryptoDb {
                 playbook_id: req.playbook_id,
                 decision_id: req.decision_id,
                 goal_id: req.goal_id,
+                file_scope: req.file_scope.clone(),
             };
             let mut task = self
                 .inner
@@ -248,6 +249,7 @@ impl DiraigentDb for CryptoDb {
                 playbook_step: req.playbook_step,
                 playbook_id: req.playbook_id,
                 flagged: req.flagged,
+                file_scope: req.file_scope.clone(),
             };
             let mut task = self.inner.update_task(task_id, &encrypted_req).await?;
             Self::decrypt_task(dek, &mut task)?;

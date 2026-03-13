@@ -77,6 +77,7 @@ async fn create(
         playbook_id: Some(playbook_id),
         decision_id: None,
         goal_id: None,
+        file_scope: None,
     };
 
     match state

@@ -35,6 +35,7 @@ pub async fn create_task(
         .clone()
         .unwrap_or(serde_json::Value::Object(Default::default()));
     let capabilities = req.required_capabilities.clone().unwrap_or_default();
+    let file_scope = req.file_scope.clone().unwrap_or_default();
     let priority = req.priority.unwrap_or(0);
 
     // Use explicit playbook_id, or fall back to project default
@@ -50,8 +51,8 @@ pub async fn create_task(
     };
 
     let task = sqlx::query_as::<_, Task>(
-        "INSERT INTO diraigent.task (project_id, title, kind, state, priority, context, required_capabilities, playbook_id, playbook_step, decision_id, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        "INSERT INTO diraigent.task (project_id, title, kind, state, priority, context, required_capabilities, playbook_id, playbook_step, decision_id, created_by, file_scope)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING *",
     )
     .bind(project_id)
@@ -65,6 +66,7 @@ pub async fn create_task(
     .bind(if playbook_id.is_some() { Some(0i32) } else { None })
     .bind(req.decision_id)
     .bind(created_by)
+    .bind(&file_scope)
     .fetch_one(pool)
     .await?;
 
@@ -220,10 +222,11 @@ pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Resu
         .unwrap_or(&existing.required_capabilities);
     let playbook_step = req.playbook_step.or(existing.playbook_step);
     let flagged = req.flagged.unwrap_or(existing.flagged);
+    let file_scope = req.file_scope.as_ref().unwrap_or(&existing.file_scope);
 
     let task = sqlx::query_as::<_, Task>(
         "UPDATE diraigent.task
-         SET title = $2, kind = $3, priority = $4, context = $5, required_capabilities = $6, playbook_step = $7, playbook_id = $8, flagged = $9
+         SET title = $2, kind = $3, priority = $4, context = $5, required_capabilities = $6, playbook_step = $7, playbook_id = $8, flagged = $9, file_scope = $10
          WHERE id = $1 RETURNING *",
     )
     .bind(task_id)
@@ -235,6 +238,7 @@ pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Resu
     .bind(playbook_step)
     .bind(playbook_id)
     .bind(flagged)
+    .bind(file_scope)
     .fetch_one(pool)
     .await?;
 
