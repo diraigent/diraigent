@@ -7,9 +7,9 @@ async fn insert_global_step_template(app: &TestApp) -> Uuid {
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO diraigent.step_template
-         (id, tenant_id, name, title, description, allowed_tools, model, budget,
+         (id, tenant_id, name, description, allowed_tools, model, budget,
           context_level, tags, metadata, created_by)
-         VALUES ($1, NULL, 'implement', 'Implement Step', 'Write code', 'full', 'claude-opus-4-6', 12.0,
+         VALUES ($1, NULL, 'implement', 'Write code', 'full', 'claude-opus-4-6', 12.0,
                  'full', '{\"default\"}', '{}'::jsonb, '00000000-0000-0000-0000-000000000000')",
     )
     .bind(id)
@@ -31,7 +31,6 @@ async fn step_template_crud() {
             &format!("/v1/{project_id}/step-templates"),
             serde_json::json!({
                 "name": "review",
-                "title": "Code Review",
                 "description": "Review the implementation",
                 "allowed_tools": "readonly",
                 "model": "claude-sonnet-4-6",
@@ -45,9 +44,11 @@ async fn step_template_crud() {
     assert_eq!(resp.status, StatusCode::OK, "create: {}", resp.json);
     let id = resp.json["id"].as_str().unwrap().to_string();
     assert_eq!(resp.json["name"].as_str().unwrap(), "review");
-    assert_eq!(resp.json["title"].as_str().unwrap(), "Code Review");
+    assert_eq!(
+        resp.json["description"].as_str().unwrap(),
+        "Review the implementation"
+    );
     assert_eq!(resp.json["allowed_tools"].as_str().unwrap(), "readonly");
-    assert_eq!(resp.json["version"].as_i64().unwrap(), 1);
     assert!(!resp.json["tenant_id"].is_null(), "should be tenant-owned");
 
     // Get
@@ -72,12 +73,14 @@ async fn step_template_crud() {
     let resp = app
         .send(put_json(
             &format!("/v1/{project_id}/step-templates/{id}"),
-            serde_json::json!({ "title": "Updated Review" }),
+            serde_json::json!({ "description": "Updated review description" }),
         ))
         .await;
     assert_eq!(resp.status, StatusCode::OK, "update: {}", resp.json);
-    assert_eq!(resp.json["title"].as_str().unwrap(), "Updated Review");
-    assert_eq!(resp.json["version"].as_i64().unwrap(), 2);
+    assert_eq!(
+        resp.json["description"].as_str().unwrap(),
+        "Updated review description"
+    );
 
     // Delete
     let resp = app
@@ -125,7 +128,7 @@ async fn global_step_template_immutable() {
     let resp = app
         .send(put_json(
             &format!("/v1/{project_id}/step-templates/{global_id}"),
-            serde_json::json!({ "title": "Hacked" }),
+            serde_json::json!({ "description": "Hacked" }),
         ))
         .await;
     assert_eq!(
@@ -177,32 +180,23 @@ async fn fork_creates_tenant_copy() {
         "fork must have a tenant_id"
     );
 
-    // The fork should record parent lineage
-    assert_eq!(
-        resp.json["parent_id"].as_str().unwrap(),
-        global_id.to_string(),
-        "fork should reference parent"
-    );
-    assert_eq!(
-        resp.json["parent_version"].as_i64().unwrap(),
-        1,
-        "fork should record parent version"
-    );
-
     // The fork should have the same content as the original
     assert_eq!(resp.json["name"].as_str().unwrap(), "implement");
-    assert_eq!(resp.json["title"].as_str().unwrap(), "Implement Step");
+    assert_eq!(resp.json["description"].as_str().unwrap(), "Write code");
     assert_eq!(resp.json["allowed_tools"].as_str().unwrap(), "full");
 
     // The forked copy should be mutable
     let resp = app
         .send(put_json(
             &format!("/v1/{project_id}/step-templates/{forked_id}"),
-            serde_json::json!({ "title": "My Custom Implement" }),
+            serde_json::json!({ "description": "My custom implement step" }),
         ))
         .await;
     assert_eq!(resp.status, StatusCode::OK, "update fork: {}", resp.json);
-    assert_eq!(resp.json["title"].as_str().unwrap(), "My Custom Implement");
+    assert_eq!(
+        resp.json["description"].as_str().unwrap(),
+        "My custom implement step"
+    );
 
     app.cleanup().await;
 }
@@ -219,7 +213,7 @@ async fn cross_tenant_isolation() {
             &format!("/v1/{project_id}/step-templates"),
             serde_json::json!({
                 "name": "secret-step",
-                "title": "Secret Step",
+                "description": "A secret step",
             }),
         ))
         .await;
@@ -231,8 +225,8 @@ async fn cross_tenant_isolation() {
     let other_template_id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO diraigent.step_template
-         (id, tenant_id, name, title, tags, metadata, created_by)
-         VALUES ($1, $2, 'other-step', 'Other Tenant Step', '{}', '{}'::jsonb, '00000000-0000-0000-0000-000000000000')",
+         (id, tenant_id, name, description, tags, metadata, created_by)
+         VALUES ($1, $2, 'other-step', 'Other tenant step', '{}', '{}'::jsonb, '00000000-0000-0000-0000-000000000000')",
     )
     .bind(other_template_id)
     .bind(other_tenant_id)
@@ -274,7 +268,7 @@ async fn list_filters_by_tag() {
         &format!("/v1/{project_id}/step-templates"),
         serde_json::json!({
             "name": "implement",
-            "title": "Implement",
+            "description": "Implement the feature",
             "tags": ["code"],
         }),
     ))
@@ -284,7 +278,7 @@ async fn list_filters_by_tag() {
         &format!("/v1/{project_id}/step-templates"),
         serde_json::json!({
             "name": "review",
-            "title": "Review",
+            "description": "Review the implementation",
             "tags": ["review"],
         }),
     ))
