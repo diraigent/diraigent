@@ -170,7 +170,7 @@ impl DiraigentDb for CryptoDb {
             let encrypted_req = CreateTask {
                 title: req.title.clone(),
                 kind: req.kind.clone(),
-                priority: req.priority,
+                urgent: req.urgent,
                 context: req
                     .context
                     .as_ref()
@@ -241,7 +241,7 @@ impl DiraigentDb for CryptoDb {
             let encrypted_req = UpdateTask {
                 title: req.title.clone(),
                 kind: req.kind.clone(),
-                priority: req.priority,
+                urgent: req.urgent,
                 context: req
                     .context
                     .as_ref()

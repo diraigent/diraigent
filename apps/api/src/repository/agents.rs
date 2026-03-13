@@ -172,7 +172,7 @@ pub async fn list_agent_tasks(
 
     let tasks = sqlx::query_as::<_, Task>(
         "SELECT * FROM diraigent.task WHERE assigned_agent_id = $1
-         ORDER BY priority ASC, created_at ASC LIMIT $2 OFFSET $3",
+         ORDER BY urgent DESC, created_at ASC LIMIT $2 OFFSET $3",
     )
     .bind(agent_id)
     .bind(limit)
@@ -255,7 +255,7 @@ pub async fn get_agent_context(
                t.required_capabilities = '{}'
                OR t.required_capabilities <@ $2
            )
-         ORDER BY t.priority ASC LIMIT 20",
+         ORDER BY t.urgent DESC, t.created_at ASC LIMIT 20",
     )
     .bind(project_id)
     .bind(&agent.capabilities)
@@ -264,7 +264,7 @@ pub async fn get_agent_context(
 
     // 9. Tasks currently assigned to this agent
     let my_tasks = sqlx::query_as::<_, Task>(
-        "SELECT * FROM diraigent.task WHERE assigned_agent_id = $1 AND project_id = $2 AND state NOT IN ('done', 'cancelled') ORDER BY priority ASC"
+        "SELECT * FROM diraigent.task WHERE assigned_agent_id = $1 AND project_id = $2 AND state NOT IN ('done', 'cancelled') ORDER BY urgent DESC, created_at ASC"
     )
     .bind(agent_id)
     .bind(project_id)

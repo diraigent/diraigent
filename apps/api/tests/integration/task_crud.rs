@@ -31,13 +31,13 @@ async fn create_task_with_options() {
             serde_json::json!({
                 "title": "Bug fix",
                 "kind": "bug",
-                "priority": 5,
+                "urgent": true,
                 "context": { "spec": "fix the login" },
             }),
         )
         .await;
     assert_eq!(task["kind"].as_str().unwrap(), "bug");
-    assert_eq!(task["priority"].as_i64().unwrap(), 5);
+    assert_eq!(task["urgent"].as_bool().unwrap(), true);
     assert_eq!(task["context"]["spec"].as_str().unwrap(), "fix the login");
 
     app.cleanup().await;
@@ -103,13 +103,13 @@ async fn update_task_fields() {
             &format!("/v1/tasks/{task_id}"),
             serde_json::json!({
                 "title": "Updated title",
-                "priority": 10,
+                "urgent": true,
             }),
         ))
         .await;
     assert_eq!(resp.status, StatusCode::OK);
     assert_eq!(resp.json["title"].as_str().unwrap(), "Updated title");
-    assert_eq!(resp.json["priority"].as_i64().unwrap(), 10);
+    assert_eq!(resp.json["urgent"].as_bool().unwrap(), true);
 
     app.cleanup().await;
 }
