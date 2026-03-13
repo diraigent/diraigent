@@ -37,16 +37,6 @@ RUN touch libs/common-rust/diraigent-types/src/lib.rs \
 
 RUN cargo build --release -p diraigent-orchestra
 
-ARG TARGETARCH
-RUN case "$TARGETARCH" in \
-      amd64) UPX_ARCH=amd64_linux ;; \
-      arm64) UPX_ARCH=arm64_linux ;; \
-      *) echo "Unsupported arch: $TARGETARCH" && exit 1 ;; \
-    esac && \
-    curl -sL "https://github.com/upx/upx/releases/download/v5.1.1/upx-5.1.1-${UPX_ARCH}.tar.xz" \
-      | tar xJ --strip-components=1 "upx-5.1.1-${UPX_ARCH}/upx" && \
-    ./upx --best --lzma target/release/orchestra target/release/agent-cli && rm upx
-
 # ── Stage 2: runtime ──────────────────────────────────────────
 FROM node:22-slim AS runtime
 
