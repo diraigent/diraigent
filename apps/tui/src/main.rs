@@ -61,6 +61,7 @@ enum ApiMsg {
     ChangedFiles(Vec<client::ChangedFile>),
     Verifications(Vec<client::Verification>),
     Events(Vec<client::Event>),
+    Reports(Vec<client::Report>),
     Webhooks(Vec<client::Webhook>),
     WebhookDeliveries(Vec<client::WebhookDelivery>),
     WebhookTestResult(String),
@@ -137,6 +138,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             audit,
             verifications,
             events,
+            reports,
             webhooks,
         ) = tokio::join!(
             api.list_tasks(pid),
@@ -151,6 +153,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             api.list_audit(pid),
             api.list_verifications(pid, None, None, None, 100, 0),
             api.list_events(pid, None, None),
+            api.list_reports(pid),
             api.list_webhooks(pid),
         );
         if let Ok(resp) = tasks {
@@ -188,6 +191,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         if let Ok(resp) = events {
             let _ = tx.send(ApiMsg::Events(resp)).await;
+        }
+        if let Ok(resp) = reports {
+            let _ = tx.send(ApiMsg::Reports(resp)).await;
         }
         if let Ok(resp) = webhooks {
             let _ = tx.send(ApiMsg::Webhooks(resp)).await;
@@ -384,6 +390,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::Audit(a) => app.audit_log = a,
                 ApiMsg::Verifications(v) => app.verifications = v,
                 ApiMsg::Events(e) => app.events = e,
+                ApiMsg::Reports(r) => app.reports = r,
                 ApiMsg::Webhooks(w) => app.webhooks = w,
                 ApiMsg::WebhookDeliveries(d) => app.webhook_deliveries = d,
                 ApiMsg::WebhookTestResult(r) => app.webhook_test_result = Some(r),
@@ -583,7 +590,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 View::Source => views::source::render(f, main_layout[1], &mut app),
                 View::Events => views::events::render(f, main_layout[1], &mut app),
                 View::Webhooks => views::webhooks::render(f, main_layout[1], &mut app),
-                View::Dashboard | View::Reports | View::StepTemplates => {
+                View::Reports => views::reports::render(f, main_layout[1], &mut app),
+                View::Dashboard | View::StepTemplates => {
                     let label = app.view.label();
                     let block = ratatui::widgets::Block::default()
                         .title(format!(" {} ", label))
@@ -842,7 +850,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .collect();
                     f.render_widget(ratatui::widgets::List::new(items), inner);
                 }
-                Modal::BulkDelete => {
+                Modal::BulkDelete | Modal::ReportDelete => {
                     let count = app.bulk_selected.len();
                     let popup_area = widgets::popup::centered_rect(50, 20, size);
                     Clear.render(popup_area, f.buffer_mut());
@@ -3997,6 +4005,113 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         _ => {}
                     }
+                } else if app.report_form.is_some() {
+                    let form = app.report_form.as_mut().unwrap();
+                    match key.code {
+                        KeyCode::Esc => {
+                            app.report_form = None;
+                        }
+                        KeyCode::Tab => {
+                            form.active_field = (form.active_field + 1) % 3;
+                            form.cursor = match form.active_field {
+                                0 => form.title.chars().count(),
+                                2 => form.prompt.chars().count(),
+                                _ => 0,
+                            };
+                        }
+                        KeyCode::Enter => {
+                            if form.active_field == 1 {
+                                form.kind_index = (form.kind_index + 1) % app::REPORT_KINDS.len();
+                            } else if !form.title.is_empty() {
+                                let title = form.title.clone();
+                                let kind = app::REPORT_KINDS[form.kind_index].to_string();
+                                let prompt = form.prompt.clone();
+                                let pid = app.current_project;
+                                app.report_form = None;
+                                if let Some(pid) = pid {
+                                    let api = api.clone();
+                                    let tx = tx.clone();
+                                    tokio::spawn(async move {
+                                        let body = serde_json::json!({
+                                            "title": title,
+                                            "kind": kind,
+                                            "prompt": prompt,
+                                        });
+                                        match api.create_report(pid, body).await {
+                                            Ok(_) => {
+                                                if let Ok(rpts) = api.list_reports(pid).await {
+                                                    let _ = tx.send(ApiMsg::Reports(rpts)).await;
+                                                }
+                                            }
+                                            Err(e) => {
+                                                let _ = tx
+                                                    .send(ApiMsg::Error(format!("Report: {e}")))
+                                                    .await;
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                        KeyCode::Left => {
+                            if form.active_field == 1 {
+                                if form.kind_index > 0 {
+                                    form.kind_index -= 1;
+                                } else {
+                                    form.kind_index = app::REPORT_KINDS.len() - 1;
+                                }
+                            } else if form.cursor > 0 {
+                                form.cursor -= 1;
+                            }
+                        }
+                        KeyCode::Right => {
+                            if form.active_field == 1 {
+                                form.kind_index = (form.kind_index + 1) % app::REPORT_KINDS.len();
+                            } else {
+                                let text = if form.active_field == 0 {
+                                    &form.title
+                                } else {
+                                    &form.prompt
+                                };
+                                if form.cursor < text.chars().count() {
+                                    form.cursor += 1;
+                                }
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            if form.cursor > 0 && form.active_field != 1 {
+                                form.cursor -= 1;
+                                let text = if form.active_field == 0 {
+                                    &mut form.title
+                                } else {
+                                    &mut form.prompt
+                                };
+                                let bp = text
+                                    .char_indices()
+                                    .nth(form.cursor)
+                                    .map(|(i, _)| i)
+                                    .unwrap_or(text.len());
+                                text.remove(bp);
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            if form.active_field != 1 {
+                                let text = if form.active_field == 0 {
+                                    &mut form.title
+                                } else {
+                                    &mut form.prompt
+                                };
+                                let bp = text
+                                    .char_indices()
+                                    .nth(form.cursor)
+                                    .map(|(i, _)| i)
+                                    .unwrap_or(text.len());
+                                text.insert(bp, c);
+                                form.cursor += 1;
+                            }
+                        }
+                        _ => {}
+                    }
                 } else if app.webhook_form.is_some() {
                     let form = app.webhook_form.as_mut().unwrap();
                     match key.code {
@@ -5456,6 +5571,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             _ => {}
                         },
+                        Modal::ReportDelete => match key.code {
+                            KeyCode::Esc | KeyCode::Char('n') => {
+                                app.modal = Modal::None;
+                            }
+                            KeyCode::Enter | KeyCode::Char('y') => {
+                                if let Some(rpt) =
+                                    app.selected_report.and_then(|i| app.reports.get(i))
+                                {
+                                    let rpt_id = rpt.id;
+                                    let api = api.clone();
+                                    let tx = tx.clone();
+                                    let pid = app.current_project;
+                                    tokio::spawn(async move {
+                                        if let Err(e) = api.delete_report(rpt_id).await {
+                                            let _ = tx
+                                                .send(ApiMsg::Error(format!("Delete: {e}")))
+                                                .await;
+                                        } else if let Some(pid) = pid {
+                                            if let Ok(rpts) = api.list_reports(pid).await {
+                                                let _ = tx.send(ApiMsg::Reports(rpts)).await;
+                                            }
+                                        }
+                                    });
+                                }
+                                app.modal = Modal::None;
+                            }
+                            _ => {}
+                        },
                         Modal::GoalLink | Modal::GoalStatus | Modal::DependencyAdd => {
                             match key.code {
                                 KeyCode::Esc => app.modal = Modal::None,
@@ -6296,6 +6439,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.knowledge_form = Some(app::KnowledgeForm::default());
                                 } else if app.view == View::Integrations {
                                     app.integration_form = Some(app::IntegrationForm::default());
+                                } else if app.view == View::Reports {
+                                    app.report_form = Some(app::ReportForm::default());
                                 } else if app.view == View::Events {
                                     app.event_form = Some(app::EventForm::default());
                                 } else if app.view == View::Webhooks {
@@ -7421,6 +7566,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         });
                                     }
+                                } else if app.view == View::Reports && app.selected_report.is_some()
+                                {
+                                    app.modal = Modal::ReportDelete;
                                 }
                             }
                             // Logs view controls: T/Y = time range, N/M = limit, B = direction

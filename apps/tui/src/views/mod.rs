@@ -15,6 +15,7 @@ pub mod verifications;
 pub mod chat;
 pub mod events;
 pub mod git;
+pub mod reports;
 pub mod search;
 pub mod source;
 pub mod webhooks;

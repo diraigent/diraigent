@@ -1,9 +1,9 @@
 use crate::client::{
     Agent, AuditEntry, BranchInfo, ChangedFile, ChatMessage, Decision, GitTaskStatus, Goal,
     GoalComment, GoalProgress, GoalStats, Integration, IntegrationAccess, KnowledgeEntry, LogEntry,
-    MainPushStatus, Member, Observation, Playbook, Project, ProjectEvent, Role, SearchResult,
-    StepTemplate, Task, TaskComment, TaskDependencies, TaskUpdate, TreeEntry, Verification,
-    Webhook, WebhookDelivery,
+    MainPushStatus, Member, Observation, Playbook, Project, ProjectEvent, Report, Role,
+    SearchResult, StepTemplate, Task, TaskComment, TaskDependencies, TaskUpdate, TreeEntry,
+    Verification, Webhook, WebhookDelivery,
 };
 use ratatui::widgets::ListState;
 use uuid::Uuid;
@@ -144,6 +144,7 @@ pub enum Modal {
     GoalComment,
     EventKindFilter,
     EventSeverityFilter,
+    ReportDelete,
 }
 
 pub const TIME_RANGES: &[(&str, i64)] = &[
@@ -392,6 +393,23 @@ impl ProjectSettingsForm {
     }
 }
 
+pub const REPORT_KINDS: &[&str] = &[
+    "security",
+    "component",
+    "architecture",
+    "performance",
+    "custom",
+];
+
+#[derive(Default)]
+pub struct ReportForm {
+    pub title: String,
+    pub kind_index: usize, // index into REPORT_KINDS
+    pub prompt: String,
+    pub active_field: usize, // 0=title, 1=kind, 2=prompt
+    pub cursor: usize,
+}
+
 pub const WEBHOOK_EVENT_TYPES: &[&str] = &[
     "task.created",
     "task.updated",
@@ -582,6 +600,7 @@ pub struct App {
     pub integration_form: Option<IntegrationForm>,
     pub event_form: Option<EventForm>,
     pub webhook_form: Option<WebhookForm>,
+    pub report_form: Option<ReportForm>,
     pub connected: bool,
     pub view: View,
     pub modal: Modal,
@@ -615,6 +634,8 @@ pub struct App {
     pub webhooks: Vec<Webhook>,
     pub webhook_deliveries: Vec<WebhookDelivery>,
     pub webhook_test_result: Option<String>,
+    pub reports: Vec<Report>,
+    pub selected_report: Option<usize>,
 
     // Goal comments
     pub goal_comments: Vec<GoalComment>,
@@ -736,6 +757,7 @@ impl App {
             integration_form: None,
             event_form: None,
             webhook_form: None,
+            report_form: None,
             view: View::Tasks,
             modal: Modal::None,
             focus: 0,
@@ -769,6 +791,8 @@ impl App {
             webhooks: vec![],
             webhook_deliveries: vec![],
             webhook_test_result: None,
+            reports: vec![],
+            selected_report: None,
             goal_comments: vec![],
             step_templates: vec![],
             agent_tasks: vec![],
@@ -857,7 +881,8 @@ impl App {
             View::Search => self.search_results.len(),
             View::Chat => self.chat_messages.len(),
             View::Source => self.source_entries.len(),
-            View::Dashboard | View::Reports | View::StepTemplates => 0,
+            View::Dashboard | View::StepTemplates => 0,
+            View::Reports => self.reports.len(),
             View::Webhooks => self.webhooks.len(),
             View::Events => self.filtered_events().len(),
         }
@@ -882,7 +907,8 @@ impl App {
             View::Search => self.selected_search_result,
             View::Chat => None,
             View::Source => self.source_selected,
-            View::Dashboard | View::Reports | View::StepTemplates => None,
+            View::Dashboard | View::StepTemplates => None,
+            View::Reports => self.selected_report,
             View::Webhooks => self.selected_webhook,
             View::Events => self.selected_event,
         }
@@ -911,7 +937,8 @@ impl App {
             View::Search => self.selected_search_result = idx,
             View::Chat => {}
             View::Source => self.source_selected = idx,
-            View::Dashboard | View::Reports | View::StepTemplates => {}
+            View::Dashboard | View::StepTemplates => {}
+            View::Reports => self.selected_report = idx,
             View::Webhooks => self.selected_webhook = idx,
             View::Events => self.selected_event = idx,
         }
