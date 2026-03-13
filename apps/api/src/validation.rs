@@ -369,6 +369,29 @@ pub fn validate_update_goal(req: &UpdateGoal) -> Result<(), AppError> {
     Ok(())
 }
 
+// ── Plan ──
+
+pub fn validate_create_plan(req: &CreatePlan) -> Result<(), AppError> {
+    validate_str_len(&req.title, 1, 500, "Plan title")?;
+    if let Some(ref m) = req.metadata {
+        validate_json_payload(m, "metadata")?;
+    }
+    Ok(())
+}
+
+pub fn validate_update_plan(req: &UpdatePlan) -> Result<(), AppError> {
+    if let Some(ref title) = req.title {
+        validate_str_len(title, 1, 500, "Plan title")?;
+    }
+    if let Some(ref status) = req.status {
+        validate_enum_member(status, models::PLAN_STATUSES, "plan status")?;
+    }
+    if let Some(ref m) = req.metadata {
+        validate_json_payload(m, "metadata")?;
+    }
+    Ok(())
+}
+
 // ── Knowledge ──
 
 pub fn validate_create_knowledge(
