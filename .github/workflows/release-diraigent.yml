@@ -66,10 +66,11 @@ jobs:
 
       - name: Prepare release assets
         run: |
-          cd artifacts
-          mv orchestra-linux-amd64/orchestra orchestra-linux-amd64
-          mv orchestra-linux-arm64/orchestra orchestra-linux-arm64
-          mv orchestra-macos-arm64/orchestra orchestra-macos-arm64
+          mkdir -p release
+          cp artifacts/orchestra-linux-amd64/orchestra release/orchestra-linux-amd64
+          cp artifacts/orchestra-linux-arm64/orchestra release/orchestra-linux-arm64
+          cp artifacts/orchestra-macos-arm64/orchestra release/orchestra-macos-arm64
+          cd release
           sha256sum orchestra-* > checksums.txt
 
       - name: Create release
@@ -79,7 +80,7 @@ jobs:
           name: ${{ github.ref_name }}
           generate_release_notes: true
           files: |
-            artifacts/orchestra-linux-amd64
-            artifacts/orchestra-linux-arm64
-            artifacts/orchestra-macos-arm64
-            artifacts/checksums.txt
+            release/orchestra-linux-amd64
+            release/orchestra-linux-arm64
+            release/orchestra-macos-arm64
+            release/checksums.txt
