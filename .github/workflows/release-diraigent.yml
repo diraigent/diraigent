@@ -1,167 +1,85 @@
-name: Release Diraigent
+name: Release Diraigent Binaries
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version tag (e.g. v2026.03.14-01)'
-        required: true
-        type: string
+  push:
+    tags:
+      - 'v[0-9]*'
 
 concurrency:
-  group: release-diraigent-${{ github.ref }}
+  group: release-binaries-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  # ──────────────────────────────────────────────────────────────────
-  # API
-  # ──────────────────────────────────────────────────────────────────
-  api:
-    name: API
-    runs-on: ubuntu-latest
-    permissions:
-      packages: write
+  build:
+    name: Build (${{ matrix.artifact }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            artifact: orchestra-linux-amd64
+            binary: orchestra
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            artifact: orchestra-linux-arm64
+            binary: orchestra
+            cross: true
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            artifact: orchestra-macos-arm64
+            binary: orchestra
     steps:
       - uses: actions/checkout@v5
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+      - name: Install Rust toolchain
+        run: rustup target add ${{ matrix.target }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+      - name: Install cross-compilation tools (Linux ARM64)
+        if: matrix.cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
 
-      - name: Set version
-        id: version
-        run: echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+      - name: Build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --release --target ${{ matrix.target }} -p diraigent-orchestra --bin orchestra
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v4
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          name: ${{ matrix.artifact }}
+          path: target/${{ matrix.target }}/release/${{ matrix.binary }}
 
-      - name: Login to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: apps/api/Containerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          labels: |
-            org.opencontainers.image.version=${{ steps.version.outputs.version }}
-          tags: |
-            diraigent/api:${{ steps.version.outputs.version }}
-            diraigent/api:latest
-            ghcr.io/${{ github.repository_owner }}/diraigent/api:${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/diraigent/api:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # ──────────────────────────────────────────────────────────────────
-  # Orchestra
-  # ──────────────────────────────────────────────────────────────────
-  orchestra:
-    name: Orchestra
+  release:
+    name: Create GitHub Release
+    needs: build
     runs-on: ubuntu-latest
     permissions:
-      packages: write
+      contents: write
     steps:
-      - uses: actions/checkout@v5
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Set version
-        id: version
-        run: echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          path: artifacts
 
-      - name: Login to GHCR
-        uses: docker/login-action@v4
+      - name: Prepare release assets
+        run: |
+          cd artifacts
+          mv orchestra-linux-amd64/orchestra orchestra-linux-amd64
+          mv orchestra-linux-arm64/orchestra orchestra-linux-arm64
+          mv orchestra-macos-arm64/orchestra orchestra-macos-arm64
+          sha256sum orchestra-* > checksums.txt
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
         with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: apps/orchestra/Containerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          labels: |
-            org.opencontainers.image.version=${{ steps.version.outputs.version }}
-          tags: |
-            diraigent/orchestra:${{ steps.version.outputs.version }}
-            diraigent/orchestra:latest
-            ghcr.io/${{ github.repository_owner }}/diraigent/orchestra:${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/diraigent/orchestra:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # ──────────────────────────────────────────────────────────────────
-  # Web
-  # ──────────────────────────────────────────────────────────────────
-  web:
-    name: Web
-    runs-on: ubuntu-latest
-    permissions:
-      packages: write
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Set version
-        id: version
-        run: echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Login to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v7
-        with:
-          context: apps/web
-          file: apps/web/Containerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          labels: |
-            org.opencontainers.image.version=${{ steps.version.outputs.version }}
-          tags: |
-            diraigent/web:${{ steps.version.outputs.version }}
-            diraigent/web:latest
-            ghcr.io/${{ github.repository_owner }}/diraigent/web:${{ steps.version.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/diraigent/web:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            artifacts/orchestra-linux-amd64
+            artifacts/orchestra-linux-arm64
+            artifacts/orchestra-macos-arm64
+            artifacts/checksums.txt
