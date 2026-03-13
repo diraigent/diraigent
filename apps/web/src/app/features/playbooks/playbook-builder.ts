@@ -1,10 +1,12 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, inject, signal, OnInit, PLATFORM_ID } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
 import {
   CdkDragDrop,
   CdkDrag,
+  CdkDragHandle,
   CdkDropList,
   moveItemInArray,
 } from '@angular/cdk/drag-drop';
@@ -23,7 +25,7 @@ import { ProjectContext } from '../../core/services/project-context.service';
 @Component({
   selector: 'app-playbook-builder',
   standalone: true,
-  imports: [FormsModule, TranslocoModule, CdkDrag, CdkDropList],
+  imports: [FormsModule, TranslocoModule, CdkDrag, CdkDragHandle, CdkDropList],
   template: `
     <div class="p-3 sm:p-6 max-w-4xl mx-auto" *transloco="let t">
       <!-- Header -->
@@ -211,19 +213,21 @@ import { ProjectContext } from '../../core/services/project-context.service';
           (cdkDropListDropped)="dropStep($event)"
           class="space-y-3">
           @for (step of steps(); track $index; let i = $index) {
-            <div cdkDrag
+            <div cdkDrag [cdkDragDisabled]="isTouch()"
               class="bg-surface rounded-lg border border-border p-4 transition-colors hover:border-accent/50 cursor-grab active:cursor-grabbing">
               <div cdkDragPlaceholder class="bg-accent/10 rounded-lg border-2 border-dashed border-accent/30 h-32"></div>
 
               <!-- Step header -->
               <div class="flex items-center justify-between mb-3">
                 <div class="flex items-center gap-2">
-                  <!-- Drag handle -->
-                  <span cdkDragHandle class="p-2 sm:p-1 text-text-muted hover:text-text-secondary cursor-grab">
-                    <svg class="w-5 h-5 sm:w-4 sm:h-4" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm8-16a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/>
-                    </svg>
-                  </span>
+                  <!-- Drag handle (hidden on touch devices) -->
+                  @if (!isTouch()) {
+                    <span cdkDragHandle class="p-1 text-text-muted hover:text-text-secondary cursor-grab">
+                      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 6a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm8-16a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/>
+                      </svg>
+                    </span>
+                  }
                   <span class="w-6 h-6 bg-accent/20 text-accent rounded-full text-xs font-bold flex items-center justify-center shrink-0">
                     {{ i + 1 }}
                   </span>
@@ -236,37 +240,37 @@ import { ProjectContext } from '../../core/services/project-context.service';
                     </span>
                   }
                 </div>
-                <div class="flex gap-1 sm:gap-1">
+                <div class="flex gap-1">
                   @if (i > 0) {
-                    <button (click)="moveStep(i, -1)" class="p-2 sm:p-1 text-text-secondary hover:text-text-primary" [title]="t('playbooks.moveUp')">
-                      <svg class="w-4 h-4 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 15l7-7 7 7"/></svg>
+                    <button (click)="moveStep(i, -1)" class="p-1 text-text-secondary hover:text-text-primary" [title]="t('playbooks.moveUp')">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 15l7-7 7 7"/></svg>
                     </button>
                   }
                   @if (i < steps().length - 1) {
-                    <button (click)="moveStep(i, 1)" class="p-2 sm:p-1 text-text-secondary hover:text-text-primary" [title]="t('playbooks.moveDown')">
-                      <svg class="w-4 h-4 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
+                    <button (click)="moveStep(i, 1)" class="p-1 text-text-secondary hover:text-text-primary" [title]="t('playbooks.moveDown')">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7"/></svg>
                     </button>
                   }
                   @if (step.step_template_id) {
-                    <button (click)="detachTemplate(i)" class="p-2 sm:p-1 text-text-secondary hover:text-ctp-yellow" title="Detach from template">
-                      <svg class="w-4 h-4 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <button (click)="detachTemplate(i)" class="p-1 text-text-secondary hover:text-ctp-yellow" title="Detach from template">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path d="M18.84 12.25l1.72-1.71h-.02a5.004 5.004 0 00-7.07-7.07l-1.72 1.71m-6.58 6.57L3.47 13.46a5.003 5.003 0 007.07 7.07l1.71-1.71M8 12h8"/>
                       </svg>
                     </button>
                   }
-                  <button (click)="saveAsTemplate(i)" [disabled]="savingTemplate() === i" class="p-2 sm:p-1 text-text-secondary hover:text-accent" title="Save as Template">
+                  <button (click)="saveAsTemplate(i)" [disabled]="savingTemplate() === i" class="p-1 text-text-secondary hover:text-accent" title="Save as Template">
                     @if (savingTemplate() === i) {
-                      <svg class="w-4 h-4 sm:w-3.5 sm:h-3.5 animate-spin" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <svg class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path d="M12 2v4m0 12v4m-7.071-3.929l2.828-2.828m8.486-8.486l2.828-2.828M2 12h4m12 0h4m-3.929 7.071l-2.828-2.828M7.757 7.757L4.929 4.929"/>
                       </svg>
                     } @else {
-                      <svg class="w-4 h-4 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
                       </svg>
                     }
                   </button>
-                  <button (click)="removeStep(i)" class="p-2 sm:p-1 text-text-secondary hover:text-ctp-red" [title]="t('playbooks.removeStep')">
-                    <svg class="w-4 h-4 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
+                  <button (click)="removeStep(i)" class="p-1 text-text-secondary hover:text-ctp-red" [title]="t('playbooks.removeStep')">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>
                   </button>
                 </div>
               </div>
@@ -288,7 +292,7 @@ import { ProjectContext } from '../../core/services/project-context.service';
                          focus:outline-none focus:ring-1 focus:ring-accent resize-y"></textarea>
               </div>
 
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div class="grid grid-cols-2 gap-3">
                 <div>
                   <label [attr.for]="'pb-step-model-' + i" class="text-xs text-text-muted mb-0.5 block">{{ t('playbooks.model') }}</label>
                   <select [id]="'pb-step-model-' + i" [ngModel]="step.model ?? ''" (ngModelChange)="updateField(i, 'model', $event || undefined)"
@@ -474,15 +478,6 @@ import { ProjectContext } from '../../core/services/project-context.service';
     .cdk-drop-list-dragging .cdk-drag:not(.cdk-drag-placeholder) {
       transition: transform 250ms cubic-bezier(0, 0, 0.2, 1);
     }
-    /* Override CDK's inline touch-action:none on drag containers so form
-       inputs remain interactable on touch devices. Only the drag handle
-       needs touch-action:none. */
-    :host [cdkDrag] {
-      touch-action: auto !important;
-    }
-    :host [cdkDragHandle] {
-      touch-action: none;
-    }
   `],
 })
 export class PlaybookBuilderPage implements OnInit {
@@ -491,7 +486,10 @@ export class PlaybookBuilderPage implements OnInit {
   private ctx = inject(ProjectContext);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
+  private platformId = inject(PLATFORM_ID);
 
+  /** True on touch-primary devices — disables CDK drag to preserve mobile scrolling. */
+  isTouch = signal(false);
   steps = signal<SpPlaybookStep[]>([]);
   saving = signal(false);
   templates = signal<SpStepTemplate[]>([]);
@@ -511,6 +509,9 @@ export class PlaybookBuilderPage implements OnInit {
   isDefault = false;
 
   ngOnInit(): void {
+    if (isPlatformBrowser(this.platformId)) {
+      this.isTouch.set(window.matchMedia('(pointer: coarse)').matches);
+    }
     this.editId = this.route.snapshot.paramMap.get('id');
     if (this.editId) {
       this.loadPlaybook(this.editId);
