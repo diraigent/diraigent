@@ -1041,7 +1041,7 @@ export class WorkPage {
   unlinkedTasksLoading = signal(false);
 
   // Section collapse state
-  collapsedSections = signal<Set<string>>(new Set(['backlog', 'completed', 'archived']));
+  collapsedSections = signal<Set<string>>(new Set(['completed', 'archived']));
 
   // Task create form
   showTaskForm = signal(false);
