@@ -104,6 +104,17 @@ impl DiraigentDb for PostgresDb {
     async fn delete_task(&self, task_id: Uuid) -> Result<(), AppError> {
         repository::delete_task(&self.0, task_id).await
     }
+    async fn list_subtasks(
+        &self,
+        parent_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<Task>, AppError> {
+        repository::list_subtasks(&self.0, parent_id, limit, offset).await
+    }
+    async fn count_subtasks(&self, parent_id: Uuid) -> Result<i64, AppError> {
+        repository::count_subtasks(&self.0, parent_id).await
+    }
     async fn update_task_cost(
         &self,
         task_id: Uuid,

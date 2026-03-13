@@ -661,6 +661,34 @@ pub async fn count_tasks(
     Ok(row.0)
 }
 
+// ── Subtasks (parent-child) ──
+
+pub async fn list_subtasks(
+    pool: &PgPool,
+    parent_id: Uuid,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<Task>, AppError> {
+    let tasks = sqlx::query_as::<_, Task>(
+        "SELECT * FROM diraigent.task WHERE parent_id = $1
+         ORDER BY created_at ASC LIMIT $2 OFFSET $3",
+    )
+    .bind(parent_id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
+    Ok(tasks)
+}
+
+pub async fn count_subtasks(pool: &PgPool, parent_id: Uuid) -> Result<i64, AppError> {
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM diraigent.task WHERE parent_id = $1")
+        .bind(parent_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(row.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::playbooks::create_playbook;
