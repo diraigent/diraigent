@@ -110,14 +110,6 @@ export const DEFAULT_TASK_KINDS: string[] = [
   'feature', 'bug', 'refactor', 'docs', 'test', 'research', 'chore', 'spike',
 ];
 
-export const TASK_PRIORITY_LABELS: Record<number, { label: string; color: string }> = {
-  1: { label: 'Critical', color: 'text-ctp-red latte:text-ctp-red-900' },
-  2: { label: 'High', color: 'text-ctp-peach latte:text-ctp-peach-950' },
-  3: { label: 'Medium', color: 'text-ctp-yellow latte:text-ctp-yellow-950' },
-  4: { label: 'Low', color: 'text-ctp-blue latte:text-ctp-blue-900' },
-  5: { label: 'Lowest', color: 'text-ctp-overlay0 latte:text-ctp-subtext1' },
-};
-
 // ── Helper functions ────────────────────────────────────────────────────────
 
 /** Returns the Tailwind badge classes for a task state. */

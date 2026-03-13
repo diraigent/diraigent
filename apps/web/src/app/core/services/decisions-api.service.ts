@@ -10,7 +10,7 @@ export interface SpTaskSummaryForDecision {
   title: string;
   kind: string;
   state: string;
-  priority: number;
+  urgent: boolean;
   created_at: string;
 }
 

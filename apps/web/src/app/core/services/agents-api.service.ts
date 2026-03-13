@@ -29,7 +29,7 @@ export interface SpAgentTask {
   title: string;
   state: string;
   kind: string;
-  priority: number;
+  urgent: boolean;
   created_at: string;
   updated_at: string;
 }
