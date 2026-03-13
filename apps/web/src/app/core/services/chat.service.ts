@@ -11,7 +11,6 @@ export interface ChatMessage {
 interface ActiveTool {
   toolId: string;
   toolName: string;
-  status: 'running' | 'success' | 'error';
 }
 
 const STORAGE_PREFIX = 'diraigent-chat-';
@@ -25,6 +24,7 @@ export class ChatService {
   readonly streaming = signal(false);
   readonly streamingText = signal('');
   readonly activeTools = signal<ActiveTool[]>([]);
+  readonly toolsCompleted = signal(0);
   readonly error = signal<string | null>(null);
   readonly canSend = computed(() => !!this.project.projectId());
   readonly isOpen = signal(false);
@@ -47,6 +47,7 @@ export class ChatService {
         this.streaming.set(false);
         this.streamingText.set('');
         this.activeTools.set([]);
+        this.toolsCompleted.set(0);
         this.error.set(null);
       });
     });
@@ -74,6 +75,7 @@ export class ChatService {
     this.streaming.set(true);
     this.streamingText.set('');
     this.activeTools.set([]);
+    this.toolsCompleted.set(0);
     this.error.set(null);
 
     const gen = ++this.generation;
@@ -134,22 +136,15 @@ export class ChatService {
               {
                 toolId: data['tool_id'] as string,
                 toolName: data['tool_name'] as string,
-                status: 'running' as const,
               },
             ]);
             break;
 
           case 'tool_end':
             this.activeTools.update(tools =>
-              tools.map(t =>
-                t.toolId === (data['tool_id'] as string)
-                  ? {
-                      ...t,
-                      status: (data['success'] ? 'success' : 'error') as 'success' | 'error',
-                    }
-                  : t,
-              ),
+              tools.filter(t => t.toolId !== (data['tool_id'] as string)),
             );
+            this.toolsCompleted.update(n => n + 1);
             break;
 
           case 'done':
@@ -209,6 +204,7 @@ export class ChatService {
         this.streaming.set(false);
         this.streamingText.set('');
         this.activeTools.set([]);
+        this.toolsCompleted.set(0);
         this.abortController = null;
       }
     }
@@ -232,6 +228,7 @@ export class ChatService {
     this.streaming.set(false);
     this.streamingText.set('');
     this.activeTools.set([]);
+    this.toolsCompleted.set(0);
     this.error.set(null);
     this.abortController?.abort();
     this.abortController = null;
