@@ -231,6 +231,14 @@ async fn process_reaped_task(
         }
         StepOutcome::UnexpectedState(state) => {
             warn!("task {tid} in unexpected state '{state}' — skipping merge, keeping worktree");
+            let msg = format!(
+                "Task in unexpected state \'{state}\' after worker completed — \
+                 skipping merge and pipeline advancement. \
+                 Worktree preserved for investigation."
+            );
+            if let Err(comment_err) = api.post_comment(&task_id, &msg).await {
+                warn!("failed to post unexpected-state comment for {tid}: {comment_err}");
+            }
             // Fetch task to get project_id for lock release
             release_lock_project_id = api
                 .get_task(&task_id)
