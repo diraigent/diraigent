@@ -253,6 +253,14 @@ chmod +x start.sh
       <li>the orchestra picks it up and starts working</li>
     </ol>
 
+    <h3 class="section-subtitle">git credentials</h3>
+    <p class="section-intro">
+      the orchestra pushes branches and merges results back to your remote.
+      for this to work, git must be able to authenticate inside the container &mdash;
+      mount a <code>.netrc</code> file, an ssh key, or configure a credential helper.
+      without credentials, agents work locally but push/merge to remote will fail.
+    </p>
+
   </section>
 
   <!-- Footer -->
