@@ -137,6 +137,12 @@ impl DiraigentDb for PostgresDb {
     async fn list_goal_linked_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError> {
         repository::list_goal_linked_task_ids(&self.0, project_id).await
     }
+    async fn list_tasks_with_blocker_updates(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<Task>, AppError> {
+        repository::list_tasks_with_blocker_updates(&self.0, project_id).await
+    }
 
     // Task Updates
     async fn create_task_update(

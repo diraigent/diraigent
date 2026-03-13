@@ -22,6 +22,10 @@ pub fn routes() -> Router<AppState> {
         .route("/{project_id}/tasks/blocked", get(list_blocked_task_ids))
         .route("/{project_id}/tasks/flagged", get(list_flagged_task_ids))
         .route(
+            "/{project_id}/tasks/with-blockers",
+            get(list_tasks_with_blocker_updates),
+        )
+        .route(
             "/{project_id}/tasks/goal-linked",
             get(list_goal_linked_task_ids),
         )
@@ -177,6 +181,17 @@ async fn list_goal_linked_task_ids(
     require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
     let ids = state.db.list_goal_linked_task_ids(project_id).await?;
     Ok(Json(ids))
+}
+
+async fn list_tasks_with_blocker_updates(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
+    Path(project_id): Path<Uuid>,
+) -> Result<Json<Vec<Task>>, AppError> {
+    require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
+    let tasks = state.db.list_tasks_with_blocker_updates(project_id).await?;
+    Ok(Json(tasks))
 }
 
 /// Return all goal IDs linked to a task.

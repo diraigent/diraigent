@@ -6,16 +6,22 @@ import { forkJoin, of, Subscription } from 'rxjs';
 import { catchError, map, switchMap } from 'rxjs/operators';
 import { TasksApiService, SpTask, SpTaskUpdate } from '../../core/services/tasks-api.service';
 import { DiraigentApiService, DgProject } from '../../core/services/diraigent-api.service';
+import { GitApiService, TaskBranchStatus } from '../../core/services/git-api.service';
 import { ReviewSseService } from '../../core/services/review-sse.service';
 import { NavBadgeService } from '../../core/services/nav-badge.service';
 import { ObservationsPage } from '../observations/observations';
+
+export type ReviewCategory = 'human_review' | 'blocker' | 'conflict';
 
 export interface ReviewTask {
   task: SpTask;
   project: DgProject;
   artifacts: SpTaskUpdate[];
+  blockerUpdates: SpTaskUpdate[];
   acceptanceCriteria: string[];
   expanded: boolean;
+  category: ReviewCategory;
+  gitStatus: TaskBranchStatus | null;
 }
 
 @Component({
@@ -97,10 +103,23 @@ export interface ReviewTask {
               <div class="p-5">
                 <div class="flex items-start justify-between gap-4">
                   <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-2 mb-1">
-                      <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-ctp-yellow/15 text-ctp-yellow">
-                        {{ t('review.awaitingReview') }}
-                      </span>
+                    <div class="flex items-center gap-2 mb-1 flex-wrap">
+                      <!-- Category badge -->
+                      @if (item.category === 'human_review') {
+                        <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-ctp-yellow/15 text-ctp-yellow">
+                          {{ t('review.awaitingReview') }}
+                        </span>
+                      } @else if (item.category === 'blocker') {
+                        <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-ctp-red/15 text-ctp-red">
+                          {{ t('review.blocked') }}
+                        </span>
+                      }
+                      <!-- Conflict badge (shown alongside any category) -->
+                      @if (item.gitStatus?.has_conflict) {
+                        <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-ctp-peach/15 text-ctp-peach">
+                          {{ t('review.mergeConflict') }}
+                        </span>
+                      }
                       <span class="text-xs text-text-secondary">
                         {{ item.project.name }} · #{{ item.task.number }}
                       </span>
@@ -133,37 +152,64 @@ export interface ReviewTask {
                 </div>
 
                 <!-- Action buttons -->
-                <div class="flex items-center gap-2 mt-4">
-                  <button (click)="approve(item)"
-                    [disabled]="actioning() === item.task.id"
-                    class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg
-                           bg-ctp-green/20 text-ctp-green hover:bg-ctp-green/30 transition-colors
-                           disabled:opacity-50 disabled:cursor-not-allowed">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
-                    </svg>
-                    {{ t('review.approve') }}
-                  </button>
-                  <button (click)="openRework(item)"
-                    [disabled]="actioning() === item.task.id"
-                    class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg
-                           bg-ctp-yellow/20 text-ctp-yellow hover:bg-ctp-yellow/30 transition-colors
-                           disabled:opacity-50 disabled:cursor-not-allowed">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                    </svg>
-                    {{ t('review.rework') }}
-                  </button>
-                  <button (click)="reopen(item)"
-                    [disabled]="actioning() === item.task.id"
-                    class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg
-                           bg-ctp-overlay0/15 text-ctp-overlay0 hover:bg-ctp-overlay0/25 transition-colors
-                           disabled:opacity-50 disabled:cursor-not-allowed">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
-                    </svg>
-                    {{ t('review.reopen') }}
-                  </button>
+                <div class="flex items-center gap-2 mt-4 flex-wrap">
+                  @if (item.category === 'human_review') {
+                    <button (click)="approve(item)"
+                      [disabled]="actioning() === item.task.id"
+                      class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg
+                             bg-ctp-green/20 text-ctp-green hover:bg-ctp-green/30 transition-colors
+                             disabled:opacity-50 disabled:cursor-not-allowed">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                      </svg>
+                      {{ t('review.approve') }}
+                    </button>
+                    <button (click)="openRework(item)"
+                      [disabled]="actioning() === item.task.id"
+                      class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg
+                             bg-ctp-yellow/20 text-ctp-yellow hover:bg-ctp-yellow/30 transition-colors
+                             disabled:opacity-50 disabled:cursor-not-allowed">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                      </svg>
+                      {{ t('review.rework') }}
+                    </button>
+                    <button (click)="reopen(item)"
+                      [disabled]="actioning() === item.task.id"
+                      class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg
+                             bg-ctp-overlay0/15 text-ctp-overlay0 hover:bg-ctp-overlay0/25 transition-colors
+                             disabled:opacity-50 disabled:cursor-not-allowed">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
+                      </svg>
+                      {{ t('review.reopen') }}
+                    </button>
+                  }
+                  @if (item.category === 'blocker') {
+                    <button (click)="openRework(item)"
+                      [disabled]="actioning() === item.task.id"
+                      class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg
+                             bg-ctp-yellow/20 text-ctp-yellow hover:bg-ctp-yellow/30 transition-colors
+                             disabled:opacity-50 disabled:cursor-not-allowed">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                      </svg>
+                      {{ t('review.rework') }}
+                    </button>
+                  }
+                  <!-- Resolve merge conflict button -->
+                  @if (item.gitStatus?.has_conflict) {
+                    <button (click)="resolveConflict(item)"
+                      [disabled]="resolving() === item.task.id"
+                      class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg
+                             bg-ctp-peach/20 text-ctp-peach hover:bg-ctp-peach/30 transition-colors
+                             disabled:opacity-50 disabled:cursor-not-allowed">
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                      </svg>
+                      {{ resolving() === item.task.id ? t('review.resolving') : t('review.resolveConflict') }}
+                    </button>
+                  }
                   @if (actioning() === item.task.id) {
                     <span class="text-xs text-text-secondary">{{ t('common.saving') }}</span>
                   }
@@ -191,6 +237,28 @@ export interface ReviewTask {
               <!-- Expanded details -->
               @if (item.expanded) {
                 <div class="border-t border-border px-5 py-4 space-y-4 bg-bg">
+                  <!-- Blocker updates -->
+                  @if (item.blockerUpdates.length > 0) {
+                    <div>
+                      <h3 class="text-xs font-semibold text-ctp-red uppercase tracking-wider mb-2">
+                        {{ t('review.blockers') }} ({{ item.blockerUpdates.length }})
+                      </h3>
+                      <div class="space-y-2">
+                        @for (blocker of item.blockerUpdates; track blocker.id) {
+                          <div class="rounded-lg border border-ctp-red/20 bg-ctp-red/5 p-3">
+                            <div class="flex items-center gap-2 mb-1">
+                              <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-ctp-red/15 text-ctp-red">
+                                blocker
+                              </span>
+                              <span class="text-xs text-text-secondary">{{ blocker.created_at | date:'short' }}</span>
+                            </div>
+                            <pre class="text-xs text-text-primary whitespace-pre-wrap break-all leading-relaxed">{{ blocker.content }}</pre>
+                          </div>
+                        }
+                      </div>
+                    </div>
+                  }
+
                   <!-- Acceptance criteria -->
                   @if (item.acceptanceCriteria.length > 0) {
                     <div>
@@ -255,6 +323,7 @@ export interface ReviewTask {
 export class ReviewPage implements OnDestroy {
   private tasksApi = inject(TasksApiService);
   private diraigentApi = inject(DiraigentApiService);
+  private gitApi = inject(GitApiService);
   private reviewSse = inject(ReviewSseService);
   badges = inject(NavBadgeService);
 
@@ -262,6 +331,7 @@ export class ReviewPage implements OnDestroy {
   reviewItems = signal<ReviewTask[]>([]);
   loading = signal(false);
   actioning = signal<string | null>(null);
+  resolving = signal<string | null>(null);
   reworkTarget = signal<string | null>(null);
   reworkComment = '';
 
@@ -378,6 +448,28 @@ export class ReviewPage implements OnDestroy {
     });
   }
 
+  resolveConflict(item: ReviewTask): void {
+    this.resolving.set(item.task.id);
+    this.gitApi.resolveTaskBranchForProject(item.project.id, item.task.id).subscribe({
+      next: () => {
+        this.resolving.set(null);
+        // Refresh git status for this item
+        this.gitApi.taskBranchStatusForProject(item.project.id, item.task.id).pipe(
+          catchError(() => of(null)),
+        ).subscribe(status => {
+          this.reviewItems.update(items =>
+            items.map(i =>
+              i.task.id === item.task.id
+                ? { ...i, gitStatus: status }
+                : i,
+            ),
+          );
+        });
+      },
+      error: () => this.resolving.set(null),
+    });
+  }
+
   taskDescription(task: SpTask): string {
     const ctx = task.context as Record<string, unknown>;
     return (ctx?.['spec'] as string) ?? (ctx?.['description'] as string) ?? '';
@@ -390,21 +482,45 @@ export class ReviewPage implements OnDestroy {
         if (!projects.length) return of([] as ReviewTask[]);
         return forkJoin(
           projects.map(project =>
-            this.tasksApi.listForProject(project.id, { state: 'human_review', limit: 100 }).pipe(
-              catchError(() => of({ data: [] as SpTask[], total: 0, limit: 100, offset: 0, has_more: false })),
-              switchMap(resp => {
-                const tasks = resp.data;
-                if (!tasks.length) return of([] as ReviewTask[]);
+            forkJoin({
+              reviewTasks: this.tasksApi.listForProject(project.id, { state: 'human_review', limit: 100 }).pipe(
+                catchError(() => of({ data: [] as SpTask[], total: 0, limit: 100, offset: 0, has_more: false })),
+                map(resp => resp.data),
+              ),
+              blockerTasks: this.tasksApi.listTasksWithBlockers(project.id).pipe(
+                catchError(() => of([] as SpTask[])),
+              ),
+            }).pipe(
+              switchMap(({ reviewTasks, blockerTasks }) => {
+                // Deduplicate: tasks in human_review take priority
+                const reviewIds = new Set(reviewTasks.map(t => t.id));
+                const uniqueBlockerTasks = blockerTasks.filter(t => !reviewIds.has(t.id));
+                const allTasks: { task: SpTask; category: ReviewCategory }[] = [
+                  ...reviewTasks.map(task => ({ task, category: 'human_review' as ReviewCategory })),
+                  ...uniqueBlockerTasks.map(task => ({ task, category: 'blocker' as ReviewCategory })),
+                ];
+
+                if (!allTasks.length) return of([] as ReviewTask[]);
+
                 return forkJoin(
-                  tasks.map(task =>
-                    this.tasksApi.listUpdates(task.id).pipe(
-                      catchError(() => of([] as SpTaskUpdate[])),
-                      map(updates => ({
+                  allTasks.map(({ task, category }) =>
+                    forkJoin({
+                      updates: this.tasksApi.listUpdates(task.id).pipe(
+                        catchError(() => of([] as SpTaskUpdate[])),
+                      ),
+                      gitStatus: this.gitApi.taskBranchStatusForProject(project.id, task.id).pipe(
+                        catchError(() => of(null as TaskBranchStatus | null)),
+                      ),
+                    }).pipe(
+                      map(({ updates, gitStatus }) => ({
                         task,
                         project,
                         artifacts: updates.filter(u => u.kind === 'artifact'),
+                        blockerUpdates: updates.filter(u => u.kind === 'blocker'),
                         acceptanceCriteria: this.extractCriteria(task),
                         expanded: false,
+                        category: gitStatus?.has_conflict ? 'conflict' as ReviewCategory : category,
+                        gitStatus,
                       })),
                     ),
                   ),

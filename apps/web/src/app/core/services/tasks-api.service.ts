@@ -215,6 +215,10 @@ export class TasksApiService extends BaseCrudApiService<SpTask, CreateTaskReques
     return this.http.post<SpTaskComment>(`${this.baseUrl}/tasks/${taskId}/comments`, data);
   }
 
+  listTasksWithBlockers(projectId: string): Observable<SpTask[]> {
+    return this.http.get<SpTask[]>(`${this.baseUrl}/${projectId}/tasks/with-blockers`);
+  }
+
   listBlockedIds(): Observable<string[]> {
     if (!this.projectId) return EMPTY;
     return this.http.get<string[]>(`${this.baseUrl}/${this.projectId}/tasks/blocked`);

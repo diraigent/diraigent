@@ -337,6 +337,21 @@ impl DiraigentDb for CryptoDb {
     async fn list_goal_linked_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError> {
         delegate!(self, list_goal_linked_task_ids, project_id)
     }
+    async fn list_tasks_with_blocker_updates(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<Task>, AppError> {
+        let mut tasks = self
+            .inner
+            .list_tasks_with_blocker_updates(project_id)
+            .await?;
+        if let Some(dek) = self.dek_for_project(project_id).await? {
+            for t in &mut tasks {
+                Self::decrypt_task(&dek, t)?;
+            }
+        }
+        Ok(tasks)
+    }
 
     // ── Task Updates (encrypt content) ──
     async fn create_task_update(

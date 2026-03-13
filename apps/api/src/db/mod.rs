@@ -93,6 +93,10 @@ pub trait DiraigentDb: Send + Sync {
     async fn list_blocked_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError>;
     async fn list_flagged_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError>;
     async fn list_goal_linked_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError>;
+    async fn list_tasks_with_blocker_updates(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<Task>, AppError>;
 
     // ── Task Updates ──────────────────────────────────────────────────────────
     async fn create_task_update(
