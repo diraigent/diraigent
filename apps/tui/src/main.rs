@@ -529,6 +529,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 View::Search => views::search::render(f, main_layout[1], &mut app),
                 View::Chat => views::chat::render(f, main_layout[1], &mut app),
                 View::Source => views::source::render(f, main_layout[1], &mut app),
+                View::Dashboard | View::Reports | View::Events | View::Webhooks | View::StepTemplates => {
+                    let label = app.view.label();
+                    let block = ratatui::widgets::Block::default()
+                        .title(format!(" {} ", label))
+                        .borders(ratatui::widgets::Borders::ALL)
+                        .border_style(Style::default().fg(theme::overlay0()));
+                    let text = Paragraph::new(format!("{} view — coming soon", label))
+                        .block(block)
+                        .style(Style::default().fg(theme::subtext0()));
+                    f.render_widget(text, main_layout[1]);
+                }
             }
 
             // Footer
