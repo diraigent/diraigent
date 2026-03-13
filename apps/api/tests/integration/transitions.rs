@@ -2056,13 +2056,10 @@ async fn update_task_playbook_step_oob_with_new_playbook_rejected() {
 // ── update_task: simultaneous playbook_id + playbook_step boundary tests ──
 
 /// When setting a new playbook_id AND an out-of-bounds playbook_step in a single PUT,
-/// the API should reject with 422. Before the fix in task #165, the OOB check ran against
-/// the OLD playbook_id (None in this case), so any non-negative step was silently accepted —
-/// the task would end up with playbook_step=99 on a 3-step playbook (data integrity violation).
-/// After task #165, validate_playbook_step uses the effective (post-update) playbook_id,
-/// correctly returning 422 for out-of-bounds steps.
+/// the API rejects with 422. Fixed in task #165: validate_playbook_step now uses the
+/// effective (post-update) playbook_id, correctly rejecting out-of-bounds steps.
 #[tokio::test]
-async fn update_task_new_playbook_and_oob_step_accepted_currently() {
+async fn update_task_new_playbook_and_oob_step_rejected() {
     let app = require_db!();
     let project_id = app.create_project("upd-new-pb-oob").await;
 
