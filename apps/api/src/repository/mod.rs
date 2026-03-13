@@ -16,6 +16,7 @@ mod memberships;
 mod metrics;
 mod observations;
 mod packages;
+mod plans;
 mod playbooks;
 mod projects;
 mod reports;
@@ -41,6 +42,7 @@ pub use memberships::*;
 pub use metrics::*;
 pub use observations::*;
 pub use packages::*;
+pub use plans::*;
 pub use playbooks::*;
 pub use projects::*;
 pub use reports::*;
@@ -85,6 +87,7 @@ pub(crate) enum Table {
     Membership,
     Observation,
     Package,
+    Plan,
     Playbook,
     Project,
     Report,
@@ -111,6 +114,7 @@ impl Table {
             Table::Membership => "membership",
             Table::Observation => "observation",
             Table::Package => "package",
+            Table::Plan => "plan",
             Table::Playbook => "playbook",
             Table::Project => "project",
             Table::Report => "report",

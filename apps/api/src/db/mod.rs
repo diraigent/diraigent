@@ -314,6 +314,38 @@ pub trait DiraigentDb: Send + Sync {
         default_retention_days: i32,
     ) -> Result<u64, AppError>;
 
+    // ── Plans ──────────────────────────────────────────────────────────────────
+    async fn create_plan(
+        &self,
+        project_id: Uuid,
+        req: &CreatePlan,
+        created_by: Uuid,
+    ) -> Result<Plan, AppError>;
+    async fn get_plan_by_id(&self, id: Uuid) -> Result<Plan, AppError>;
+    async fn list_plans(
+        &self,
+        project_id: Uuid,
+        filters: &PlanFilters,
+    ) -> Result<Vec<Plan>, AppError>;
+    async fn count_plans(&self, project_id: Uuid, filters: &PlanFilters) -> Result<i64, AppError>;
+    async fn update_plan(&self, id: Uuid, req: &UpdatePlan) -> Result<Plan, AppError>;
+    async fn delete_plan(&self, id: Uuid) -> Result<(), AppError>;
+    async fn add_task_to_plan(&self, plan_id: Uuid, task_id: Uuid) -> Result<Task, AppError>;
+    async fn remove_task_from_plan(&self, plan_id: Uuid, task_id: Uuid) -> Result<(), AppError>;
+    async fn list_plan_tasks(
+        &self,
+        plan_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<Task>, AppError>;
+    async fn count_plan_tasks(&self, plan_id: Uuid) -> Result<i64, AppError>;
+    async fn reorder_plan_tasks(
+        &self,
+        plan_id: Uuid,
+        task_ids: &[Uuid],
+    ) -> Result<Vec<Task>, AppError>;
+    async fn get_plan_progress(&self, plan_id: Uuid) -> Result<PlanProgress, AppError>;
+
     // ── Playbooks ─────────────────────────────────────────────────────────────
     async fn create_playbook(
         &self,
