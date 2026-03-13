@@ -1,8 +1,9 @@
 use crate::client::{
     Agent, AuditEntry, BranchInfo, ChangedFile, ChatMessage, Decision, GitTaskStatus, Goal,
-    GoalProgress, GoalStats, Integration, IntegrationAccess, KnowledgeEntry, LogEntry,
-    MainPushStatus, Member, Observation, Playbook, Project, Role, SearchResult, Task, TaskComment,
-    TaskDependencies, TaskUpdate, TreeEntry, Verification,
+    GoalComment, GoalProgress, GoalStats, Integration, IntegrationAccess, KnowledgeEntry, LogEntry,
+    MainPushStatus, Member, Observation, Playbook, Project, ProjectEvent, ProjectMetrics, Report,
+    Role, SearchResult, StepTemplate, Task, TaskComment, TaskDependencies, TaskUpdate, TreeEntry,
+    Verification, Webhook, WebhookDelivery,
 };
 use ratatui::widgets::ListState;
 use uuid::Uuid;
@@ -140,6 +141,10 @@ pub enum Modal {
     GoalTaskPicker,
     GlobalSearch,
     ChatInput,
+    GoalComment,
+    EventKindFilter,
+    EventSeverityFilter,
+    ReportDelete,
 }
 
 pub const TIME_RANGES: &[(&str, i64)] = &[
@@ -388,6 +393,87 @@ impl ProjectSettingsForm {
     }
 }
 
+pub const REPORT_KINDS: &[&str] = &[
+    "security",
+    "component",
+    "architecture",
+    "performance",
+    "custom",
+];
+
+#[derive(Default)]
+pub struct ReportForm {
+    pub title: String,
+    pub kind_index: usize, // index into REPORT_KINDS
+    pub prompt: String,
+    pub active_field: usize, // 0=title, 1=kind, 2=prompt
+    pub cursor: usize,
+}
+
+pub const WEBHOOK_EVENT_TYPES: &[&str] = &[
+    "task.created",
+    "task.updated",
+    "task.transitioned",
+    "task.completed",
+    "task.commented",
+    "goal.created",
+    "goal.updated",
+    "decision.created",
+    "decision.updated",
+    "observation.created",
+    "knowledge.created",
+    "verification.created",
+];
+
+pub struct WebhookForm {
+    pub url: String,
+    pub secret: String,
+    pub event_toggles: Vec<bool>, // parallel to WEBHOOK_EVENT_TYPES
+    pub active_field: usize,      // 0=url, 1=secret, 2=events
+    pub cursor: usize,
+    pub event_selected: usize, // which event in the list is highlighted
+}
+
+impl Default for WebhookForm {
+    fn default() -> Self {
+        Self {
+            url: String::new(),
+            secret: String::new(),
+            event_toggles: vec![false; WEBHOOK_EVENT_TYPES.len()],
+            active_field: 0,
+            cursor: 0,
+            event_selected: 0,
+        }
+    }
+}
+
+pub const EVENT_KINDS: &[&str] = &[
+    "ci", "deploy", "error", "merge", "release", "alert", "custom",
+];
+pub const EVENT_SEVERITIES: &[&str] = &["info", "warning", "error", "critical"];
+
+pub struct EventForm {
+    pub title: String,
+    pub kind_index: usize,     // index into EVENT_KINDS
+    pub severity_index: usize, // index into EVENT_SEVERITIES
+    pub description: String,
+    pub active_field: usize, // 0=title, 1=kind, 2=severity, 3=description
+    pub cursor: usize,
+}
+
+impl Default for EventForm {
+    fn default() -> Self {
+        Self {
+            title: String::new(),
+            kind_index: 6,     // default to "custom"
+            severity_index: 0, // default to "info"
+            description: String::new(),
+            active_field: 0,
+            cursor: 0,
+        }
+    }
+}
+
 pub const GOAL_STATUSES: &[&str] = &["active", "achieved", "paused", "abandoned"];
 pub const GOAL_TYPES: &[&str] = &["epic", "feature", "milestone", "sprint", "initiative"];
 
@@ -512,6 +598,9 @@ pub struct App {
     pub decision_form: Option<DecisionForm>,
     pub knowledge_form: Option<KnowledgeForm>,
     pub integration_form: Option<IntegrationForm>,
+    pub event_form: Option<EventForm>,
+    pub webhook_form: Option<WebhookForm>,
+    pub report_form: Option<ReportForm>,
     pub connected: bool,
     pub view: View,
     pub modal: Modal,
@@ -539,6 +628,26 @@ pub struct App {
     pub integration_access: Vec<IntegrationAccess>,
     pub audit_log: Vec<AuditEntry>,
     pub verifications: Vec<Verification>,
+    pub events: Vec<ProjectEvent>,
+    pub event_kind_filter: Option<String>,
+    pub event_severity_filter: Option<String>,
+    pub webhooks: Vec<Webhook>,
+    pub webhook_deliveries: Vec<WebhookDelivery>,
+    pub webhook_test_result: Option<String>,
+    pub reports: Vec<Report>,
+    pub selected_report: Option<usize>,
+    // Dashboard
+    pub dashboard_metrics: Option<ProjectMetrics>,
+    pub dashboard_events: Vec<ProjectEvent>,
+
+    // Goal comments
+    pub goal_comments: Vec<GoalComment>,
+
+    // Step templates
+    pub step_templates: Vec<StepTemplate>,
+
+    // Agent tasks (queue view)
+    pub agent_tasks: Vec<Task>,
 
     // Goal task picker
     pub goal_tasks: Vec<Task>,
@@ -576,6 +685,8 @@ pub struct App {
     pub selected_integration: Option<usize>,
     pub selected_audit: Option<usize>,
     pub selected_verification: Option<usize>,
+    pub selected_event: Option<usize>,
+    pub selected_webhook: Option<usize>,
 
     // Team view focus: 0=roles, 1=members, 2=detail
     pub team_focus: usize,
@@ -647,6 +758,9 @@ impl App {
             decision_form: None,
             knowledge_form: None,
             integration_form: None,
+            event_form: None,
+            webhook_form: None,
+            report_form: None,
             view: View::Tasks,
             modal: Modal::None,
             focus: 0,
@@ -674,6 +788,19 @@ impl App {
             integration_access: vec![],
             audit_log: vec![],
             verifications: vec![],
+            events: vec![],
+            event_kind_filter: None,
+            event_severity_filter: None,
+            webhooks: vec![],
+            webhook_deliveries: vec![],
+            webhook_test_result: None,
+            reports: vec![],
+            selected_report: None,
+            dashboard_metrics: None,
+            dashboard_events: vec![],
+            goal_comments: vec![],
+            step_templates: vec![],
+            agent_tasks: vec![],
             goal_tasks: vec![],
             goal_unlinked_tasks: vec![],
             goal_picker_selected: 0,
@@ -703,6 +830,8 @@ impl App {
             selected_integration: None,
             selected_audit: None,
             selected_verification: None,
+            selected_event: None,
+            selected_webhook: None,
             team_focus: 0,
             search_query: String::new(),
             detail_scroll: 0,
@@ -757,11 +886,10 @@ impl App {
             View::Search => self.search_results.len(),
             View::Chat => self.chat_messages.len(),
             View::Source => self.source_entries.len(),
-            View::Dashboard
-            | View::Reports
-            | View::Events
-            | View::Webhooks
-            | View::StepTemplates => 0,
+            View::Dashboard | View::StepTemplates => 0,
+            View::Reports => self.reports.len(),
+            View::Webhooks => self.webhooks.len(),
+            View::Events => self.filtered_events().len(),
         }
     }
 
@@ -784,11 +912,10 @@ impl App {
             View::Search => self.selected_search_result,
             View::Chat => None,
             View::Source => self.source_selected,
-            View::Dashboard
-            | View::Reports
-            | View::Events
-            | View::Webhooks
-            | View::StepTemplates => None,
+            View::Dashboard | View::StepTemplates => None,
+            View::Reports => self.selected_report,
+            View::Webhooks => self.selected_webhook,
+            View::Events => self.selected_event,
         }
     }
 
@@ -815,11 +942,10 @@ impl App {
             View::Search => self.selected_search_result = idx,
             View::Chat => {}
             View::Source => self.source_selected = idx,
-            View::Dashboard
-            | View::Reports
-            | View::Events
-            | View::Webhooks
-            | View::StepTemplates => {}
+            View::Dashboard | View::StepTemplates => {}
+            View::Reports => self.selected_report = idx,
+            View::Webhooks => self.selected_webhook = idx,
+            View::Events => self.selected_event = idx,
         }
     }
 
@@ -917,6 +1043,26 @@ impl App {
                 }
                 if let Some(ref s) = self.verification_status_filter {
                     if v.status != *s {
+                        return false;
+                    }
+                }
+                true
+            })
+            .collect()
+    }
+
+    /// Returns events filtered by current kind and severity filters.
+    pub fn filtered_events(&self) -> Vec<&ProjectEvent> {
+        self.events
+            .iter()
+            .filter(|e| {
+                if let Some(ref k) = self.event_kind_filter {
+                    if e.kind != *k {
+                        return false;
+                    }
+                }
+                if let Some(ref s) = self.event_severity_filter {
+                    if e.severity != *s {
                         return false;
                     }
                 }

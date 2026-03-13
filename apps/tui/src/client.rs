@@ -57,6 +57,8 @@ pub struct Task {
     pub updated_at: Option<String>,
     pub completed_at: Option<String>,
     #[serde(default)]
+    pub cost_usd: f64,
+    #[serde(default)]
     pub flagged: bool,
 }
 
@@ -557,6 +559,8 @@ pub struct Event {
     pub created_at: Option<String>,
 }
 
+// Type alias so views can use ProjectEvent as the canonical name
+pub type ProjectEvent = Event;
 // ── Webhook types ────────────────────────────────────────────
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Webhook {
@@ -706,7 +710,7 @@ pub struct ProjectMetrics {
     pub task_costs: Vec<TaskCostRow>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct TaskSummary {
     #[serde(default)]
     pub total: i64,
@@ -724,7 +728,7 @@ pub struct TaskSummary {
     pub human_review: i64,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct CostSummary {
     #[serde(default)]
     pub total_input_tokens: i64,
@@ -2127,10 +2131,20 @@ impl ApiClient {
 
     // ── Event operations ────────────────────────────────────────
 
-    pub async fn list_events(&self, project_id: Uuid) -> Result<Vec<Event>, reqwest::Error> {
-        let req = self
-            .client
-            .get(format!("{}/{}/events", self.base_url, project_id));
+    pub async fn list_events(
+        &self,
+        project_id: Uuid,
+        kind: Option<&str>,
+        severity: Option<&str>,
+    ) -> Result<Vec<Event>, reqwest::Error> {
+        let mut url = format!("{}/{}/events?limit=200", self.base_url, project_id);
+        if let Some(k) = kind {
+            url.push_str(&format!("&kind={}", k));
+        }
+        if let Some(s) = severity {
+            url.push_str(&format!("&severity={}", s));
+        }
+        let req = self.client.get(&url);
         let resp = self.auth(req).send().await?.error_for_status()?;
         let body: serde_json::Value = resp.json().await?;
         Ok(serde_json::from_value(
@@ -2449,6 +2463,14 @@ impl ApiClient {
             "{}/{}/observations/cleanup",
             self.base_url, project_id
         ));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn list_agent_tasks(&self, agent_id: Uuid) -> Result<Vec<Task>, reqwest::Error> {
+        let req = self
+            .client
+            .get(format!("{}/agents/{}/tasks", self.base_url, agent_id));
         let resp = self.auth(req).send().await?.error_for_status()?;
         resp.json().await
     }

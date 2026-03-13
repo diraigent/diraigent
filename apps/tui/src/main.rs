@@ -24,10 +24,10 @@ use ratatui::{Frame, Terminal};
 use tokio::sync::{mpsc, watch};
 
 use app::{
-    App, Modal, VerificationForm, View, ALL_VIEWS, GOAL_STATUSES, GOAL_TYPES,
-    INTEGRATION_AUTH_TYPES, INTEGRATION_KINDS, KNOWLEDGE_CATEGORIES, LOG_DIRECTIONS, LOG_LIMITS,
-    OBSERVATION_KINDS, OBSERVATION_SEVERITIES, TASK_KINDS, TIME_RANGES, VERIFICATION_KINDS,
-    VERIFICATION_STATUSES,
+    App, Modal, VerificationForm, View, ALL_VIEWS, EVENT_KINDS, EVENT_SEVERITIES, GOAL_STATUSES,
+    GOAL_TYPES, INTEGRATION_AUTH_TYPES, INTEGRATION_KINDS, KNOWLEDGE_CATEGORIES, LOG_DIRECTIONS,
+    LOG_LIMITS, OBSERVATION_KINDS, OBSERVATION_SEVERITIES, TASK_KINDS, TIME_RANGES,
+    VERIFICATION_KINDS, VERIFICATION_STATUSES,
 };
 use client::ApiClient;
 
@@ -60,6 +60,13 @@ enum ApiMsg {
     GitTaskStatus(client::GitTaskStatus),
     ChangedFiles(Vec<client::ChangedFile>),
     Verifications(Vec<client::Verification>),
+    Events(Vec<client::Event>),
+    DashboardMetrics(client::ProjectMetrics),
+    DashboardEvents(Vec<client::Event>),
+    Reports(Vec<client::Report>),
+    Webhooks(Vec<client::Webhook>),
+    WebhookDeliveries(Vec<client::WebhookDelivery>),
+    WebhookTestResult(String),
     GoalTasksList(Vec<client::Task>),
     GoalUnlinkedTasks(Vec<client::Task>),
     GoalBulkLinked,
@@ -71,6 +78,10 @@ enum ApiMsg {
     ChatError(String),
     SourceTree(Vec<client::TreeEntry>),
     SourceBlob { path: String, content: String },
+    GoalComments(Vec<client::GoalComment>),
+    StepTemplates(Vec<client::StepTemplate>),
+    AgentTasks(Vec<client::Task>),
+    ObservationsCleanup(client::CleanupObservationsResult),
     Error(String),
 }
 
@@ -128,6 +139,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             integrations,
             audit,
             verifications,
+            events,
+            reports,
+            metrics,
+            recent_events,
+            webhooks,
         ) = tokio::join!(
             api.list_tasks(pid),
             api.list_playbooks(pid),
@@ -140,6 +156,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             api.list_integrations(pid),
             api.list_audit(pid),
             api.list_verifications(pid, None, None, None, 100, 0),
+            api.list_events(pid, None, None),
+            api.list_reports(pid),
+            api.get_project_metrics(pid, None),
+            api.list_recent_events(pid),
+            api.list_webhooks(pid),
         );
         if let Ok(resp) = tasks {
             let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
@@ -173,6 +194,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         if let Ok(resp) = verifications {
             let _ = tx.send(ApiMsg::Verifications(resp)).await;
+        }
+        if let Ok(resp) = events {
+            let _ = tx.send(ApiMsg::Events(resp)).await;
+        }
+        if let Ok(resp) = reports {
+            let _ = tx.send(ApiMsg::Reports(resp)).await;
+        }
+        if let Ok(m) = metrics {
+            let _ = tx.send(ApiMsg::DashboardMetrics(m)).await;
+        }
+        if let Ok(ev) = recent_events {
+            let _ = tx.send(ApiMsg::DashboardEvents(ev)).await;
+        }
+        if let Ok(resp) = webhooks {
+            let _ = tx.send(ApiMsg::Webhooks(resp)).await;
         }
     }
 
@@ -365,6 +401,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::IntegrationAccessList(access) => app.integration_access = access,
                 ApiMsg::Audit(a) => app.audit_log = a,
                 ApiMsg::Verifications(v) => app.verifications = v,
+                ApiMsg::Events(e) => app.events = e,
+                ApiMsg::Reports(r) => app.reports = r,
+                ApiMsg::DashboardMetrics(m) => app.dashboard_metrics = Some(m),
+                ApiMsg::DashboardEvents(ev) => app.dashboard_events = ev,
+                ApiMsg::Webhooks(w) => app.webhooks = w,
+                ApiMsg::WebhookDeliveries(d) => app.webhook_deliveries = d,
+                ApiMsg::WebhookTestResult(r) => app.webhook_test_result = Some(r),
                 ApiMsg::GoalTasksList(tasks) => app.goal_tasks = tasks,
                 ApiMsg::GoalUnlinkedTasks(tasks) => {
                     app.goal_unlinked_tasks = tasks;
@@ -465,6 +508,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     app.source_blob_path = Some(path);
                     app.source_blob_scroll = 0;
                 }
+                ApiMsg::GoalComments(comments) => {
+                    app.goal_comments = comments;
+                }
+                ApiMsg::StepTemplates(templates) => {
+                    app.step_templates = templates;
+                }
+                ApiMsg::AgentTasks(tasks) => {
+                    app.agent_tasks = tasks;
+                }
+                ApiMsg::ObservationsCleanup(result) => {
+                    app.last_error = Some(format!(
+                        "Cleanup: {} deleted (dismissed={}, ack={}, acted={}, resolved={}, dup={})",
+                        result.total_deleted,
+                        result.deleted_dismissed,
+                        result.deleted_acknowledged,
+                        result.deleted_acted_on,
+                        result.deleted_resolved,
+                        result.deleted_duplicates,
+                    ));
+                    // Refresh observations list
+                    if let Some(pid) = app.current_project {
+                        let api = api.clone();
+                        let tx = tx.clone();
+                        tokio::spawn(async move {
+                            if let Ok(obs) = api.list_observations(pid).await {
+                                let _ = tx.send(ApiMsg::Observations(obs)).await;
+                            }
+                        });
+                    }
+                }
                 ApiMsg::Error(e) => app.last_error = Some(e),
             }
         }
@@ -511,7 +584,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Main content
             match app.view {
                 View::Tasks => views::tasks::render(f, main_layout[1], &mut app),
-                View::Agents => views::agents::render(f, main_layout[1], &app),
+                View::Agents => views::agents::render(f, main_layout[1], &mut app),
                 View::Knowledge => views::knowledge::render(f, main_layout[1], &mut app),
                 View::Decisions => views::decisions::render(f, main_layout[1], &mut app),
                 View::Playbooks => views::playbooks::render(f, main_layout[1], &mut app),
@@ -529,7 +602,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 View::Search => views::search::render(f, main_layout[1], &mut app),
                 View::Chat => views::chat::render(f, main_layout[1], &mut app),
                 View::Source => views::source::render(f, main_layout[1], &mut app),
-                View::Dashboard | View::Reports | View::Events | View::Webhooks | View::StepTemplates => {
+                View::Events => views::events::render(f, main_layout[1], &mut app),
+                View::Webhooks => views::webhooks::render(f, main_layout[1], &mut app),
+                View::Reports => views::reports::render(f, main_layout[1], &mut app),
+                View::Dashboard => views::dashboard::render(f, main_layout[1], &mut app),
+                View::StepTemplates => {
                     let label = app.view.label();
                     let block = ratatui::widgets::Block::default()
                         .title(format!(" {} ", label))
@@ -666,8 +743,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Span::styled("[[]", Style::default().fg(theme::overlay0())),
                 Span::styled("[]]", Style::default().fg(theme::overlay0())),
                 Span::styled("Project ", Style::default().fg(theme::text())),
-                Span::styled("[c]", Style::default().fg(theme::overlay0())),
-                Span::styled("Comment ", Style::default().fg(theme::text())),
+                // View-specific shortcuts
+                if app.view == View::Tasks {
+                    Span::styled("[f]Flag [F]Files [c]Comment ", Style::default().fg(theme::overlay0()))
+                } else if app.view == View::Goals {
+                    Span::styled("[c]Comment [l]Link ", Style::default().fg(theme::overlay0()))
+                } else if app.view == View::Observations {
+                    Span::styled("[C]Cleanup [p]Promote ", Style::default().fg(theme::overlay0()))
+                } else if app.view == View::Playbooks {
+                    Span::styled("[T]Templates ", Style::default().fg(theme::overlay0()))
+                } else if app.view == View::Agents {
+                    Span::styled("[a]Tasks ", Style::default().fg(theme::overlay0()))
+                } else {
+                    Span::styled("", Style::default())
+                },
                 Span::styled("[/]", Style::default().fg(theme::overlay0())),
                 Span::styled("Search ", Style::default().fg(theme::text())),
                 Span::styled("[q]", Style::default().fg(theme::overlay0())),
@@ -696,6 +785,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Modal::Reply
                 | Modal::Comment
+                | Modal::GoalComment
                 | Modal::Search
                 | Modal::GlobalSearch
                 | Modal::LogQuery
@@ -710,6 +800,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "Global Search"
                     } else if app.modal == Modal::Comment {
                         "Comment"
+                    } else if app.modal == Modal::GoalComment {
+                        "Goal Comment"
                     } else if app
                         .selected_task
                         .and_then(|i| app.tasks.get(i))
@@ -773,7 +865,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .collect();
                     f.render_widget(ratatui::widgets::List::new(items), inner);
                 }
-                Modal::BulkDelete => {
+                Modal::BulkDelete | Modal::ReportDelete => {
                     let count = app.bulk_selected.len();
                     let popup_area = widgets::popup::centered_rect(50, 20, size);
                     Clear.render(popup_area, f.buffer_mut());
@@ -801,7 +893,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 | Modal::ViewPicker
                 | Modal::VerificationStatus
                 | Modal::VerificationKindFilter
-                | Modal::VerificationStatusFilter => {
+                | Modal::VerificationStatusFilter
+                | Modal::EventKindFilter
+                | Modal::EventSeverityFilter => {
                     let states: Vec<&str> =
                         app.transition_options.iter().map(|s| s.as_str()).collect();
                     let title = match app.modal {
@@ -812,6 +906,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Modal::VerificationStatus => " Verification Status ",
                         Modal::VerificationKindFilter => " Filter by Kind ",
                         Modal::VerificationStatusFilter => " Filter by Status ",
+                        Modal::EventKindFilter => " Filter Events by Kind ",
+                        Modal::EventSeverityFilter => " Filter Events by Severity ",
                         _ => "",
                     };
                     let popup_area = widgets::popup::centered_rect(40, 50, size);
@@ -3924,6 +4020,339 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         _ => {}
                     }
+                } else if app.report_form.is_some() {
+                    let form = app.report_form.as_mut().unwrap();
+                    match key.code {
+                        KeyCode::Esc => {
+                            app.report_form = None;
+                        }
+                        KeyCode::Tab => {
+                            form.active_field = (form.active_field + 1) % 3;
+                            form.cursor = match form.active_field {
+                                0 => form.title.chars().count(),
+                                2 => form.prompt.chars().count(),
+                                _ => 0,
+                            };
+                        }
+                        KeyCode::Enter => {
+                            if form.active_field == 1 {
+                                form.kind_index = (form.kind_index + 1) % app::REPORT_KINDS.len();
+                            } else if !form.title.is_empty() {
+                                let title = form.title.clone();
+                                let kind = app::REPORT_KINDS[form.kind_index].to_string();
+                                let prompt = form.prompt.clone();
+                                let pid = app.current_project;
+                                app.report_form = None;
+                                if let Some(pid) = pid {
+                                    let api = api.clone();
+                                    let tx = tx.clone();
+                                    tokio::spawn(async move {
+                                        let body = serde_json::json!({
+                                            "title": title,
+                                            "kind": kind,
+                                            "prompt": prompt,
+                                        });
+                                        match api.create_report(pid, body).await {
+                                            Ok(_) => {
+                                                if let Ok(rpts) = api.list_reports(pid).await {
+                                                    let _ = tx.send(ApiMsg::Reports(rpts)).await;
+                                                }
+                                            }
+                                            Err(e) => {
+                                                let _ = tx
+                                                    .send(ApiMsg::Error(format!("Report: {e}")))
+                                                    .await;
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                        KeyCode::Left => {
+                            if form.active_field == 1 {
+                                if form.kind_index > 0 {
+                                    form.kind_index -= 1;
+                                } else {
+                                    form.kind_index = app::REPORT_KINDS.len() - 1;
+                                }
+                            } else if form.cursor > 0 {
+                                form.cursor -= 1;
+                            }
+                        }
+                        KeyCode::Right => {
+                            if form.active_field == 1 {
+                                form.kind_index = (form.kind_index + 1) % app::REPORT_KINDS.len();
+                            } else {
+                                let text = if form.active_field == 0 {
+                                    &form.title
+                                } else {
+                                    &form.prompt
+                                };
+                                if form.cursor < text.chars().count() {
+                                    form.cursor += 1;
+                                }
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            if form.cursor > 0 && form.active_field != 1 {
+                                form.cursor -= 1;
+                                let text = if form.active_field == 0 {
+                                    &mut form.title
+                                } else {
+                                    &mut form.prompt
+                                };
+                                let bp = text
+                                    .char_indices()
+                                    .nth(form.cursor)
+                                    .map(|(i, _)| i)
+                                    .unwrap_or(text.len());
+                                text.remove(bp);
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            if form.active_field != 1 {
+                                let text = if form.active_field == 0 {
+                                    &mut form.title
+                                } else {
+                                    &mut form.prompt
+                                };
+                                let bp = text
+                                    .char_indices()
+                                    .nth(form.cursor)
+                                    .map(|(i, _)| i)
+                                    .unwrap_or(text.len());
+                                text.insert(bp, c);
+                                form.cursor += 1;
+                            }
+                        }
+                        _ => {}
+                    }
+                } else if app.webhook_form.is_some() {
+                    let form = app.webhook_form.as_mut().unwrap();
+                    match key.code {
+                        KeyCode::Esc => {
+                            app.webhook_form = None;
+                        }
+                        KeyCode::Tab => {
+                            form.active_field = (form.active_field + 1) % 3;
+                            form.cursor = match form.active_field {
+                                0 => form.url.chars().count(),
+                                1 => form.secret.chars().count(),
+                                _ => 0,
+                            };
+                        }
+                        KeyCode::Enter => {
+                            if !form.url.is_empty() {
+                                let url = form.url.clone();
+                                let secret = if form.secret.is_empty() {
+                                    None
+                                } else {
+                                    Some(form.secret.clone())
+                                };
+                                let events: Vec<String> = app::WEBHOOK_EVENT_TYPES
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|(i, _)| {
+                                        form.event_toggles.get(*i).copied().unwrap_or(false)
+                                    })
+                                    .map(|(_, ev)| ev.to_string())
+                                    .collect();
+                                let pid = app.current_project;
+                                app.webhook_form = None;
+                                if let Some(pid) = pid {
+                                    let api = api.clone();
+                                    let tx = tx.clone();
+                                    tokio::spawn(async move {
+                                        let mut body = serde_json::json!({
+                                            "url": url,
+                                            "events": events,
+                                            "enabled": true,
+                                        });
+                                        if let Some(s) = secret {
+                                            body["secret"] = serde_json::json!(s);
+                                        }
+                                        match api.create_webhook(pid, body).await {
+                                            Ok(_) => {
+                                                if let Ok(whs) = api.list_webhooks(pid).await {
+                                                    let _ = tx.send(ApiMsg::Webhooks(whs)).await;
+                                                }
+                                            }
+                                            Err(e) => {
+                                                let _ = tx
+                                                    .send(ApiMsg::Error(format!("Webhook: {e}")))
+                                                    .await;
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                        KeyCode::Up => {
+                            if form.active_field == 2 && form.event_selected > 0 {
+                                form.event_selected -= 1;
+                            }
+                        }
+                        KeyCode::Down => {
+                            if form.active_field == 2
+                                && form.event_selected + 1 < app::WEBHOOK_EVENT_TYPES.len()
+                            {
+                                form.event_selected += 1;
+                            }
+                        }
+                        KeyCode::Char(' ') => {
+                            if form.active_field == 2 {
+                                let idx = form.event_selected;
+                                if idx < form.event_toggles.len() {
+                                    form.event_toggles[idx] = !form.event_toggles[idx];
+                                }
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            if form.cursor > 0 && matches!(form.active_field, 0 | 1) {
+                                form.cursor -= 1;
+                                let text = match form.active_field {
+                                    0 => &mut form.url,
+                                    1 => &mut form.secret,
+                                    _ => &mut form.url,
+                                };
+                                let bp = text
+                                    .char_indices()
+                                    .nth(form.cursor)
+                                    .map(|(i, _)| i)
+                                    .unwrap_or(text.len());
+                                text.remove(bp);
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            if matches!(form.active_field, 0 | 1) {
+                                let text = match form.active_field {
+                                    0 => &mut form.url,
+                                    1 => &mut form.secret,
+                                    _ => &mut form.url,
+                                };
+                                let bp = text
+                                    .char_indices()
+                                    .nth(form.cursor)
+                                    .map(|(i, _)| i)
+                                    .unwrap_or(text.len());
+                                text.insert(bp, c);
+                                form.cursor += 1;
+                            }
+                        }
+                        _ => {}
+                    }
+                } else if app.event_form.is_some() {
+                    let form = app.event_form.as_mut().unwrap();
+                    match key.code {
+                        KeyCode::Esc => {
+                            app.event_form = None;
+                        }
+                        KeyCode::Tab => {
+                            form.active_field = (form.active_field + 1) % 4;
+                            form.cursor = match form.active_field {
+                                0 => form.title.chars().count(),
+                                3 => form.description.chars().count(),
+                                _ => 0,
+                            };
+                        }
+                        KeyCode::Enter => {
+                            if !form.title.is_empty() {
+                                let title = form.title.clone();
+                                let description = form.description.clone();
+                                let kind = EVENT_KINDS[form.kind_index].to_string();
+                                let severity = EVENT_SEVERITIES[form.severity_index].to_string();
+                                let pid = app.current_project;
+                                app.event_form = None;
+                                if let Some(pid) = pid {
+                                    let api = api.clone();
+                                    let tx = tx.clone();
+                                    tokio::spawn(async move {
+                                        let body = serde_json::json!({
+                                            "kind": kind,
+                                            "severity": severity,
+                                            "title": title,
+                                            "description": description,
+                                            "source": "tui",
+                                        });
+                                        match api.create_event(pid, body).await {
+                                            Ok(_) => {
+                                                if let Ok(evts) =
+                                                    api.list_events(pid, None, None).await
+                                                {
+                                                    let _ = tx.send(ApiMsg::Events(evts)).await;
+                                                }
+                                            }
+                                            Err(e) => {
+                                                let _ = tx
+                                                    .send(ApiMsg::Error(format!("Event: {e}")))
+                                                    .await;
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                        KeyCode::Left => match form.active_field {
+                            1 => {
+                                if form.kind_index > 0 {
+                                    form.kind_index -= 1;
+                                } else {
+                                    form.kind_index = EVENT_KINDS.len() - 1;
+                                }
+                            }
+                            2 => {
+                                if form.severity_index > 0 {
+                                    form.severity_index -= 1;
+                                } else {
+                                    form.severity_index = EVENT_SEVERITIES.len() - 1;
+                                }
+                            }
+                            _ => {}
+                        },
+                        KeyCode::Right => match form.active_field {
+                            1 => {
+                                form.kind_index = (form.kind_index + 1) % EVENT_KINDS.len();
+                            }
+                            2 => {
+                                form.severity_index =
+                                    (form.severity_index + 1) % EVENT_SEVERITIES.len();
+                            }
+                            _ => {}
+                        },
+                        KeyCode::Backspace => {
+                            if form.cursor > 0 && matches!(form.active_field, 0 | 3) {
+                                form.cursor -= 1;
+                                let text = match form.active_field {
+                                    0 => &mut form.title,
+                                    3 => &mut form.description,
+                                    _ => &mut form.title,
+                                };
+                                let bp = text
+                                    .char_indices()
+                                    .nth(form.cursor)
+                                    .map(|(i, _)| i)
+                                    .unwrap_or(text.len());
+                                text.remove(bp);
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            if matches!(form.active_field, 0 | 3) {
+                                let text = match form.active_field {
+                                    0 => &mut form.title,
+                                    3 => &mut form.description,
+                                    _ => &mut form.title,
+                                };
+                                let bp = text
+                                    .char_indices()
+                                    .nth(form.cursor)
+                                    .map(|(i, _)| i)
+                                    .unwrap_or(text.len());
+                                text.insert(bp, c);
+                                form.cursor += 1;
+                            }
+                        }
+                        _ => {}
+                    }
                 } else if app.view == View::ProjectSettings && app.settings_form.is_some() {
                     // Settings form handles its own keys
                     let playbook_count = app.playbooks.len();
@@ -4420,6 +4849,74 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             if let Ok(comments) = api.get_task_comments(tid).await {
                                                 let _ =
                                                     tx.send(ApiMsg::TaskComments(comments)).await;
+                                            }
+                                        });
+                                    }
+                                }
+                                app.modal = Modal::None;
+                                app.input_text.clear();
+                                app.input_cursor = 0;
+                            }
+                            KeyCode::Backspace => {
+                                if app.input_cursor > 0 {
+                                    app.input_cursor -= 1;
+                                    let byte_pos = app
+                                        .input_text
+                                        .char_indices()
+                                        .nth(app.input_cursor)
+                                        .map(|(i, _)| i)
+                                        .unwrap_or(app.input_text.len());
+                                    app.input_text.remove(byte_pos);
+                                }
+                            }
+                            KeyCode::Left => {
+                                if app.input_cursor > 0 {
+                                    app.input_cursor -= 1;
+                                }
+                            }
+                            KeyCode::Right => {
+                                if app.input_cursor < app.input_text.chars().count() {
+                                    app.input_cursor += 1;
+                                }
+                            }
+                            KeyCode::Char(c) => {
+                                let byte_pos = app
+                                    .input_text
+                                    .char_indices()
+                                    .nth(app.input_cursor)
+                                    .map(|(i, _)| i)
+                                    .unwrap_or(app.input_text.len());
+                                app.input_text.insert(byte_pos, c);
+                                app.input_cursor += 1;
+                            }
+                            _ => {}
+                        },
+                        Modal::GoalComment => match key.code {
+                            KeyCode::Esc => {
+                                app.modal = Modal::None;
+                                app.input_text.clear();
+                                app.input_cursor = 0;
+                            }
+                            KeyCode::Enter => {
+                                if !app.input_text.is_empty() {
+                                    if let Some(goal) =
+                                        app.selected_goal.and_then(|i| app.goals.get(i))
+                                    {
+                                        let gid = goal.id;
+                                        let content = app.input_text.clone();
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            let _ = api
+                                                .create_goal_comment(
+                                                    gid,
+                                                    serde_json::json!({"content": content}),
+                                                )
+                                                .await;
+                                            if let Ok(comments) = api.list_goal_comments(gid).await
+                                            {
+                                                let _ =
+                                                    tx.send(ApiMsg::GoalComments(comments)).await;
                                             }
                                         });
                                     }
@@ -5035,6 +5532,88 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             _ => {}
                         },
+                        Modal::EventKindFilter => match key.code {
+                            KeyCode::Esc => app.modal = Modal::None,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.transition_selected > 0 {
+                                    app.transition_selected -= 1;
+                                }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.transition_selected + 1 < app.transition_options.len() {
+                                    app.transition_selected += 1;
+                                }
+                            }
+                            KeyCode::Enter => {
+                                if let Some(selected) =
+                                    app.transition_options.get(app.transition_selected).cloned()
+                                {
+                                    if selected == "all" {
+                                        app.event_kind_filter = None;
+                                    } else {
+                                        app.event_kind_filter = Some(selected);
+                                    }
+                                    app.selected_event = None;
+                                }
+                                app.modal = Modal::None;
+                            }
+                            _ => {}
+                        },
+                        Modal::EventSeverityFilter => match key.code {
+                            KeyCode::Esc => app.modal = Modal::None,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.transition_selected > 0 {
+                                    app.transition_selected -= 1;
+                                }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.transition_selected + 1 < app.transition_options.len() {
+                                    app.transition_selected += 1;
+                                }
+                            }
+                            KeyCode::Enter => {
+                                if let Some(selected) =
+                                    app.transition_options.get(app.transition_selected).cloned()
+                                {
+                                    if selected == "all" {
+                                        app.event_severity_filter = None;
+                                    } else {
+                                        app.event_severity_filter = Some(selected);
+                                    }
+                                    app.selected_event = None;
+                                }
+                                app.modal = Modal::None;
+                            }
+                            _ => {}
+                        },
+                        Modal::ReportDelete => match key.code {
+                            KeyCode::Esc | KeyCode::Char('n') => {
+                                app.modal = Modal::None;
+                            }
+                            KeyCode::Enter | KeyCode::Char('y') => {
+                                if let Some(rpt) =
+                                    app.selected_report.and_then(|i| app.reports.get(i))
+                                {
+                                    let rpt_id = rpt.id;
+                                    let api = api.clone();
+                                    let tx = tx.clone();
+                                    let pid = app.current_project;
+                                    tokio::spawn(async move {
+                                        if let Err(e) = api.delete_report(rpt_id).await {
+                                            let _ = tx
+                                                .send(ApiMsg::Error(format!("Delete: {e}")))
+                                                .await;
+                                        } else if let Some(pid) = pid {
+                                            if let Ok(rpts) = api.list_reports(pid).await {
+                                                let _ = tx.send(ApiMsg::Reports(rpts)).await;
+                                            }
+                                        }
+                                    });
+                                }
+                                app.modal = Modal::None;
+                            }
+                            _ => {}
+                        },
                         Modal::GoalLink | Modal::GoalStatus | Modal::DependencyAdd => {
                             match key.code {
                                 KeyCode::Esc => app.modal = Modal::None,
@@ -5521,6 +6100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.goal_progress = None;
                                     app.goal_stats = None;
                                     app.goal_children.clear();
+                                    app.goal_comments.clear();
                                     app.observations.clear();
                                     app.roles.clear();
                                     app.members.clear();
@@ -5603,13 +6183,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     });
                                 }
                             }
+                            KeyCode::Char('H') | KeyCode::Home => {
+                                app.view = View::Dashboard;
+                                app.detail_scroll = 0;
+                                if let Some(pid) = app.current_project {
+                                    let api2 = api.clone();
+                                    let tx2 = tx.clone();
+                                    tokio::spawn(async move {
+                                        if let Ok(m) = api2.get_project_metrics(pid, None).await {
+                                            let _ = tx2.send(ApiMsg::DashboardMetrics(m)).await;
+                                        }
+                                    });
+                                    let api3 = api.clone();
+                                    let tx3 = tx.clone();
+                                    tokio::spawn(async move {
+                                        if let Ok(ev) = api3.list_recent_events(pid).await {
+                                            let _ = tx3.send(ApiMsg::DashboardEvents(ev)).await;
+                                        }
+                                    });
+                                }
+                            }
                             KeyCode::Char('V') => {
                                 app.view = View::Verifications;
                                 app.detail_scroll = 0;
                             }
                             KeyCode::Char('C') => {
-                                app.view = View::Chat;
-                                app.detail_scroll = 0;
+                                if app.view == View::Observations {
+                                    // Cleanup observations
+                                    if let Some(pid) = app.current_project {
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            match api.cleanup_observations(pid).await {
+                                                Ok(result) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::ObservationsCleanup(result))
+                                                        .await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::Error(format!(
+                                                            "Cleanup: {e}"
+                                                        )))
+                                                        .await;
+                                                }
+                                            }
+                                        });
+                                    }
+                                } else {
+                                    app.view = View::Chat;
+                                    app.detail_scroll = 0;
+                                }
                             }
                             KeyCode::Up | KeyCode::Char('k') => {
                                 if app.view == View::Logs {
@@ -5746,11 +6370,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             app.modal = Modal::Transition;
                                         }
                                     }
+                                } else if app.view == View::Webhooks {
+                                    if let Some(wh) =
+                                        app.selected_webhook.and_then(|i| app.webhooks.get(i))
+                                    {
+                                        let wh_id = wh.id;
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            match api.test_webhook(wh_id).await {
+                                                Ok(resp) => {
+                                                    let summary = resp
+                                                        .get("status")
+                                                        .and_then(|v| v.as_str())
+                                                        .map(|s| s.to_string())
+                                                        .unwrap_or_else(|| {
+                                                            serde_json::to_string(&resp)
+                                                                .unwrap_or_else(|_| "OK".into())
+                                                        });
+                                                    let _ = tx
+                                                        .send(ApiMsg::WebhookTestResult(summary))
+                                                        .await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::WebhookTestResult(format!(
+                                                            "Error: {e}"
+                                                        )))
+                                                        .await;
+                                                }
+                                            }
+                                        });
+                                    }
                                 }
                             }
                             KeyCode::Char('c') => {
                                 if app.view == View::Tasks && app.selected_task.is_some() {
                                     app.modal = Modal::Comment;
+                                    app.input_text.clear();
+                                    app.input_cursor = 0;
+                                } else if app.view == View::Goals && app.selected_goal.is_some() {
+                                    app.modal = Modal::GoalComment;
                                     app.input_text.clear();
                                     app.input_cursor = 0;
                                 }
@@ -5814,6 +6474,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.knowledge_form = Some(app::KnowledgeForm::default());
                                 } else if app.view == View::Integrations {
                                     app.integration_form = Some(app::IntegrationForm::default());
+                                } else if app.view == View::Reports {
+                                    app.report_form = Some(app::ReportForm::default());
+                                } else if app.view == View::Events {
+                                    app.event_form = Some(app::EventForm::default());
+                                } else if app.view == View::Webhooks {
+                                    app.webhook_form = Some(app::WebhookForm::default());
                                 }
                             }
                             // Goals view: s = status transition
@@ -5895,6 +6561,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                     }
                                 }
+                            }
+                            // Events view: f = kind filter
+                            KeyCode::Char('f') if app.view == View::Events => {
+                                let mut opts: Vec<String> = vec!["all".into()];
+                                opts.extend(EVENT_KINDS.iter().map(|k| k.to_string()));
+                                app.transition_options = opts;
+                                app.transition_selected = 0;
+                                app.modal = Modal::EventKindFilter;
                             }
                             // Verifications view: K = kind filter, S = status filter
                             KeyCode::Char('K') => {
@@ -6035,10 +6709,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                            // Tasks view (bulk mode): d = bulk delete
+                            // Tasks view (bulk mode): d = bulk delete, deliveries (Webhooks)
                             // Observations view: d = dismiss
                             KeyCode::Char('d') => {
-                                if app.view == View::Tasks
+                                if app.view == View::Webhooks {
+                                    if let Some(wh) =
+                                        app.selected_webhook.and_then(|i| app.webhooks.get(i))
+                                    {
+                                        let wh_id = wh.id;
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            match api.list_webhook_deliveries(wh_id).await {
+                                                Ok(deliveries) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::WebhookDeliveries(deliveries))
+                                                        .await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::Error(format!(
+                                                            "Deliveries: {e}"
+                                                        )))
+                                                        .await;
+                                                }
+                                            }
+                                        });
+                                    }
+                                } else if app.view == View::Tasks
                                     && app.bulk_mode
                                     && !app.bulk_selected.is_empty()
                                 {
@@ -6115,7 +6813,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // Integrations view: a = access management
                             // Decisions view: a = accept
                             KeyCode::Char('a') => {
-                                if app.view == View::Tasks && app.selected_task.is_some() {
+                                if app.view == View::Agents {
+                                    if let Some(agent) =
+                                        app.selected_agent.and_then(|i| app.agents.get(i))
+                                    {
+                                        let agent_id = agent.id;
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            match api.list_agent_tasks(agent_id).await {
+                                                Ok(tasks) => {
+                                                    let _ =
+                                                        tx.send(ApiMsg::AgentTasks(tasks)).await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::Error(format!(
+                                                            "Agent tasks: {e}"
+                                                        )))
+                                                        .await;
+                                                }
+                                            }
+                                        });
+                                    }
+                                } else if app.view == View::Tasks && app.selected_task.is_some() {
                                     // Open claim modal with agent list
                                     let opts: Vec<String> =
                                         app.agents.iter().map(|a| a.name.clone()).collect();
@@ -6359,9 +7080,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.modal = Modal::BulkTransition;
                                 }
                             }
-                            // F = view changed files (Tasks view)
-                            KeyCode::Char('F') => {
+                            // f = toggle flagged (Tasks view)
+                            KeyCode::Char('f') => {
                                 if app.view == View::Tasks {
+                                    if let Some(task) =
+                                        app.selected_task.and_then(|i| app.tasks.get(i))
+                                    {
+                                        let tid = task.id;
+                                        let new_flagged = !task.flagged;
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        let pid = app.current_project;
+                                        tokio::spawn(async move {
+                                            match api
+                                                .update_task(
+                                                    tid,
+                                                    serde_json::json!({"flagged": new_flagged}),
+                                                )
+                                                .await
+                                            {
+                                                Ok(_) => {
+                                                    if let Some(pid) = pid {
+                                                        if let Ok(resp) = api.list_tasks(pid).await
+                                                        {
+                                                            let _ = tx
+                                                                .send(ApiMsg::Tasks(resp.data))
+                                                                .await;
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::Error(format!("Flag: {e}")))
+                                                        .await;
+                                                }
+                                            }
+                                        });
+                                    }
+                                }
+                            }
+                            // F = view changed files (Tasks view), severity filter (Events view)
+                            KeyCode::Char('F') => {
+                                if app.view == View::Events {
+                                    let mut opts: Vec<String> = vec!["all".into()];
+                                    opts.extend(EVENT_SEVERITIES.iter().map(|s| s.to_string()));
+                                    app.transition_options = opts;
+                                    app.transition_selected = 0;
+                                    app.modal = Modal::EventSeverityFilter;
+                                } else if app.view == View::Tasks {
                                     if let Some(tid) = app.selected_task_id() {
                                         app.show_changed_files = !app.show_changed_files;
                                         if app.show_changed_files {
@@ -6633,6 +7399,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         });
                                     }
+                                } else if app.view == View::Webhooks {
+                                    if let Some(wh) =
+                                        app.selected_webhook.and_then(|i| app.webhooks.get(i))
+                                    {
+                                        let wh_id = wh.id;
+                                        let new_enabled = !wh.enabled;
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        let pid = app.current_project;
+                                        tokio::spawn(async move {
+                                            let body = serde_json::json!({
+                                                "enabled": new_enabled,
+                                            });
+                                            if let Err(e) = api.update_webhook(wh_id, body).await {
+                                                let _ = tx
+                                                    .send(ApiMsg::Error(format!("Toggle: {e}")))
+                                                    .await;
+                                            } else if let Some(pid) = pid {
+                                                if let Ok(whs) = api.list_webhooks(pid).await {
+                                                    let _ = tx.send(ApiMsg::Webhooks(whs)).await;
+                                                }
+                                            }
+                                        });
+                                    }
                                 }
                             }
                             // h = entity history (Audit view)
@@ -6791,11 +7581,56 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         });
                                     }
+                                } else if app.view == View::Webhooks {
+                                    if let Some(wh) =
+                                        app.selected_webhook.and_then(|i| app.webhooks.get(i))
+                                    {
+                                        let wh_id = wh.id;
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        let pid = app.current_project;
+                                        tokio::spawn(async move {
+                                            if let Err(e) = api.delete_webhook(wh_id).await {
+                                                let _ = tx
+                                                    .send(ApiMsg::Error(format!("Delete: {e}")))
+                                                    .await;
+                                            } else if let Some(pid) = pid {
+                                                if let Ok(whs) = api.list_webhooks(pid).await {
+                                                    let _ = tx.send(ApiMsg::Webhooks(whs)).await;
+                                                }
+                                            }
+                                        });
+                                    }
+                                } else if app.view == View::Reports && app.selected_report.is_some()
+                                {
+                                    app.modal = Modal::ReportDelete;
                                 }
                             }
                             // Logs view controls: T/Y = time range, N/M = limit, B = direction
+                            // Playbooks view: T = fetch step templates
                             KeyCode::Char('T') => {
-                                if app.view == View::Logs {
+                                if app.view == View::Playbooks {
+                                    if let Some(pid) = app.current_project {
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            match api.list_step_templates(pid).await {
+                                                Ok(templates) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::StepTemplates(templates))
+                                                        .await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::Error(format!(
+                                                            "Step templates: {e}"
+                                                        )))
+                                                        .await;
+                                                }
+                                            }
+                                        });
+                                    }
+                                } else if app.view == View::Logs {
                                     if app.log_time_range_idx > 0 {
                                         app.log_time_range_idx -= 1;
                                     } else {
@@ -6971,6 +7806,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             tokio::spawn(async move {
                                 if let Ok(tasks) = api.list_goal_tasks(gid, 50, 0).await {
                                     let _ = tx.send(ApiMsg::GoalTasksList(tasks)).await;
+                                }
+                            });
+                        }
+                        {
+                            let api = api.clone();
+                            let tx = tx.clone();
+                            tokio::spawn(async move {
+                                if let Ok(comments) = api.list_goal_comments(gid).await {
+                                    let _ = tx.send(ApiMsg::GoalComments(comments)).await;
                                 }
                             });
                         }
