@@ -7,6 +7,8 @@ import { catchError, map, switchMap } from 'rxjs/operators';
 import { TasksApiService, SpTask, SpTaskUpdate } from '../../core/services/tasks-api.service';
 import { DiraigentApiService, DgProject } from '../../core/services/diraigent-api.service';
 import { ReviewSseService } from '../../core/services/review-sse.service';
+import { NavBadgeService } from '../../core/services/nav-badge.service';
+import { ObservationsPage } from '../observations/observations';
 
 export interface ReviewTask {
   task: SpTask;
@@ -19,19 +21,54 @@ export interface ReviewTask {
 @Component({
   selector: 'app-review',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, DatePipe, SlicePipe],
+  imports: [TranslocoModule, FormsModule, DatePipe, SlicePipe, ObservationsPage],
   template: `
     <div class="p-3 sm:p-6" *transloco="let t">
       <!-- Header -->
       <div class="flex items-center justify-between mb-3 sm:mb-6">
-        <div class="flex items-center gap-3">
-          <h1 class="text-2xl font-semibold text-text-primary">{{ t('nav.review') }}</h1>
+        <h1 class="text-2xl font-semibold text-text-primary">{{ t('nav.review') }}</h1>
+      </div>
+
+      <!-- Tabs -->
+      <div class="flex items-center gap-1 border-b border-border mb-4">
+        <button (click)="activeTab.set('review')"
+          class="px-4 py-2 text-sm font-medium transition-colors relative"
+          [class.text-accent]="activeTab() === 'review'"
+          [class.text-text-secondary]="activeTab() !== 'review'"
+          [class.hover:text-text-primary]="activeTab() !== 'review'">
+          {{ t('review.tabReview') }}
           @if (reviewItems().length > 0) {
-            <span class="min-w-[1.5rem] h-6 px-1.5 rounded-full bg-ctp-yellow/20 text-ctp-yellow text-xs font-semibold flex items-center justify-center">
+            <span class="ml-1.5 min-w-[1.25rem] h-5 px-1 rounded-full bg-ctp-yellow/20 text-ctp-yellow text-[10px] font-semibold inline-flex items-center justify-center leading-none">
               {{ reviewItems().length }}
             </span>
           }
-        </div>
+          @if (activeTab() === 'review') {
+            <span class="absolute bottom-0 left-0 right-0 h-0.5 bg-accent rounded-t"></span>
+          }
+        </button>
+        <button (click)="activeTab.set('observations')"
+          class="px-4 py-2 text-sm font-medium transition-colors relative"
+          [class.text-accent]="activeTab() === 'observations'"
+          [class.text-text-secondary]="activeTab() !== 'observations'"
+          [class.hover:text-text-primary]="activeTab() !== 'observations'">
+          {{ t('review.tabObservations') }}
+          @if (badges.openObservations() > 0) {
+            <span class="ml-1.5 min-w-[1.25rem] h-5 px-1 rounded-full bg-ctp-red/20 text-ctp-red text-[10px] font-semibold inline-flex items-center justify-center leading-none">
+              {{ badges.openObservations() > 99 ? '99+' : badges.openObservations() }}
+            </span>
+          }
+          @if (activeTab() === 'observations') {
+            <span class="absolute bottom-0 left-0 right-0 h-0.5 bg-accent rounded-t"></span>
+          }
+        </button>
+      </div>
+
+      @if (activeTab() === 'observations') {
+        <app-observations />
+      } @else {
+
+      <!-- Review tab content -->
+      <div class="flex items-center justify-end mb-4">
         <button (click)="load()" [disabled]="loading()"
           class="flex items-center gap-2 px-3 py-2 text-sm text-text-secondary hover:text-text-primary border border-border rounded-lg hover:bg-surface transition-colors disabled:opacity-50">
           <svg class="w-4 h-4" [class.animate-spin]="loading()" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -210,6 +247,8 @@ export interface ReviewTask {
           }
         </div>
       }
+
+      } <!-- end review tab -->
     </div>
   `,
 })
@@ -217,7 +256,9 @@ export class ReviewPage implements OnDestroy {
   private tasksApi = inject(TasksApiService);
   private diraigentApi = inject(DiraigentApiService);
   private reviewSse = inject(ReviewSseService);
+  badges = inject(NavBadgeService);
 
+  activeTab = signal<'review' | 'observations'>('review');
   reviewItems = signal<ReviewTask[]>([]);
   loading = signal(false);
   actioning = signal<string | null>(null);

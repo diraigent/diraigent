@@ -1,8 +1,9 @@
-import { Component, inject, signal, computed, effect } from '@angular/core';
+import { Component, inject, signal, computed, effect, DestroyRef } from '@angular/core';
 import { NgTemplateOutlet, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TranslocoModule } from '@jsverse/transloco';
-import { forkJoin, of } from 'rxjs';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Subscription, forkJoin, of, timer, switchMap } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { ProjectContext } from '../../core/services/project-context.service';
 import {
@@ -29,6 +30,8 @@ import { TaskFormComponent } from '../tasks/components/task-form/task-form';
 import { TaskListComponent } from '../tasks/pages/task-list/task-list';
 import { VerificationsApiService, SpVerification } from '../../core/services/verifications-api.service';
 import { PlaybooksApiService, SpPlaybook } from '../../core/services/playbooks-api.service';
+import { GitApiService, BranchInfo, MainPushStatus, TaskBranchStatus } from '../../core/services/git-api.service';
+import { ChatService } from '../../core/services/chat.service';
 
 const STATUSES: GoalStatus[] = ['active', 'achieved', 'paused', 'abandoned'];
 
@@ -68,6 +71,40 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
       <div class="flex items-center justify-between mb-3 sm:mb-6">
         <h1 class="text-2xl font-semibold text-text-primary">{{ t('nav.work') }}</h1>
         <div class="flex items-center gap-3">
+          @if (mainStatus(); as ms) {
+            @if (ms.ahead > 0 && ms.behind > 0) {
+              <button (click)="onResolveAndPushMain()"
+                [disabled]="resolvingMain()"
+                title="Local main and remote have diverged ({{ ms.ahead }} ahead, {{ ms.behind }} behind). Click to rebase and push."
+                class="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg
+                       bg-ctp-red/15 text-ctp-red hover:bg-ctp-red/25 transition-colors
+                       disabled:opacity-50 disabled:cursor-not-allowed">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+                @if (resolvingMain()) {
+                  resolving...
+                } @else {
+                  merge conflict (↑{{ ms.ahead }} ↓{{ ms.behind }})
+                }
+              </button>
+            } @else if (ms.ahead > 0) {
+              <button (click)="onPushMain()"
+                [disabled]="pushingMain()"
+                class="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg
+                       bg-ctp-yellow/15 text-ctp-yellow hover:bg-ctp-yellow/25 transition-colors
+                       disabled:opacity-50 disabled:cursor-not-allowed">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                </svg>
+                @if (pushingMain()) {
+                  pushing...
+                } @else {
+                  push to remote ({{ ms.ahead }})
+                }
+              </button>
+            }
+          }
           <button (click)="openCreateStandaloneTask()" class="px-4 py-2 bg-ctp-green text-ctp-base rounded-lg text-sm font-medium hover:opacity-90">
             {{ t('tasks.create') }}
           </button>
@@ -498,6 +535,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                       [tasks]="filteredLinkedTasks()"
                       [loading]="linkedTasksLoading()"
                       [selectedId]="selectedLinkedTask()?.id ?? null"
+                      [branchMap]="branchMap()"
                       [detailUpdates]="taskDetailUpdates()"
                       [detailComments]="taskDetailComments()"
                       [detailDependencies]="taskDetailDependencies()"
@@ -512,6 +550,11 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                       (taskSelect)="selectLinkedTask($event)"
                       (stateChange)="onLinkedTaskStateChange($event.task, $event.target)"
                       (detailTransition)="onLinkedTaskStateChange(selectedLinkedTask()!, $event)"
+                      (detailClaim)="onTaskClaim()"
+                      (detailRelease)="onTaskRelease(selectedLinkedTask()!)"
+                      (detailPush)="onTaskPush($event)"
+                      (detailResolve)="onTaskResolve(selectedLinkedTask()!)"
+                      (detailRevert)="onTaskRevert(selectedLinkedTask()!)"
                       (detailPostUpdate)="onLinkedTaskPostUpdate($event)"
                       (detailPostComment)="onLinkedTaskPostComment($event)"
                       (detailDelete)="onLinkedTaskDelete()"
@@ -563,6 +606,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               [tasks]="activeUnlinkedTasks()"
               [loading]="false"
               [selectedId]="selectedUnlinkedTask()?.id ?? null"
+              [branchMap]="branchMap()"
               [detailUpdates]="taskDetailUpdates()"
               [detailComments]="taskDetailComments()"
               [detailDependencies]="taskDetailDependencies()"
@@ -577,6 +621,11 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               (taskSelect)="selectUnlinkedTask($event)"
               (stateChange)="onUnlinkedTaskStateChange($event.task, $event.target)"
               (detailTransition)="onUnlinkedTaskStateChange(selectedUnlinkedTask()!, $event)"
+              (detailClaim)="onTaskClaim()"
+              (detailRelease)="onTaskRelease(selectedUnlinkedTask()!)"
+              (detailPush)="onTaskPush($event)"
+              (detailResolve)="onTaskResolve(selectedUnlinkedTask()!)"
+              (detailRevert)="onTaskRevert(selectedUnlinkedTask()!)"
               (detailPostUpdate)="onUnlinkedTaskPostUpdate($event)"
               (detailPostComment)="onUnlinkedTaskPostComment($event)"
               (detailDelete)="onUnlinkedTaskDelete()"
@@ -608,6 +657,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                 [tasks]="backlogUnlinkedTasks()"
                 [loading]="false"
                 [selectedId]="selectedUnlinkedTask()?.id ?? null"
+                [branchMap]="branchMap()"
                 [detailUpdates]="taskDetailUpdates()"
                 [detailComments]="taskDetailComments()"
                 [detailDependencies]="taskDetailDependencies()"
@@ -622,6 +672,11 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                 (taskSelect)="selectUnlinkedTask($event)"
                 (stateChange)="onUnlinkedTaskStateChange($event.task, $event.target)"
                 (detailTransition)="onUnlinkedTaskStateChange(selectedUnlinkedTask()!, $event)"
+                (detailClaim)="onTaskClaim()"
+                (detailRelease)="onTaskRelease(selectedUnlinkedTask()!)"
+                (detailPush)="onTaskPush($event)"
+                (detailResolve)="onTaskResolve(selectedUnlinkedTask()!)"
+                (detailRevert)="onTaskRevert(selectedUnlinkedTask()!)"
                 (detailPostUpdate)="onUnlinkedTaskPostUpdate($event)"
                 (detailPostComment)="onUnlinkedTaskPostComment($event)"
                 (detailDelete)="onUnlinkedTaskDelete()"
@@ -662,6 +717,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   [tasks]="doneUnlinkedTasks()"
                   [loading]="false"
                   [selectedId]="selectedUnlinkedTask()?.id ?? null"
+                  [branchMap]="branchMap()"
                   [detailUpdates]="taskDetailUpdates()"
                   [detailComments]="taskDetailComments()"
                   [detailDependencies]="taskDetailDependencies()"
@@ -676,6 +732,11 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   (taskSelect)="selectUnlinkedTask($event)"
                   (stateChange)="onUnlinkedTaskStateChange($event.task, $event.target)"
                   (detailTransition)="onUnlinkedTaskStateChange(selectedUnlinkedTask()!, $event)"
+                  (detailClaim)="onTaskClaim()"
+                  (detailRelease)="onTaskRelease(selectedUnlinkedTask()!)"
+                  (detailPush)="onTaskPush($event)"
+                  (detailResolve)="onTaskResolve(selectedUnlinkedTask()!)"
+                  (detailRevert)="onTaskRevert(selectedUnlinkedTask()!)"
                   (detailPostUpdate)="onUnlinkedTaskPostUpdate($event)"
                   (detailPostComment)="onUnlinkedTaskPostComment($event)"
                   (detailDelete)="onUnlinkedTaskDelete()"
@@ -717,6 +778,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   [tasks]="cancelledUnlinkedTasks()"
                   [loading]="false"
                   [selectedId]="selectedUnlinkedTask()?.id ?? null"
+                  [branchMap]="branchMap()"
                   [detailUpdates]="taskDetailUpdates()"
                   [detailComments]="taskDetailComments()"
                   [detailDependencies]="taskDetailDependencies()"
@@ -731,6 +793,11 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   (taskSelect)="selectUnlinkedTask($event)"
                   (stateChange)="onUnlinkedTaskStateChange($event.task, $event.target)"
                   (detailTransition)="onUnlinkedTaskStateChange(selectedUnlinkedTask()!, $event)"
+                  (detailClaim)="onTaskClaim()"
+                  (detailRelease)="onTaskRelease(selectedUnlinkedTask()!)"
+                  (detailPush)="onTaskPush($event)"
+                  (detailResolve)="onTaskResolve(selectedUnlinkedTask()!)"
+                  (detailRevert)="onTaskRevert(selectedUnlinkedTask()!)"
                   (detailPostUpdate)="onUnlinkedTaskPostUpdate($event)"
                   (detailPostComment)="onUnlinkedTaskPostComment($event)"
                   (detailDelete)="onUnlinkedTaskDelete()"
@@ -930,6 +997,9 @@ export class WorkPage {
   private verificationsApi = inject(VerificationsApiService);
   private playbooksApi = inject(PlaybooksApiService);
   private ctx = inject(ProjectContext);
+  private git = inject(GitApiService);
+  private chat = inject(ChatService);
+  private destroyRef = inject(DestroyRef);
 
   readonly statuses = STATUSES;
   readonly goalTypes = GOAL_TYPES;
@@ -971,7 +1041,7 @@ export class WorkPage {
   unlinkedTasksLoading = signal(false);
 
   // Section collapse state
-  collapsedSections = signal<Set<string>>(new Set(['backlog', 'completed', 'archived']));
+  collapsedSections = signal<Set<string>>(new Set(['completed', 'archived']));
 
   // Task create form
   showTaskForm = signal(false);
@@ -997,13 +1067,22 @@ export class WorkPage {
   taskDetailDependencies = signal<SpTaskDependencies>({ depends_on: [], blocks: [] });
   taskDetailVerifications = signal<SpVerification[]>([]);
   taskDetailChangedFiles = signal<ChangedFileSummary[]>([]);
-  taskDetailGitStatus = signal<import('../../core/services/git-api.service').TaskBranchStatus | null>(null);
+  taskDetailGitStatus = signal<TaskBranchStatus | null>(null);
   taskDetailLoading = signal(false);
   taskDetailPushing = signal(false);
   taskDetailReverting = signal(false);
   taskDetailResolving = signal(false);
   goalPlaybooks = signal<SpPlaybook[]>([]);
   editingTask = signal<SpTask | null>(null);
+
+  // Git status
+  mainStatus = signal<MainPushStatus | null>(null);
+  pushingMain = signal(false);
+  resolvingMain = signal(false);
+  branchMap = signal<Map<string, BranchInfo>>(new Map());
+  private gitPollSub?: Subscription;
+  private detailPollSub?: Subscription;
+  private gitSub?: Subscription;
 
   // --- Computed: goal sections ---
 
@@ -1071,6 +1150,187 @@ export class WorkPage {
       this.playbooksApi.list().subscribe({
         next: (pbs) => this.goalPlaybooks.set(pbs),
       });
+      this.startGitPolling();
+    });
+  }
+
+  // --- Git polling ---
+
+  private startGitPolling(): void {
+    this.gitPollSub?.unsubscribe();
+    this.gitPollSub = timer(0, 15_000)
+      .pipe(
+        switchMap(() => forkJoin({
+          branches: this.git.listBranches('agent/').pipe(catchError(() => of({ current_branch: '', branches: [] as BranchInfo[] }))),
+          mainStatus: this.git.mainStatus().pipe(catchError(() => of(null as MainPushStatus | null))),
+        })),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe({
+        next: ({ branches, mainStatus }) => {
+          this.mainStatus.set(mainStatus);
+          const map = new Map<string, BranchInfo>();
+          for (const b of branches.branches) {
+            if (b.task_id_prefix) {
+              map.set(b.task_id_prefix, b);
+            }
+          }
+          this.branchMap.set(map);
+        },
+      });
+  }
+
+  onPushMain(): void {
+    this.pushingMain.set(true);
+    this.git.pushMain().subscribe({
+      next: () => {
+        this.pushingMain.set(false);
+        this.mainStatus.set(null);
+      },
+      error: () => this.pushingMain.set(false),
+    });
+  }
+
+  onResolveAndPushMain(): void {
+    this.resolvingMain.set(true);
+    const ms = this.mainStatus();
+    this.git.resolveAndPushMain().subscribe({
+      next: () => {
+        this.resolvingMain.set(false);
+        this.mainStatus.set(null);
+      },
+      error: (err: unknown) => {
+        this.resolvingMain.set(false);
+        const detail = ms ? ` (local is ${ms.ahead} commit(s) ahead, ${ms.behind} behind remote)` : '';
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        const prompt =
+          `There is a merge conflict on the main branch${detail}. ` +
+          `The automatic rebase+push failed with: ${errorMsg}. ` +
+          `Can you resolve this merge conflict and push main to the remote?`;
+        this.chat.openWithMessage(prompt);
+      },
+    });
+  }
+
+  // --- Detail polling ---
+
+  private startDetailPolling(taskId: string): void {
+    this.stopDetailPolling();
+    this.detailPollSub = timer(10_000, 10_000)
+      .pipe(
+        switchMap(() => this.fetchTaskDetail(taskId)),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe({
+        next: ({ updates, comments, dependencies, changedFiles, verifications }) => {
+          const sel = this.selectedLinkedTask() ?? this.selectedUnlinkedTask();
+          if (sel?.id === taskId) {
+            this.taskDetailUpdates.set(updates);
+            this.taskDetailComments.set(comments);
+            this.taskDetailDependencies.set(dependencies);
+            this.taskDetailChangedFiles.set(changedFiles);
+            this.taskDetailVerifications.set(verifications.data);
+          }
+        },
+      });
+  }
+
+  private stopDetailPolling(): void {
+    this.detailPollSub?.unsubscribe();
+    this.detailPollSub = undefined;
+  }
+
+  private fetchTaskDetail(taskId: string) {
+    return forkJoin({
+      updates: this.tasksApi.listUpdates(taskId).pipe(catchError(() => of([] as SpTaskUpdate[]))),
+      comments: this.tasksApi.listComments(taskId).pipe(catchError(() => of([] as SpTaskComment[]))),
+      dependencies: this.tasksApi.listDependencies(taskId).pipe(catchError(() => of({ depends_on: [], blocks: [] } as SpTaskDependencies))),
+      changedFiles: this.tasksApi.listChangedFiles(taskId).pipe(catchError(() => of([] as ChangedFileSummary[]))),
+      verifications: this.verificationsApi.list({ task_id: taskId, limit: 20 }).pipe(
+        catchError(() => of({ data: [] as SpVerification[], total: 0, limit: 20, offset: 0, has_more: false })),
+      ),
+    });
+  }
+
+  private loadGitStatus(taskId: string): void {
+    this.gitSub?.unsubscribe();
+    this.gitSub = this.git.taskBranchStatus(taskId).pipe(
+      catchError(() => of(null as TaskBranchStatus | null)),
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe({
+      next: (status) => {
+        const sel = this.selectedLinkedTask() ?? this.selectedUnlinkedTask();
+        if (sel?.id === taskId) {
+          this.taskDetailGitStatus.set(status);
+        }
+      },
+    });
+  }
+
+  // --- Task-level git operations ---
+
+  onTaskPush(branch: string): void {
+    this.taskDetailPushing.set(true);
+    this.git.pushBranch(branch).subscribe({
+      next: (res) => {
+        this.taskDetailPushing.set(false);
+        if (res.success) {
+          const sel = this.selectedLinkedTask() ?? this.selectedUnlinkedTask();
+          if (sel) this.loadGitStatus(sel.id);
+        }
+      },
+      error: () => this.taskDetailPushing.set(false),
+    });
+  }
+
+  onTaskRevert(task: SpTask): void {
+    this.taskDetailReverting.set(true);
+    this.git.revertTask(task.id).subscribe({
+      next: () => {
+        this.taskDetailReverting.set(false);
+        this.loadUnlinkedTasks();
+        const sel = this.selected();
+        if (sel) this.loadLinkedTasks(sel.id);
+      },
+      error: () => this.taskDetailReverting.set(false),
+    });
+  }
+
+  onTaskResolve(task: SpTask): void {
+    this.taskDetailResolving.set(true);
+    this.git.resolveTaskBranch(task.id).subscribe({
+      next: () => {
+        this.taskDetailResolving.set(false);
+        this.loadGitStatus(task.id);
+      },
+      error: (err: unknown) => {
+        this.taskDetailResolving.set(false);
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        const branch = this.taskDetailGitStatus()?.branch ?? `agent/task-${task.id.substring(0, 12)}`;
+        const prompt =
+          `There is a merge conflict on branch ${branch}. ` +
+          `The automatic rebase failed with: ${errorMsg}. ` +
+          `Can you resolve this merge conflict by rebasing the branch onto the default branch?`;
+        this.chat.openWithMessage(prompt);
+      },
+    });
+  }
+
+  onTaskClaim(): void {
+    // Claim requires an agent_id; not applicable in web UI context.
+  }
+
+  onTaskRelease(task: SpTask): void {
+    this.tasksApi.release(task.id).subscribe({
+      next: () => {
+        this.loadUnlinkedTasks();
+        const sel = this.selected();
+        if (sel) {
+          this.loadLinkedTasks(sel.id);
+          this.loadAllProgress([sel]);
+          this.loadStatsAndChildren(sel.id);
+        }
+      },
     });
   }
 
@@ -1384,12 +1644,15 @@ export class WorkPage {
     this.selectedUnlinkedTask.set(null);
     if (task && this.selectedLinkedTask()?.id === task.id) {
       this.selectedLinkedTask.set(null);
+      this.stopDetailPolling();
       return;
     }
     this.selectedLinkedTask.set(task);
     this.resetTaskDetail();
     if (task) {
       this.loadTaskDetail(task.id);
+    } else {
+      this.stopDetailPolling();
     }
   }
 
@@ -1404,15 +1667,7 @@ export class WorkPage {
 
   private loadTaskDetail(taskId: string): void {
     this.taskDetailLoading.set(true);
-    forkJoin({
-      updates: this.tasksApi.listUpdates(taskId).pipe(catchError(() => of([] as SpTaskUpdate[]))),
-      comments: this.tasksApi.listComments(taskId).pipe(catchError(() => of([] as SpTaskComment[]))),
-      dependencies: this.tasksApi.listDependencies(taskId).pipe(catchError(() => of({ depends_on: [], blocks: [] } as SpTaskDependencies))),
-      changedFiles: this.tasksApi.listChangedFiles(taskId).pipe(catchError(() => of([] as ChangedFileSummary[]))),
-      verifications: this.verificationsApi.list({ task_id: taskId, limit: 20 }).pipe(
-        catchError(() => of({ data: [] as SpVerification[], total: 0, limit: 20, offset: 0, has_more: false })),
-      ),
-    }).subscribe({
+    this.fetchTaskDetail(taskId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: ({ updates, comments, dependencies, changedFiles, verifications }) => {
         this.taskDetailUpdates.set(updates);
         this.taskDetailComments.set(comments);
@@ -1423,6 +1678,8 @@ export class WorkPage {
       },
       error: () => this.taskDetailLoading.set(false),
     });
+    this.loadGitStatus(taskId);
+    this.startDetailPolling(taskId);
   }
 
   onLinkedTaskStateChange(task: SpTask, target: string): void {
@@ -1572,6 +1829,7 @@ export class WorkPage {
   selectUnlinkedTask(task: SpTask | null): void {
     if (task && this.selectedUnlinkedTask()?.id === task.id) {
       this.selectedUnlinkedTask.set(null);
+      this.stopDetailPolling();
       return;
     }
     this.selectedLinkedTask.set(null);
@@ -1579,6 +1837,8 @@ export class WorkPage {
     this.resetTaskDetail();
     if (task) {
       this.loadTaskDetail(task.id);
+    } else {
+      this.stopDetailPolling();
     }
   }
 

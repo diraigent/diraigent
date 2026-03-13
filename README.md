@@ -100,6 +100,16 @@ The platform also tracks structured knowledge (architecture docs, conventions, p
 | `GIT_REPO_URL` | Orchestra | Git repo URL cloned into the worker volume |
 | `MAX_WORKERS` | No | Concurrent Claude Code workers (default: `3`) |
 
+### Git credentials
+
+The orchestra pushes branches and merges results back to your remote. For this to work, git must be able to authenticate inside the container. Common options:
+
+- **HTTPS + PAT** — mount a `.netrc` file with `machine github.com login <user> password <token>`
+- **SSH** — mount your SSH key and use an `ssh://` remote URL
+- **Git credential helper** — configure `GIT_ASKPASS` or a store-based helper
+
+Without credentials, agents can still work locally but push/merge to the remote will fail.
+
 ## API Reference
 
 The OpenAPI spec is served at runtime: `GET /v1/openapi.json`

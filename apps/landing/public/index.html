@@ -31,7 +31,11 @@
   <meta name="twitter:image:alt" content="diraigent — conductor for your software orchestra">
 
   <!-- Favicon -->
-  <link rel="icon" type="image/svg+xml" href="assets/images/logo-diraigent.svg">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 
   <!-- Structured Data -->
   <script type="application/ld+json">
@@ -252,6 +256,14 @@ chmod +x start.sh
       <li><strong>create a task</strong> &mdash; attach the playbook, fill in spec and acceptance criteria</li>
       <li>the orchestra picks it up and starts working</li>
     </ol>
+
+    <h3 class="section-subtitle">git credentials</h3>
+    <p class="section-intro">
+      the orchestra pushes branches and merges results back to your remote.
+      for this to work, git must be able to authenticate inside the container &mdash;
+      mount a <code>.netrc</code> file, an ssh key, or configure a credential helper.
+      without credentials, agents work locally but push/merge to remote will fail.
+    </p>
 
   </section>
 

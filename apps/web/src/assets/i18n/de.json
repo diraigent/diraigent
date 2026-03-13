@@ -36,7 +36,9 @@
     "reworkCommentPlaceholder": "Optionales Feedback für den Agenten...",
     "refresh": "Aktualisieren",
     "updatedAt": "Aktualisiert",
-    "agent": "Agent"
+    "agent": "Agent",
+    "tabReview": "Menschliche Überprüfung",
+    "tabObservations": "Beobachtungen"
   },
   "dashboard": {
     "title": "Dashboard",
