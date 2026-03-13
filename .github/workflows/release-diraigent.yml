@@ -1,0 +1,164 @@
+name: Release Diraigent
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+
+concurrency:
+  group: release-diraigent-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────
+  # API
+  # ──────────────────────────────────────────────────────────────────
+  api:
+    name: API
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Containerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+          tags: |
+            diraigent/api:${{ steps.version.outputs.version }}
+            diraigent/api:latest
+            ghcr.io/${{ github.repository_owner }}/diraigent/api:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/diraigent/api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ──────────────────────────────────────────────────────────────────
+  # Orchestra
+  # ──────────────────────────────────────────────────────────────────
+  orchestra:
+    name: Orchestra
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/orchestra/Containerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+          tags: |
+            diraigent/orchestra:${{ steps.version.outputs.version }}
+            diraigent/orchestra:latest
+            ghcr.io/${{ github.repository_owner }}/diraigent/orchestra:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/diraigent/orchestra:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ──────────────────────────────────────────────────────────────────
+  # Web
+  # ──────────────────────────────────────────────────────────────────
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Containerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+          tags: |
+            diraigent/web:${{ steps.version.outputs.version }}
+            diraigent/web:latest
+            ghcr.io/${{ github.repository_owner }}/diraigent/web:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/diraigent/web:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
