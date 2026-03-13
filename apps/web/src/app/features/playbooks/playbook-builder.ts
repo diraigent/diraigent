@@ -122,6 +122,10 @@ import { ProjectContext } from '../../core/services/project-context.service';
                       <dd>Branch from and merge to a specified target branch (e.g. develop, staging). Requires a target branch name.</dd>
                     </div>
                     <div>
+                      <dt class="font-medium text-text-primary">Feature branch (per goal)</dt>
+                      <dd>Tasks branch from a goal branch (e.g. goal/&lt;slug&gt;) and merge back into it. The goal branch merges to default when the goal is completed.</dd>
+                    </div>
+                    <div>
                       <dt class="font-medium text-text-primary">No git</dt>
                       <dd>Plain directory, no git operations. For non-code tasks.</dd>
                     </div>
@@ -136,6 +140,7 @@ import { ProjectContext } from '../../core/services/project-context.service';
             <option value="merge_to_default">Merge to default branch</option>
             <option value="branch_only">Branch only (no merge, for PRs)</option>
             <option value="branch_to_target">Merge to target branch</option>
+            <option value="feature_branch">Feature branch (per goal)</option>
             <option value="no_git">No git</option>
           </select>
         </div>
