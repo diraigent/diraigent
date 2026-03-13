@@ -1179,6 +1179,125 @@ impl WorktreeManager {
         Ok(format!("Resolved conflict and pushed {db} to origin"))
     }
 
+    /// Release: squash-merge a source branch into the default branch, tag, and push.
+    ///
+    /// Steps:
+    /// 1. Checkout default branch and pull latest
+    /// 2. Squash-merge source branch (default: "dev")
+    /// 3. Commit with provided message
+    /// 4. Create date-based tag (e.g. v20260313-01)
+    /// 5. Push default branch + tag to all remotes
+    ///
+    /// Returns a summary message with the tag name.
+    pub fn release(&self, source_branch: Option<&str>, message: Option<&str>) -> Result<String> {
+        if self.git_root.is_none() {
+            bail!("git_mode=none: release operations not supported");
+        }
+
+        let db = &self.default_branch;
+        let source = source_branch.unwrap_or("dev");
+
+        // Verify source branch exists
+        self.git(&["rev-parse", "--verify", source])
+            .with_context(|| format!("source branch '{source}' does not exist"))?;
+
+        // Checkout default branch
+        let current = self.git_output(&["rev-parse", "--abbrev-ref", "HEAD"])?;
+        if current.trim() != db {
+            self.git(&["checkout", db])
+                .with_context(|| format!("checkout {db} for release"))?;
+        }
+
+        // Pull latest if remote is configured
+        if self
+            .git_output(&["config", "--get", &format!("branch.{db}.remote")])
+            .is_ok()
+        {
+            self.run_git(&["pull", "--rebase", "origin", db], GIT_NET_TIMEOUT_SECS)
+                .ok(); // Best-effort; may fail if no remote
+        }
+
+        // Check if there's anything to merge
+        let diff_check = self.git_output(&["rev-list", "--count", &format!("{db}..{source}")])?;
+        let commit_count: i32 = diff_check.trim().parse().unwrap_or(0);
+        if commit_count == 0 {
+            bail!("nothing to release: {source} has no new commits over {db}");
+        }
+
+        // Squash merge
+        self.git(&["merge", "--squash", source])
+            .with_context(|| format!("squash merge {source} into {db}"))?;
+
+        // Build commit message from git log if not provided
+        let commit_msg = if let Some(msg) = message {
+            msg.to_string()
+        } else {
+            // Summarize commits being merged
+            let log = self
+                .git_output(&[
+                    "log",
+                    "--oneline",
+                    "--no-merges",
+                    &format!("{db}..{source}"),
+                ])
+                .unwrap_or_default();
+            format!("release: squash merge {source} into {db}\n\n{log}")
+        };
+
+        self.git(&["commit", "-m", &commit_msg])
+            .with_context(|| "commit squash merge")?;
+
+        // Generate date-based tag: v{YYYYMMDD}-{NN}
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        // Convert unix timestamp to YYYYMMDD
+        let days = now / 86400;
+        let (y, m, d) = unix_days_to_ymd(days as i64);
+        let today = format!("{y:04}{m:02}{d:02}");
+        let tag_prefix = format!("v{today}-");
+        let existing_tags = self
+            .git_output(&["tag", "-l", &format!("{tag_prefix}*")])
+            .unwrap_or_default();
+        let next_seq = existing_tags
+            .lines()
+            .filter_map(|t| t.strip_prefix(&tag_prefix)?.parse::<i32>().ok())
+            .max()
+            .map(|n| n + 1)
+            .unwrap_or(1);
+        let tag = format!("{tag_prefix}{:02}", next_seq);
+
+        self.git(&["tag", &tag])
+            .with_context(|| format!("create tag {tag}"))?;
+
+        // Push to all remotes
+        let remotes_output = self.git_output(&["remote"]).unwrap_or_default();
+        let remotes: Vec<&str> = remotes_output.lines().filter(|r| !r.is_empty()).collect();
+
+        let mut push_results = Vec::new();
+        for remote in &remotes {
+            // Push default branch
+            match self.run_git(&["push", remote, db], GIT_NET_TIMEOUT_SECS) {
+                Ok(_) => push_results.push(format!("pushed {db} to {remote}")),
+                Err(e) => push_results.push(format!("failed to push {db} to {remote}: {e}")),
+            }
+            // Push tag
+            match self.run_git(&["push", remote, &tag], GIT_NET_TIMEOUT_SECS) {
+                Ok(_) => push_results.push(format!("pushed {tag} to {remote}")),
+                Err(e) => push_results.push(format!("failed to push {tag} to {remote}: {e}")),
+            }
+        }
+
+        // Invalidate fetch cache
+        *self.last_fetch.lock().unwrap() = None;
+
+        Ok(format!(
+            "Released {tag} ({commit_count} commits from {source})\n{}",
+            push_results.join("\n")
+        ))
+    }
+
     fn get_ahead_behind(&self, local: &str, remote: &str) -> (i32, i32) {
         let range = format!("{local}...{remote}");
         match self.git_output(&["rev-list", "--left-right", "--count", &range]) {
@@ -1195,6 +1314,22 @@ impl WorktreeManager {
     fn git_output(&self, args: &[&str]) -> Result<String> {
         self.run_git(args, GIT_CMD_TIMEOUT_SECS)
     }
+}
+
+/// Convert days since Unix epoch to (year, month, day).
+fn unix_days_to_ymd(days: i64) -> (i32, u32, u32) {
+    // Civil calendar algorithm from http://howardhinnant.github.io/date_algorithms.html
+    let z = days + 719468;
+    let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
+    let doe = (z - era * 146097) as u32;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y as i32, m, d)
 }
 
 // ── Changed file info (for posting to API) ──

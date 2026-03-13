@@ -34,6 +34,16 @@ export interface PushResponse {
   message: string;
 }
 
+export interface ReleaseRequest {
+  source_branch?: string;
+  message?: string;
+}
+
+export interface ReleaseResponse {
+  success: boolean;
+  message: string;
+}
+
 export interface MainPushStatus {
   ahead: number;
   behind: number;
@@ -117,6 +127,14 @@ export class GitApiService {
   taskBranchStatusForProject(projectId: string, taskId: string): Observable<TaskBranchStatus> {
     return this.http.get<TaskBranchStatus>(
       `${this.baseUrl}/${projectId}/git/task-branch/${taskId}`,
+    );
+  }
+
+  release(req: ReleaseRequest = {}): Observable<ReleaseResponse> {
+    if (!this.projectId) return EMPTY;
+    return this.http.post<ReleaseResponse>(
+      `${this.baseUrl}/${this.projectId}/git/release`,
+      req,
     );
   }
 

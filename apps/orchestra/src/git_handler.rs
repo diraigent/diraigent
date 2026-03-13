@@ -121,6 +121,11 @@ pub fn handle_git_request(
                     .map(|msg| serde_json::json!({ "message": msg })),
             )
         }
+        "release" => (
+            "release",
+            wm.release(branch, path)
+                .map(|msg| serde_json::json!({ "message": msg })),
+        ),
         "source_tree" => {
             let git_ref = git_ref.unwrap_or(wm.default_branch());
             let path = path.unwrap_or("");
