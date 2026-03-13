@@ -830,6 +830,83 @@ mod tests {
         drop(mock);
     }
 
+    #[tokio::test]
+    async fn retry_api_call_succeeds_on_first_attempt() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/tasks/task-ok"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"id": "task-ok", "state": "ready"})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let tid = TaskId::new("task-ok");
+        let result = retry_api_call("get_task", &tid, || api.get_task("task-ok")).await;
+        assert!(result.is_ok());
+        let val = result.unwrap();
+        assert_eq!(val["id"].as_str(), Some("task-ok"));
+    }
+
+    #[tokio::test]
+    async fn retry_api_call_succeeds_after_transient_failures() {
+        let server = MockServer::start().await;
+
+        // First 2 requests return 500, then succeed
+        let fail_mock = Mock::given(method("GET"))
+            .and(path("/tasks/task-transient"))
+            .respond_with(ResponseTemplate::new(500))
+            .up_to_n_times(2)
+            .expect(2)
+            .mount_as_scoped(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/tasks/task-transient"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"id": "task-transient", "state": "done"})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let tid = TaskId::new("task-transient");
+        let result = retry_api_call("get_task", &tid, || api.get_task("task-transient")).await;
+        assert!(result.is_ok());
+        let val = result.unwrap();
+        assert_eq!(val["state"].as_str(), Some("done"));
+        drop(fail_mock);
+    }
+
+    #[tokio::test]
+    async fn retry_api_call_returns_last_error_on_exhaustion() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/tasks/task-exhaust"))
+            .respond_with(ResponseTemplate::new(503))
+            .expect(4)
+            .mount(&server)
+            .await;
+
+        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let tid = TaskId::new("task-exhaust");
+        let result = retry_api_call("get_task", &tid, || api.get_task("task-exhaust")).await;
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        // Error should mention the HTTP status (503)
+        assert!(
+            err_msg.contains("503"),
+            "Expected error to contain '503', got: {err_msg}"
+        );
+    }
+
     // ── resolve_step tests with step_template_id ──
 
     #[tokio::test]
