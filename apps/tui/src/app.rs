@@ -712,6 +712,10 @@ pub struct App {
     pub bulk_selected: std::collections::HashSet<uuid::Uuid>,
     pub bulk_mode: bool,
 
+    // Task hierarchy
+    pub show_hierarchy: bool,
+    pub subtasks: Vec<Task>,
+
     // Git view
     pub branches: Vec<BranchInfo>,
     pub current_branch: String,
@@ -844,6 +848,8 @@ impl App {
             show_changed_files: false,
             bulk_selected: std::collections::HashSet::new(),
             bulk_mode: false,
+            show_hierarchy: false,
+            subtasks: vec![],
             branches: vec![],
             current_branch: String::new(),
             main_push_status: None,

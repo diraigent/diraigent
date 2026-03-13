@@ -60,6 +60,10 @@ pub struct Task {
     pub cost_usd: f64,
     #[serde(default)]
     pub flagged: bool,
+    #[serde(default)]
+    pub parent_id: Option<Uuid>,
+    #[serde(default)]
+    pub plan_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -1028,6 +1032,14 @@ impl ApiClient {
             .send()
             .await?
             .error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn list_subtasks(&self, task_id: Uuid) -> Result<Vec<Task>, reqwest::Error> {
+        let req = self
+            .client
+            .get(format!("{}/tasks/{}/subtasks", self.base_url, task_id));
+        let resp = self.auth(req).send().await?.error_for_status()?;
         resp.json().await
     }
 

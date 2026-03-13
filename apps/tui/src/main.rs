@@ -81,6 +81,7 @@ enum ApiMsg {
     GoalComments(Vec<client::GoalComment>),
     StepTemplates(Vec<client::StepTemplate>),
     AgentTasks(Vec<client::Task>),
+    Subtasks(Vec<client::Task>),
     ObservationsCleanup(client::CleanupObservationsResult),
     Error(String),
 }
@@ -265,11 +266,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let api = api.clone();
                 let tx = tx.clone();
                 tokio::spawn(async move {
-                    let (updates, comments, deps, git_status) = tokio::join!(
+                    let (updates, comments, deps, git_status, subtasks) = tokio::join!(
                         api.get_task_updates(tid),
                         api.get_task_comments(tid),
                         api.list_task_dependencies(tid),
                         api.get_git_task_status(tid),
+                        api.list_subtasks(tid),
                     );
                     if let Ok(updates) = updates {
                         let _ = tx.send(ApiMsg::TaskUpdates(updates)).await;
@@ -282,6 +284,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     if let Ok(status) = git_status {
                         let _ = tx.send(ApiMsg::GitTaskStatus(status)).await;
+                    }
+                    if let Ok(subtasks) = subtasks {
+                        let _ = tx.send(ApiMsg::Subtasks(subtasks)).await;
                     }
                 });
             }
@@ -516,6 +521,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 ApiMsg::AgentTasks(tasks) => {
                     app.agent_tasks = tasks;
+                }
+                ApiMsg::Subtasks(tasks) => {
+                    app.subtasks = tasks;
                 }
                 ApiMsg::ObservationsCleanup(result) => {
                     app.last_error = Some(format!(
@@ -7425,9 +7433,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                            // h = entity history (Audit view)
+                            // h = toggle hierarchy (Tasks view) or entity history (Audit view)
                             KeyCode::Char('h') => {
-                                if app.view == View::Audit {
+                                if app.view == View::Tasks {
+                                    app.show_hierarchy = !app.show_hierarchy;
+                                } else if app.view == View::Audit {
                                     if let Some(entry) =
                                         app.selected_audit.and_then(|i| app.audit_log.get(i))
                                     {
