@@ -61,6 +61,9 @@ enum ApiMsg {
     ChangedFiles(Vec<client::ChangedFile>),
     Verifications(Vec<client::Verification>),
     Events(Vec<client::Event>),
+    Webhooks(Vec<client::Webhook>),
+    WebhookDeliveries(Vec<client::WebhookDelivery>),
+    WebhookTestResult(String),
     GoalTasksList(Vec<client::Task>),
     GoalUnlinkedTasks(Vec<client::Task>),
     GoalBulkLinked,
@@ -134,6 +137,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             audit,
             verifications,
             events,
+            webhooks,
         ) = tokio::join!(
             api.list_tasks(pid),
             api.list_playbooks(pid),
@@ -147,6 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             api.list_audit(pid),
             api.list_verifications(pid, None, None, None, 100, 0),
             api.list_events(pid, None, None),
+            api.list_webhooks(pid),
         );
         if let Ok(resp) = tasks {
             let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
@@ -183,6 +188,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         if let Ok(resp) = events {
             let _ = tx.send(ApiMsg::Events(resp)).await;
+        }
+        if let Ok(resp) = webhooks {
+            let _ = tx.send(ApiMsg::Webhooks(resp)).await;
         }
     }
 
@@ -376,6 +384,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::Audit(a) => app.audit_log = a,
                 ApiMsg::Verifications(v) => app.verifications = v,
                 ApiMsg::Events(e) => app.events = e,
+                ApiMsg::Webhooks(w) => app.webhooks = w,
+                ApiMsg::WebhookDeliveries(d) => app.webhook_deliveries = d,
+                ApiMsg::WebhookTestResult(r) => app.webhook_test_result = Some(r),
                 ApiMsg::GoalTasksList(tasks) => app.goal_tasks = tasks,
                 ApiMsg::GoalUnlinkedTasks(tasks) => {
                     app.goal_unlinked_tasks = tasks;
@@ -571,7 +582,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 View::Chat => views::chat::render(f, main_layout[1], &mut app),
                 View::Source => views::source::render(f, main_layout[1], &mut app),
                 View::Events => views::events::render(f, main_layout[1], &mut app),
-                View::Dashboard | View::Reports | View::Webhooks | View::StepTemplates => {
+                View::Webhooks => views::webhooks::render(f, main_layout[1], &mut app),
+                View::Dashboard | View::Reports | View::StepTemplates => {
                     let label = app.view.label();
                     let block = ratatui::widgets::Block::default()
                         .title(format!(" {} ", label))
@@ -3985,6 +3997,120 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         _ => {}
                     }
+                } else if app.webhook_form.is_some() {
+                    let form = app.webhook_form.as_mut().unwrap();
+                    match key.code {
+                        KeyCode::Esc => {
+                            app.webhook_form = None;
+                        }
+                        KeyCode::Tab => {
+                            form.active_field = (form.active_field + 1) % 3;
+                            form.cursor = match form.active_field {
+                                0 => form.url.chars().count(),
+                                1 => form.secret.chars().count(),
+                                _ => 0,
+                            };
+                        }
+                        KeyCode::Enter => {
+                            if !form.url.is_empty() {
+                                let url = form.url.clone();
+                                let secret = if form.secret.is_empty() {
+                                    None
+                                } else {
+                                    Some(form.secret.clone())
+                                };
+                                let events: Vec<String> = app::WEBHOOK_EVENT_TYPES
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|(i, _)| {
+                                        form.event_toggles.get(*i).copied().unwrap_or(false)
+                                    })
+                                    .map(|(_, ev)| ev.to_string())
+                                    .collect();
+                                let pid = app.current_project;
+                                app.webhook_form = None;
+                                if let Some(pid) = pid {
+                                    let api = api.clone();
+                                    let tx = tx.clone();
+                                    tokio::spawn(async move {
+                                        let mut body = serde_json::json!({
+                                            "url": url,
+                                            "events": events,
+                                            "enabled": true,
+                                        });
+                                        if let Some(s) = secret {
+                                            body["secret"] = serde_json::json!(s);
+                                        }
+                                        match api.create_webhook(pid, body).await {
+                                            Ok(_) => {
+                                                if let Ok(whs) = api.list_webhooks(pid).await {
+                                                    let _ = tx.send(ApiMsg::Webhooks(whs)).await;
+                                                }
+                                            }
+                                            Err(e) => {
+                                                let _ = tx
+                                                    .send(ApiMsg::Error(format!("Webhook: {e}")))
+                                                    .await;
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                        KeyCode::Up => {
+                            if form.active_field == 2 && form.event_selected > 0 {
+                                form.event_selected -= 1;
+                            }
+                        }
+                        KeyCode::Down => {
+                            if form.active_field == 2
+                                && form.event_selected + 1 < app::WEBHOOK_EVENT_TYPES.len()
+                            {
+                                form.event_selected += 1;
+                            }
+                        }
+                        KeyCode::Char(' ') => {
+                            if form.active_field == 2 {
+                                let idx = form.event_selected;
+                                if idx < form.event_toggles.len() {
+                                    form.event_toggles[idx] = !form.event_toggles[idx];
+                                }
+                            }
+                        }
+                        KeyCode::Backspace => {
+                            if form.cursor > 0 && matches!(form.active_field, 0 | 1) {
+                                form.cursor -= 1;
+                                let text = match form.active_field {
+                                    0 => &mut form.url,
+                                    1 => &mut form.secret,
+                                    _ => &mut form.url,
+                                };
+                                let bp = text
+                                    .char_indices()
+                                    .nth(form.cursor)
+                                    .map(|(i, _)| i)
+                                    .unwrap_or(text.len());
+                                text.remove(bp);
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            if matches!(form.active_field, 0 | 1) {
+                                let text = match form.active_field {
+                                    0 => &mut form.url,
+                                    1 => &mut form.secret,
+                                    _ => &mut form.url,
+                                };
+                                let bp = text
+                                    .char_indices()
+                                    .nth(form.cursor)
+                                    .map(|(i, _)| i)
+                                    .unwrap_or(text.len());
+                                text.insert(bp, c);
+                                form.cursor += 1;
+                            }
+                        }
+                        _ => {}
+                    }
                 } else if app.event_form.is_some() {
                     let form = app.event_form.as_mut().unwrap();
                     match key.code {
@@ -6066,6 +6192,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             app.modal = Modal::Transition;
                                         }
                                     }
+                                } else if app.view == View::Webhooks {
+                                    if let Some(wh) =
+                                        app.selected_webhook.and_then(|i| app.webhooks.get(i))
+                                    {
+                                        let wh_id = wh.id;
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            match api.test_webhook(wh_id).await {
+                                                Ok(resp) => {
+                                                    let summary = resp
+                                                        .get("status")
+                                                        .and_then(|v| v.as_str())
+                                                        .map(|s| s.to_string())
+                                                        .unwrap_or_else(|| {
+                                                            serde_json::to_string(&resp)
+                                                                .unwrap_or_else(|_| "OK".into())
+                                                        });
+                                                    let _ = tx
+                                                        .send(ApiMsg::WebhookTestResult(summary))
+                                                        .await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::WebhookTestResult(format!(
+                                                            "Error: {e}"
+                                                        )))
+                                                        .await;
+                                                }
+                                            }
+                                        });
+                                    }
                                 }
                             }
                             KeyCode::Char('c') => {
@@ -6140,6 +6298,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.integration_form = Some(app::IntegrationForm::default());
                                 } else if app.view == View::Events {
                                     app.event_form = Some(app::EventForm::default());
+                                } else if app.view == View::Webhooks {
+                                    app.webhook_form = Some(app::WebhookForm::default());
                                 }
                             }
                             // Goals view: s = status transition
@@ -6369,10 +6529,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                            // Tasks view (bulk mode): d = bulk delete
+                            // Tasks view (bulk mode): d = bulk delete, deliveries (Webhooks)
                             // Observations view: d = dismiss
                             KeyCode::Char('d') => {
-                                if app.view == View::Tasks
+                                if app.view == View::Webhooks {
+                                    if let Some(wh) =
+                                        app.selected_webhook.and_then(|i| app.webhooks.get(i))
+                                    {
+                                        let wh_id = wh.id;
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            match api.list_webhook_deliveries(wh_id).await {
+                                                Ok(deliveries) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::WebhookDeliveries(deliveries))
+                                                        .await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = tx
+                                                        .send(ApiMsg::Error(format!(
+                                                            "Deliveries: {e}"
+                                                        )))
+                                                        .await;
+                                                }
+                                            }
+                                        });
+                                    }
+                                } else if app.view == View::Tasks
                                     && app.bulk_mode
                                     && !app.bulk_selected.is_empty()
                                 {
@@ -7035,6 +7219,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         });
                                     }
+                                } else if app.view == View::Webhooks {
+                                    if let Some(wh) =
+                                        app.selected_webhook.and_then(|i| app.webhooks.get(i))
+                                    {
+                                        let wh_id = wh.id;
+                                        let new_enabled = !wh.enabled;
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        let pid = app.current_project;
+                                        tokio::spawn(async move {
+                                            let body = serde_json::json!({
+                                                "enabled": new_enabled,
+                                            });
+                                            if let Err(e) = api.update_webhook(wh_id, body).await {
+                                                let _ = tx
+                                                    .send(ApiMsg::Error(format!("Toggle: {e}")))
+                                                    .await;
+                                            } else if let Some(pid) = pid {
+                                                if let Ok(whs) = api.list_webhooks(pid).await {
+                                                    let _ = tx.send(ApiMsg::Webhooks(whs)).await;
+                                                }
+                                            }
+                                        });
+                                    }
                                 }
                             }
                             // h = entity history (Audit view)
@@ -7189,6 +7397,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 {
                                                     let _ =
                                                         tx.send(ApiMsg::Integrations(intgs)).await;
+                                                }
+                                            }
+                                        });
+                                    }
+                                } else if app.view == View::Webhooks {
+                                    if let Some(wh) =
+                                        app.selected_webhook.and_then(|i| app.webhooks.get(i))
+                                    {
+                                        let wh_id = wh.id;
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        let pid = app.current_project;
+                                        tokio::spawn(async move {
+                                            if let Err(e) = api.delete_webhook(wh_id).await {
+                                                let _ = tx
+                                                    .send(ApiMsg::Error(format!("Delete: {e}")))
+                                                    .await;
+                                            } else if let Some(pid) = pid {
+                                                if let Ok(whs) = api.list_webhooks(pid).await {
+                                                    let _ = tx.send(ApiMsg::Webhooks(whs)).await;
                                                 }
                                             }
                                         });

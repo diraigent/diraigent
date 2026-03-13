@@ -3,6 +3,7 @@ use crate::client::{
     GoalComment, GoalProgress, GoalStats, Integration, IntegrationAccess, KnowledgeEntry, LogEntry,
     MainPushStatus, Member, Observation, Playbook, Project, ProjectEvent, Role, SearchResult,
     StepTemplate, Task, TaskComment, TaskDependencies, TaskUpdate, TreeEntry, Verification,
+    Webhook, WebhookDelivery,
 };
 use ratatui::widgets::ListState;
 use uuid::Uuid;
@@ -391,6 +392,43 @@ impl ProjectSettingsForm {
     }
 }
 
+pub const WEBHOOK_EVENT_TYPES: &[&str] = &[
+    "task.created",
+    "task.updated",
+    "task.transitioned",
+    "task.completed",
+    "task.commented",
+    "goal.created",
+    "goal.updated",
+    "decision.created",
+    "decision.updated",
+    "observation.created",
+    "knowledge.created",
+    "verification.created",
+];
+
+pub struct WebhookForm {
+    pub url: String,
+    pub secret: String,
+    pub event_toggles: Vec<bool>, // parallel to WEBHOOK_EVENT_TYPES
+    pub active_field: usize,      // 0=url, 1=secret, 2=events
+    pub cursor: usize,
+    pub event_selected: usize, // which event in the list is highlighted
+}
+
+impl Default for WebhookForm {
+    fn default() -> Self {
+        Self {
+            url: String::new(),
+            secret: String::new(),
+            event_toggles: vec![false; WEBHOOK_EVENT_TYPES.len()],
+            active_field: 0,
+            cursor: 0,
+            event_selected: 0,
+        }
+    }
+}
+
 pub const EVENT_KINDS: &[&str] = &[
     "ci", "deploy", "error", "merge", "release", "alert", "custom",
 ];
@@ -543,6 +581,7 @@ pub struct App {
     pub knowledge_form: Option<KnowledgeForm>,
     pub integration_form: Option<IntegrationForm>,
     pub event_form: Option<EventForm>,
+    pub webhook_form: Option<WebhookForm>,
     pub connected: bool,
     pub view: View,
     pub modal: Modal,
@@ -573,6 +612,9 @@ pub struct App {
     pub events: Vec<ProjectEvent>,
     pub event_kind_filter: Option<String>,
     pub event_severity_filter: Option<String>,
+    pub webhooks: Vec<Webhook>,
+    pub webhook_deliveries: Vec<WebhookDelivery>,
+    pub webhook_test_result: Option<String>,
 
     // Goal comments
     pub goal_comments: Vec<GoalComment>,
@@ -620,6 +662,7 @@ pub struct App {
     pub selected_audit: Option<usize>,
     pub selected_verification: Option<usize>,
     pub selected_event: Option<usize>,
+    pub selected_webhook: Option<usize>,
 
     // Team view focus: 0=roles, 1=members, 2=detail
     pub team_focus: usize,
@@ -692,6 +735,7 @@ impl App {
             knowledge_form: None,
             integration_form: None,
             event_form: None,
+            webhook_form: None,
             view: View::Tasks,
             modal: Modal::None,
             focus: 0,
@@ -722,6 +766,9 @@ impl App {
             events: vec![],
             event_kind_filter: None,
             event_severity_filter: None,
+            webhooks: vec![],
+            webhook_deliveries: vec![],
+            webhook_test_result: None,
             goal_comments: vec![],
             step_templates: vec![],
             agent_tasks: vec![],
@@ -755,6 +802,7 @@ impl App {
             selected_audit: None,
             selected_verification: None,
             selected_event: None,
+            selected_webhook: None,
             team_focus: 0,
             search_query: String::new(),
             detail_scroll: 0,
@@ -809,7 +857,8 @@ impl App {
             View::Search => self.search_results.len(),
             View::Chat => self.chat_messages.len(),
             View::Source => self.source_entries.len(),
-            View::Dashboard | View::Reports | View::Webhooks | View::StepTemplates => 0,
+            View::Dashboard | View::Reports | View::StepTemplates => 0,
+            View::Webhooks => self.webhooks.len(),
             View::Events => self.filtered_events().len(),
         }
     }
@@ -833,7 +882,8 @@ impl App {
             View::Search => self.selected_search_result,
             View::Chat => None,
             View::Source => self.source_selected,
-            View::Dashboard | View::Reports | View::Webhooks | View::StepTemplates => None,
+            View::Dashboard | View::Reports | View::StepTemplates => None,
+            View::Webhooks => self.selected_webhook,
             View::Events => self.selected_event,
         }
     }
@@ -861,7 +911,8 @@ impl App {
             View::Search => self.selected_search_result = idx,
             View::Chat => {}
             View::Source => self.source_selected = idx,
-            View::Dashboard | View::Reports | View::Webhooks | View::StepTemplates => {}
+            View::Dashboard | View::Reports | View::StepTemplates => {}
+            View::Webhooks => self.selected_webhook = idx,
             View::Events => self.selected_event = idx,
         }
     }
