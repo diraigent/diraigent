@@ -710,8 +710,23 @@ async fn bulk_operate(
                     BulkAction::Transition {
                         target_state,
                         playbook_step,
-                    } => {
+                    } => 'transition: {
                         let old_state = task.state.clone();
+                        // Completing a "review" step additionally requires
+                        // review authority (mirrors single-task transition_task).
+                        if target_state == "done"
+                            && old_state == "review"
+                            && let Err(e) = require_authority(
+                                state.db.as_ref(),
+                                agent_id,
+                                user_id,
+                                project_id,
+                                "review",
+                            )
+                            .await
+                        {
+                            break 'transition Err(e.to_string());
+                        }
                         match state
                             .db
                             .transition_task(*task_id, target_state, *playbook_step)
@@ -814,11 +829,6 @@ async fn bulk_transition_tasks(
     Json(req): Json<BulkTransition>,
 ) -> Result<(StatusCode, Json<BulkResult>), AppError> {
     require_authority(state.db.as_ref(), agent_id, user_id, project_id, "execute").await?;
-    // When transitioning to "done", also require review authority so that
-    // agents without review privileges cannot bulk-approve review steps.
-    if req.state == "done" {
-        require_authority(state.db.as_ref(), agent_id, user_id, project_id, "review").await?;
-    }
     let action = BulkAction::Transition {
         target_state: req.state,
         playbook_step: req.playbook_step,
