@@ -298,7 +298,7 @@ fn render_active_tasks(f: &mut Frame, area: Rect, app: &App) {
         Cell::from(" #").style(Style::default().fg(theme::overlay0())),
         Cell::from("Title").style(Style::default().fg(theme::overlay0())),
         Cell::from("State").style(Style::default().fg(theme::overlay0())),
-        Cell::from("Pri").style(Style::default().fg(theme::overlay0())),
+        Cell::from("Urg").style(Style::default().fg(theme::overlay0())),
         Cell::from("Agent").style(Style::default().fg(theme::overlay0())),
         Cell::from("Cost").style(Style::default().fg(theme::overlay0())),
     ]);
@@ -330,7 +330,8 @@ fn render_active_tasks(f: &mut Frame, area: Rect, app: &App) {
                 Cell::from(format!(" {}", t.number)).style(Style::default().fg(theme::subtext0())),
                 Cell::from(title).style(Style::default().fg(theme::text())),
                 Cell::from(t.state.clone()).style(Style::default().fg(state_color)),
-                Cell::from(format!("{}", t.priority)).style(Style::default().fg(theme::text())),
+                Cell::from(if t.urgent { "⚡" } else { "" })
+                    .style(Style::default().fg(theme::red())),
                 Cell::from(agent_name).style(Style::default().fg(theme::subtext0())),
                 Cell::from(format!("${:.2}", t.cost_usd))
                     .style(Style::default().fg(theme::green())),

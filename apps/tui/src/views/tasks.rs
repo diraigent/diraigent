@@ -215,8 +215,11 @@ fn render_detail(f: &mut Frame, area: Rect, app: &mut App) {
                     if t.kind.is_empty() { "—" } else { &t.kind },
                     Style::default().fg(theme::text()),
                 ),
-                Span::styled("  Priority: ", Style::default().fg(theme::subtext0())),
-                Span::styled(t.priority.to_string(), Style::default().fg(theme::text())),
+                if t.urgent {
+                    Span::styled("  ⚡ Urgent", Style::default().fg(theme::red()))
+                } else {
+                    Span::styled("", Style::default())
+                },
             ]),
             Line::from(vec![
                 Span::styled("Agent: ", Style::default().fg(theme::subtext0())),

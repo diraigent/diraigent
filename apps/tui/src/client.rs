@@ -45,7 +45,7 @@ pub struct Task {
     pub kind: String,
     pub state: String,
     #[serde(default)]
-    pub priority: i32,
+    pub urgent: bool,
     pub assigned_agent_id: Option<Uuid>,
     #[serde(default)]
     pub context: serde_json::Value,
@@ -1027,14 +1027,14 @@ impl ApiClient {
         project_id: Uuid,
         title: &str,
         kind: &str,
-        priority: u8,
+        urgent: bool,
         spec: &str,
         playbook_id: Option<Uuid>,
     ) -> Result<Task, reqwest::Error> {
         let mut body = serde_json::json!({
             "title": title,
             "kind": kind,
-            "priority": priority,
+            "urgent": urgent,
             "context": { "spec": spec }
         });
         if let Some(pid) = playbook_id {
@@ -1378,12 +1378,12 @@ impl ApiClient {
         id: Uuid,
         title: &str,
         kind: &str,
-        priority: u8,
+        urgent: bool,
     ) -> Result<(), reqwest::Error> {
         let req = self
             .client
             .post(format!("{}/observations/{}/promote", self.base_url, id))
-            .json(&serde_json::json!({"title": title, "kind": kind, "priority": priority}));
+            .json(&serde_json::json!({"title": title, "kind": kind, "urgent": urgent}));
         self.auth(req).send().await?.error_for_status()?;
         Ok(())
     }
