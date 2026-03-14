@@ -13,10 +13,14 @@ import { CreateProjectService } from './shared/services/create-project.service';
   template: `
     @if (auth.isLoggedIn()) {
       <app-sidebar />
-      <main id="main-content" class="lg:ml-64 h-screen overflow-y-auto pt-14 lg:pt-0" tabindex="-1">
-        <router-outlet />
-      </main>
-      <app-chat-drawer />
+      <div class="lg:ml-64 h-screen flex flex-col">
+        <main id="main-content" class="flex-[2] overflow-y-auto pt-14 lg:pt-0" tabindex="-1">
+          <router-outlet />
+        </main>
+        <div id="chat-panel" class="flex-1 min-h-0 border-t border-border">
+          <app-chat-drawer />
+        </div>
+      </div>
       @if (createProject.isOpen()) {
         <app-create-project-modal
           [parentProjects]="createProject.parentProjects()"
