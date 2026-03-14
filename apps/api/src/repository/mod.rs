@@ -7,6 +7,7 @@ use crate::error::AppError;
 mod agents;
 mod audit;
 mod decisions;
+mod event_rules;
 mod events;
 mod files;
 mod goals;
@@ -33,6 +34,7 @@ mod webhooks;
 pub use agents::*;
 pub use audit::*;
 pub use decisions::*;
+pub use event_rules::*;
 pub use events::*;
 pub use files::*;
 pub use goals::*;
@@ -81,6 +83,7 @@ pub(crate) enum Table {
     ChangedFile,
     Decision,
     Event,
+    EventObservationRule,
     Goal,
     Integration,
     Knowledge,
@@ -108,6 +111,7 @@ impl Table {
             Table::ChangedFile => "task_changed_file",
             Table::Decision => "decision",
             Table::Event => "event",
+            Table::EventObservationRule => "event_observation_rule",
             Table::Goal => "goal",
             Table::Integration => "integration",
             Table::Knowledge => "knowledge",

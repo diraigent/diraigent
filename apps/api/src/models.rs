@@ -60,6 +60,7 @@ pub const OBSERVATION_SOURCES: &[&str] = &[
     "worker",
     "log_monitor",
     "manual",
+    "event_trigger",
 ];
 pub const EVENT_KINDS: &[&str] = &[
     "ci", "deploy", "error", "merge", "release", "alert", "custom",
@@ -1884,6 +1885,58 @@ pub struct UpdateStepTemplate {
 pub struct StepTemplateFilters {
     pub name: Option<String>,
     pub tag: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+// ── Event Observation Rule Models ──
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct EventObservationRule {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub name: String,
+    pub enabled: bool,
+    pub event_kind: Option<String>,
+    pub event_source: Option<String>,
+    pub severity_gte: Option<String>,
+    pub observation_kind: String,
+    pub observation_severity: String,
+    pub title_template: String,
+    pub description_template: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateEventObservationRule {
+    pub name: String,
+    pub enabled: Option<bool>,
+    pub event_kind: Option<String>,
+    pub event_source: Option<String>,
+    pub severity_gte: Option<String>,
+    pub observation_kind: Option<String>,
+    pub observation_severity: Option<String>,
+    pub title_template: String,
+    pub description_template: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateEventObservationRule {
+    pub name: Option<String>,
+    pub enabled: Option<bool>,
+    pub event_kind: Option<String>,
+    pub event_source: Option<String>,
+    pub severity_gte: Option<String>,
+    pub observation_kind: Option<String>,
+    pub observation_severity: Option<String>,
+    pub title_template: Option<String>,
+    pub description_template: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct EventObservationRuleFilters {
+    pub enabled: Option<bool>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
 }

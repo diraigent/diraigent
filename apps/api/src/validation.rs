@@ -497,6 +497,34 @@ pub fn validate_create_observation(
     Ok(())
 }
 
+// ── Event Observation Rule ──
+
+pub fn validate_create_event_observation_rule(
+    req: &CreateEventObservationRule,
+) -> Result<(), AppError> {
+    if req.name.is_empty() {
+        return Err(AppError::Validation("Rule name must be non-empty".into()));
+    }
+    if let Some(ref kind) = req.observation_kind {
+        validate_enum_member(kind, models::OBSERVATION_KINDS, "observation kind")?;
+    }
+    if let Some(ref sev) = req.observation_severity {
+        validate_enum_member(sev, models::OBSERVATION_SEVERITIES, "observation severity")?;
+    }
+    if let Some(ref ek) = req.event_kind {
+        validate_enum_member(ek, models::EVENT_KINDS, "event kind")?;
+    }
+    if let Some(ref sev) = req.severity_gte {
+        validate_enum_member(sev, models::EVENT_SEVERITIES, "severity_gte")?;
+    }
+    if req.title_template.is_empty() {
+        return Err(AppError::Validation(
+            "title_template must be non-empty".into(),
+        ));
+    }
+    Ok(())
+}
+
 // ── Integration ──
 
 pub fn validate_create_integration(
