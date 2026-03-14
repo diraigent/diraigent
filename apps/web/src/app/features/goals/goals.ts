@@ -138,9 +138,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               {{ t('git.release') }}
             }
           </button>
-          <button (click)="openCreateStandaloneTask()" class="px-4 py-2 bg-ctp-green text-ctp-base rounded-lg text-sm font-medium hover:opacity-90">
-            {{ t('tasks.create') }}
-          </button>
           <button (click)="openCreate()" class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90">
             {{ t('goals.create') }}
           </button>
@@ -1109,7 +1106,6 @@ export class WorkPage {
 
   // Task create form
   showTaskForm = signal(false);
-  private creatingForGoal = false;
 
   // Marked tasks (per-goal, stored in localStorage)
   markedTaskIds = signal<Set<string>>(new Set());
@@ -2036,16 +2032,9 @@ export class WorkPage {
     });
   }
 
-  // --- Task form (shared between goal-linked and standalone) ---
-
-  openCreateStandaloneTask(): void {
-    this.creatingForGoal = false;
-    this.editingTask.set(null);
-    this.showTaskForm.set(true);
-  }
+  // --- Task form (goal-linked only) ---
 
   openCreateTaskForGoal(): void {
-    this.creatingForGoal = true;
     this.editingTask.set(null);
     this.showTaskForm.set(true);
   }
@@ -2055,26 +2044,17 @@ export class WorkPage {
   }
 
   onCreateTask(req: CreateTaskRequest): void {
-    if (this.creatingForGoal) {
-      const sel = this.selected();
-      if (!sel) return;
-      req.goal_id = sel.id;
-      this.tasksApi.create(req).subscribe({
-        next: () => {
-          this.closeTaskForm();
-          this.loadLinkedTasks(sel.id);
-          this.loadAllProgress([sel]);
-          this.loadStatsAndChildren(sel.id);
-        },
-      });
-    } else {
-      this.tasksApi.create(req).subscribe({
-        next: () => {
-          this.closeTaskForm();
-          this.loadUnlinkedTasks();
-        },
-      });
-    }
+    const sel = this.selected();
+    if (!sel) return;
+    req.goal_id = sel.id;
+    this.tasksApi.create(req).subscribe({
+      next: () => {
+        this.closeTaskForm();
+        this.loadLinkedTasks(sel.id);
+        this.loadAllProgress([sel]);
+        this.loadStatsAndChildren(sel.id);
+      },
+    });
   }
 
   onUpdateTaskForGoal(event: { id: string; data: UpdateTaskRequest }): void {
