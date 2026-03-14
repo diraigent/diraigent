@@ -153,7 +153,6 @@ pub struct Goal {
     pub parent_goal_id: Option<Uuid>,
     #[serde(default)]
     pub auto_status: Option<bool>,
-    pub target_date: Option<String>,
     #[serde(default)]
     pub success_criteria: Option<serde_json::Value>,
     #[serde(default)]

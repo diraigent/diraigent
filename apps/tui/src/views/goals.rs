@@ -107,14 +107,6 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 ));
             }
 
-            if let Some(ref date) = g.target_date {
-                lines.push(Line::from(""));
-                lines.push(Line::styled(
-                    format!("Target: {}", date),
-                    Style::default().fg(theme::subtext0()),
-                ));
-            }
-
             if let Some(ref criteria) = g.success_criteria {
                 if !criteria.is_null() {
                     lines.push(Line::from(""));

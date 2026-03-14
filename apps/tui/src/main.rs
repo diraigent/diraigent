@@ -1884,7 +1884,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Constraint::Length(2), // Title
                         Constraint::Length(2), // Description
                         Constraint::Length(2), // Success criteria
-                        Constraint::Length(2), // Target date
                         Constraint::Length(2), // Status
                         Constraint::Length(2), // Goal type
                         Constraint::Length(2), // Priority
@@ -1986,38 +1985,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         form.active_field == 2,
                     );
                 }
-                // Target date with cursor
-                {
-                    let val = if form.active_field == 3 {
-                        let bp = form
-                            .target_date
-                            .char_indices()
-                            .nth(form.cursor)
-                            .map(|(i, _)| i)
-                            .unwrap_or(form.target_date.len());
-                        if bp < form.target_date.len() {
-                            format!("{}│{}", &form.target_date[..bp], &form.target_date[bp..])
-                        } else {
-                            format!("{}│", &form.target_date)
-                        }
-                    } else {
-                        form.target_date.clone()
-                    };
-                    render_gf(f, field_chunks[3], "Date:", &val, form.active_field == 3);
-                }
                 // Status selector
                 {
                     let val = format!("◀ {} ▶", GOAL_STATUSES[form.status_index]);
-                    render_gf(f, field_chunks[4], "Status:", &val, form.active_field == 4);
+                    render_gf(f, field_chunks[3], "Status:", &val, form.active_field == 3);
                 }
                 // Goal type selector
                 {
                     let val = format!("◀ {} ▶", GOAL_TYPES[form.goal_type_index]);
-                    render_gf(f, field_chunks[5], "Type:", &val, form.active_field == 5);
+                    render_gf(f, field_chunks[4], "Type:", &val, form.active_field == 4);
                 }
                 // Priority with cursor
                 {
-                    let val = if form.active_field == 6 {
+                    let val = if form.active_field == 5 {
                         let bp = form
                             .priority
                             .char_indices()
@@ -2034,10 +2014,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     };
                     render_gf(
                         f,
-                        field_chunks[6],
+                        field_chunks[5],
                         "Priority:",
                         &val,
-                        form.active_field == 6,
+                        form.active_field == 5,
                     );
                 }
                 // Auto status toggle
@@ -2045,17 +2025,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let val = if form.auto_status { "ON" } else { "OFF" };
                     render_gf(
                         f,
-                        field_chunks[7],
+                        field_chunks[6],
                         "Auto Status:",
                         val,
-                        form.active_field == 7,
+                        form.active_field == 6,
                     );
                 }
                 let hint = Paragraph::new(Line::styled(
                     " Tab: next | Enter: submit | Esc: cancel",
                     Style::default().fg(theme::overlay0()),
                 ));
-                f.render_widget(hint, field_chunks[8]);
+                f.render_widget(hint, field_chunks[7]);
             }
 
             // Observation creation form
@@ -3329,13 +3309,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             app.goal_form = None;
                         }
                         KeyCode::Tab => {
-                            form.active_field = (form.active_field + 1) % 8;
+                            form.active_field = (form.active_field + 1) % 7;
                             form.cursor = match form.active_field {
                                 0 => form.title.chars().count(),
                                 1 => form.description.chars().count(),
                                 2 => form.success_criteria.chars().count(),
-                                3 => form.target_date.chars().count(),
-                                6 => form.priority.chars().count(),
+                                5 => form.priority.chars().count(),
                                 _ => 0,
                             };
                         }
@@ -3344,7 +3323,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let title = form.title.clone();
                                 let description = form.description.clone();
                                 let success_criteria = form.success_criteria.clone();
-                                let target_date = form.target_date.clone();
                                 let status = GOAL_STATUSES[form.status_index].to_string();
                                 let goal_type = GOAL_TYPES[form.goal_type_index].to_string();
                                 let priority: i32 = form.priority.parse().unwrap_or(0);
@@ -3368,9 +3346,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             body["success_criteria"] =
                                                 serde_json::json!([success_criteria]);
                                         }
-                                        if !target_date.is_empty() {
-                                            body["target_date"] = serde_json::json!(target_date);
-                                        }
                                         let result = if let Some(gid) = editing_id {
                                             api.update_goal(gid, body).await.map(|_| ())
                                         } else {
@@ -3388,7 +3363,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             {
                                                 Ok(g) => {
                                                     if !success_criteria.is_empty()
-                                                        || !target_date.is_empty()
                                                         || status != "active"
                                                     {
                                                         let mut upd = serde_json::json!({});
@@ -3397,10 +3371,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                                 serde_json::json!([
                                                                     success_criteria
                                                                 ]);
-                                                        }
-                                                        if !target_date.is_empty() {
-                                                            upd["target_date"] =
-                                                                serde_json::json!(target_date);
                                                         }
                                                         if status != "active" {
                                                             upd["status"] =
@@ -3431,21 +3401,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                         KeyCode::Left => match form.active_field {
-                            4 => {
+                            3 => {
                                 if form.status_index > 0 {
                                     form.status_index -= 1;
                                 } else {
                                     form.status_index = GOAL_STATUSES.len() - 1;
                                 }
                             }
-                            5 => {
+                            4 => {
                                 if form.goal_type_index > 0 {
                                     form.goal_type_index -= 1;
                                 } else {
                                     form.goal_type_index = GOAL_TYPES.len() - 1;
                                 }
                             }
-                            7 => {
+                            6 => {
                                 form.auto_status = !form.auto_status;
                             }
                             _ => {
@@ -3455,14 +3425,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         },
                         KeyCode::Right => match form.active_field {
-                            4 => {
+                            3 => {
                                 form.status_index = (form.status_index + 1) % GOAL_STATUSES.len();
                             }
-                            5 => {
+                            4 => {
                                 form.goal_type_index =
                                     (form.goal_type_index + 1) % GOAL_TYPES.len();
                             }
-                            7 => {
+                            6 => {
                                 form.auto_status = !form.auto_status;
                             }
                             _ => {
@@ -3470,8 +3440,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     0 => form.title.chars().count(),
                                     1 => form.description.chars().count(),
                                     2 => form.success_criteria.chars().count(),
-                                    3 => form.target_date.chars().count(),
-                                    6 => form.priority.chars().count(),
+                                    5 => form.priority.chars().count(),
                                     _ => 0,
                                 };
                                 if form.cursor < len {
@@ -3480,9 +3449,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         },
                         KeyCode::Backspace => {
-                            if form.active_field == 4
-                                || form.active_field == 5
-                                || form.active_field == 7
+                            if form.active_field == 3
+                                || form.active_field == 4
+                                || form.active_field == 6
                             {
                                 // selectors/toggle, ignore backspace
                             } else if form.cursor > 0 {
@@ -3491,8 +3460,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     0 => &mut form.title,
                                     1 => &mut form.description,
                                     2 => &mut form.success_criteria,
-                                    3 => &mut form.target_date,
-                                    6 => &mut form.priority,
+                                    5 => &mut form.priority,
                                     _ => &mut form.title,
                                 };
                                 let bp = text
@@ -3504,9 +3472,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                         KeyCode::Char(c) => {
-                            if form.active_field == 4
-                                || form.active_field == 5
-                                || form.active_field == 7
+                            if form.active_field == 3
+                                || form.active_field == 4
+                                || form.active_field == 6
                             {
                                 // selectors/toggle, ignore chars
                             } else {
@@ -3514,8 +3482,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     0 => &mut form.title,
                                     1 => &mut form.description,
                                     2 => &mut form.success_criteria,
-                                    3 => &mut form.target_date,
-                                    6 => &mut form.priority,
+                                    5 => &mut form.priority,
                                     _ => &mut form.title,
                                 };
                                 let bp = text
@@ -7346,10 +7313,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                         })
                                                     })
                                                 })
-                                                .unwrap_or_default(),
-                                            target_date: goal
-                                                .target_date
-                                                .clone()
                                                 .unwrap_or_default(),
                                             status_index: status_idx,
                                             goal_type_index: goal_type_idx,
