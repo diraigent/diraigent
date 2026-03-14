@@ -41,8 +41,6 @@ export interface SpTask {
   reverted_at: string | null;
   flagged: boolean;
   parent_id: string | null;
-  plan_id: string | null;
-  plan_position: number;
   /** Enriched field — only present on GET /tasks/:id */
   decision?: SpDecisionSummary | null;
   input_tokens: number;

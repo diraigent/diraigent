@@ -26,6 +26,10 @@ pub fn routes() -> Router<AppState> {
             post(link_task).get(list_goal_tasks_handler),
         )
         .route("/goals/{goal_id}/tasks/bulk", post(bulk_link_tasks_handler))
+        .route(
+            "/{project_id}/goals/{goal_id}/tasks/reorder",
+            post(reorder_goal_tasks_handler),
+        )
         .route("/goals/{goal_id}/tasks/{task_id}", delete(unlink_task))
         .route("/goals/{goal_id}/progress", get(get_progress))
         .route("/goals/{goal_id}/stats", get(get_stats))
@@ -386,6 +390,25 @@ async fn list_goal_comments(
     .await?;
     let comments = state.db.list_goal_comments(goal_id, &pagination).await?;
     Ok(Json(comments))
+}
+
+async fn reorder_goal_tasks_handler(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
+    Path((project_id, goal_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<ReorderGoalTasks>,
+) -> Result<Json<Vec<Task>>, AppError> {
+    require_authority(state.db.as_ref(), agent_id, user_id, project_id, "decide").await?;
+
+    // Verify the goal belongs to this project
+    let existing = state.db.get_goal_by_id(goal_id).await?;
+    if existing.project_id != project_id {
+        return Err(AppError::NotFound("Goal not found".into()));
+    }
+
+    let tasks = state.db.reorder_goal_tasks(goal_id, &req.task_ids).await?;
+    Ok(Json(tasks))
 }
 
 /// For a given task_id, query all linked goals with `auto_status = true`,

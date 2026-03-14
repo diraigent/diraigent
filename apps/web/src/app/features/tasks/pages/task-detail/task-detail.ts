@@ -335,20 +335,6 @@ const VERIFICATION_KIND_COLORS: Record<VerificationKind, string> = {
         </div>
       }
 
-      <!-- Plan membership -->
-      @if (planName()) {
-        <div class="mb-4">
-          <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">{{ t('tasks.planMembership') }}</h3>
-          <button (click)="navigateToPlan.emit(task().plan_id!)"
-            class="flex items-center gap-2 bg-bg rounded-lg px-3 py-2 border border-border hover:border-accent/50 transition-colors cursor-pointer w-full text-left">
-            <svg class="w-4 h-4 shrink-0 text-ctp-teal" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
-            <span class="text-sm text-text-primary">{{ planName() }}</span>
-          </button>
-        </div>
-      }
-
       <!-- Spec / Description -->
       <div class="mb-4">
         <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1">{{ t('tasks.spec') }}</h3>
@@ -557,8 +543,6 @@ export class TaskDetailComponent {
   kinds = input<string[]>(DEFAULT_TASK_KINDS);
   parentTask = input<SpTask | null>(null);
   subtasks = input<SpTask[]>([]);
-  planName = input<string | null>(null);
-
   closed = output<void>();
   transitionClick = output<string>();
   claimClick = output<void>();
@@ -574,7 +558,6 @@ export class TaskDetailComponent {
   playbookStepChange = output<number>();
   inlineUpdate = output<UpdateTaskRequest>();
   navigateToTask = output<string>();
-  navigateToPlan = output<string>();
 
   depId = '';
   confirmingDelete = false;

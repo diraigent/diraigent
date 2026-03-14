@@ -36,8 +36,14 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
+<<<<<<< HEAD
   amd64:
     name: API (amd64)
+=======
+  # Promote: re-tag the existing amd64 image from deploy (no rebuild)
+  promote-amd64:
+    name: API (promote amd64)
+>>>>>>> dev
     needs: [check]
     if: needs.check.outputs.changed == 'true'
     runs-on: docker
@@ -47,13 +53,17 @@ jobs:
         username: ${{ github.repository_owner }}
         password: ${{ secrets.FORGEJO_TOKEN }}
     steps:
+<<<<<<< HEAD
       - uses: actions/checkout@v4
       - name: Create buildx builder
         run: docker buildx create --name builder --driver docker-container --use && docker buildx inspect --bootstrap
+=======
+>>>>>>> dev
       - name: Login to registries
         run: |
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
           docker login ${{ vars.REGISTRY_URL }} -u ${{ github.repository_owner }} -p ${{ secrets.FORGEJO_TOKEN }}
+<<<<<<< HEAD
       - name: Build and push
         run: |
           VERSION="${GITHUB_REF_NAME}"
@@ -68,6 +78,23 @@ jobs:
 
   arm64:
     name: API (arm64)
+=======
+      - name: Re-tag existing amd64 image
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          FORGEJO="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/api"
+          # Pull the amd64 image that deploy already built
+          docker pull "${FORGEJO}:latest"
+          # Re-tag for release
+          docker tag "${FORGEJO}:latest" "diraigent/api:${VERSION}-amd64"
+          docker tag "${FORGEJO}:latest" "${FORGEJO}:${VERSION}-amd64"
+          docker push "diraigent/api:${VERSION}-amd64"
+          docker push "${FORGEJO}:${VERSION}-amd64"
+
+  # Build: only arm64 needs a fresh build
+  build-arm64:
+    name: API (build arm64)
+>>>>>>> dev
     needs: [check]
     if: needs.check.outputs.changed == 'true'
     runs-on: docker
@@ -98,7 +125,11 @@ jobs:
 
   manifest:
     name: API (manifest)
+<<<<<<< HEAD
     needs: [amd64, arm64]
+=======
+    needs: [promote-amd64, build-arm64]
+>>>>>>> dev
     runs-on: docker
     container:
       image: ${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/ci-deploy:latest

@@ -16,7 +16,6 @@ pub mod chat;
 pub mod dashboard;
 pub mod events;
 pub mod git;
-pub mod plans;
 pub mod reports;
 pub mod search;
 pub mod source;

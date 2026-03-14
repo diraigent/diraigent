@@ -349,7 +349,6 @@ type SortDir = 'asc' | 'desc';
                   [kinds]="detailKinds()"
                   [parentTask]="detailParentTask()"
                   [subtasks]="detailSubtasks()"
-                  [planName]="detailPlanName()"
                   (closed)="onDetailClosed(task)"
                   (transitionClick)="detailTransition.emit($event)"
                   (claimClick)="detailClaim.emit()"
@@ -364,8 +363,7 @@ type SortDir = 'asc' | 'desc';
                   (playbookChange)="detailPlaybookChange.emit($event)"
                   (playbookStepChange)="detailPlaybookStepChange.emit($event)"
                   (inlineUpdate)="detailInlineUpdate.emit($event)"
-                  (navigateToTask)="detailNavigateToTask.emit($event)"
-                  (navigateToPlan)="detailNavigateToPlan.emit($event)" />
+                  (navigateToTask)="detailNavigateToTask.emit($event)" />
               </div>
             } @else if (expandedIds().has(task.id)) {
               <div class="px-3 pb-3 ml-7 space-y-1.5 border-t border-border pt-2.5 text-xs">
@@ -470,8 +468,6 @@ export class TaskListComponent {
   detailKinds = input<string[]>([]);
   detailParentTask = input<SpTask | null>(null);
   detailSubtasks = input<SpTask[]>([]);
-  detailPlanName = input<string | null>(null);
-
   taskSelect = output<SpTask>();
   stateChange = output<{ task: SpTask; target: string }>();
   searchChange = output<string>();
@@ -499,7 +495,6 @@ export class TaskListComponent {
   detailPlaybookStepChange = output<number>();
   detailInlineUpdate = output<UpdateTaskRequest>();
   detailNavigateToTask = output<string>();
-  detailNavigateToPlan = output<string>();
 
   readonly Math = Math;
   states = input<string[]>(['backlog', 'ready', 'working', 'implement', 'review', 'merge', 'human_review', 'done', 'cancelled']);

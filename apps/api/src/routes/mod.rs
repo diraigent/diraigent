@@ -17,7 +17,6 @@ mod members;
 mod metrics;
 mod observations;
 mod packages;
-mod plans;
 mod playbooks;
 mod projects;
 mod reports;
@@ -79,7 +78,6 @@ pub fn router() -> Router<AppState> {
         .merge(decisions::routes())
         .merge(observations::routes())
         .merge(packages::routes())
-        .merge(plans::routes())
         .merge(playbooks::routes())
         .merge(event_rules::routes())
         .merge(events::routes())
