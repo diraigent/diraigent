@@ -101,6 +101,51 @@ export interface DgSettings {
   repo_root: string | null;
 }
 
+export interface TokenDayCount {
+  day: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+}
+
+export interface TaskCostRow {
+  task_id: string;
+  task_number: number;
+  title: string;
+  state: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+}
+
+export interface CostSummary {
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cost_usd: number;
+}
+
+export interface TaskSummary {
+  total: number;
+  done: number;
+  cancelled: number;
+  in_progress: number;
+  ready: number;
+  backlog: number;
+  human_review: number;
+}
+
+export interface ProjectMetrics {
+  project_id: string;
+  range_days: number;
+  task_summary: TaskSummary;
+  tasks_per_day: { day: string; count: number }[];
+  avg_time_in_state_hours: { state: string; avg_hours: number | null }[];
+  agent_breakdown: { agent_id: string; agent_name: string; tasks_completed: number; tasks_in_progress: number; avg_completion_hours: number | null }[];
+  playbook_completion: { playbook_id: string; playbook_title: string; total_tasks: number; completed_tasks: number; completion_rate: number }[];
+  cost_summary: CostSummary;
+  task_costs: TaskCostRow[];
+}
+
 export interface ClaudeMdResponse {
   content: string;
   exists: boolean;
@@ -154,5 +199,13 @@ export class DiraigentApiService {
   getHealth(): Observable<SpHealthResponse> {
     const base = new URL(this.baseUrl).origin;
     return this.http.get<SpHealthResponse>(`${base}/health/live`);
+  }
+
+  getProjectMetrics(projectId: string, days?: number): Observable<ProjectMetrics> {
+    const params: Record<string, string> = {};
+    if (days != null) {
+      params['days'] = days.toString();
+    }
+    return this.http.get<ProjectMetrics>(`${this.baseUrl}/${projectId}/metrics`, { params });
   }
 }

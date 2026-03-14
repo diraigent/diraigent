@@ -7,6 +7,7 @@ import { catchError } from 'rxjs/operators';
 import { TasksApiService, SpTask } from '../../core/services/tasks-api.service';
 import { DiraigentApiService, DgProject } from '../../core/services/diraigent-api.service';
 import { taskStateColor, taskTransitions } from '../../shared/ui-constants';
+import { TokenUsageChartComponent } from './token-usage-chart';
 
 interface ProjectTasks {
   project: DgProject;
@@ -26,7 +27,7 @@ const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('w
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [TranslocoModule, DatePipe],
+  imports: [TranslocoModule, DatePipe, TokenUsageChartComponent],
   template: `
     <div class="p-3 sm:p-6" *transloco="let t">
       <h1 class="text-2xl font-semibold text-text-primary mb-3 sm:mb-6">{{ t('dashboard.title') }}</h1>
@@ -66,7 +67,7 @@ const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('w
         </div>
 
         <!-- Token usage row -->
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
           <div class="bg-surface border border-border rounded-lg p-4">
             <div class="text-3xl font-bold text-ctp-lavender">{{ formatTokens(tokenStats().today.total) }}</div>
             <div class="text-sm text-text-secondary mt-1">{{ t('dashboard.stats.tokensToday') }}</div>
@@ -83,6 +84,16 @@ const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('w
             <div class="text-xs text-text-muted mt-1">{{ formatTokens(tokenStats().total.input) }} in / {{ formatTokens(tokenStats().total.output) }} out</div>
           </div>
         </div>
+
+        <!-- Token usage chart -->
+        @for (pt of allProjectTasks(); track pt.project.id) {
+          <div class="mb-4">
+            @if (allProjectTasks().length > 1) {
+              <div class="text-xs text-text-muted mb-1">{{ pt.project.name }}</div>
+            }
+            <app-token-usage-chart [projectId]="pt.project.id" [tasks]="pt.tasks" />
+          </div>
+        }
 
         <!-- Per-project breakdown -->
         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-8">
