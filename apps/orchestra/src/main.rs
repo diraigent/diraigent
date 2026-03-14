@@ -6,6 +6,7 @@ mod config;
 mod constants;
 mod context;
 mod crypto;
+mod diraigent_config;
 mod git;
 mod git_handler;
 mod git_provisioner;

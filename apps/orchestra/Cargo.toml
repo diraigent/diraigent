@@ -39,6 +39,7 @@ aes-kw = "0.2"
 hkdf = "0.12"
 zeroize = { version = "1", features = ["derive"] }
 base64 = "0.22"
+toml = "0.8"
 
 [dev-dependencies]
 wiremock = "0.6"
