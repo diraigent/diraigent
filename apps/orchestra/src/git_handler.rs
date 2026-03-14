@@ -1,3 +1,4 @@
+use crate::api::ProjectsApi;
 use crate::git::WorktreeManager;
 use base64::Engine as _;
 use serde::Serialize;
@@ -159,6 +160,152 @@ pub fn handle_git_request(
                 data: serde_json::Value::Null,
             }
         }
+    }
+}
+
+/// Wrapper around `handle_git_request` that emits events to the API
+/// after mutating git operations (push, revert, release).
+///
+/// Must be called from within a `spawn_blocking` context that has a
+/// tokio runtime handle available (via `Handle::current()`).
+#[allow(clippy::too_many_arguments)]
+pub fn handle_git_request_with_events(
+    wm: &WorktreeManager,
+    api: &ProjectsApi,
+    project_id: &str,
+    query_type: &str,
+    prefix: Option<&str>,
+    task_id: Option<&str>,
+    branch: Option<&str>,
+    remote: Option<&str>,
+    path: Option<&str>,
+    git_ref: Option<&str>,
+) -> GitResponse {
+    let response = handle_git_request(
+        wm, query_type, prefix, task_id, branch, remote, path, git_ref,
+    );
+
+    // Only emit events for mutating operations
+    let event = build_git_event(api, query_type, &response, wm, task_id, branch);
+    if let Some(event) = event
+        && let Ok(rt) = tokio::runtime::Handle::try_current()
+        && let Err(e) = rt.block_on(api.post_event(project_id, &event))
+    {
+        warn!(query_type, "failed to emit git event: {e}");
+    }
+
+    response
+}
+
+/// Build an event JSON value for mutating git operations, if applicable.
+fn build_git_event(
+    api: &ProjectsApi,
+    query_type: &str,
+    response: &GitResponse,
+    wm: &WorktreeManager,
+    task_id: Option<&str>,
+    branch: Option<&str>,
+) -> Option<serde_json::Value> {
+    match query_type {
+        "revert_task" if response.success => {
+            let tid = task_id.unwrap_or("unknown");
+            let revert_msg = response
+                .data
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("");
+            Some(serde_json::json!({
+                "kind": "custom",
+                "source": "orchestra",
+                "title": format!("Task reverted: {tid}"),
+                "severity": "info",
+                "related_task_id": tid,
+                "agent_id": api.agent_id(),
+                "metadata": {
+                    "task_id": tid,
+                    "revert_message": revert_msg,
+                }
+            }))
+        }
+        "push_main" | "resolve_and_push_main" => {
+            let branch_name = wm.default_branch();
+            if response.success {
+                Some(serde_json::json!({
+                    "kind": "custom",
+                    "source": "orchestra",
+                    "title": format!("Pushed {branch_name} to origin"),
+                    "severity": "info",
+                    "agent_id": api.agent_id(),
+                    "metadata": {
+                        "branch": branch_name,
+                        "success": true,
+                    }
+                }))
+            } else {
+                Some(serde_json::json!({
+                    "kind": "custom",
+                    "source": "orchestra",
+                    "title": format!("Push failed: {branch_name}"),
+                    "severity": "warning",
+                    "agent_id": api.agent_id(),
+                    "metadata": {
+                        "branch": branch_name,
+                        "success": false,
+                        "error": response.error.as_deref().unwrap_or("unknown error"),
+                    }
+                }))
+            }
+        }
+        "push" => {
+            let branch_name = branch.unwrap_or("unknown");
+            if response.success {
+                Some(serde_json::json!({
+                    "kind": "custom",
+                    "source": "orchestra",
+                    "title": format!("Pushed {branch_name}"),
+                    "severity": "info",
+                    "agent_id": api.agent_id(),
+                    "metadata": {
+                        "branch": branch_name,
+                        "success": true,
+                    }
+                }))
+            } else {
+                Some(serde_json::json!({
+                    "kind": "custom",
+                    "source": "orchestra",
+                    "title": format!("Push failed: {branch_name}"),
+                    "severity": "warning",
+                    "agent_id": api.agent_id(),
+                    "metadata": {
+                        "branch": branch_name,
+                        "success": false,
+                        "error": response.error.as_deref().unwrap_or("unknown error"),
+                    }
+                }))
+            }
+        }
+        "release" if response.success => {
+            let release_msg = response
+                .data
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("");
+            // Extract tag from the release message ("Released vYYYYMMDD-NN (N commits from ...)")
+            let tag = release_msg.split_whitespace().nth(1).unwrap_or("unknown");
+            Some(serde_json::json!({
+                "kind": "release",
+                "source": "orchestra",
+                "title": format!("Release: {tag}"),
+                "severity": "info",
+                "agent_id": api.agent_id(),
+                "metadata": {
+                    "tag": tag,
+                    "message": release_msg,
+                }
+            }))
+        }
+        _ => None,
     }
 }
 
