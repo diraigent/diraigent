@@ -282,7 +282,19 @@
     "todoPlaceholder": "Aufgabe hinzufügen...",
     "addTodo": "Hinzufügen",
     "todosEmpty": "Noch keine Aufgaben. Oben eine hinzufügen.",
-    "clearDone": "Erledigte löschen"
+    "clearDone": "Erledigte löschen",
+    "planTasksBtn": "Aufgaben planen",
+    "planLoading": "Aufgabenplan wird erstellt...",
+    "planDialogTitle": "Geplante Aufgaben",
+    "planDialogDesc": "Überprüfe und bearbeite die vorgeschlagenen Aufgaben vor der Erstellung.",
+    "planCreateBtn": "{{count}} Aufgaben erstellen",
+    "planCancel": "Abbrechen",
+    "planEmpty": "Keine Aufgaben vorgeschlagen. Füge mehr Details zur Beschreibung oder den Erfolgskriterien hinzu.",
+    "planError": "Aufgabenplan konnte nicht erstellt werden. Bitte versuche es erneut.",
+    "planCreating": "Aufgaben werden erstellt...",
+    "planRemoveTask": "Aus Plan entfernen",
+    "planTaskSpec": "Spezifikation",
+    "planTaskCriteria": "Akzeptanzkriterien"
   },
   "work": {
     "activeGoals": "Aktive Arbeitselemente",

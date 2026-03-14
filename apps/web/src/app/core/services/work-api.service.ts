@@ -137,8 +137,20 @@ export class WorkApiService extends BaseCrudApiService<SpWork, SpWorkCreate, SpW
     return this.http.post<SpWorkComment>(`${this.baseUrl}/work/${workId}/comments`, { content });
   }
 
+  planTasks(workId: string): Observable<PlannedTask[]> {
+    if (!this.projectId) return EMPTY as Observable<PlannedTask[]>;
+    return this.http.post<PlannedTask[]>(`${this.baseUrl}/${this.projectId}/work/${workId}/plan`, {});
+  }
+
   reorder(workIds: string[]): Observable<SpWork[]> {
     if (!this.projectId) return EMPTY as Observable<SpWork[]>;
     return this.http.post<SpWork[]>(`${this.baseUrl}/${this.projectId}/work/reorder`, { work_ids: workIds });
   }
+}
+
+export interface PlannedTask {
+  title: string;
+  kind: string;
+  spec: string;
+  acceptance_criteria: string[];
 }
