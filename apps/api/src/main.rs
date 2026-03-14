@@ -218,7 +218,13 @@ async fn main() -> anyhow::Result<()> {
                 // DEV_USER_ID is absent or empty (docker-compose `${VAR:-}` sets to "").
                 let auth_required = env::var("AUTH_ISSUER").is_ok_and(|s| !s.is_empty())
                     && !env::var("DEV_USER_ID").is_ok_and(|s| !s.is_empty());
-                move || async move { Json(json!({ "auth_required": auth_required })) }
+                let chat_model = env::var("CHAT_MODEL").unwrap_or_else(|_| "sonnet".into());
+                move || async move {
+                    Json(json!({
+                        "auth_required": auth_required,
+                        "chat_model": chat_model,
+                    }))
+                }
             }),
         )
         .nest("/v1", routes::router())
