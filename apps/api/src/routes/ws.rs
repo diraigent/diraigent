@@ -11,7 +11,7 @@ use crate::AppState;
 use crate::auth::AuthUser;
 use crate::error::AppError;
 use crate::ws_protocol::WsMessage;
-use crate::ws_registry::GitResponsePayload;
+use crate::ws_registry::{GitResponsePayload, PlanResponsePayload};
 
 pub fn routes() -> Router<AppState> {
     Router::new().route("/agents/{agent_id}/ws", get(ws_handler))
@@ -85,6 +85,21 @@ async fn handle_socket(state: AppState, agent_id: Uuid, socket: WebSocket) {
                                 success,
                                 error,
                                 data,
+                            },
+                        );
+                    }
+                    WsMessage::PlanResponse {
+                        request_id,
+                        success,
+                        error,
+                        tasks,
+                    } => {
+                        state.ws_registry.complete_plan_request(
+                            &request_id,
+                            PlanResponsePayload {
+                                success,
+                                error,
+                                tasks,
                             },
                         );
                     }

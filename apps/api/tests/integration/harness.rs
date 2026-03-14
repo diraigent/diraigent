@@ -158,7 +158,6 @@ impl TestApp {
             agent_tx,
             sse_tickets: diraigent_api::SseTicketStore::default(),
             ws_registry: Arc::new(diraigent_api::ws_registry::WsRegistry::new()),
-            anthropic_api_key: None,
         };
         Router::new()
             .nest("/v1", routes::router())

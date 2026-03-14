@@ -1,4 +1,3 @@
-pub mod ai;
 pub mod auth;
 pub mod authz;
 pub mod chat;
@@ -124,8 +123,6 @@ pub struct AppState {
     pub sse_tickets: SseTicketStore,
     /// WebSocket connection registry for orchestra agents.
     pub ws_registry: Arc<ws_registry::WsRegistry>,
-    /// Anthropic API key for AI-powered features (task planning, etc.).
-    pub anthropic_api_key: Option<String>,
 }
 
 impl AppState {
