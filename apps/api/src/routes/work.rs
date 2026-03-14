@@ -35,6 +35,7 @@ pub fn routes() -> Router<AppState> {
         .route("/work/{work_id}/stats", get(get_stats))
         .route("/work/{work_id}/children", get(list_children))
         .route("/{project_id}/work/{work_id}/activate", post(activate_work))
+        .route("/{project_id}/work/{work_id}/plan", post(plan_work))
         .route(
             "/work/{work_id}/comments",
             post(create_work_comment).get(list_work_comments),
@@ -184,6 +185,42 @@ async fn activate_work(
     );
 
     Ok(Json(work))
+}
+
+async fn plan_work(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
+    Path((project_id, work_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<PlanWorkResponse>, AppError> {
+    require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
+
+    // Verify the work item belongs to this project
+    let work = state.db.get_work_by_id(work_id).await?;
+    if work.project_id != project_id {
+        return Err(AppError::NotFound("Work item not found".into()));
+    }
+
+    // Ensure Anthropic API key is configured
+    let api_key = state.anthropic_api_key.as_deref().ok_or_else(|| {
+        AppError::ServiceUnavailable(
+            "AI planning is not configured (ANTHROPIC_API_KEY not set)".into(),
+        )
+    })?;
+
+    // Get project name for context
+    let project = state.db.get_project_by_id(project_id).await?;
+
+    let tasks = crate::ai::generate_task_plan(
+        api_key,
+        &work.title,
+        work.description.as_deref().unwrap_or(""),
+        &work.success_criteria,
+        &project.name,
+    )
+    .await?;
+
+    Ok(Json(PlanWorkResponse { tasks }))
 }
 
 async fn link_task(
