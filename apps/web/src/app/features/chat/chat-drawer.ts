@@ -13,7 +13,12 @@ import { ChatService } from '../../core/services/chat.service';
 
         <!-- Header -->
         <div class="flex items-center justify-between px-4 py-3 border-b border-border bg-bg-subtle">
-          <span class="font-semibold text-text-primary">AI Assistant</span>
+          <div class="flex items-center gap-2">
+            <span class="font-semibold text-text-primary">AI Assistant</span>
+            @if (chat.chatModel()) {
+              <span class="text-xs text-text-secondary font-normal">{{ chat.chatModel() }}</span>
+            }
+          </div>
           <div class="flex items-center gap-2">
             @if (!chat.collapsed()) {
               <button (click)="chat.clear()"
