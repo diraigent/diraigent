@@ -18,7 +18,9 @@ import { ChatService } from './core/services/chat.service';
         <main id="main-content" class="flex-[2] overflow-y-auto pt-14 lg:pt-0" tabindex="-1">
           <router-outlet />
         </main>
-        <div id="chat-panel" class="flex-1 min-h-0 border-t border-border">
+        <div id="chat-panel" class="border-t border-border overflow-hidden"
+             [class.flex-1]="!chat.collapsed()"
+             [class.min-h-0]="!chat.collapsed()">
           <app-chat-drawer />
         </div>
       </div>
@@ -66,7 +68,7 @@ import { ChatService } from './core/services/chat.service';
 export class App implements AfterViewInit, OnDestroy {
   auth = inject(AuthService);
   createProject = inject(CreateProjectService);
-  private chat = inject(ChatService);
+  chat = inject(ChatService);
 
   /** Whether the floating chat button should be visible (mobile only, chat out of viewport). */
   showChatFab = signal(false);
