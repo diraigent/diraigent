@@ -1,6 +1,9 @@
 -- Rename goal -> work across all tables, columns, indices, constraints, triggers
 
+ALTER TABLE diraigent.goal DROP COLUMN IF EXISTS target_date;
+
 -- 1. Rename tables
+-- Remove target_date column from goal table
 ALTER TABLE diraigent.goal RENAME TO work;
 ALTER TABLE diraigent.goal_comment RENAME TO work_comment;
 ALTER TABLE diraigent.task_goal RENAME TO task_work;

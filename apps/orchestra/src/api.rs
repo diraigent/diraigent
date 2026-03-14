@@ -259,6 +259,10 @@ impl ProjectsApi {
             .await
     }
 
+    pub async fn get_agent(&self, agent_id: &str) -> Result<Value> {
+        self.get(&format!("/agents/{agent_id}")).await
+    }
+
     pub async fn update_agent(&self, agent_id: &str, body: &Value) -> Result<Value> {
         self.put(&format!("/agents/{agent_id}"), body).await
     }

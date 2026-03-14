@@ -130,6 +130,28 @@ async fn main() -> Result<()> {
         std::process::exit(1);
     });
 
+    // Report orchestra version in agent metadata
+    {
+        let version = env!("CARGO_PKG_VERSION");
+        match api.get_agent(&config.agent_id).await {
+            Ok(agent) => {
+                let mut meta = agent["metadata"].clone();
+                if let Some(obj) = meta.as_object_mut() {
+                    obj.insert("version".into(), serde_json::json!(version));
+                } else {
+                    meta = serde_json::json!({"runtime": "orchestra", "version": version});
+                }
+                if let Err(e) = api
+                    .update_agent(&config.agent_id, &serde_json::json!({"metadata": meta}))
+                    .await
+                {
+                    warn!("failed to report version in agent metadata: {e}");
+                }
+            }
+            Err(e) => warn!("failed to fetch agent for version update: {e}"),
+        }
+    }
+
     info!("listening (workers={})", config.max_workers);
 
     let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));

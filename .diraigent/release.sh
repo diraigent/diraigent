@@ -48,7 +48,7 @@ git commit -m "$COMMIT_BODY"
 git tag "$TAG"
 
 git push origin main --tags
-git push github main --tags
+# git push github main --tags
 
 # Merge main back into dev so changelog + tag are present
 git checkout dev

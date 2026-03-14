@@ -541,7 +541,12 @@
     "noLoginKey": "Kein login-abgeleiteter Schlüssel gefunden. Bitte entsperre zuerst die Verschlüsselung.",
     "passphraseKeyFailed": "Passwort-Schlüssel konnte nicht erstellt werden",
     "encryptionModeSwitchFailed": "Verschlüsselungsmodus konnte nicht gewechselt werden",
-    "passphraseSetupFailed": "Passwort-Einrichtung fehlgeschlagen"
+    "passphraseSetupFailed": "Passwort-Einrichtung fehlgeschlagen",
+    "versionInfo": "Versionsinformationen",
+    "versionWeb": "Web",
+    "versionApi": "API",
+    "versionOrchestras": "Orchestras",
+    "noOrchestras": "Keine Orchestras verbunden"
   },
   "projects": {
     "create": "Neues Projekt",
