@@ -3,7 +3,7 @@ use crate::crypto::Dek;
 use crate::step_profile::StepProfile;
 use crate::task_id::TaskId;
 use std::path::Path;
-use tracing::info;
+use tracing::{debug, info};
 
 /// Build the static system prompt for Claude Code's `--system-prompt` flag.
 ///
@@ -72,6 +72,7 @@ pub async fn build_user_prompt(
     // Previously these ran sequentially (~200-500ms of serial latency);
     // now they overlap and complete in ~one round-trip (~30ms).
     let include_goals = context_level.include_goals;
+    let include_related = context_level.include_knowledge;
     let (
         project_res,
         task_res,
@@ -81,6 +82,7 @@ pub async fn build_user_prompt(
         updates_res,
         verifications_res,
         task_goal_ids,
+        related_items_res,
     ) = tokio::join!(
         api.get_project(project_id),
         api.get_task(task_id),
@@ -96,10 +98,34 @@ pub async fn build_user_prompt(
         api.get_task_updates(task_id),
         api.get_verifications(project_id, task_id),
         api.get_task_goals(task_id),
+        async {
+            if include_related {
+                Some(api.get_related_items(task_id).await)
+            } else {
+                None
+            }
+        },
     );
 
     let project_json = project_res.ok();
     let task_json = task_res.ok();
+
+    // Build related context section (task-relevant knowledge/decisions/observations).
+    // Only included for full-context steps (implement/dream), not minimal (review).
+    let related_context = match related_items_res {
+        Some(Ok(ref related)) => {
+            let section = build_related_context_section(related);
+            if section.is_empty() {
+                debug!("task {tid}: related items returned empty");
+            }
+            section
+        }
+        Some(Err(ref e)) => {
+            debug!("task {tid}: related items fetch failed: {e}");
+            String::new()
+        }
+        None => String::new(),
+    };
     // First goal ID linked to this task (if any) — used for goal inheritance
     // when the agent creates subtasks. Empty string when the task has no goal.
     let first_goal_id = task_goal_ids
@@ -352,7 +378,7 @@ pub async fn build_user_prompt(
 
 ## Active Goals
 {goals_section}
-## Task Discussion (comments & feedback from humans — follow these instructions)
+{related_context}## Task Discussion (comments & feedback from humans — follow these instructions)
 {task_spec_inline}{discussion}
 {workflow}
 
@@ -490,6 +516,70 @@ fn trim_context(context: &mut serde_json::Value, level: &ContextLevel) {
         }
         // Always keep: project, agent, role, membership, ready_tasks, my_tasks, decisions, integrations
     }
+}
+
+/// Build the related context section from the related items API response.
+///
+/// Formats knowledge, decisions, and observations with title, relevance score,
+/// and snippet. Returns an empty string if no related items are found.
+fn build_related_context_section(related: &serde_json::Value) -> String {
+    let knowledge = related["knowledge"].as_array();
+    let decisions = related["decisions"].as_array();
+    let observations = related["observations"].as_array();
+
+    let has_knowledge = knowledge.is_some_and(|arr| !arr.is_empty());
+    let has_decisions = decisions.is_some_and(|arr| !arr.is_empty());
+    let has_observations = observations.is_some_and(|arr| !arr.is_empty());
+
+    if !has_knowledge && !has_decisions && !has_observations {
+        return String::new();
+    }
+
+    let mut section = String::from(
+        "## Relevant Context for This Task\n\n\
+         The following knowledge entries and decisions are related to this task:\n\n",
+    );
+
+    if let Some(items) = knowledge.filter(|arr| !arr.is_empty()) {
+        section.push_str("### Related Knowledge\n");
+        for item in items {
+            let title = item["title"].as_str().unwrap_or("untitled");
+            let score = item["relevance_score"].as_f64().unwrap_or(0.0);
+            let snippet = item["snippet"].as_str().unwrap_or("");
+            section.push_str(&format!(
+                "- **{title}** (relevance: {score:.1}): {snippet}\n"
+            ));
+        }
+        section.push('\n');
+    }
+
+    if let Some(items) = decisions.filter(|arr| !arr.is_empty()) {
+        section.push_str("### Related Decisions\n");
+        for item in items {
+            let title = item["title"].as_str().unwrap_or("untitled");
+            let score = item["relevance_score"].as_f64().unwrap_or(0.0);
+            let snippet = item["snippet"].as_str().unwrap_or("");
+            section.push_str(&format!(
+                "- **{title}** (relevance: {score:.1}): {snippet}\n"
+            ));
+        }
+        section.push('\n');
+    }
+
+    if let Some(items) = observations.filter(|arr| !arr.is_empty()) {
+        section.push_str("### Related Observations\n");
+        for item in items {
+            let title = item["title"].as_str().unwrap_or("untitled");
+            let score = item["relevance_score"].as_f64().unwrap_or(0.0);
+            let snippet = item["snippet"].as_str().unwrap_or("");
+            section.push_str(&format!(
+                "- **{title}** (relevance: {score:.1}): {snippet}\n"
+            ));
+        }
+        section.push('\n');
+    }
+
+    section
 }
 
 /// Build the goals section with progress info.
@@ -1532,6 +1622,110 @@ mod tests {
         assert!(
             output.contains("Plan: llllllll-mmmm-nnnn-oooo-pppppppppppp"),
             "{{{{plan_id}}}} template variable should be substituted, got: {output}"
+        );
+    }
+
+    // ── build_related_context_section tests ──────────────────
+
+    #[test]
+    fn related_context_with_all_three_types() {
+        let related = serde_json::json!({
+            "knowledge": [
+                {"title": "Auth pattern", "relevance_score": 0.9, "snippet": "JWT RS256 auth…"}
+            ],
+            "decisions": [
+                {"title": "Use metadata JSON", "relevance_score": 0.7, "snippet": "Store in jsonb…"}
+            ],
+            "observations": [
+                {"title": "Missing test", "relevance_score": 0.5, "snippet": "No coverage for…"}
+            ]
+        });
+        let section = build_related_context_section(&related);
+        assert!(section.contains("## Relevant Context for This Task"));
+        assert!(section.contains("### Related Knowledge"));
+        assert!(section.contains("**Auth pattern** (relevance: 0.9)"));
+        assert!(section.contains("### Related Decisions"));
+        assert!(section.contains("**Use metadata JSON** (relevance: 0.7)"));
+        assert!(section.contains("### Related Observations"));
+        assert!(section.contains("**Missing test** (relevance: 0.5)"));
+    }
+
+    #[test]
+    fn related_context_empty_when_no_items() {
+        let related = serde_json::json!({
+            "knowledge": [],
+            "decisions": [],
+            "observations": []
+        });
+        let section = build_related_context_section(&related);
+        assert!(
+            section.is_empty(),
+            "empty related items should produce empty section, got: {section}"
+        );
+    }
+
+    #[test]
+    fn related_context_empty_when_missing_arrays() {
+        let related = serde_json::json!({});
+        let section = build_related_context_section(&related);
+        assert!(
+            section.is_empty(),
+            "missing arrays should produce empty section, got: {section}"
+        );
+    }
+
+    #[test]
+    fn related_context_partial_only_knowledge() {
+        let related = serde_json::json!({
+            "knowledge": [
+                {"title": "SQL injection safe", "relevance_score": 1.0, "snippet": "Parameterized queries…"}
+            ],
+            "decisions": [],
+            "observations": []
+        });
+        let section = build_related_context_section(&related);
+        assert!(section.contains("### Related Knowledge"));
+        assert!(!section.contains("### Related Decisions"));
+        assert!(!section.contains("### Related Observations"));
+    }
+
+    #[test]
+    fn related_context_handles_null_snippet() {
+        let related = serde_json::json!({
+            "knowledge": [
+                {"title": "No snippet item", "relevance_score": 0.6, "snippet": null}
+            ],
+            "decisions": [],
+            "observations": []
+        });
+        let section = build_related_context_section(&related);
+        assert!(section.contains("**No snippet item** (relevance: 0.6): \n"));
+    }
+
+    #[test]
+    fn related_context_included_for_implement_context_level() {
+        let level = ContextLevel::for_step("implement");
+        assert!(
+            level.include_knowledge,
+            "implement step should have include_knowledge=true for related items"
+        );
+    }
+
+    #[test]
+    fn related_context_included_for_dream_context_level() {
+        let level = ContextLevel::for_step("dream");
+        assert!(
+            level.include_knowledge,
+            "dream step should have include_knowledge=true for related items"
+        );
+    }
+
+    #[test]
+    fn related_context_excluded_for_review_context_level() {
+        let level = ContextLevel::for_step("review");
+        assert!(
+            !level.include_knowledge,
+            "review step should have include_knowledge=false (no related items)"
         );
     }
 
