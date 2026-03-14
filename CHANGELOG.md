@@ -1,5 +1,19 @@
 # Changelog
 
+## v20260314-2328 (2026-03-14)
+- Renamed "Goals" to "Work" across the entire application
+- Added AI-powered task planning: plan tasks directly from a work item with preview dialog
+- Work item planning now routed through orchestra for improved reliability
+- Planning auto-generates success criteria when none are provided
+- Added version info to Account Settings
+- Fixed mobile horizontal scrolling issues
+- Fixed error display showing [object Object] on git push failures
+- Improved chat history compression
+- Tasks now transition to human review on merge failure
+- Streamlined work detail view by removing redundant buttons and nested scrolling
+
+---
+
 ## v20260314-1902 (2026-03-14)
 
 ### API
