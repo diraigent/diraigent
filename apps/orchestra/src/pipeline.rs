@@ -797,10 +797,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn check_next_step_unexpected_state_returns_unexpected_state() {
+    async fn check_next_step_step_state_returns_already_ready() {
         let server = MockServer::start().await;
         let task_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 
+        // A task in a step state (e.g. "implement") means it was already claimed
+        // by another worker — a normal race condition. Returns AlreadyReady.
         Mock::given(method("GET"))
             .and(path_regex(format!("/tasks/{task_id}")))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -812,7 +814,7 @@ mod tests {
         let api = test_api(&server.uri());
         assert_eq!(
             check_next_step(&api, task_id).await.unwrap(),
-            StepOutcome::UnexpectedState("implement".to_string())
+            StepOutcome::AlreadyReady
         );
     }
 
