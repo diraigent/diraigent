@@ -1,4 +1,4 @@
-import { Component, ChangeDetectorRef, inject, signal, computed, effect, DestroyRef, PLATFORM_ID } from '@angular/core';
+import { Component, ChangeDetectorRef, inject, signal, computed, effect, DestroyRef, PLATFORM_ID, ViewEncapsulation } from '@angular/core';
 import { NgTemplateOutlet, DatePipe, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TranslocoModule } from '@jsverse/transloco';
@@ -73,6 +73,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
   selector: 'app-work',
   standalone: true,
   imports: [TranslocoModule, FormsModule, DatePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent, CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList],
+  encapsulation: ViewEncapsulation.None,
   styles: [`
     .cdk-drag-animating {
       transition: none !important;
@@ -583,7 +584,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                       (stateChange)="onLinkedTaskStateChange($event.task, $event.target)"
                       (detailTransition)="onLinkedTaskStateChange(selectedLinkedTask()!, $event)"
                       (detailClaim)="onTaskClaim()"
-                      (detailRelease)="onTaskRelease(selectedLinkedTask()!)"
                       (detailPush)="onTaskPush($event)"
                       (detailResolve)="onTaskResolve(selectedLinkedTask()!)"
                       (detailRevert)="onTaskRevert(selectedLinkedTask()!)"
@@ -685,7 +685,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               (stateChange)="onUnlinkedTaskStateChange($event.task, $event.target)"
               (detailTransition)="onUnlinkedTaskStateChange(selectedUnlinkedTask()!, $event)"
               (detailClaim)="onTaskClaim()"
-              (detailRelease)="onTaskRelease(selectedUnlinkedTask()!)"
               (detailPush)="onTaskPush($event)"
               (detailResolve)="onTaskResolve(selectedUnlinkedTask()!)"
               (detailRevert)="onTaskRevert(selectedUnlinkedTask()!)"
@@ -736,8 +735,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                 (stateChange)="onUnlinkedTaskStateChange($event.task, $event.target)"
                 (detailTransition)="onUnlinkedTaskStateChange(selectedUnlinkedTask()!, $event)"
                 (detailClaim)="onTaskClaim()"
-                (detailRelease)="onTaskRelease(selectedUnlinkedTask()!)"
-                (detailPush)="onTaskPush($event)"
+                  (detailPush)="onTaskPush($event)"
                 (detailResolve)="onTaskResolve(selectedUnlinkedTask()!)"
                 (detailRevert)="onTaskRevert(selectedUnlinkedTask()!)"
                 (detailPostUpdate)="onUnlinkedTaskPostUpdate($event)"
@@ -796,7 +794,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   (stateChange)="onUnlinkedTaskStateChange($event.task, $event.target)"
                   (detailTransition)="onUnlinkedTaskStateChange(selectedUnlinkedTask()!, $event)"
                   (detailClaim)="onTaskClaim()"
-                  (detailRelease)="onTaskRelease(selectedUnlinkedTask()!)"
                   (detailPush)="onTaskPush($event)"
                   (detailResolve)="onTaskResolve(selectedUnlinkedTask()!)"
                   (detailRevert)="onTaskRevert(selectedUnlinkedTask()!)"
@@ -857,7 +854,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   (stateChange)="onUnlinkedTaskStateChange($event.task, $event.target)"
                   (detailTransition)="onUnlinkedTaskStateChange(selectedUnlinkedTask()!, $event)"
                   (detailClaim)="onTaskClaim()"
-                  (detailRelease)="onTaskRelease(selectedUnlinkedTask()!)"
                   (detailPush)="onTaskPush($event)"
                   (detailResolve)="onTaskResolve(selectedUnlinkedTask()!)"
                   (detailRevert)="onTaskRevert(selectedUnlinkedTask()!)"
@@ -1409,20 +1405,6 @@ export class WorkPage {
 
   onTaskClaim(): void {
     // Claim requires an agent_id; not applicable in web UI context.
-  }
-
-  onTaskRelease(task: SpTask): void {
-    this.tasksApi.release(task.id).subscribe({
-      next: () => {
-        this.loadUnlinkedTasks();
-        const sel = this.selected();
-        if (sel) {
-          this.loadLinkedTasks(sel.id);
-          this.loadAllProgress([sel]);
-          this.loadStatsAndChildren(sel.id);
-        }
-      },
-    });
   }
 
   // --- Section collapse ---

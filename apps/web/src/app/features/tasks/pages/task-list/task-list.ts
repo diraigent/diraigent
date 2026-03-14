@@ -353,7 +353,6 @@ type SortDir = 'asc' | 'desc';
                   (closed)="onDetailClosed(task)"
                   (transitionClick)="detailTransition.emit($event)"
                   (claimClick)="detailClaim.emit()"
-                  (releaseClick)="detailRelease.emit()"
                   (pushClick)="detailPush.emit($event)"
                   (resolveClick)="detailResolve.emit()"
                   (revertClick)="detailRevert.emit()"
@@ -488,7 +487,6 @@ export class TaskListComponent {
   // Detail event outputs (bubbled from TaskDetailComponent)
   detailTransition = output<string>();
   detailClaim = output<void>();
-  detailRelease = output<void>();
   detailPush = output<string>();
   detailResolve = output<void>();
   detailRevert = output<void>();

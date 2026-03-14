@@ -5,7 +5,8 @@ ARG TARGETARCH
 
 # Install cross-compilation tools for arm64 (only when needed)
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
-      apt-get update && apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu && \
+      apt-get update && apt-get install -y --no-install-recommends \
+        gcc-aarch64-linux-gnu libc6-dev-arm64-cross && \
       rustup target add aarch64-unknown-linux-gnu && \
       rm -rf /var/lib/apt/lists/*; \
     fi

@@ -119,13 +119,40 @@ async fn process_reaped_task(
                     let target = git_strategy
                         .merge_target(wm.default_branch())
                         .unwrap_or_else(|| wm.default_branch());
+                    // Collect stats before merge (branch is deleted after successful merge)
+                    let branch_name = TaskId::new(&task_id).branch_name();
+                    let changed_files = wm.collect_changed_files(&task_id).unwrap_or_default();
+                    let (insertions, deletions) =
+                        wm.diff_insertion_deletion_stats(&task_id).unwrap_or((0, 0));
                     match wm.merge_to_branch(&task_id, target) {
                         Ok(_) => {
                             info!("mid-pipeline merge for {tid} to {target} succeeded");
+                            let file_paths: Vec<&str> =
+                                changed_files.iter().map(|f| f.path.as_str()).collect();
+                            emit_merge_event(
+                                api,
+                                &project_id,
+                                &task_id,
+                                &branch_name,
+                                target,
+                                &file_paths,
+                                insertions,
+                                deletions,
+                            )
+                            .await;
                             wm.remove_worktree(&task_id);
                         }
                         Err(e) => {
                             error!("mid-pipeline merge failed for {tid}: {e} — keeping branch");
+                            emit_merge_error_event(
+                                api,
+                                &project_id,
+                                &task_id,
+                                &branch_name,
+                                target,
+                                &format!("{e:#}"),
+                            )
+                            .await;
                             let msg = format!(
                                 "Mid-pipeline merge to {target} failed: {e}. \
                                  Worktree preserved for manual resolution."
@@ -179,14 +206,41 @@ async fn process_reaped_task(
                 let target = git_strategy
                     .merge_target(wm.default_branch())
                     .unwrap_or_else(|| wm.default_branch());
+                // Collect stats before merge (branch is deleted after successful merge)
+                let branch_name = TaskId::new(&task_id).branch_name();
+                let changed_files = wm.collect_changed_files(&task_id).unwrap_or_default();
+                let (insertions, deletions) =
+                    wm.diff_insertion_deletion_stats(&task_id).unwrap_or((0, 0));
                 match wm.merge_to_branch(&task_id, target) {
                     Ok(_) => {
+                        let file_paths: Vec<&str> =
+                            changed_files.iter().map(|f| f.path.as_str()).collect();
+                        emit_merge_event(
+                            api,
+                            &project_id,
+                            &task_id,
+                            &branch_name,
+                            target,
+                            &file_paths,
+                            insertions,
+                            deletions,
+                        )
+                        .await;
                         wm.remove_worktree(&task_id);
                     }
                     Err(e) => {
                         error!(
                             "merge failed for {tid}: {e} — keeping branch for manual resolution"
                         );
+                        emit_merge_error_event(
+                            api,
+                            &project_id,
+                            &task_id,
+                            &branch_name,
+                            target,
+                            &format!("{e:#}"),
+                        )
+                        .await;
                         let msg = format!(
                             "Merge to {target} failed: {e}. \
                              Worktree preserved for manual resolution."
@@ -289,6 +343,70 @@ async fn process_reaped_task(
         }
     }
     locks_released
+}
+
+// ── Git event helpers ──
+
+/// Emit a merge success event with file stats.
+#[allow(clippy::too_many_arguments)]
+async fn emit_merge_event(
+    api: &ProjectsApi,
+    project_id: &str,
+    task_id: &str,
+    branch: &str,
+    target_branch: &str,
+    files: &[&str],
+    insertions: usize,
+    deletions: usize,
+) {
+    let event = serde_json::json!({
+        "kind": "merge",
+        "source": "orchestra",
+        "title": format!("Merged {branch} → {target_branch}"),
+        "severity": "info",
+        "related_task_id": task_id,
+        "agent_id": api.agent_id(),
+        "metadata": {
+            "task_id": task_id,
+            "branch": branch,
+            "target_branch": target_branch,
+            "files_changed": files.len(),
+            "files": files,
+            "insertions": insertions,
+            "deletions": deletions,
+        }
+    });
+    if let Err(e) = api.post_event(project_id, &event).await {
+        warn!("failed to emit merge event: {e}");
+    }
+}
+
+/// Emit an error event for a failed merge (conflict).
+async fn emit_merge_error_event(
+    api: &ProjectsApi,
+    project_id: &str,
+    task_id: &str,
+    branch: &str,
+    target_branch: &str,
+    error_message: &str,
+) {
+    let event = serde_json::json!({
+        "kind": "error",
+        "source": "orchestra",
+        "title": format!("Merge conflict: {branch} → {target_branch}"),
+        "severity": "warning",
+        "related_task_id": task_id,
+        "agent_id": api.agent_id(),
+        "metadata": {
+            "task_id": task_id,
+            "branch": branch,
+            "target_branch": target_branch,
+            "error_message": error_message,
+        }
+    });
+    if let Err(e) = api.post_event(project_id, &event).await {
+        warn!("failed to emit merge error event: {e}");
+    }
 }
 
 #[cfg(test)]
