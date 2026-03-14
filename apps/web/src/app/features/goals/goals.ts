@@ -1270,9 +1270,9 @@ export class WorkPage {
           next: (ms) => this.mainStatus.set(ms),
         });
       },
-      error: (err: unknown) => {
+      error: (err) => {
         this.releasing.set(false);
-        const errorMsg = err instanceof Error ? err.message : String(err);
+        const errorMsg = err?.error?.error || err?.error?.message || err?.message || 'Unknown error';
         alert(`Release failed: ${errorMsg}`);
       },
     });
@@ -1286,10 +1286,10 @@ export class WorkPage {
         this.resolvingMain.set(false);
         this.mainStatus.set(null);
       },
-      error: (err: unknown) => {
+      error: (err) => {
         this.resolvingMain.set(false);
         const detail = ms ? ` (local is ${ms.ahead} commit(s) ahead, ${ms.behind} behind remote)` : '';
-        const errorMsg = err instanceof Error ? err.message : String(err);
+        const errorMsg = err?.error?.error || err?.error?.message || err?.message || 'Unknown error';
         const prompt =
           `There is a merge conflict on the main branch${detail}. ` +
           `The automatic rebase+push failed with: ${errorMsg}. ` +
@@ -1390,9 +1390,9 @@ export class WorkPage {
         this.taskDetailResolving.set(false);
         this.loadGitStatus(task.id);
       },
-      error: (err: unknown) => {
+      error: (err) => {
         this.taskDetailResolving.set(false);
-        const errorMsg = err instanceof Error ? err.message : String(err);
+        const errorMsg = err?.error?.error || err?.error?.message || err?.message || 'Unknown error';
         const branch = this.taskDetailGitStatus()?.branch ?? `agent/task-${task.id.substring(0, 12)}`;
         const prompt =
           `There is a merge conflict on branch ${branch}. ` +
