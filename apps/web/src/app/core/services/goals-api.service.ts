@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { EMPTY, Observable } from 'rxjs';
 import { BaseCrudApiService } from './base-crud-api.service';
 import { SpTask } from './tasks-api.service';
 
@@ -141,6 +141,7 @@ export class GoalsApiService extends BaseCrudApiService<SpGoal, SpGoalCreate, Sp
   }
 
   reorder(goalIds: string[]): Observable<SpGoal[]> {
-    return this.http.post<SpGoal[]>(`${this.baseUrl}/goals/reorder`, { goal_ids: goalIds });
+    if (!this.projectId) return EMPTY as Observable<SpGoal[]>;
+    return this.http.post<SpGoal[]>(`${this.baseUrl}/${this.projectId}/goals/reorder`, { goal_ids: goalIds });
   }
 }
