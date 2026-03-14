@@ -6,8 +6,10 @@ import { TenantApiService, Tenant } from '../../core/services/tenant-api.service
 import { AuthService } from '../../core/services/auth.service';
 import { CryptoService } from '../../core/services/crypto.service';
 import { ThemeService } from '../../core/services/theme.service';
+import { AgentsApiService, SpAgent } from '../../core/services/agents-api.service';
 import { PassphrasePromptComponent } from '../../shared/components/passphrase-prompt/passphrase-prompt';
 import { AppearanceSettingsComponent } from '../../shared/components/appearance-settings/appearance-settings';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-tenant-settings',
@@ -117,6 +119,44 @@ import { AppearanceSettingsComponent } from '../../shared/components/appearance-
         </div>
       </section>
 
+      <!-- Version Info -->
+      <section class="mb-8">
+        <h2 class="text-lg font-medium text-text-primary mb-4">{{ t('tenantSettings.versionInfo') }}</h2>
+        <div class="bg-surface rounded-lg border border-border p-6">
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-text-secondary">{{ t('tenantSettings.versionWeb') }}</span>
+              <span class="text-sm font-mono text-text-primary">{{ webVersion }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-text-secondary">{{ t('tenantSettings.versionApi') }}</span>
+              <span class="text-sm font-mono text-text-primary">{{ apiVersion() || '—' }}</span>
+            </div>
+            @if (orchestras().length > 0) {
+              <div class="pt-3 border-t border-border">
+                <span class="text-sm text-text-secondary">{{ t('tenantSettings.versionOrchestras') }}</span>
+                <div class="mt-2 space-y-2">
+                  @for (orch of orchestras(); track orch.id) {
+                    <div class="flex items-center justify-between bg-bg-subtle rounded px-3 py-2">
+                      <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full" [class]="orch.status === 'idle' || orch.status === 'working' ? 'bg-ctp-green' : 'bg-ctp-overlay1'"></span>
+                        <span class="text-sm text-text-primary">{{ orch.name }}</span>
+                      </div>
+                      <span class="text-sm font-mono text-text-secondary">{{ orch.metadata['version'] || '—' }}</span>
+                    </div>
+                  }
+                </div>
+              </div>
+            } @else {
+              <div class="flex items-center justify-between">
+                <span class="text-sm text-text-secondary">{{ t('tenantSettings.versionOrchestras') }}</span>
+                <span class="text-sm text-text-secondary">{{ t('tenantSettings.noOrchestras') }}</span>
+              </div>
+            }
+          </div>
+        </div>
+      </section>
+
       @if (showPassphrasePrompt()) {
         <app-passphrase-prompt
           (confirmed)="switchToPassphraseMode($event)"
@@ -131,6 +171,7 @@ export class TenantSettingsPage {
   private cryptoSvc = inject(CryptoService);
   private themeService = inject(ThemeService);
   private transloco = inject(TranslocoService);
+  private agentsApi = inject(AgentsApiService);
 
   // Tenant / Encryption
   tenant = signal<Tenant | null>(null);
@@ -143,6 +184,11 @@ export class TenantSettingsPage {
   rotationResult = signal('');
   showPassphrasePrompt = signal(false);
 
+  // Version Info
+  webVersion = environment.appVersion;
+  apiVersion = signal('');
+  orchestras = signal<SpAgent[]>([]);
+
   encryptionModeClass = () => {
     const mode = this.tenant()?.encryption_mode;
     switch (mode) {
@@ -154,6 +200,28 @@ export class TenantSettingsPage {
 
   constructor() {
     this.loadTenant();
+    this.loadVersionInfo();
+  }
+
+  private loadVersionInfo(): void {
+    // Fetch API version from /v1/config
+    fetch(`${environment.apiServer}/config`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.api_version) {
+          this.apiVersion.set(data.api_version);
+        }
+      })
+      .catch(() => { /* API unreachable */ });
+
+    // Fetch orchestras (agents with runtime: "orchestra" in metadata)
+    this.agentsApi.getAgents().subscribe({
+      next: agents => {
+        const orchs = agents.filter(a => a.metadata?.['runtime'] === 'orchestra');
+        this.orchestras.set(orchs);
+      },
+      error: () => { /* ignore */ },
+    });
   }
 
   private loadTenant(): void {

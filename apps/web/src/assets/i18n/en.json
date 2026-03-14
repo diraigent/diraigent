@@ -565,7 +565,12 @@
     "noLoginKey": "No login-derived key found. Please unlock encryption first.",
     "passphraseKeyFailed": "Failed to create passphrase key",
     "encryptionModeSwitchFailed": "Failed to switch encryption mode",
-    "passphraseSetupFailed": "Passphrase setup failed"
+    "passphraseSetupFailed": "Passphrase setup failed",
+    "versionInfo": "Version Info",
+    "versionWeb": "Web",
+    "versionApi": "API",
+    "versionOrchestras": "Orchestras",
+    "noOrchestras": "No orchestras connected"
   },
   "projects": {
     "create": "New Project",
