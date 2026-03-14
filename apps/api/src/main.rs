@@ -178,6 +178,7 @@ async fn main() -> anyhow::Result<()> {
         agent_tx,
         sse_tickets: diraigent_api::SseTicketStore::default(),
         ws_registry: Arc::new(ws_registry::WsRegistry::new()),
+        anthropic_api_key: env::var("ANTHROPIC_API_KEY").ok(),
     };
 
     stale_detector::spawn_stale_detector(database.clone(), webhook_dispatcher);

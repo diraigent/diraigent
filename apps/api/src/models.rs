@@ -682,6 +682,14 @@ pub struct WorkComment {
     pub updated_at: DateTime<Utc>,
 }
 
+// ── AI Planning ──
+
+/// Response wrapper for the AI planning endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanWorkResponse {
+    pub tasks: Vec<crate::ai::PlannedTask>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Knowledge {
     pub id: Uuid,
