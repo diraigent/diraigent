@@ -303,14 +303,6 @@ type SortDir = 'asc' | 'desc';
               <span class="hidden lg:inline-block text-text-muted text-xs w-20 text-right shrink-0 truncate font-mono">
                 {{ task.assigned_agent_id ? (task.assigned_agent_id | slice:0:8) : '—' }}
               </span>
-              <!-- Expand chevron -->
-              <button class="shrink-0 p-1 text-text-muted hover:text-text-secondary rounded transition-colors cursor-pointer"
-                      (click)="toggleExpand($event, task.id)">
-                <svg class="w-4 h-4 transition-transform duration-150" [class.rotate-180]="expandedIds().has(task.id) || selectedId() === task.id"
-                     fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
             </div>
 
             <!-- State transition menu (mobile) -->
@@ -364,39 +356,6 @@ type SortDir = 'asc' | 'desc';
                   (playbookStepChange)="detailPlaybookStepChange.emit($event)"
                   (inlineUpdate)="detailInlineUpdate.emit($event)"
                   (navigateToTask)="detailNavigateToTask.emit($event)" />
-              </div>
-            } @else if (expandedIds().has(task.id)) {
-              <div class="px-3 pb-3 ml-7 space-y-1.5 border-t border-border pt-2.5 text-xs">
-                <div class="flex justify-between">
-                  <span class="text-text-muted">{{ t('tasks.created') }}</span>
-                  <span class="text-text-secondary">{{ task.created_at | date:'MMM d, y HH:mm' }}</span>
-                </div>
-                <div class="flex justify-between">
-                  <span class="text-text-muted">{{ t('tasks.agent') }}</span>
-                  <span class="text-text-secondary font-mono">{{ task.assigned_agent_id ? (task.assigned_agent_id | slice:0:8) + '...' : '—' }}</span>
-                </div>
-                @if (task.context?.['spec']) {
-                  <div class="mt-2">
-                    <span class="text-text-muted">{{ t('tasks.spec') }}</span>
-                    <p class="text-text-secondary mt-0.5 whitespace-pre-line line-clamp-3">{{ task.context['spec'] }}</p>
-                  </div>
-                }
-                @if (getBranch(task.id); as branch) {
-                  <div class="flex justify-between items-center">
-                    <span class="text-text-muted">Branch</span>
-                    @if (branch.is_pushed) {
-                      <span class="inline-flex items-center gap-1 text-ctp-green text-xs">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" /></svg>
-                        Pushed
-                      </span>
-                    } @else {
-                      <span class="inline-flex items-center gap-1 text-ctp-yellow text-xs">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                        Local
-                      </span>
-                    }
-                  </div>
-                }
               </div>
             }
           </div>
@@ -505,7 +464,6 @@ export class TaskListComponent {
   sortDir = signal<SortDir>('desc');
   selectedIds = signal<Set<string>>(new Set());
   bulkTransitionOpen = signal(false);
-  expandedIds = signal<Set<string>>(new Set());
   hierarchyView = signal(false);
   collapsedParents = signal<Set<string>>(new Set());
   readonly sortColumns: { field: SortField; label: string }[] = [
@@ -648,23 +606,7 @@ export class TaskListComponent {
     this.flagToggle.emit({ task, flagged: !task.flagged });
   }
 
-  // Accordion expand/collapse
-
-  toggleExpand(event: Event, taskId: string): void {
-    event.stopPropagation();
-    const next = new Set(this.expandedIds());
-    if (next.has(taskId)) {
-      next.delete(taskId);
-    } else {
-      next.add(taskId);
-    }
-    this.expandedIds.set(next);
-  }
-
   onDetailClosed(task: SpTask): void {
-    const next = new Set(this.expandedIds());
-    next.delete(task.id);
-    this.expandedIds.set(next);
     this.taskSelect.emit(task);
   }
 

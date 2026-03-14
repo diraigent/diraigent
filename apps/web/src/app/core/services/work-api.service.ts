@@ -13,9 +13,9 @@ export interface SpWork {
   title: string;
   description: string;
   status: WorkStatus;
-  goal_type: WorkType;
+  work_type: WorkType;
   priority: number;
-  parent_goal_id: string | null;
+  parent_work_id: string | null;
   auto_status: boolean;
   success_criteria: string;
   metadata: Record<string, unknown>;
@@ -31,7 +31,7 @@ export interface SpWorkProgress {
 }
 
 export interface SpWorkStats {
-  goal_id: string;
+  work_id: string;
   backlog_count: number;
   ready_count: number;
   working_count: number;
@@ -49,7 +49,7 @@ export interface SpWorkStats {
 
 export interface SpWorkComment {
   id: string;
-  goal_id: string;
+  work_id: string;
   agent_id: string | null;
   user_id: string | null;
   content: string;
@@ -62,9 +62,9 @@ export interface SpWorkCreate {
   title: string;
   description: string;
   success_criteria: string;
-  goal_type?: WorkType;
+  work_type?: WorkType;
   priority?: number;
-  parent_goal_id?: string | null;
+  parent_work_id?: string | null;
   auto_status?: boolean;
 }
 
@@ -79,9 +79,9 @@ export interface SpWorkUpdate {
   description?: string;
   status?: WorkStatus;
   success_criteria?: string;
-  goal_type?: WorkType;
+  work_type?: WorkType;
   priority?: number;
-  parent_goal_id?: string | null;
+  parent_work_id?: string | null;
   auto_status?: boolean;
   metadata?: Record<string, unknown>;
 }
@@ -93,7 +93,7 @@ export class WorkApiService extends BaseCrudApiService<SpWork, SpWorkCreate, SpW
   list(status?: WorkStatus, workType?: WorkType, topLevel?: boolean): Observable<SpWork[]> {
     const params: Record<string, string> = {};
     if (status) params['status'] = status;
-    if (workType) params['goal_type'] = workType;
+    if (workType) params['work_type'] = workType;
     if (topLevel) params['top_level'] = 'true';
     return this.fetchList(params);
   }
@@ -137,8 +137,25 @@ export class WorkApiService extends BaseCrudApiService<SpWork, SpWorkCreate, SpW
     return this.http.post<SpWorkComment>(`${this.baseUrl}/work/${workId}/comments`, { content });
   }
 
+  planTasks(workId: string): Observable<PlanWorkResponse> {
+    if (!this.projectId) return EMPTY as Observable<PlanWorkResponse>;
+    return this.http.post<PlanWorkResponse>(`${this.baseUrl}/${this.projectId}/work/${workId}/plan`, {});
+  }
+
   reorder(workIds: string[]): Observable<SpWork[]> {
     if (!this.projectId) return EMPTY as Observable<SpWork[]>;
-    return this.http.post<SpWork[]>(`${this.baseUrl}/${this.projectId}/work/reorder`, { goal_ids: workIds });
+    return this.http.post<SpWork[]>(`${this.baseUrl}/${this.projectId}/work/reorder`, { work_ids: workIds });
   }
+}
+
+export interface PlannedTask {
+  title: string;
+  kind: string;
+  spec: string;
+  acceptance_criteria: string[];
+}
+
+export interface PlanWorkResponse {
+  tasks: PlannedTask[];
+  success_criteria?: string[];
 }

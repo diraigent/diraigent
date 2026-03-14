@@ -12,6 +12,7 @@ pub enum AppError {
     Forbidden(String),
     UnprocessableEntity(String),
     ServiceUnavailable(String),
+    BadGateway(String),
 }
 
 impl std::fmt::Display for AppError {
@@ -25,6 +26,7 @@ impl std::fmt::Display for AppError {
             AppError::Forbidden(msg) => write!(f, "{msg}"),
             AppError::UnprocessableEntity(msg) => write!(f, "{msg}"),
             AppError::ServiceUnavailable(msg) => write!(f, "{msg}"),
+            AppError::BadGateway(msg) => write!(f, "{msg}"),
         }
     }
 }
@@ -44,6 +46,7 @@ impl IntoResponse for AppError {
             AppError::ServiceUnavailable(msg) => {
                 (StatusCode::SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE", msg)
             }
+            AppError::BadGateway(msg) => (StatusCode::BAD_GATEWAY, "BAD_GATEWAY", msg),
         };
 
         let body = axum::Json(json!({

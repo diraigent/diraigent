@@ -35,53 +35,46 @@ pub struct Message {
     pub content: String,
 }
 
+/// Build the system prompt, returning it along with the project record (to
+/// avoid a duplicate `get_project_by_id` call in `run_chat_stream`).
 pub async fn build_system_prompt(
     db: &dyn DiraigentDb,
     project_id: Uuid,
     api_base: &str,
     auth_header: &str,
-) -> String {
-    let project = db.get_project_by_id(project_id).await.ok();
+) -> (String, Option<Project>) {
+    // Run all queries in parallel instead of sequentially
+    let task_filters = TaskFilters {
+        limit: Some(50),
+        offset: Some(0),
+        ..Default::default()
+    };
+    let knowledge_filters = KnowledgeFilters {
+        limit: Some(10),
+        offset: Some(0),
+        ..Default::default()
+    };
+    let decision_filters = DecisionFilters {
+        limit: Some(10),
+        offset: Some(0),
+        ..Default::default()
+    };
+    let (project, tasks_raw, knowledge, decisions) = tokio::join!(
+        db.get_project_by_id(project_id),
+        db.list_tasks(project_id, &task_filters),
+        db.list_knowledge(project_id, &knowledge_filters),
+        db.list_decisions(project_id, &decision_filters),
+    );
 
-    let tasks: Vec<Task> = db
-        .list_tasks(
-            project_id,
-            &TaskFilters {
-                limit: Some(50),
-                offset: Some(0),
-                ..Default::default()
-            },
-        )
-        .await
+    let project = project.ok();
+    let tasks: Vec<Task> = tasks_raw
         .unwrap_or_default()
         .into_iter()
         .filter(|t| !matches!(t.state.as_str(), "done" | "cancelled" | "backlog"))
         .take(20)
         .collect();
-
-    let knowledge = db
-        .list_knowledge(
-            project_id,
-            &KnowledgeFilters {
-                limit: Some(10),
-                offset: Some(0),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap_or_default();
-
-    let decisions = db
-        .list_decisions(
-            project_id,
-            &DecisionFilters {
-                limit: Some(10),
-                offset: Some(0),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap_or_default();
+    let knowledge = knowledge.unwrap_or_default();
+    let decisions = decisions.unwrap_or_default();
 
     let mut prompt = String::from(
         "You are an AI assistant for the Diraigent project management platform. \
@@ -168,7 +161,7 @@ pub async fn build_system_prompt(
         prompt.push('\n');
     }
 
-    prompt
+    (prompt, project)
 }
 
 pub struct ChatStreamParams {
@@ -199,16 +192,17 @@ pub async fn run_chat_stream(p: ChatStreamParams) {
     let model = model_override
         .filter(|m| !m.is_empty())
         .unwrap_or_else(|| std::env::var("CHAT_MODEL").unwrap_or_else(|_| "sonnet".into()));
-    let system_prompt = build_system_prompt(db.as_ref(), project_id, &api_base, &auth_header).await;
+    let (system_prompt, project) =
+        build_system_prompt(db.as_ref(), project_id, &api_base, &auth_header).await;
     let session_id = Uuid::now_v7().to_string();
 
-    // Find the project's tenant to look up connected agents
-    let tenant_id = match db.get_project_by_id(project_id).await {
-        Ok(p) => p.tenant_id,
-        Err(e) => {
+    // Reuse the project record from build_system_prompt (avoids duplicate query)
+    let tenant_id = match project {
+        Some(p) => p.tenant_id,
+        None => {
             let _ = tx
                 .send(ChatSseEvent::Error {
-                    message: format!("Failed to find project: {e}"),
+                    message: "Failed to find project".into(),
                 })
                 .await;
             return;

@@ -89,6 +89,7 @@ jobs:
           FORGEJO="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/web"
           docker buildx build \
             --platform linux/arm64 \
+            --build-arg DIRAIGENT_VERSION="${VERSION}" \
             --label "org.opencontainers.image.version=${VERSION}" \
             -f apps/web/Containerfile \
             -t "diraigent/web:${VERSION}-arm64" \

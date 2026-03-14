@@ -31,7 +31,13 @@ COPY public/ public/
 COPY src/ src/
 
 # Build production bundle
-RUN npm run build:prod
+ARG DIRAIGENT_VERSION
+RUN npm run build:prod && \
+    if [ -n "$DIRAIGENT_VERSION" ]; then \
+      echo "$DIRAIGENT_VERSION" > /tmp/diraigent_version; \
+    else \
+      echo "dev-$(date -u +%Y%m%d-%H%M)" > /tmp/diraigent_version; \
+    fi
 
 # =============================================================================
 # Stage 3: Runtime — uses target platform (amd64 or arm64 nginx)
@@ -58,6 +64,8 @@ COPY --from=builder --chown=appuser:appgroup /app/dist/diraigent-web/browser/ /u
 RUN if [ -f /usr/share/nginx/html/index.csr.html ]; then \
         mv /usr/share/nginx/html/index.csr.html /usr/share/nginx/html/index.html; \
     fi && chown appuser:appgroup /usr/share/nginx/html/index.html 2>/dev/null || true
+
+COPY --from=builder /tmp/diraigent_version /etc/diraigent_version
 
 # Switch to non-root user
 USER appuser

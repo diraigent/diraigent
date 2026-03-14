@@ -2,6 +2,7 @@ FROM --platform=linux/amd64 rust:1.93-bookworm AS builder
 WORKDIR /build
 
 ARG TARGETARCH
+ARG DIRAIGENT_VERSION
 
 # Install cross-compilation tools for arm64 (only when needed)
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
@@ -63,11 +64,19 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
       cp target/release/diraigent-api /usr/local/bin/diraigent-api; \
     fi
 
+# Bake version: use build arg if provided, otherwise build timestamp
+RUN if [ -n "$DIRAIGENT_VERSION" ]; then \
+      echo "$DIRAIGENT_VERSION" > /tmp/diraigent_version; \
+    else \
+      echo "dev-$(date -u +%Y%m%d-%H%M)" > /tmp/diraigent_version; \
+    fi
+
 FROM debian:bookworm-slim AS runtime
 RUN groupadd --system --gid 1001 appgroup && \
     useradd --system --uid 1001 --gid appgroup appuser
 RUN apt-get update && apt-get install -y --no-install-recommends libssl3 ca-certificates wget && rm -rf /var/lib/apt/lists/*
 COPY --from=builder --chown=appuser:appgroup /usr/local/bin/diraigent-api /usr/local/bin/
+COPY --from=builder /tmp/diraigent_version /etc/diraigent_version
 USER appuser
 
 ENV HOST=0.0.0.0 PORT=3000 SERVICE_NAME=diraigent-api
@@ -80,4 +89,4 @@ LABEL org.opencontainers.image.title="diraigent-api" \
 
 EXPOSE 3000
 HEALTHCHECK CMD wget -q --spider http://localhost:3000/health/live || exit 1
-ENTRYPOINT ["diraigent-api"]
+ENTRYPOINT ["sh", "-c", "export DIRAIGENT_VERSION=${DIRAIGENT_VERSION:-$(cat /etc/diraigent_version)}; exec diraigent-api"]

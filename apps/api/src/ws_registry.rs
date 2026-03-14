@@ -11,11 +11,20 @@ pub struct GitResponsePayload {
     pub data: serde_json::Value,
 }
 
+/// Payload returned for completed plan requests.
+pub struct PlanResponsePayload {
+    pub success: bool,
+    pub error: Option<String>,
+    pub tasks: serde_json::Value,
+}
+
 pub struct WsRegistry {
     /// Connected orchestras: agent_id -> WS sender
     connections: DashMap<Uuid, mpsc::UnboundedSender<WsMessage>>,
     /// Pending git requests: request_id -> oneshot sender
     pending_git: DashMap<String, oneshot::Sender<GitResponsePayload>>,
+    /// Pending plan requests: request_id -> oneshot sender
+    pending_plan: DashMap<String, oneshot::Sender<PlanResponsePayload>>,
     /// Active chat sessions: session_id -> mpsc sender for SSE events
     active_chats: DashMap<String, mpsc::Sender<ChatSseEvent>>,
 }
@@ -31,6 +40,7 @@ impl WsRegistry {
         Self {
             connections: DashMap::new(),
             pending_git: DashMap::new(),
+            pending_plan: DashMap::new(),
             active_chats: DashMap::new(),
         }
     }
@@ -78,6 +88,23 @@ impl WsRegistry {
     /// Complete a pending git request with a response.
     pub fn complete_git_request(&self, request_id: &str, response: GitResponsePayload) {
         if let Some((_, tx)) = self.pending_git.remove(request_id) {
+            let _ = tx.send(response);
+        }
+    }
+
+    /// Register a pending plan request. Returns a receiver for the response.
+    pub fn register_plan_request(
+        &self,
+        request_id: String,
+    ) -> oneshot::Receiver<PlanResponsePayload> {
+        let (tx, rx) = oneshot::channel();
+        self.pending_plan.insert(request_id, tx);
+        rx
+    }
+
+    /// Complete a pending plan request with a response.
+    pub fn complete_plan_request(&self, request_id: &str, response: PlanResponsePayload) {
+        if let Some((_, tx)) = self.pending_plan.remove(request_id) {
             let _ = tx.send(response);
         }
     }

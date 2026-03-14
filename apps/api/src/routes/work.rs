@@ -35,6 +35,7 @@ pub fn routes() -> Router<AppState> {
         .route("/work/{work_id}/stats", get(get_stats))
         .route("/work/{work_id}/children", get(list_children))
         .route("/{project_id}/work/{work_id}/activate", post(activate_work))
+        .route("/{project_id}/work/{work_id}/plan", post(plan_work))
         .route(
             "/work/{work_id}/comments",
             post(create_work_comment).get(list_work_comments),
@@ -184,6 +185,79 @@ async fn activate_work(
     );
 
     Ok(Json(work))
+}
+
+async fn plan_work(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
+    Path((project_id, work_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<PlanWorkResponse>, AppError> {
+    require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
+
+    // Verify the work item belongs to this project
+    let work = state.db.get_work_by_id(work_id).await?;
+    if work.project_id != project_id {
+        return Err(AppError::NotFound("Work item not found".into()));
+    }
+
+    // Get project for context
+    let project = state.db.get_project_by_id(project_id).await?;
+
+    // Find a connected orchestra agent
+    let agent_ids = state
+        .db
+        .list_tenant_agent_ids(project.tenant_id)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to find agents: {e}")))?;
+
+    let connected_agent = state
+        .ws_registry
+        .find_connected_agent(&agent_ids)
+        .ok_or_else(|| {
+            AppError::ServiceUnavailable("No orchestra agent connected for planning".into())
+        })?;
+
+    // Register pending request and send via WS
+    let request_id = Uuid::now_v7().to_string();
+    let rx = state.ws_registry.register_plan_request(request_id.clone());
+
+    let ws_msg = crate::ws_protocol::WsMessage::PlanRequest {
+        request_id: request_id.clone(),
+        project_id,
+        title: work.title.clone(),
+        description: work.description.clone().unwrap_or_default(),
+        success_criteria: work.success_criteria.clone(),
+        project_name: project.name.clone(),
+    };
+
+    if !state.ws_registry.send_to_agent(connected_agent, ws_msg) {
+        return Err(AppError::BadGateway(
+            "Failed to send plan request to orchestra".into(),
+        ));
+    }
+
+    // Wait for response with timeout (120s)
+    let response = tokio::time::timeout(std::time::Duration::from_secs(120), rx)
+        .await
+        .map_err(|_| AppError::BadGateway("Plan request timed out".into()))?
+        .map_err(|_| AppError::BadGateway("Orchestra disconnected during planning".into()))?;
+
+    if !response.success {
+        return Err(AppError::BadGateway(
+            response.error.unwrap_or_else(|| "Planning failed".into()),
+        ));
+    }
+
+    let tasks: Vec<PlannedTask> = serde_json::from_value(response.tasks)
+        .map_err(|e| AppError::Internal(format!("Failed to parse plan response: {e}")))?;
+
+    // TODO: success_criteria not yet returned by orchestra plan.response
+    // Once added, parse and save them here
+    Ok(Json(PlanWorkResponse {
+        tasks,
+        success_criteria: None,
+    }))
 }
 
 async fn link_task(
