@@ -1842,4 +1842,49 @@ impl DiraigentDb for CryptoDb {
     async fn get_task_log_by_id(&self, id: Uuid) -> Result<TaskLog, AppError> {
         delegate!(self, get_task_log_by_id, id)
     }
+
+    // Event Observation Rules (no encrypted fields — pure delegation)
+    async fn create_event_observation_rule(
+        &self,
+        project_id: Uuid,
+        req: &CreateEventObservationRule,
+    ) -> Result<EventObservationRule, AppError> {
+        delegate!(self, create_event_observation_rule, project_id, req)
+    }
+    async fn get_event_observation_rule(&self, id: Uuid) -> Result<EventObservationRule, AppError> {
+        delegate!(self, get_event_observation_rule, id)
+    }
+    async fn list_event_observation_rules(
+        &self,
+        project_id: Uuid,
+        filters: &EventObservationRuleFilters,
+    ) -> Result<Vec<EventObservationRule>, AppError> {
+        delegate!(self, list_event_observation_rules, project_id, filters)
+    }
+    async fn update_event_observation_rule(
+        &self,
+        id: Uuid,
+        req: &UpdateEventObservationRule,
+    ) -> Result<EventObservationRule, AppError> {
+        delegate!(self, update_event_observation_rule, id, req)
+    }
+    async fn delete_event_observation_rule(&self, id: Uuid) -> Result<(), AppError> {
+        delegate!(self, delete_event_observation_rule, id)
+    }
+    async fn find_matching_event_rules(
+        &self,
+        project_id: Uuid,
+        event_kind: &str,
+        event_source: &str,
+        event_severity: Option<&str>,
+    ) -> Result<Vec<EventObservationRule>, AppError> {
+        delegate!(
+            self,
+            find_matching_event_rules,
+            project_id,
+            event_kind,
+            event_source,
+            event_severity
+        )
+    }
 }

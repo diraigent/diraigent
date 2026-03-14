@@ -1,6 +1,6 @@
-import { Component, inject, viewChild, ElementRef, effect, untracked } from '@angular/core';
+import { Component, inject, viewChild, ElementRef, effect, untracked, HostListener } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ChatService } from '../../core/services/chat.service';
+import { ChatService, CHAT_MODELS } from '../../core/services/chat.service';
 
 @Component({
   selector: 'app-chat-drawer',
@@ -15,9 +15,29 @@ import { ChatService } from '../../core/services/chat.service';
         <div class="flex items-center justify-between px-4 py-3 border-b border-border bg-bg-subtle">
           <div class="flex items-center gap-2">
             <span class="font-semibold text-text-primary">AI Assistant</span>
-            @if (chat.chatModel()) {
-              <span class="text-xs text-text-secondary font-normal">{{ chat.chatModel() }}</span>
-            }
+            <div class="relative">
+              <button (click)="chat.toggleModelSelector(); $event.stopPropagation()"
+                      class="text-xs text-text-secondary font-normal hover:text-accent transition-colors
+                             flex items-center gap-0.5 cursor-pointer">
+                {{ chat.chatModel() || 'model' }}
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              @if (chat.modelSelectorOpen()) {
+                <div class="absolute top-full left-0 mt-1 bg-surface border border-border rounded-lg shadow-lg z-50 py-1 min-w-[120px]">
+                  @for (model of models; track model) {
+                    <button (click)="chat.setModel(model); $event.stopPropagation()"
+                            class="w-full text-left px-3 py-1.5 text-xs transition-colors"
+                            [class]="model === chat.chatModel()
+                              ? 'text-accent bg-accent/10 font-medium'
+                              : 'text-text-secondary hover:text-text-primary hover:bg-bg-subtle'">
+                      {{ model }}
+                    </button>
+                  }
+                </div>
+              }
+            </div>
           </div>
           <div class="flex items-center gap-2">
             @if (!chat.collapsed()) {
@@ -105,7 +125,7 @@ import { ChatService } from '../../core/services/chat.service';
             </div>
 
             <!-- Input -->
-            <div class="border-t border-border p-3">
+            <div class="border-t border-border p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
               <div class="flex gap-2">
                 <textarea
                   #inputEl
@@ -140,8 +160,16 @@ import { ChatService } from '../../core/services/chat.service';
 export class ChatDrawerComponent {
   chat = inject(ChatService);
   inputText = '';
+  readonly models = CHAT_MODELS;
 
   private messageList = viewChild<ElementRef<HTMLDivElement>>('messageList');
+
+  @HostListener('document:click')
+  onDocumentClick(): void {
+    if (this.chat.modelSelectorOpen()) {
+      this.chat.modelSelectorOpen.set(false);
+    }
+  }
   /** Set to true when the user manually scrolls up to read history. */
   private userScrolledUp = false;
 

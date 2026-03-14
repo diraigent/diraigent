@@ -1398,4 +1398,49 @@ impl DiraigentDb for PostgresDb {
     async fn get_task_log_by_id(&self, id: Uuid) -> Result<TaskLog, AppError> {
         repository::get_task_log_by_id(&self.0, id).await
     }
+
+    // Event Observation Rules
+    async fn create_event_observation_rule(
+        &self,
+        project_id: Uuid,
+        req: &CreateEventObservationRule,
+    ) -> Result<EventObservationRule, AppError> {
+        repository::create_event_observation_rule(&self.0, project_id, req).await
+    }
+    async fn get_event_observation_rule(&self, id: Uuid) -> Result<EventObservationRule, AppError> {
+        repository::get_event_observation_rule(&self.0, id).await
+    }
+    async fn list_event_observation_rules(
+        &self,
+        project_id: Uuid,
+        filters: &EventObservationRuleFilters,
+    ) -> Result<Vec<EventObservationRule>, AppError> {
+        repository::list_event_observation_rules(&self.0, project_id, filters).await
+    }
+    async fn update_event_observation_rule(
+        &self,
+        id: Uuid,
+        req: &UpdateEventObservationRule,
+    ) -> Result<EventObservationRule, AppError> {
+        repository::update_event_observation_rule(&self.0, id, req).await
+    }
+    async fn delete_event_observation_rule(&self, id: Uuid) -> Result<(), AppError> {
+        repository::delete_event_observation_rule(&self.0, id).await
+    }
+    async fn find_matching_event_rules(
+        &self,
+        project_id: Uuid,
+        event_kind: &str,
+        event_source: &str,
+        event_severity: Option<&str>,
+    ) -> Result<Vec<EventObservationRule>, AppError> {
+        repository::find_matching_rules(
+            &self.0,
+            project_id,
+            event_kind,
+            event_source,
+            event_severity,
+        )
+        .await
+    }
 }
