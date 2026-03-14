@@ -5,8 +5,11 @@ use crate::ws_protocol::WsMessage;
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::Command;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
@@ -214,6 +217,27 @@ async fn connect_and_run(
                             .await;
                         });
                     }
+                    WsMessage::PlanRequest {
+                        request_id,
+                        project_id: _project_id,
+                        title,
+                        description,
+                        success_criteria,
+                        project_name,
+                    } => {
+                        let sender = tx.clone();
+                        tokio::spawn(async move {
+                            handle_plan_request(
+                                sender,
+                                &request_id,
+                                &title,
+                                &description,
+                                &success_criteria,
+                                &project_name,
+                            )
+                            .await;
+                        });
+                    }
                     WsMessage::GitRequest {
                         request_id,
                         project_id,
@@ -347,4 +371,256 @@ fn extract_host(url: &str) -> String {
         .next()
         .unwrap_or("")
         .to_string()
+}
+
+/// Handle a plan.request by spawning `claude -p` with the planning prompt.
+async fn handle_plan_request(
+    sender: WsSender,
+    request_id: &str,
+    title: &str,
+    description: &str,
+    success_criteria: &serde_json::Value,
+    project_name: &str,
+) {
+    let request_id = request_id.to_string();
+
+    let send_error = |sender: WsSender, request_id: String, msg: String| async move {
+        let ws_msg = WsMessage::PlanResponse {
+            request_id,
+            success: false,
+            error: Some(msg),
+            tasks: serde_json::Value::Array(vec![]),
+        };
+        if let Err(e) = sender.send(ws_msg) {
+            error!("failed to send plan error via WS: {e}");
+        }
+    };
+
+    // Build planning prompt (same logic as the old ai.rs)
+    let criteria_text = match success_criteria {
+        serde_json::Value::Array(items) => items
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| format!("- {s}")))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        serde_json::Value::String(s) => s.clone(),
+        _ => success_criteria.to_string(),
+    };
+
+    let desc = if description.is_empty() {
+        "No description provided"
+    } else {
+        description
+    };
+    let criteria = if criteria_text.is_empty() {
+        "None specified".to_string()
+    } else {
+        criteria_text
+    };
+
+    let prompt = format!(
+        r#"You are a technical project planner for the project "{project_name}".
+
+Decompose the following work item into 3-8 concrete, implementable tasks. Each task should be small enough for a single developer to complete in one session.
+
+## Work Item
+**Title**: {title}
+**Description**: {desc}
+**Success Criteria**:
+{criteria}
+
+## Requirements
+- Order tasks by dependency (tasks that must be done first come first)
+- Each task must have a clear, specific scope
+- kind must be one of: feature, bug, refactor, test, docs
+- spec should be a detailed technical description of what to implement
+- acceptance_criteria should be verifiable conditions (not vague)
+- Do NOT create meta-tasks like "review" or "deploy" — only implementation work
+
+Respond with ONLY a valid JSON object in this exact format, no markdown fences or extra text:
+{{"tasks": [{{"title": "...", "kind": "...", "spec": "...", "acceptance_criteria": ["..."]}}, ...]}}"#
+    );
+
+    // Spawn claude -p
+    let mut child = match Command::new("claude")
+        .args([
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--no-session-persistence",
+            "--model",
+            "sonnet",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(e) => {
+            send_error(
+                sender,
+                request_id,
+                format!("Failed to spawn claude CLI: {e}"),
+            )
+            .await;
+            return;
+        }
+    };
+
+    // Write prompt to stdin
+    if let Some(mut stdin) = child.stdin.take() {
+        if let Err(e) = stdin.write_all(prompt.as_bytes()).await {
+            send_error(
+                sender,
+                request_id,
+                format!("Failed to write to claude stdin: {e}"),
+            )
+            .await;
+            return;
+        }
+        drop(stdin);
+    }
+
+    // Read streaming JSON from stdout, collect the result
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            send_error(sender, request_id, "Failed to capture claude stdout".into()).await;
+            return;
+        }
+    };
+
+    let reader = BufReader::new(stdout);
+    let mut lines = reader.lines();
+    let mut accumulated_text = String::new();
+    let mut is_error = false;
+
+    while let Ok(Some(line)) = lines.next_line().await {
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let event: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let event_type = event["type"].as_str().unwrap_or("");
+
+        match event_type {
+            "stream_event" => {
+                let inner = &event["event"];
+                if inner["type"].as_str() == Some("content_block_delta")
+                    && let Some(text) = inner["delta"]["text"].as_str()
+                {
+                    accumulated_text.push_str(text);
+                }
+            }
+            "assistant" => {
+                if accumulated_text.is_empty()
+                    && let Some(content) = event["message"]["content"].as_array()
+                {
+                    let full_text: String = content
+                        .iter()
+                        .filter_map(|block| {
+                            if block["type"].as_str() == Some("text") {
+                                block["text"].as_str().map(String::from)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if !full_text.is_empty() {
+                        accumulated_text = full_text;
+                    }
+                }
+            }
+            "result" => {
+                is_error = event["is_error"].as_bool().unwrap_or(false);
+                if is_error {
+                    accumulated_text = event["result"]
+                        .as_str()
+                        .unwrap_or("Unknown error")
+                        .to_string();
+                } else if accumulated_text.is_empty() {
+                    accumulated_text = event["result"].as_str().unwrap_or("").to_string();
+                }
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    let _ = child.wait().await;
+
+    if is_error {
+        send_error(sender, request_id, accumulated_text).await;
+        return;
+    }
+
+    // Parse the JSON response from Claude's text output.
+    // Strip markdown fences if present.
+    let text = accumulated_text.trim();
+    let json_text = if text.starts_with("```") {
+        // Strip ```json ... ``` wrapper
+        let without_prefix = text
+            .strip_prefix("```json")
+            .or_else(|| text.strip_prefix("```"))
+            .unwrap_or(text);
+        without_prefix
+            .strip_suffix("```")
+            .unwrap_or(without_prefix)
+            .trim()
+    } else {
+        text
+    };
+
+    let parsed: serde_json::Value = match serde_json::from_str(json_text) {
+        Ok(v) => v,
+        Err(e) => {
+            warn!(
+                error = %e,
+                text = %json_text,
+                "failed to parse plan response as JSON"
+            );
+            send_error(
+                sender,
+                request_id,
+                format!("Failed to parse AI response as JSON: {e}"),
+            )
+            .await;
+            return;
+        }
+    };
+
+    // Extract the tasks array
+    let tasks = if let Some(tasks) = parsed.get("tasks") {
+        tasks.clone()
+    } else if parsed.is_array() {
+        // Claude might return just the array
+        parsed
+    } else {
+        send_error(
+            sender,
+            request_id,
+            "AI response did not contain a 'tasks' array".into(),
+        )
+        .await;
+        return;
+    };
+
+    let ws_msg = WsMessage::PlanResponse {
+        request_id,
+        success: true,
+        error: None,
+        tasks,
+    };
+
+    if let Err(e) = sender.send(ws_msg) {
+        error!("failed to send plan response via WS: {e}");
+    }
+
+    info!("plan request completed");
 }

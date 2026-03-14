@@ -3,6 +3,7 @@ FROM --platform=linux/amd64 rust:1.93-bookworm AS builder
 WORKDIR /build
 
 ARG TARGETARCH
+ARG DIRAIGENT_VERSION
 
 # Install cross-compilation tools for arm64 (only when needed)
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
@@ -67,6 +68,13 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
       cp target/release/agent-cli /usr/local/bin/agent-cli; \
     fi
 
+# Bake version: use build arg if provided, otherwise build timestamp
+RUN if [ -n "$DIRAIGENT_VERSION" ]; then \
+      echo "$DIRAIGENT_VERSION" > /tmp/diraigent_version; \
+    else \
+      echo "dev-$(date -u +%Y%m%d-%H%M)" > /tmp/diraigent_version; \
+    fi
+
 # ── Stage 2: runtime ──────────────────────────────────────────
 FROM node:22-slim AS runtime
 
@@ -86,6 +94,7 @@ WORKDIR /app
 # Orchestra and CLI binaries
 COPY --from=builder --chown=appuser:appgroup /usr/local/bin/orchestra /usr/local/bin/orchestra
 COPY --from=builder --chown=appuser:appgroup /usr/local/bin/agent-cli /usr/local/bin/agent-cli
+COPY --from=builder /tmp/diraigent_version /etc/diraigent_version
 
 # Agent docs
 COPY --from=builder --chown=appuser:appgroup /build/apps/orchestra/CLAUDE.md ./
@@ -105,4 +114,4 @@ LABEL org.opencontainers.image.title="diraigent-orchestra" \
       org.opencontainers.image.url="https://www.diraigent.com" \
       org.opencontainers.image.source="https://www.diraigent.com"
 
-ENTRYPOINT ["orchestra"]
+ENTRYPOINT ["sh", "-c", "export DIRAIGENT_VERSION=${DIRAIGENT_VERSION:-$(cat /etc/diraigent_version)}; exec orchestra"]

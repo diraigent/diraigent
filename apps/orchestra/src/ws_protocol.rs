@@ -53,6 +53,15 @@ pub enum WsMessage {
         path: Option<String>,
         git_ref: Option<String>,
     },
+    #[serde(rename = "plan.request")]
+    PlanRequest {
+        request_id: String,
+        project_id: Uuid,
+        title: String,
+        description: String,
+        success_criteria: serde_json::Value,
+        project_name: String,
+    },
 
     // Orchestra -> API
     #[serde(rename = "chat.event")]
@@ -66,6 +75,13 @@ pub enum WsMessage {
         success: bool,
         error: Option<String>,
         data: serde_json::Value,
+    },
+    #[serde(rename = "plan.response")]
+    PlanResponse {
+        request_id: String,
+        success: bool,
+        error: Option<String>,
+        tasks: serde_json::Value,
     },
     #[serde(rename = "heartbeat")]
     Heartbeat,

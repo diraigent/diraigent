@@ -283,7 +283,20 @@
     "todoPlaceholder": "Add a todo item...",
     "addTodo": "Add",
     "todosEmpty": "No todos yet. Add one above.",
-    "clearDone": "Clear done"
+    "clearDone": "Clear done",
+    "planTasksBtn": "Plan Tasks",
+    "planLoading": "Generating task plan...",
+    "planDialogTitle": "Planned Tasks",
+    "planDialogDesc": "Review and edit the suggested tasks before creating them.",
+    "planCreateBtn": "Create {{count}} Tasks",
+    "planCancel": "Cancel",
+    "planEmpty": "No tasks were suggested. Try adding more detail to the description or success criteria.",
+    "planError": "Failed to generate task plan. Please try again.",
+    "planCreating": "Creating tasks...",
+    "planRemoveTask": "Remove from plan",
+    "planTaskSpec": "Specification",
+    "planTaskCriteria": "Acceptance Criteria",
+    "planGeneratedCriteria": "Generated Success Criteria"
   },
   "work": {
     "activeGoals": "Active Goals",

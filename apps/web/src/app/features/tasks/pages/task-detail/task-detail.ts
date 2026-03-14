@@ -31,7 +31,7 @@ const VERIFICATION_KIND_COLORS: Record<VerificationKind, string> = {
   standalone: true,
   imports: [TranslocoModule, FormsModule, DatePipe, SlicePipe, RouterLink, TaskUpdatesComponent, TaskCommentsComponent, ChangedFilesComponent],
   template: `
-    <div [class]="embedded() ? 'px-5 pb-5 pt-3 max-h-[70vh] overflow-y-auto' : 'bg-surface rounded-lg border border-border p-5 max-h-[calc(100vh-180px)] overflow-y-auto'" *transloco="let t">
+    <div [class]="embedded() ? 'px-5 pb-5 pt-3' : 'bg-surface rounded-lg border border-border p-5'" *transloco="let t">
       <!-- Header -->
       <div class="flex items-center justify-between mb-3">
         @if (editingTitle()) {
@@ -357,7 +357,7 @@ const VERIFICATION_KIND_COLORS: Record<VerificationKind, string> = {
           @if (spec()) {
             <pre (click)="startSpecEdit()" (keydown.enter)="startSpecEdit()"
               tabindex="0" role="button"
-              class="text-sm text-text-primary whitespace-pre-wrap break-words bg-bg rounded-lg p-3 border border-border max-h-60 overflow-y-auto overflow-x-hidden cursor-pointer hover:border-accent/50 transition-colors">{{ spec() }}</pre>
+              class="text-sm text-text-primary whitespace-pre-wrap break-words bg-bg rounded-lg p-3 border border-border overflow-x-hidden cursor-pointer hover:border-accent/50 transition-colors">{{ spec() }}</pre>
           } @else {
             <p (click)="startSpecEdit()" (keydown.enter)="startSpecEdit()"
               tabindex="0" role="button"
