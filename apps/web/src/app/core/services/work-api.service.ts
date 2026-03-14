@@ -138,7 +138,8 @@ export class WorkApiService extends BaseCrudApiService<SpWork, SpWorkCreate, SpW
   }
 
   planTasks(workId: string): Observable<PlannedTask[]> {
-    return this.http.post<PlannedTask[]>(`${this.baseUrl}/work/${workId}/plan`, {});
+    if (!this.projectId) return EMPTY as Observable<PlannedTask[]>;
+    return this.http.post<PlannedTask[]>(`${this.baseUrl}/${this.projectId}/work/${workId}/plan`, {});
   }
 
   reorder(workIds: string[]): Observable<SpWork[]> {
