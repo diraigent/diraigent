@@ -10,7 +10,7 @@ set -euo pipefail
 #   DIRAIGENT_TARGET_BRANCH  — target branch (default: main)
 #   DIRAIGENT_VERSION        — tag name (default: vYYYYMMDD-HHMM)
 
-RELEASE=false
+RELEASE="${DIRAIGENT_RELEASE:-false}"
 for arg in "$@"; do
   case "$arg" in
     --release) RELEASE=true ;;
