@@ -46,15 +46,36 @@ import { ChatService, CHAT_MODELS } from '../../core/services/chat.service';
                 Clear
               </button>
             }
-            <button (click)="chat.toggleCollapsed()"
-                    class="p-1 text-text-secondary hover:text-text-primary transition-colors"
-                    [attr.aria-label]="chat.collapsed() ? 'Expand chat' : 'Collapse chat'">
-              <svg class="w-4 h-4 transition-transform duration-300"
-                   [class.rotate-180]="chat.collapsed()"
-                   fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
+            @if (!chat.collapsed()) {
+              <button (click)="chat.toggleFullscreen()"
+                      class="p-1 text-text-secondary hover:text-text-primary transition-colors"
+                      [attr.aria-label]="chat.fullscreen() ? 'Exit full screen' : 'Full screen'">
+                @if (chat.fullscreen()) {
+                  <!-- Minimize icon (arrows inward) -->
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9 9V4.5M9 9H4.5M9 9L3.5 3.5M9 15v4.5M9 15H4.5M9 15l-5.5 5.5M15 9h4.5M15 9V4.5M15 9l5.5-5.5M15 15h4.5M15 15v4.5m0-4.5l5.5 5.5" />
+                  </svg>
+                } @else {
+                  <!-- Maximize icon (arrows outward) -->
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9M20.25 20.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+                  </svg>
+                }
+              </button>
+            }
+            @if (!chat.fullscreen()) {
+              <button (click)="chat.toggleCollapsed()"
+                      class="p-1 text-text-secondary hover:text-text-primary transition-colors"
+                      [attr.aria-label]="chat.collapsed() ? 'Expand chat' : 'Collapse chat'">
+                <svg class="w-4 h-4 transition-transform duration-300"
+                     [class.rotate-180]="chat.collapsed()"
+                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            }
           </div>
         </div>
 
