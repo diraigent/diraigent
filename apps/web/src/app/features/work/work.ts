@@ -194,8 +194,8 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
               </svg>
               <span class="text-sm font-medium text-text-primary">{{ goal.title }}</span>
-              <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ typeColor(goal.goal_type) }}">
-                {{ t('goals.type.' + goal.goal_type) }}
+              <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ typeColor(goal.work_type) }}">
+                {{ t('goals.type.' + goal.work_type) }}
               </span>
               <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
                 {{ t('goals.status.' + goal.status) }}
@@ -1506,7 +1506,7 @@ export class WorkPage {
       this.formTitle = goal.title;
       this.formDescription = goal.description;
       this.formCriteria = goal.success_criteria;
-      this.formWorkType = goal.goal_type;
+      this.formWorkType = goal.work_type;
       this.formPriority = goal.priority;
       this.formAutoStatus = goal.auto_status;
       this.loadTodos(goal);
@@ -1593,7 +1593,7 @@ export class WorkPage {
       sel.title === this.formTitle &&
       sel.description === this.formDescription &&
       sel.success_criteria === this.formCriteria &&
-      sel.goal_type === this.formWorkType &&
+      sel.work_type === this.formWorkType &&
       sel.priority === this.formPriority &&
       sel.auto_status === this.formAutoStatus
     ) {
@@ -1604,7 +1604,7 @@ export class WorkPage {
         title: this.formTitle,
         description: this.formDescription,
         success_criteria: this.formCriteria,
-        goal_type: this.formWorkType,
+        work_type: this.formWorkType,
         priority: this.formPriority,
         auto_status: this.formAutoStatus,
       })
@@ -1625,7 +1625,7 @@ export class WorkPage {
         title: this.formTitle,
         description: this.formDescription,
         success_criteria: this.formCriteria,
-        goal_type: this.formWorkType,
+        work_type: this.formWorkType,
         priority: this.formPriority,
         auto_status: this.formAutoStatus,
       }).subscribe({
@@ -1639,7 +1639,7 @@ export class WorkPage {
         title: this.formTitle,
         description: this.formDescription,
         success_criteria: this.formCriteria,
-        goal_type: this.formWorkType,
+        work_type: this.formWorkType,
         priority: this.formPriority,
         auto_status: this.formAutoStatus,
       };
