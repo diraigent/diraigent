@@ -1497,6 +1497,8 @@ pub struct ProjectMetrics {
     pub cost_summary: CostSummary,
     /// Per-task cost breakdown for tasks with non-zero spend.
     pub task_costs: Vec<TaskCostRow>,
+    /// Token usage per day for time-series graphing.
+    pub tokens_per_day: Vec<TokenDayCount>,
 }
 
 /// Aggregated LLM token usage and cost for a project.
@@ -1542,6 +1544,15 @@ pub struct TaskSummary {
 pub struct DayCount {
     pub day: chrono::NaiveDate,
     pub count: i64,
+}
+
+/// Token usage per day for time-series graphing.
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct TokenDayCount {
+    pub day: chrono::NaiveDate,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cost_usd: f64,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]

@@ -19,6 +19,7 @@ pub async fn get_project_metrics(
     let playbook_completion = get_playbook_completion(pool, project_id, since).await?;
     let cost_summary = get_cost_summary(pool, project_id, since).await?;
     let task_costs = get_task_costs(pool, project_id, since).await?;
+    let tokens_per_day = get_tokens_per_day(pool, project_id, since).await?;
 
     Ok(ProjectMetrics {
         project_id,
@@ -30,6 +31,7 @@ pub async fn get_project_metrics(
         playbook_completion,
         cost_summary,
         task_costs,
+        tokens_per_day,
     })
 }
 
@@ -249,6 +251,32 @@ async fn get_task_costs(
            AND created_at >= $2
            AND cost_usd > 0
          ORDER BY cost_usd DESC",
+    )
+    .bind(project_id)
+    .bind(since)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
+}
+
+async fn get_tokens_per_day(
+    pool: &PgPool,
+    project_id: Uuid,
+    since: chrono::DateTime<Utc>,
+) -> Result<Vec<TokenDayCount>, AppError> {
+    let rows = sqlx::query_as::<_, TokenDayCount>(
+        "SELECT
+            DATE(COALESCE(completed_at, updated_at)) AS day,
+            SUM(input_tokens)::bigint                AS input_tokens,
+            SUM(output_tokens)::bigint               AS output_tokens,
+            SUM(cost_usd)::float8                    AS cost_usd
+         FROM diraigent.task
+         WHERE project_id = $1
+           AND (completed_at >= $2 OR updated_at >= $2)
+           AND (input_tokens > 0 OR output_tokens > 0)
+         GROUP BY day
+         ORDER BY day",
     )
     .bind(project_id)
     .bind(since)
