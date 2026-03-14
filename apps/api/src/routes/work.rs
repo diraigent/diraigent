@@ -201,56 +201,62 @@ async fn plan_work(
         return Err(AppError::NotFound("Work item not found".into()));
     }
 
-    // Ensure Anthropic API key is configured
-    let api_key = state.anthropic_api_key.as_deref().ok_or_else(|| {
-        AppError::ServiceUnavailable(
-            "AI planning is not configured (ANTHROPIC_API_KEY not set)".into(),
-        )
-    })?;
-
-    // Get project name for context
+    // Get project for context
     let project = state.db.get_project_by_id(project_id).await?;
 
-    let result = crate::ai::generate_task_plan(
-        api_key,
-        &work.title,
-        work.description.as_deref().unwrap_or(""),
-        &work.success_criteria,
-        &project.name,
-    )
-    .await?;
+    // Find a connected orchestra agent
+    let agent_ids = state
+        .db
+        .list_tenant_agent_ids(project.tenant_id)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to find agents: {e}")))?;
 
-    // If AI generated success criteria for a work item that had none, save them
-    if let Some(ref criteria) = result.success_criteria
-        && !criteria.is_empty()
-    {
-        let criteria_json = serde_json::Value::Array(
-            criteria
-                .iter()
-                .map(|s| serde_json::Value::String(s.clone()))
-                .collect(),
-        );
-        let update = UpdateWork {
-            title: None,
-            description: None,
-            status: None,
-            work_type: None,
-            priority: None,
-            parent_work_id: None,
-            auto_status: None,
-            intent_type: None,
-            success_criteria: Some(criteria_json),
-            metadata: None,
-            sort_order: None,
-        };
-        if let Err(e) = state.db.update_work(work_id, &update).await {
-            tracing::warn!(work_id = %work_id, error = %e, "Failed to save AI-generated success criteria");
-        }
+    let connected_agent = state
+        .ws_registry
+        .find_connected_agent(&agent_ids)
+        .ok_or_else(|| {
+            AppError::ServiceUnavailable("No orchestra agent connected for planning".into())
+        })?;
+
+    // Register pending request and send via WS
+    let request_id = Uuid::now_v7().to_string();
+    let rx = state.ws_registry.register_plan_request(request_id.clone());
+
+    let ws_msg = crate::ws_protocol::WsMessage::PlanRequest {
+        request_id: request_id.clone(),
+        project_id,
+        title: work.title.clone(),
+        description: work.description.clone().unwrap_or_default(),
+        success_criteria: work.success_criteria.clone(),
+        project_name: project.name.clone(),
+    };
+
+    if !state.ws_registry.send_to_agent(connected_agent, ws_msg) {
+        return Err(AppError::BadGateway(
+            "Failed to send plan request to orchestra".into(),
+        ));
     }
 
+    // Wait for response with timeout (120s)
+    let response = tokio::time::timeout(std::time::Duration::from_secs(120), rx)
+        .await
+        .map_err(|_| AppError::BadGateway("Plan request timed out".into()))?
+        .map_err(|_| AppError::BadGateway("Orchestra disconnected during planning".into()))?;
+
+    if !response.success {
+        return Err(AppError::BadGateway(
+            response.error.unwrap_or_else(|| "Planning failed".into()),
+        ));
+    }
+
+    let tasks: Vec<PlannedTask> = serde_json::from_value(response.tasks)
+        .map_err(|e| AppError::Internal(format!("Failed to parse plan response: {e}")))?;
+
+    // TODO: success_criteria not yet returned by orchestra plan.response
+    // Once added, parse and save them here
     Ok(Json(PlanWorkResponse {
-        tasks: result.tasks,
-        success_criteria: result.success_criteria,
+        tasks,
+        success_criteria: None,
     }))
 }
 
