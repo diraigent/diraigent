@@ -697,6 +697,10 @@ pub struct PlannedTask {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanWorkResponse {
     pub tasks: Vec<PlannedTask>,
+    /// Generated success criteria for the work item (only present when
+    /// the work item had no criteria and the AI generated them).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub success_criteria: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]

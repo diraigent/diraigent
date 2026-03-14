@@ -326,7 +326,7 @@ fn max_message_tokens() -> usize {
 ///
 /// Returns the original messages if they fit. Otherwise keeps the most recent
 /// messages that fit within the budget and either summarizes or truncates the
-/// older ones depending on whether the Anthropic API is available.
+/// older ones depending on whether the Claude CLI is available.
 async fn compress_messages(messages: Vec<Message>) -> Vec<Message> {
     let budget = max_message_tokens();
     let total_tokens: usize = messages.iter().map(|m| estimate_tokens(&m.content)).sum();
@@ -365,8 +365,8 @@ async fn compress_messages(messages: Vec<Message>) -> Vec<Message> {
         return recent.to_vec();
     }
 
-    // Try summarization via Anthropic API, fall back to truncation note.
-    let summary = match summarize_via_api(older).await {
+    // Try summarization via claude CLI, fall back to truncation note.
+    let summary = match summarize_via_cli(older).await {
         Some(s) => s,
         None => build_truncation_summary(older),
     };
@@ -394,10 +394,11 @@ async fn compress_messages(messages: Vec<Message>) -> Vec<Message> {
     compressed
 }
 
-/// Call the Anthropic Messages API (Haiku) to summarize older messages.
-async fn summarize_via_api(messages: &[Message]) -> Option<String> {
-    let api_key = std::env::var("ANTHROPIC_API_KEY").ok()?;
-
+/// Summarize older messages via `claude -p` subprocess (Haiku model).
+///
+/// This routes through the normal Claude CLI infrastructure rather than making
+/// direct Anthropic API calls, keeping all AI usage tracked and consistent.
+async fn summarize_via_cli(messages: &[Message]) -> Option<String> {
     let conversation_text = messages
         .iter()
         .map(|m| {
@@ -422,52 +423,63 @@ async fn summarize_via_api(messages: &[Message]) -> Option<String> {
         &conversation_text
     };
 
-    let body = serde_json::json!({
-        "model": "claude-haiku-4-5-20251001",
-        "max_tokens": 2048,
-        "messages": [{
-            "role": "user",
-            "content": format!(
-                "Summarize the following conversation concisely. \
-                 Preserve key topics discussed, decisions made, tasks created, \
-                 and any important context the user would need to continue the \
-                 conversation. Use bullet points.\n\n{truncated}"
-            )
-        }]
-    });
+    let prompt = format!(
+        "Summarize the following conversation concisely. \
+         Preserve key topics discussed, decisions made, tasks created, \
+         and any important context the user would need to continue the \
+         conversation. Use bullet points.\n\n{truncated}"
+    );
 
-    let client = reqwest::Client::new();
-    let resp = client
-        .post("https://api.anthropic.com/v1/messages")
-        .header("x-api-key", &api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .ok()?;
+    let mut child = match Command::new("claude")
+        .args([
+            "-p",
+            "--output-format",
+            "text",
+            "--no-session-persistence",
+            "--model",
+            "claude-haiku-4-5-20251001",
+            "--max-turns",
+            "1",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(e) => {
+            warn!("failed to spawn claude CLI for summarization: {e}");
+            return None;
+        }
+    };
 
-    if !resp.status().is_success() {
+    // Write prompt and close stdin to signal EOF
+    {
+        let mut stdin = child.stdin.take()?;
+        if let Err(e) = stdin.write_all(prompt.as_bytes()).await {
+            warn!("failed to write summarization prompt to claude stdin: {e}");
+            return None;
+        }
+        // stdin dropped here, signaling EOF
+    }
+
+    let output = match child.wait_with_output().await {
+        Ok(output) => output,
+        Err(e) => {
+            warn!("failed to wait for claude summarization process: {e}");
+            return None;
+        }
+    };
+
+    if !output.status.success() {
         warn!(
-            status = %resp.status(),
-            "Anthropic summarization API returned error -- falling back to truncation"
+            status = ?output.status,
+            "claude summarization CLI returned non-zero exit -- falling back to truncation"
         );
         return None;
     }
 
-    let resp_json: serde_json::Value = resp.json().await.ok()?;
-    let text = resp_json["content"]
-        .as_array()?
-        .iter()
-        .filter_map(|b| {
-            if b["type"].as_str() == Some("text") {
-                b["text"].as_str().map(String::from)
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     if text.is_empty() {
         return None;
@@ -475,7 +487,7 @@ async fn summarize_via_api(messages: &[Message]) -> Option<String> {
 
     debug!(
         summary_len = text.len(),
-        "summarized older messages via API"
+        "summarized older messages via CLI"
     );
     Some(text)
 }

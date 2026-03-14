@@ -252,7 +252,12 @@ async fn plan_work(
     let tasks: Vec<PlannedTask> = serde_json::from_value(response.tasks)
         .map_err(|e| AppError::Internal(format!("Failed to parse plan response: {e}")))?;
 
-    Ok(Json(PlanWorkResponse { tasks }))
+    // TODO: success_criteria not yet returned by orchestra plan.response
+    // Once added, parse and save them here
+    Ok(Json(PlanWorkResponse {
+        tasks,
+        success_criteria: None,
+    }))
 }
 
 async fn link_task(

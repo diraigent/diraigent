@@ -294,7 +294,8 @@
     "planCreating": "Aufgaben werden erstellt...",
     "planRemoveTask": "Aus Plan entfernen",
     "planTaskSpec": "Spezifikation",
-    "planTaskCriteria": "Akzeptanzkriterien"
+    "planTaskCriteria": "Akzeptanzkriterien",
+    "planGeneratedCriteria": "Generierte Erfolgskriterien"
   },
   "work": {
     "activeGoals": "Aktive Arbeitselemente",
