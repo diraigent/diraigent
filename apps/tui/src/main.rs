@@ -24,10 +24,10 @@ use ratatui::{Frame, Terminal};
 use tokio::sync::{mpsc, watch};
 
 use app::{
-    App, Modal, VerificationForm, View, ALL_VIEWS, EVENT_KINDS, EVENT_SEVERITIES, GOAL_STATUSES,
-    GOAL_TYPES, INTEGRATION_AUTH_TYPES, INTEGRATION_KINDS, KNOWLEDGE_CATEGORIES, LOG_DIRECTIONS,
-    LOG_LIMITS, OBSERVATION_KINDS, OBSERVATION_SEVERITIES, TASK_KINDS, TIME_RANGES,
-    VERIFICATION_KINDS, VERIFICATION_STATUSES,
+    App, Modal, VerificationForm, View, ALL_VIEWS, EVENT_KINDS, EVENT_SEVERITIES,
+    INTEGRATION_AUTH_TYPES, INTEGRATION_KINDS, KNOWLEDGE_CATEGORIES, LOG_DIRECTIONS, LOG_LIMITS,
+    OBSERVATION_KINDS, OBSERVATION_SEVERITIES, TASK_KINDS, TIME_RANGES, VERIFICATION_KINDS,
+    VERIFICATION_STATUSES, WORK_STATUSES, WORK_TYPES,
 };
 use client::ApiClient;
 
@@ -43,10 +43,10 @@ enum ApiMsg {
     Knowledge(Vec<client::KnowledgeEntry>),
     Decisions(Vec<client::Decision>),
     Playbooks(Vec<client::Playbook>),
-    Goals(Vec<client::Goal>),
-    GoalProgress(client::GoalProgress),
-    GoalStats(client::GoalStats),
-    GoalChildren(Vec<client::Goal>),
+    WorkItems(Vec<client::Work>),
+    WorkProgress(client::WorkProgress),
+    WorkStats(client::WorkStats),
+    WorkChildren(Vec<client::Work>),
     Observations(Vec<client::Observation>),
     Roles(Vec<client::Role>),
     Members(Vec<client::Member>),
@@ -67,9 +67,9 @@ enum ApiMsg {
     Webhooks(Vec<client::Webhook>),
     WebhookDeliveries(Vec<client::WebhookDelivery>),
     WebhookTestResult(String),
-    GoalTasksList(Vec<client::Task>),
-    GoalUnlinkedTasks(Vec<client::Task>),
-    GoalBulkLinked,
+    WorkTasksList(Vec<client::Task>),
+    WorkUnlinkedTasks(Vec<client::Task>),
+    WorkBulkLinked,
     Branches(client::BranchListResponse),
     MainStatus(client::MainPushStatus),
     GitActionResult(String),
@@ -78,7 +78,7 @@ enum ApiMsg {
     ChatError(String),
     SourceTree(Vec<client::TreeEntry>),
     SourceBlob { path: String, content: String },
-    GoalComments(Vec<client::GoalComment>),
+    WorkComments(Vec<client::WorkComment>),
     StepTemplates(Vec<client::StepTemplate>),
     AgentTasks(Vec<client::Task>),
     Subtasks(Vec<client::Task>),
@@ -133,7 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             playbooks,
             knowledge,
             decisions,
-            goals,
+            work_items,
             observations,
             roles,
             members,
@@ -150,7 +150,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             api.list_playbooks(pid),
             api.list_knowledge(pid),
             api.list_decisions(pid),
-            api.list_goals(pid),
+            api.list_work(pid),
             api.list_observations(pid),
             api.list_roles(),
             api.list_members(),
@@ -175,8 +175,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Ok(resp) = decisions {
             let _ = tx.send(ApiMsg::Decisions(resp)).await;
         }
-        if let Ok(resp) = goals {
-            let _ = tx.send(ApiMsg::Goals(resp)).await;
+        if let Ok(resp) = work_items {
+            let _ = tx.send(ApiMsg::WorkItems(resp)).await;
         }
         if let Ok(resp) = observations {
             let _ = tx.send(ApiMsg::Observations(resp)).await;
@@ -395,10 +395,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::Knowledge(k) => app.knowledge = k,
                 ApiMsg::Decisions(d) => app.decisions = d,
                 ApiMsg::Playbooks(p) => app.playbooks = p,
-                ApiMsg::Goals(g) => app.goals = g,
-                ApiMsg::GoalProgress(p) => app.goal_progress = Some(p),
-                ApiMsg::GoalStats(s) => app.goal_stats = Some(s),
-                ApiMsg::GoalChildren(c) => app.goal_children = c,
+                ApiMsg::WorkItems(g) => app.work_items = g,
+                ApiMsg::WorkProgress(p) => app.work_progress = Some(p),
+                ApiMsg::WorkStats(s) => app.work_stats = Some(s),
+                ApiMsg::WorkChildren(c) => app.work_children = c,
                 ApiMsg::Observations(o) => app.observations = o,
                 ApiMsg::Roles(r) => app.roles = r,
                 ApiMsg::Members(m) => app.members = m,
@@ -413,26 +413,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::Webhooks(w) => app.webhooks = w,
                 ApiMsg::WebhookDeliveries(d) => app.webhook_deliveries = d,
                 ApiMsg::WebhookTestResult(r) => app.webhook_test_result = Some(r),
-                ApiMsg::GoalTasksList(tasks) => app.goal_tasks = tasks,
-                ApiMsg::GoalUnlinkedTasks(tasks) => {
-                    app.goal_unlinked_tasks = tasks;
-                    app.goal_picker_loading = false;
+                ApiMsg::WorkTasksList(tasks) => app.work_tasks = tasks,
+                ApiMsg::WorkUnlinkedTasks(tasks) => {
+                    app.work_unlinked_tasks = tasks;
+                    app.work_picker_loading = false;
                 }
-                ApiMsg::GoalBulkLinked => {
-                    // Refresh goal tasks + progress after linking
-                    if let Some(goal) = app.selected_goal.and_then(|i| app.goals.get(i)) {
+                ApiMsg::WorkBulkLinked => {
+                    // Refresh work tasks + progress after linking
+                    if let Some(goal) = app.selected_work.and_then(|i| app.work_items.get(i)) {
                         let gid = goal.id;
                         let api = api.clone();
                         let tx = tx.clone();
                         tokio::spawn(async move {
-                            if let Ok(tasks) = api.list_goal_tasks(gid, 50, 0).await {
-                                let _ = tx.send(ApiMsg::GoalTasksList(tasks)).await;
+                            if let Ok(tasks) = api.list_work_tasks(gid, 50, 0).await {
+                                let _ = tx.send(ApiMsg::WorkTasksList(tasks)).await;
                             }
-                            if let Ok(progress) = api.get_goal_progress(gid).await {
-                                let _ = tx.send(ApiMsg::GoalProgress(progress)).await;
+                            if let Ok(progress) = api.get_work_progress(gid).await {
+                                let _ = tx.send(ApiMsg::WorkProgress(progress)).await;
                             }
-                            if let Ok(stats) = api.get_goal_stats(gid).await {
-                                let _ = tx.send(ApiMsg::GoalStats(stats)).await;
+                            if let Ok(stats) = api.get_work_stats(gid).await {
+                                let _ = tx.send(ApiMsg::WorkStats(stats)).await;
                             }
                         });
                     }
@@ -513,8 +513,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     app.source_blob_path = Some(path);
                     app.source_blob_scroll = 0;
                 }
-                ApiMsg::GoalComments(comments) => {
-                    app.goal_comments = comments;
+                ApiMsg::WorkComments(comments) => {
+                    app.work_comments = comments;
                 }
                 ApiMsg::StepTemplates(templates) => {
                     app.step_templates = templates;
@@ -596,7 +596,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 View::Knowledge => views::knowledge::render(f, main_layout[1], &mut app),
                 View::Decisions => views::decisions::render(f, main_layout[1], &mut app),
                 View::Playbooks => views::playbooks::render(f, main_layout[1], &mut app),
-                View::Goals => views::goals::render(f, main_layout[1], &mut app),
+                View::Work => views::work::render(f, main_layout[1], &mut app),
                 View::Observations => views::observations::render(f, main_layout[1], &mut app),
                 View::Team => views::team::render(f, main_layout[1], &mut app),
                 View::Integrations => views::integrations::render(f, main_layout[1], &mut app),
@@ -676,13 +676,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Span::styled("Playbooks ", Style::default().fg(theme::text())),
                 Span::styled(
                     "[6]",
-                    Style::default().fg(if app.view == View::Goals {
+                    Style::default().fg(if app.view == View::Work {
                         theme::blue()
                     } else {
                         theme::overlay0()
                     }),
                 ),
-                Span::styled("Goals ", Style::default().fg(theme::text())),
+                Span::styled("Work ", Style::default().fg(theme::text())),
                 Span::styled(
                     "[7]",
                     Style::default().fg(if app.view == View::Observations {
@@ -754,7 +754,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // View-specific shortcuts
                 if app.view == View::Tasks {
                     Span::styled("[f]Flag [F]Files [c]Comment ", Style::default().fg(theme::overlay0()))
-                } else if app.view == View::Goals {
+                } else if app.view == View::Work {
                     Span::styled("[c]Comment [l]Link ", Style::default().fg(theme::overlay0()))
                 } else if app.view == View::Observations {
                     Span::styled("[C]Cleanup [p]Promote ", Style::default().fg(theme::overlay0()))
@@ -793,7 +793,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Modal::Reply
                 | Modal::Comment
-                | Modal::GoalComment
+                | Modal::WorkComment
                 | Modal::Search
                 | Modal::GlobalSearch
                 | Modal::LogQuery
@@ -808,8 +808,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "Global Search"
                     } else if app.modal == Modal::Comment {
                         "Comment"
-                    } else if app.modal == Modal::GoalComment {
-                        "Goal Comment"
+                    } else if app.modal == Modal::WorkComment {
+                        "Work Comment"
                     } else if app
                         .selected_task
                         .and_then(|i| app.tasks.get(i))
@@ -944,16 +944,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .collect();
                     f.render_widget(ratatui::widgets::List::new(items), inner);
                 }
-                Modal::GoalLink | Modal::GoalStatus | Modal::DependencyAdd => {
-                    // Reuse transition popup pattern: show goals/statuses/tasks as list
+                Modal::WorkLink | Modal::WorkStatus | Modal::DependencyAdd => {
+                    // Reuse transition popup pattern: show work/statuses/tasks as list
                     let states: Vec<&str> =
                         app.transition_options.iter().map(|s| s.as_str()).collect();
-                    let title = if app.modal == Modal::GoalLink {
-                        " Link to Goal "
+                    let title = if app.modal == Modal::WorkLink {
+                        " Link to Work "
                     } else if app.modal == Modal::DependencyAdd {
                         " Add Dependency "
                     } else {
-                        " Goal Status "
+                        " Work Status "
                     };
                     let popup_area = widgets::popup::centered_rect(40, 50, size);
                     Clear.render(popup_area, f.buffer_mut());
@@ -981,13 +981,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .collect();
                     f.render_widget(ratatui::widgets::List::new(items), inner);
                 }
-                Modal::GoalTaskPicker => {
+                Modal::WorkTaskPicker => {
                     let popup_area = widgets::popup::centered_rect(60, 70, size);
                     Clear.render(popup_area, f.buffer_mut());
-                    let title = if app.goal_picker_loading {
-                        " Link Tasks to Goal (loading...) "
+                    let title = if app.work_picker_loading {
+                        " Link Tasks to Work (loading...) "
                     } else {
-                        " Link Tasks to Goal [Space=toggle  Enter=confirm  Esc=cancel] "
+                        " Link Tasks to Work [Space=toggle  Enter=confirm  Esc=cancel] "
                     };
                     let block = Block::default()
                         .title(title)
@@ -996,7 +996,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .style(Style::default().bg(theme::mantle()));
                     let inner = block.inner(popup_area);
                     f.render_widget(block, popup_area);
-                    if app.goal_unlinked_tasks.is_empty() && !app.goal_picker_loading {
+                    if app.work_unlinked_tasks.is_empty() && !app.work_picker_loading {
                         let p = Paragraph::new(Line::styled(
                             "  No unlinked tasks available.",
                             Style::default().fg(theme::overlay0()),
@@ -1004,16 +1004,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         f.render_widget(p, inner);
                     } else {
                         let items: Vec<ratatui::widgets::ListItem> = app
-                            .goal_unlinked_tasks
+                            .work_unlinked_tasks
                             .iter()
                             .enumerate()
                             .map(|(i, t)| {
-                                let checked = if app.goal_picker_checked.contains(&i) {
+                                let checked = if app.work_picker_checked.contains(&i) {
                                     "[x]"
                                 } else {
                                     "[ ]"
                                 };
-                                let style = if i == app.goal_picker_selected {
+                                let style = if i == app.work_picker_selected {
                                     Style::default().fg(theme::base()).bg(theme::green())
                                 } else {
                                     Style::default().fg(theme::text())
@@ -1069,7 +1069,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
-                        "                  Playbooks/Goals/Obs/Team/Int/Audit)  l = Logs",
+                        "                  Playbooks/Work/Obs/Team/Int/Audit)  l = Logs",
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
@@ -1139,17 +1139,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Style::default().fg(theme::text()),
                     ),
                     Line::from(""),
-                    Line::styled("  Goals / Observations", Style::default().fg(theme::blue())),
+                    Line::styled("  Work / Observations", Style::default().fg(theme::blue())),
                     Line::styled(
-                        "    s             Change status (Goals/Observations)",
+                        "    s             Change status (Work/Observations)",
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
-                        "    g             Link task to goal (Tasks view)",
+                        "    g             Link task to work (Tasks view)",
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
-                        "    l             Link tasks to goal (Goals view, multi-select)",
+                        "    l             Link tasks to work (Work view, multi-select)",
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
@@ -1861,14 +1861,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 f.render_widget(hint, field_chunks[5]);
             }
 
-            // Goal creation/edit form
-            if let Some(ref form) = app.goal_form {
+            // Work creation/edit form
+            if let Some(ref form) = app.work_form {
                 let form_area = widgets::popup::centered_rect(60, 60, size);
                 Clear.render(form_area, f.buffer_mut());
                 let title = if form.editing_id.is_some() {
-                    " Edit Goal "
+                    " Edit Work Item "
                 } else {
-                    " New Goal "
+                    " New Work Item "
                 };
                 let block = Block::default()
                     .title(title)
@@ -1884,9 +1884,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Constraint::Length(2), // Title
                         Constraint::Length(2), // Description
                         Constraint::Length(2), // Success criteria
-                        Constraint::Length(2), // Target date
                         Constraint::Length(2), // Status
-                        Constraint::Length(2), // Goal type
+                        Constraint::Length(2), // Work type
                         Constraint::Length(2), // Priority
                         Constraint::Length(2), // Auto status
                         Constraint::Length(1), // Footer
@@ -1986,38 +1985,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         form.active_field == 2,
                     );
                 }
-                // Target date with cursor
-                {
-                    let val = if form.active_field == 3 {
-                        let bp = form
-                            .target_date
-                            .char_indices()
-                            .nth(form.cursor)
-                            .map(|(i, _)| i)
-                            .unwrap_or(form.target_date.len());
-                        if bp < form.target_date.len() {
-                            format!("{}│{}", &form.target_date[..bp], &form.target_date[bp..])
-                        } else {
-                            format!("{}│", &form.target_date)
-                        }
-                    } else {
-                        form.target_date.clone()
-                    };
-                    render_gf(f, field_chunks[3], "Date:", &val, form.active_field == 3);
-                }
                 // Status selector
                 {
-                    let val = format!("◀ {} ▶", GOAL_STATUSES[form.status_index]);
-                    render_gf(f, field_chunks[4], "Status:", &val, form.active_field == 4);
+                    let val = format!("◀ {} ▶", WORK_STATUSES[form.status_index]);
+                    render_gf(f, field_chunks[3], "Status:", &val, form.active_field == 3);
                 }
-                // Goal type selector
+                // Work type selector
                 {
-                    let val = format!("◀ {} ▶", GOAL_TYPES[form.goal_type_index]);
-                    render_gf(f, field_chunks[5], "Type:", &val, form.active_field == 5);
+                    let val = format!("◀ {} ▶", WORK_TYPES[form.work_type_index]);
+                    render_gf(f, field_chunks[4], "Type:", &val, form.active_field == 4);
                 }
                 // Priority with cursor
                 {
-                    let val = if form.active_field == 6 {
+                    let val = if form.active_field == 5 {
                         let bp = form
                             .priority
                             .char_indices()
@@ -2034,10 +2014,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     };
                     render_gf(
                         f,
-                        field_chunks[6],
+                        field_chunks[5],
                         "Priority:",
                         &val,
-                        form.active_field == 6,
+                        form.active_field == 5,
                     );
                 }
                 // Auto status toggle
@@ -2045,17 +2025,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let val = if form.auto_status { "ON" } else { "OFF" };
                     render_gf(
                         f,
-                        field_chunks[7],
+                        field_chunks[6],
                         "Auto Status:",
                         val,
-                        form.active_field == 7,
+                        form.active_field == 6,
                     );
                 }
                 let hint = Paragraph::new(Line::styled(
                     " Tab: next | Enter: submit | Esc: cancel",
                     Style::default().fg(theme::overlay0()),
                 ));
-                f.render_widget(hint, field_chunks[8]);
+                f.render_widget(hint, field_chunks[7]);
             }
 
             // Observation creation form
@@ -3322,20 +3302,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             _ => {}
                         }
                     }
-                } else if app.goal_form.is_some() {
-                    let form = app.goal_form.as_mut().unwrap();
+                } else if app.work_form.is_some() {
+                    let form = app.work_form.as_mut().unwrap();
                     match key.code {
                         KeyCode::Esc => {
-                            app.goal_form = None;
+                            app.work_form = None;
                         }
                         KeyCode::Tab => {
-                            form.active_field = (form.active_field + 1) % 8;
+                            form.active_field = (form.active_field + 1) % 7;
                             form.cursor = match form.active_field {
                                 0 => form.title.chars().count(),
                                 1 => form.description.chars().count(),
                                 2 => form.success_criteria.chars().count(),
-                                3 => form.target_date.chars().count(),
-                                6 => form.priority.chars().count(),
+                                5 => form.priority.chars().count(),
                                 _ => 0,
                             };
                         }
@@ -3344,14 +3323,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let title = form.title.clone();
                                 let description = form.description.clone();
                                 let success_criteria = form.success_criteria.clone();
-                                let target_date = form.target_date.clone();
-                                let status = GOAL_STATUSES[form.status_index].to_string();
-                                let goal_type = GOAL_TYPES[form.goal_type_index].to_string();
+                                let status = WORK_STATUSES[form.status_index].to_string();
+                                let work_type = WORK_TYPES[form.work_type_index].to_string();
                                 let priority: i32 = form.priority.parse().unwrap_or(0);
                                 let auto_status = form.auto_status;
                                 let editing_id = form.editing_id;
                                 let pid = app.current_project;
-                                app.goal_form = None;
+                                app.work_form = None;
                                 if let Some(pid) = pid {
                                     let api = api.clone();
                                     let tx = tx.clone();
@@ -3360,7 +3338,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             "title": title,
                                             "description": description,
                                             "status": status,
-                                            "goal_type": goal_type,
+                                            "work_type": work_type,
                                             "priority": priority,
                                             "auto_status": auto_status,
                                         });
@@ -3368,18 +3346,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             body["success_criteria"] =
                                                 serde_json::json!([success_criteria]);
                                         }
-                                        if !target_date.is_empty() {
-                                            body["target_date"] = serde_json::json!(target_date);
-                                        }
                                         let result = if let Some(gid) = editing_id {
-                                            api.update_goal(gid, body).await.map(|_| ())
+                                            api.update_work(gid, body).await.map(|_| ())
                                         } else {
                                             match api
-                                                .create_goal(
+                                                .create_work(
                                                     pid,
                                                     &title,
                                                     &description,
-                                                    &goal_type,
+                                                    &work_type,
                                                     priority,
                                                     None,
                                                     auto_status,
@@ -3388,7 +3363,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             {
                                                 Ok(g) => {
                                                     if !success_criteria.is_empty()
-                                                        || !target_date.is_empty()
                                                         || status != "active"
                                                     {
                                                         let mut upd = serde_json::json!({});
@@ -3398,15 +3372,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                                     success_criteria
                                                                 ]);
                                                         }
-                                                        if !target_date.is_empty() {
-                                                            upd["target_date"] =
-                                                                serde_json::json!(target_date);
-                                                        }
                                                         if status != "active" {
                                                             upd["status"] =
                                                                 serde_json::json!(status);
                                                         }
-                                                        api.update_goal(g.id, upd).await.map(|_| ())
+                                                        api.update_work(g.id, upd).await.map(|_| ())
                                                     } else {
                                                         Ok(())
                                                     }
@@ -3416,13 +3386,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         };
                                         match result {
                                             Ok(()) => {
-                                                if let Ok(goals) = api.list_goals(pid).await {
-                                                    let _ = tx.send(ApiMsg::Goals(goals)).await;
+                                                if let Ok(items) = api.list_work(pid).await {
+                                                    let _ = tx.send(ApiMsg::WorkItems(items)).await;
                                                 }
                                             }
                                             Err(e) => {
                                                 let _ = tx
-                                                    .send(ApiMsg::Error(format!("Goal: {e}")))
+                                                    .send(ApiMsg::Error(format!("Work: {e}")))
                                                     .await;
                                             }
                                         }
@@ -3431,21 +3401,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                         KeyCode::Left => match form.active_field {
-                            4 => {
+                            3 => {
                                 if form.status_index > 0 {
                                     form.status_index -= 1;
                                 } else {
-                                    form.status_index = GOAL_STATUSES.len() - 1;
+                                    form.status_index = WORK_STATUSES.len() - 1;
                                 }
                             }
-                            5 => {
-                                if form.goal_type_index > 0 {
-                                    form.goal_type_index -= 1;
+                            4 => {
+                                if form.work_type_index > 0 {
+                                    form.work_type_index -= 1;
                                 } else {
-                                    form.goal_type_index = GOAL_TYPES.len() - 1;
+                                    form.work_type_index = WORK_TYPES.len() - 1;
                                 }
                             }
-                            7 => {
+                            6 => {
                                 form.auto_status = !form.auto_status;
                             }
                             _ => {
@@ -3455,14 +3425,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         },
                         KeyCode::Right => match form.active_field {
+                            3 => {
+                                form.status_index = (form.status_index + 1) % WORK_STATUSES.len();
+                            }
                             4 => {
-                                form.status_index = (form.status_index + 1) % GOAL_STATUSES.len();
+                                form.work_type_index =
+                                    (form.work_type_index + 1) % WORK_TYPES.len();
                             }
-                            5 => {
-                                form.goal_type_index =
-                                    (form.goal_type_index + 1) % GOAL_TYPES.len();
-                            }
-                            7 => {
+                            6 => {
                                 form.auto_status = !form.auto_status;
                             }
                             _ => {
@@ -3470,8 +3440,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     0 => form.title.chars().count(),
                                     1 => form.description.chars().count(),
                                     2 => form.success_criteria.chars().count(),
-                                    3 => form.target_date.chars().count(),
-                                    6 => form.priority.chars().count(),
+                                    5 => form.priority.chars().count(),
                                     _ => 0,
                                 };
                                 if form.cursor < len {
@@ -3480,9 +3449,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         },
                         KeyCode::Backspace => {
-                            if form.active_field == 4
-                                || form.active_field == 5
-                                || form.active_field == 7
+                            if form.active_field == 3
+                                || form.active_field == 4
+                                || form.active_field == 6
                             {
                                 // selectors/toggle, ignore backspace
                             } else if form.cursor > 0 {
@@ -3491,8 +3460,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     0 => &mut form.title,
                                     1 => &mut form.description,
                                     2 => &mut form.success_criteria,
-                                    3 => &mut form.target_date,
-                                    6 => &mut form.priority,
+                                    5 => &mut form.priority,
                                     _ => &mut form.title,
                                 };
                                 let bp = text
@@ -3504,9 +3472,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                         KeyCode::Char(c) => {
-                            if form.active_field == 4
-                                || form.active_field == 5
-                                || form.active_field == 7
+                            if form.active_field == 3
+                                || form.active_field == 4
+                                || form.active_field == 6
                             {
                                 // selectors/toggle, ignore chars
                             } else {
@@ -3514,8 +3482,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     0 => &mut form.title,
                                     1 => &mut form.description,
                                     2 => &mut form.success_criteria,
-                                    3 => &mut form.target_date,
-                                    6 => &mut form.priority,
+                                    5 => &mut form.priority,
                                     _ => &mut form.title,
                                 };
                                 let bp = text
@@ -4903,7 +4870,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             _ => {}
                         },
-                        Modal::GoalComment => match key.code {
+                        Modal::WorkComment => match key.code {
                             KeyCode::Esc => {
                                 app.modal = Modal::None;
                                 app.input_text.clear();
@@ -4912,7 +4879,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             KeyCode::Enter => {
                                 if !app.input_text.is_empty() {
                                     if let Some(goal) =
-                                        app.selected_goal.and_then(|i| app.goals.get(i))
+                                        app.selected_work.and_then(|i| app.work_items.get(i))
                                     {
                                         let gid = goal.id;
                                         let content = app.input_text.clone();
@@ -4920,15 +4887,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         let tx = tx.clone();
                                         tokio::spawn(async move {
                                             let _ = api
-                                                .create_goal_comment(
+                                                .create_work_comment(
                                                     gid,
                                                     serde_json::json!({"content": content}),
                                                 )
                                                 .await;
-                                            if let Ok(comments) = api.list_goal_comments(gid).await
+                                            if let Ok(comments) = api.list_work_comments(gid).await
                                             {
                                                 let _ =
-                                                    tx.send(ApiMsg::GoalComments(comments)).await;
+                                                    tx.send(ApiMsg::WorkComments(comments)).await;
                                             }
                                         });
                                     }
@@ -5626,7 +5593,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             _ => {}
                         },
-                        Modal::GoalLink | Modal::GoalStatus | Modal::DependencyAdd => {
+                        Modal::WorkLink | Modal::WorkStatus | Modal::DependencyAdd => {
                             match key.code {
                                 KeyCode::Esc => app.modal = Modal::None,
                                 KeyCode::Up | KeyCode::Char('k') => {
@@ -5643,19 +5610,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     if let Some(selected) =
                                         app.transition_options.get(app.transition_selected).cloned()
                                     {
-                                        if app.modal == Modal::GoalLink {
-                                            // Link selected task to the chosen goal
+                                        if app.modal == Modal::WorkLink {
+                                            // Link selected task to the chosen work item
                                             if let Some(tid) = app.selected_task_id() {
-                                                // Find goal by title match
-                                                if let Some(goal) =
-                                                    app.goals.iter().find(|g| g.title == selected)
+                                                // Find work item by title match
+                                                if let Some(goal) = app
+                                                    .work_items
+                                                    .iter()
+                                                    .find(|g| g.title == selected)
                                                 {
                                                     let gid = goal.id;
                                                     let api = api.clone();
                                                     let tx = tx.clone();
                                                     tokio::spawn(async move {
                                                         if let Err(e) =
-                                                            api.link_task_to_goal(gid, tid).await
+                                                            api.link_task_to_work(gid, tid).await
                                                         {
                                                             let _ = tx
                                                                 .send(ApiMsg::Error(format!(
@@ -5697,10 +5666,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 }
                                             }
                                         } else {
-                                            // GoalStatus: update goal status
+                                            // WorkStatus: update work status
                                             if let Some(gid) = app
-                                                .selected_goal
-                                                .and_then(|i| app.goals.get(i))
+                                                .selected_work
+                                                .and_then(|i| app.work_items.get(i))
                                                 .map(|g| g.id)
                                             {
                                                 let api = api.clone();
@@ -5708,16 +5677,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 let pid = app.current_project;
                                                 tokio::spawn(async move {
                                                     let _ = api
-                                                        .update_goal(
+                                                        .update_work(
                                                             gid,
                                                             serde_json::json!({"status": selected}),
                                                         )
                                                         .await;
                                                     if let Some(pid) = pid {
-                                                        if let Ok(goals) = api.list_goals(pid).await
+                                                        if let Ok(items) = api.list_work(pid).await
                                                         {
-                                                            let _ =
-                                                                tx.send(ApiMsg::Goals(goals)).await;
+                                                            let _ = tx
+                                                                .send(ApiMsg::WorkItems(items))
+                                                                .await;
                                                         }
                                                     }
                                                 });
@@ -5729,44 +5699,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 _ => {}
                             }
                         }
-                        Modal::GoalTaskPicker => match key.code {
+                        Modal::WorkTaskPicker => match key.code {
                             KeyCode::Esc => {
                                 app.modal = Modal::None;
-                                app.goal_unlinked_tasks.clear();
-                                app.goal_picker_checked.clear();
-                                app.goal_picker_selected = 0;
+                                app.work_unlinked_tasks.clear();
+                                app.work_picker_checked.clear();
+                                app.work_picker_selected = 0;
                             }
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.goal_picker_selected > 0 {
-                                    app.goal_picker_selected -= 1;
+                                if app.work_picker_selected > 0 {
+                                    app.work_picker_selected -= 1;
                                 }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.goal_picker_selected + 1 < app.goal_unlinked_tasks.len() {
-                                    app.goal_picker_selected += 1;
+                                if app.work_picker_selected + 1 < app.work_unlinked_tasks.len() {
+                                    app.work_picker_selected += 1;
                                 }
                             }
                             KeyCode::Char(' ') => {
-                                let idx = app.goal_picker_selected;
-                                if idx < app.goal_unlinked_tasks.len() {
-                                    if app.goal_picker_checked.contains(&idx) {
-                                        app.goal_picker_checked.remove(&idx);
+                                let idx = app.work_picker_selected;
+                                if idx < app.work_unlinked_tasks.len() {
+                                    if app.work_picker_checked.contains(&idx) {
+                                        app.work_picker_checked.remove(&idx);
                                     } else {
-                                        app.goal_picker_checked.insert(idx);
+                                        app.work_picker_checked.insert(idx);
                                     }
                                 }
                             }
                             KeyCode::Enter => {
-                                if !app.goal_picker_checked.is_empty() {
+                                if !app.work_picker_checked.is_empty() {
                                     let task_ids: Vec<uuid::Uuid> = app
-                                        .goal_picker_checked
+                                        .work_picker_checked
                                         .iter()
                                         .filter_map(|&i| {
-                                            app.goal_unlinked_tasks.get(i).map(|t| t.id)
+                                            app.work_unlinked_tasks.get(i).map(|t| t.id)
                                         })
                                         .collect();
                                     if let Some(goal) =
-                                        app.selected_goal.and_then(|i| app.goals.get(i))
+                                        app.selected_work.and_then(|i| app.work_items.get(i))
                                     {
                                         let gid = goal.id;
                                         let api = api.clone();
@@ -5774,7 +5744,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         tokio::spawn(async move {
                                             match api.bulk_link_tasks(gid, &task_ids).await {
                                                 Ok(_) => {
-                                                    let _ = tx.send(ApiMsg::GoalBulkLinked).await;
+                                                    let _ = tx.send(ApiMsg::WorkBulkLinked).await;
                                                 }
                                                 Err(e) => {
                                                     let _ = tx
@@ -5788,9 +5758,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                                 app.modal = Modal::None;
-                                app.goal_unlinked_tasks.clear();
-                                app.goal_picker_checked.clear();
-                                app.goal_picker_selected = 0;
+                                app.work_unlinked_tasks.clear();
+                                app.work_picker_checked.clear();
+                                app.work_picker_selected = 0;
                             }
                             _ => {}
                         },
@@ -6108,11 +6078,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.playbooks.clear();
                                     app.knowledge.clear();
                                     app.decisions.clear();
-                                    app.goals.clear();
-                                    app.goal_progress = None;
-                                    app.goal_stats = None;
-                                    app.goal_children.clear();
-                                    app.goal_comments.clear();
+                                    app.work_items.clear();
+                                    app.work_progress = None;
+                                    app.work_stats = None;
+                                    app.work_children.clear();
+                                    app.work_comments.clear();
                                     app.observations.clear();
                                     app.roles.clear();
                                     app.members.clear();
@@ -6123,7 +6093,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.log_scroll = 0;
                                     app.selected_task = None;
                                     app.task_list_state.select(None);
-                                    app.selected_goal = None;
+                                    app.selected_work = None;
                                     app.selected_observation = None;
                                     app.selected_role = None;
                                     app.selected_member = None;
@@ -6158,7 +6128,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 app.detail_scroll = 0;
                             }
                             KeyCode::Char('6') => {
-                                app.view = View::Goals;
+                                app.view = View::Work;
                                 app.detail_scroll = 0;
                             }
                             KeyCode::Char('7') => {
@@ -6421,8 +6391,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.modal = Modal::Comment;
                                     app.input_text.clear();
                                     app.input_cursor = 0;
-                                } else if app.view == View::Goals && app.selected_goal.is_some() {
-                                    app.modal = Modal::GoalComment;
+                                } else if app.view == View::Work && app.selected_work.is_some() {
+                                    app.modal = Modal::WorkComment;
                                     app.input_text.clear();
                                     app.input_cursor = 0;
                                 }
@@ -6476,8 +6446,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.playbook_form = Some(app::PlaybookForm::default());
                                 } else if app.view == View::Verifications {
                                     app.verification_form = Some(VerificationForm::default());
-                                } else if app.view == View::Goals {
-                                    app.goal_form = Some(app::GoalForm::default());
+                                } else if app.view == View::Work {
+                                    app.work_form = Some(app::WorkForm::default());
                                 } else if app.view == View::Observations {
                                     app.observation_form = Some(app::ObservationForm::default());
                                 } else if app.view == View::Decisions {
@@ -6494,12 +6464,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.webhook_form = Some(app::WebhookForm::default());
                                 }
                             }
-                            // Goals view: s = status transition
+                            // Work view: s = status transition
                             // Observations view: s = status transition
                             KeyCode::Char('s') => {
-                                if app.view == View::Goals {
+                                if app.view == View::Work {
                                     if let Some(goal) =
-                                        app.selected_goal.and_then(|i| app.goals.get(i))
+                                        app.selected_work.and_then(|i| app.work_items.get(i))
                                     {
                                         let status = goal.status.as_deref().unwrap_or("active");
                                         let opts: Vec<String> = match status {
@@ -6521,7 +6491,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         if !opts.is_empty() {
                                             app.transition_options = opts;
                                             app.transition_selected = 0;
-                                            app.modal = Modal::GoalStatus;
+                                            app.modal = Modal::WorkStatus;
                                         }
                                     }
                                 } else if app.view == View::Observations {
@@ -6678,35 +6648,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                            // Tasks view: g = link task to goal
+                            // Tasks view: g = link task to work
                             KeyCode::Char('g') => {
                                 if app.view == View::Tasks
                                     && app.selected_task.is_some()
-                                    && !app.goals.is_empty()
+                                    && !app.work_items.is_empty()
                                 {
                                     let opts: Vec<String> =
-                                        app.goals.iter().map(|g| g.title.clone()).collect();
+                                        app.work_items.iter().map(|g| g.title.clone()).collect();
                                     app.transition_options = opts;
                                     app.transition_selected = 0;
-                                    app.modal = Modal::GoalLink;
+                                    app.modal = Modal::WorkLink;
                                 }
                             }
-                            // Goals view: l = link tasks (open picker)
+                            // Work view: l = link tasks (open picker)
                             KeyCode::Char('l') => {
-                                if app.view == View::Goals && app.selected_goal.is_some() {
+                                if app.view == View::Work && app.selected_work.is_some() {
                                     if let Some(pid) = app.current_project {
-                                        app.goal_picker_selected = 0;
-                                        app.goal_picker_checked.clear();
-                                        app.goal_picker_loading = true;
-                                        app.goal_unlinked_tasks.clear();
-                                        app.modal = Modal::GoalTaskPicker;
+                                        app.work_picker_selected = 0;
+                                        app.work_picker_checked.clear();
+                                        app.work_picker_loading = true;
+                                        app.work_unlinked_tasks.clear();
+                                        app.modal = Modal::WorkTaskPicker;
                                         let api = api.clone();
                                         let tx = tx.clone();
                                         tokio::spawn(async move {
                                             match api.list_unlinked_tasks(pid, 50, 0).await {
                                                 Ok(tasks) => {
                                                     let _ = tx
-                                                        .send(ApiMsg::GoalUnlinkedTasks(tasks))
+                                                        .send(ApiMsg::WorkUnlinkedTasks(tasks))
                                                         .await;
                                                 }
                                                 Err(e) => {
@@ -7318,19 +7288,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             step_field: 0,
                                         });
                                     }
-                                } else if app.view == View::Goals {
+                                } else if app.view == View::Work {
                                     if let Some(goal) =
-                                        app.selected_goal.and_then(|i| app.goals.get(i))
+                                        app.selected_work.and_then(|i| app.work_items.get(i))
                                     {
-                                        let status_idx = GOAL_STATUSES
+                                        let status_idx = WORK_STATUSES
                                             .iter()
                                             .position(|s| Some(*s) == goal.status.as_deref())
                                             .unwrap_or(0);
-                                        let goal_type_idx = GOAL_TYPES
+                                        let work_type_idx = WORK_TYPES
                                             .iter()
-                                            .position(|t| Some(*t) == goal.goal_type.as_deref())
+                                            .position(|t| Some(*t) == goal.work_type.as_deref())
                                             .unwrap_or(0);
-                                        app.goal_form = Some(app::GoalForm {
+                                        app.work_form = Some(app::WorkForm {
                                             title: goal.title.clone(),
                                             description: goal
                                                 .description
@@ -7347,12 +7317,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     })
                                                 })
                                                 .unwrap_or_default(),
-                                            target_date: goal
-                                                .target_date
-                                                .clone()
-                                                .unwrap_or_default(),
                                             status_index: status_idx,
-                                            goal_type_index: goal_type_idx,
+                                            work_type_index: work_type_idx,
                                             priority: goal
                                                 .priority
                                                 .map(|p| p.to_string())
@@ -7783,22 +7749,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     last_nav_time = Some(Instant::now());
                 }
 
-                // Fetch goal progress on selection change
+                // Fetch work progress on selection change
                 if app.modal == Modal::None
-                    && app.view == View::Goals
+                    && app.view == View::Work
                     && matches!(
                         key.code,
                         KeyCode::Up | KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('k')
                     )
                 {
-                    if let Some(goal) = app.selected_goal.and_then(|i| app.goals.get(i)) {
+                    if let Some(goal) = app.selected_work.and_then(|i| app.work_items.get(i)) {
                         let gid = goal.id;
                         {
                             let api = api.clone();
                             let tx = tx.clone();
                             tokio::spawn(async move {
-                                if let Ok(progress) = api.get_goal_progress(gid).await {
-                                    let _ = tx.send(ApiMsg::GoalProgress(progress)).await;
+                                if let Ok(progress) = api.get_work_progress(gid).await {
+                                    let _ = tx.send(ApiMsg::WorkProgress(progress)).await;
                                 }
                             });
                         }
@@ -7806,20 +7772,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let api = api.clone();
                             let tx = tx.clone();
                             tokio::spawn(async move {
-                                if let Ok(stats) = api.get_goal_stats(gid).await {
-                                    let _ = tx.send(ApiMsg::GoalStats(stats)).await;
+                                if let Ok(stats) = api.get_work_stats(gid).await {
+                                    let _ = tx.send(ApiMsg::WorkStats(stats)).await;
                                 }
-                                if let Ok(children) = api.list_goal_children(gid).await {
-                                    let _ = tx.send(ApiMsg::GoalChildren(children)).await;
-                                }
-                            });
-                        }
-                        {
-                            let api = api.clone();
-                            let tx = tx.clone();
-                            tokio::spawn(async move {
-                                if let Ok(tasks) = api.list_goal_tasks(gid, 50, 0).await {
-                                    let _ = tx.send(ApiMsg::GoalTasksList(tasks)).await;
+                                if let Ok(children) = api.list_work_children(gid).await {
+                                    let _ = tx.send(ApiMsg::WorkChildren(children)).await;
                                 }
                             });
                         }
@@ -7827,8 +7784,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let api = api.clone();
                             let tx = tx.clone();
                             tokio::spawn(async move {
-                                if let Ok(comments) = api.list_goal_comments(gid).await {
-                                    let _ = tx.send(ApiMsg::GoalComments(comments)).await;
+                                if let Ok(tasks) = api.list_work_tasks(gid, 50, 0).await {
+                                    let _ = tx.send(ApiMsg::WorkTasksList(tasks)).await;
+                                }
+                            });
+                        }
+                        {
+                            let api = api.clone();
+                            let tx = tx.clone();
+                            tokio::spawn(async move {
+                                if let Ok(comments) = api.list_work_comments(gid).await {
+                                    let _ = tx.send(ApiMsg::WorkComments(comments)).await;
                                 }
                             });
                         }

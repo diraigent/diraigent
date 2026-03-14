@@ -216,8 +216,8 @@ type SortDir = 'asc' | 'desc';
                       </svg>
                     </span>
                   }
-                  @if (goalLinkedIds().has(task.id)) {
-                    <span class="inline-flex items-center px-1 py-0.5 rounded text-[10px] font-medium bg-ctp-mauve/15 text-ctp-mauve" [title]="t('tasks.linkedToGoal')">
+                  @if (workLinkedIds().has(task.id)) {
+                    <span class="inline-flex items-center px-1 py-0.5 rounded text-[10px] font-medium bg-ctp-mauve/15 text-ctp-mauve" [title]="t('tasks.linkedToWork')">
                       <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path d="M13 10V3L4 14h7v7l9-11h-7z" />
                       </svg>
@@ -330,7 +330,7 @@ type SortDir = 'asc' | 'desc';
 
             <!-- Expanded details -->
             @if (selectedId() === task.id) {
-              <div class="border-t border-border">
+              <div class="border-t border-border overflow-x-hidden">
                 <app-task-detail
                   [embedded]="true"
                   [task]="task"
@@ -440,7 +440,7 @@ export class TaskListComponent {
   loading = input(false);
   selectedId = input<string | null>(null);
   blockedIds = input<Set<string>>(new Set());
-  goalLinkedIds = input<Set<string>>(new Set());
+  workLinkedIds = input<Set<string>>(new Set());
   flaggedIds = input<Set<string>>(new Set());
   branchMap = input<Map<string, BranchInfo>>(new Map());
   searchQuery = input('');

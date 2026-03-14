@@ -57,10 +57,10 @@ const VERIFICATION_KIND_COLORS: Record<VerificationKind, string> = {
       </div>
 
       <!-- Task UUID -->
-      <div class="flex items-center gap-1.5 mb-3">
-        <span class="text-text-muted text-[10px] uppercase tracking-wider">{{ t('tasks.taskId') }}</span>
-        <button (click)="copyId()" class="group flex items-center gap-1 text-[11px] font-mono text-text-secondary hover:text-accent transition-colors cursor-pointer" [title]="t(copied() ? 'common.copied' : 'common.copy')">
-          <span>{{ task().id }}</span>
+      <div class="flex items-center gap-1.5 mb-3 min-w-0">
+        <span class="text-text-muted text-[10px] uppercase tracking-wider shrink-0">{{ t('tasks.taskId') }}</span>
+        <button (click)="copyId()" class="group flex items-center gap-1 text-[11px] font-mono text-text-secondary hover:text-accent transition-colors cursor-pointer break-all min-w-0" [title]="t(copied() ? 'common.copied' : 'common.copy')">
+          <span class="break-all">{{ task().id }}</span>
           <svg class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             @if (copied()) {
               <path d="M5 13l4 4L19 7" />
@@ -215,11 +215,11 @@ const VERIFICATION_KIND_COLORS: Record<VerificationKind, string> = {
       @if (gitStatus()?.exists) {
         <div class="mb-4">
           <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">Branch</h3>
-          <div class="flex items-center gap-2 bg-bg rounded-lg px-3 py-2 border border-border">
+          <div class="flex items-center gap-2 bg-bg rounded-lg px-3 py-2 border border-border flex-wrap min-w-0">
             <svg class="w-4 h-4 shrink-0 text-text-muted" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path d="M6 3v12m0 0a3 3 0 103 3V9a3 3 0 10-3-3m0 12a3 3 0 103 3m6-3a3 3 0 10-3-3m0 0V9a3 3 0 10-3-3" />
             </svg>
-            <code class="text-xs text-text-primary font-mono flex-1 truncate">{{ gitStatus()!.branch }}</code>
+            <code class="text-xs text-text-primary font-mono flex-1 truncate min-w-0">{{ gitStatus()!.branch }}</code>
             @if (gitStatus()!.is_pushed) {
               <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-ctp-green/15 text-ctp-green"
                     title="Pushed to remote">
@@ -357,7 +357,7 @@ const VERIFICATION_KIND_COLORS: Record<VerificationKind, string> = {
           @if (spec()) {
             <pre (click)="startSpecEdit()" (keydown.enter)="startSpecEdit()"
               tabindex="0" role="button"
-              class="text-sm text-text-primary whitespace-pre-wrap bg-bg rounded-lg p-3 border border-border max-h-60 overflow-y-auto cursor-pointer hover:border-accent/50 transition-colors">{{ spec() }}</pre>
+              class="text-sm text-text-primary whitespace-pre-wrap break-words bg-bg rounded-lg p-3 border border-border max-h-60 overflow-y-auto overflow-x-hidden cursor-pointer hover:border-accent/50 transition-colors">{{ spec() }}</pre>
           } @else {
             <p (click)="startSpecEdit()" (keydown.enter)="startSpecEdit()"
               tabindex="0" role="button"
@@ -374,7 +374,7 @@ const VERIFICATION_KIND_COLORS: Record<VerificationKind, string> = {
           <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1">{{ t('tasks.files') }}</h3>
           <div class="space-y-0.5">
             @for (file of files(); track file) {
-              <p class="text-xs text-ctp-green font-mono">{{ file }}</p>
+              <p class="text-xs text-ctp-green font-mono break-all">{{ file }}</p>
             }
           </div>
         </div>
@@ -384,7 +384,7 @@ const VERIFICATION_KIND_COLORS: Record<VerificationKind, string> = {
       @if (testCmd()) {
         <div class="mb-4">
           <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1">{{ t('tasks.testCmd') }}</h3>
-          <code class="text-xs text-ctp-green font-mono bg-bg rounded px-2 py-1">{{ testCmd() }}</code>
+          <code class="text-xs text-ctp-green font-mono bg-bg rounded px-2 py-1 break-all">{{ testCmd() }}</code>
         </div>
       }
 
@@ -475,9 +475,9 @@ const VERIFICATION_KIND_COLORS: Record<VerificationKind, string> = {
       </div>
 
       <!-- Footer -->
-      <div class="flex items-center justify-between pt-3 mt-4 border-t border-border">
+      <div class="flex flex-wrap items-center justify-between gap-2 pt-3 mt-4 border-t border-border">
         <span class="text-xs text-text-muted">{{ t('tasks.updatedAt') }}: {{ task().updated_at | date:'medium' }}</span>
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 flex-wrap">
           @if (task().state === 'done' || task().state === 'cancelled') {
             @if (!confirmingRevert) {
               <button (click)="confirmingRevert = true" [disabled]="reverting()"

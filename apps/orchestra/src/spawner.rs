@@ -313,13 +313,13 @@ pub async fn spawn_worker(
                 WorktreeManager::disabled(&working_dir)
             } else if let Some(ref root) = git_root {
                 let m = WorktreeManager::with_branch(root, base);
-                // For feature_branch, ensure the goal branch exists before creating worktrees
-                if let crate::git_strategy::GitStrategy::FeatureBranch { goal_branch } =
+                // For feature_branch, ensure the work branch exists before creating worktrees
+                if let crate::git_strategy::GitStrategy::FeatureBranch { work_branch } =
                     &git_strategy
-                    && let Err(e) = m.ensure_branch(goal_branch)
+                    && let Err(e) = m.ensure_branch(work_branch)
                 {
                     warn!(
-                        "spawn: failed to ensure goal branch {goal_branch} for task {task_id_owned}: {e}"
+                        "spawn: failed to ensure work branch {work_branch} for task {task_id_owned}: {e}"
                     );
                 }
                 m

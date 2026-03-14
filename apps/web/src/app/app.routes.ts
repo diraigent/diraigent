@@ -11,7 +11,7 @@ export const routes: Routes = [
   {
     path: 'work',
     canActivate: [AuthGuard],
-    loadComponent: () => import('./features/goals/goals').then(m => m.WorkPage),
+    loadComponent: () => import('./features/work/work').then(m => m.WorkPage),
   },
   {
     path: 'review',

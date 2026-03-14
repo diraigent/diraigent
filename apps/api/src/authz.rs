@@ -6,7 +6,7 @@ use crate::AppState;
 use crate::auth::AuthUser;
 use crate::db::DiraigentDb;
 use crate::models::{
-    Decision, Goal, Integration, Knowledge, Observation, Report, Task, Verification, Webhook,
+    Decision, Integration, Knowledge, Observation, Report, Task, Verification, Webhook, Work,
 };
 
 // ── ProjectScoped trait ──────────────────────────────────────────────────────
@@ -24,7 +24,7 @@ impl ProjectScoped for Task {
         self.project_id
     }
 }
-impl ProjectScoped for Goal {
+impl ProjectScoped for Work {
     fn project_id(&self) -> Uuid {
         self.project_id
     }

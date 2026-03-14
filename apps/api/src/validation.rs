@@ -325,7 +325,7 @@ fn validate_authorities(auths: &[String]) -> Result<(), AppError> {
     Ok(())
 }
 
-// ── Priority (used by Goal, not Task) ──
+// ── Priority (used by Work, not Task) ──
 
 fn validate_priority(priority: i32) -> Result<(), AppError> {
     if !(-1000..=1000).contains(&priority) {
@@ -336,15 +336,15 @@ fn validate_priority(priority: i32) -> Result<(), AppError> {
     Ok(())
 }
 
-// ── Goal ──
+// ── Work ──
 
-pub fn validate_create_goal(req: &CreateGoal) -> Result<(), AppError> {
-    validate_str_len(&req.title, 1, 500, "Goal title")?;
-    if let Some(ref goal_type) = req.goal_type {
-        validate_enum_member(goal_type, models::GOAL_TYPES, "goal type")?;
+pub fn validate_create_work(req: &CreateWork) -> Result<(), AppError> {
+    validate_str_len(&req.title, 1, 500, "Work title")?;
+    if let Some(ref work_type) = req.work_type {
+        validate_enum_member(work_type, models::WORK_TYPES, "work type")?;
     }
     if let Some(ref intent_type) = req.intent_type {
-        validate_enum_member(intent_type, models::GOAL_INTENT_TYPES, "goal intent type")?;
+        validate_enum_member(intent_type, models::WORK_INTENT_TYPES, "work intent type")?;
     }
     if let Some(priority) = req.priority {
         validate_priority(priority)?;
@@ -352,18 +352,18 @@ pub fn validate_create_goal(req: &CreateGoal) -> Result<(), AppError> {
     Ok(())
 }
 
-pub fn validate_update_goal(req: &UpdateGoal) -> Result<(), AppError> {
+pub fn validate_update_work(req: &UpdateWork) -> Result<(), AppError> {
     if let Some(ref title) = req.title {
-        validate_str_len(title, 1, 500, "Goal title")?;
+        validate_str_len(title, 1, 500, "Work title")?;
     }
     if let Some(ref status) = req.status {
-        validate_enum_member(status, models::GOAL_STATUSES, "goal status")?;
+        validate_enum_member(status, models::WORK_STATUSES, "work status")?;
     }
-    if let Some(ref goal_type) = req.goal_type {
-        validate_enum_member(goal_type, models::GOAL_TYPES, "goal type")?;
+    if let Some(ref work_type) = req.work_type {
+        validate_enum_member(work_type, models::WORK_TYPES, "work type")?;
     }
     if let Some(Some(ref intent_type)) = req.intent_type {
-        validate_enum_member(intent_type, models::GOAL_INTENT_TYPES, "goal intent type")?;
+        validate_enum_member(intent_type, models::WORK_INTENT_TYPES, "work intent type")?;
     }
     if let Some(priority) = req.priority {
         validate_priority(priority)?;

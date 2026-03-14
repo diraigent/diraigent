@@ -76,7 +76,7 @@ async fn create(
         required_capabilities: None,
         playbook_id: Some(playbook_id),
         decision_id: None,
-        goal_id: None,
+        work_id: None,
         file_scope: None,
         parent_id: None,
     };

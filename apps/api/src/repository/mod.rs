@@ -10,7 +10,6 @@ mod decisions;
 mod event_rules;
 mod events;
 mod files;
-mod goals;
 mod integrations;
 mod knowledge;
 mod memberships;
@@ -30,6 +29,7 @@ mod tenants;
 mod transitions;
 mod verifications;
 mod webhooks;
+mod work;
 
 pub use agents::*;
 pub use audit::*;
@@ -37,7 +37,6 @@ pub use decisions::*;
 pub use event_rules::*;
 pub use events::*;
 pub use files::*;
-pub use goals::*;
 pub use integrations::*;
 pub use knowledge::*;
 pub use memberships::*;
@@ -57,6 +56,7 @@ pub use tenants::*;
 pub use transitions::*;
 pub use verifications::*;
 pub use webhooks::*;
+pub use work::*;
 
 // ── Shared utilities ──
 
@@ -84,7 +84,7 @@ pub(crate) enum Table {
     Decision,
     Event,
     EventObservationRule,
-    Goal,
+    Work,
     Integration,
     Knowledge,
     Membership,
@@ -111,7 +111,7 @@ impl Table {
             Table::Decision => "decision",
             Table::Event => "event",
             Table::EventObservationRule => "event_observation_rule",
-            Table::Goal => "goal",
+            Table::Work => "work",
             Table::Integration => "integration",
             Table::Knowledge => "knowledge",
             Table::Membership => "membership",

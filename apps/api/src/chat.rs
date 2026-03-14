@@ -111,7 +111,7 @@ pub async fn build_system_prompt(
          - `POST /{{project_id}}/observations` — Create observation\n\
          - `GET /{{project_id}}/verifications?task_id=<id>&kind=<kind>&status=<status>` — List verifications\n\
          - `POST /{{project_id}}/verifications` — Create verification\n\
-         - `GET /{{project_id}}/goals` — List goals\n\
+         - `GET /{{project_id}}/work` — List work items\n\
          - `GET /{{project_id}}/playbooks` — List playbooks\n\n",
     ));
 

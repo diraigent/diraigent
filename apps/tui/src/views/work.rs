@@ -15,17 +15,17 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
 
     // List
     let block = Block::default()
-        .title(" Goals ")
+        .title(" Work ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme::green()));
 
     let items: Vec<ListItem> = app
-        .goals
+        .work_items
         .iter()
         .enumerate()
         .map(|(i, g)| {
             let status = g.status.as_deref().unwrap_or("active");
-            let goal_type = g.goal_type.as_deref().unwrap_or("epic");
+            let work_type = g.work_type.as_deref().unwrap_or("epic");
             let priority = g.priority.unwrap_or(0);
             let color = match status {
                 "active" => theme::green(),
@@ -34,7 +34,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 "abandoned" => theme::red(),
                 _ => theme::text(),
             };
-            let style = if Some(i) == app.selected_goal {
+            let style = if Some(i) == app.selected_work {
                 Style::default().fg(theme::base()).bg(theme::green())
             } else {
                 Style::default().fg(color)
@@ -45,7 +45,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 String::new()
             };
             ListItem::new(Line::styled(
-                format!(" [{}:{}]{} {}", goal_type, status, prio_str, g.title),
+                format!(" [{}:{}]{} {}", work_type, status, prio_str, g.title),
                 style,
             ))
         })
@@ -55,16 +55,16 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
 
     // Detail
     let detail_block = Block::default()
-        .title(" Goal Detail ")
+        .title(" Work Detail ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme::surface1()));
 
     let content = app
-        .selected_goal
-        .and_then(|i| app.goals.get(i))
+        .selected_work
+        .and_then(|i| app.work_items.get(i))
         .map(|g| {
             let status = g.status.as_deref().unwrap_or("active");
-            let goal_type = g.goal_type.as_deref().unwrap_or("epic");
+            let work_type = g.work_type.as_deref().unwrap_or("epic");
             let priority = g.priority.unwrap_or(0);
             let auto_status = g.auto_status.unwrap_or(false);
             let status_color = match status {
@@ -79,7 +79,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 Line::styled(
                     format!(
                         "Type: {}  Status: {}  Priority: {}",
-                        goal_type, status, priority
+                        work_type, status, priority
                     ),
                     Style::default().fg(status_color),
                 ),
@@ -92,9 +92,9 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 ));
             }
 
-            if g.parent_goal_id.is_some() {
+            if g.parent_work_id.is_some() {
                 lines.push(Line::styled(
-                    "Has parent goal",
+                    "Has parent work item",
                     Style::default().fg(theme::subtext0()),
                 ));
             }
@@ -104,14 +104,6 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 lines.push(Line::styled(
                     desc.as_str(),
                     Style::default().fg(theme::text()),
-                ));
-            }
-
-            if let Some(ref date) = g.target_date {
-                lines.push(Line::from(""));
-                lines.push(Line::styled(
-                    format!("Target: {}", date),
-                    Style::default().fg(theme::subtext0()),
                 ));
             }
 
@@ -137,8 +129,8 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             }
 
             // Progress bar
-            if let Some(ref progress) = app.goal_progress {
-                if progress.goal_id == g.id {
+            if let Some(ref progress) = app.work_progress {
+                if progress.work_id == g.id {
                     lines.push(Line::from(""));
                     let total = progress.total_tasks;
                     let done = progress.done_tasks;
@@ -169,8 +161,8 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             }
 
             // Stats
-            if let Some(ref stats) = app.goal_stats {
-                if stats.goal_id == g.id {
+            if let Some(ref stats) = app.work_stats {
+                if stats.work_id == g.id {
                     lines.push(Line::from(""));
                     lines.push(Line::styled(
                         "Task Stats:",
@@ -209,13 +201,13 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             }
 
             // Linked tasks
-            if !app.goal_tasks.is_empty() {
+            if !app.work_tasks.is_empty() {
                 lines.push(Line::from(""));
                 lines.push(Line::styled(
-                    format!("Linked Tasks ({}):", app.goal_tasks.len()),
+                    format!("Linked Tasks ({}):", app.work_tasks.len()),
                     Style::default().fg(theme::peach()),
                 ));
-                for t in &app.goal_tasks {
+                for t in &app.work_tasks {
                     let state_color = match t.state.as_str() {
                         "done" => theme::green(),
                         "cancelled" => theme::red(),
@@ -236,13 +228,13 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             ));
 
             // Comments
-            if !app.goal_comments.is_empty() {
+            if !app.work_comments.is_empty() {
                 lines.push(Line::from(""));
                 lines.push(Line::styled(
-                    format!("Comments ({}):", app.goal_comments.len()),
+                    format!("Comments ({}):", app.work_comments.len()),
                     Style::default().fg(theme::peach()),
                 ));
-                for gc in &app.goal_comments {
+                for gc in &app.work_comments {
                     let time = gc
                         .created_at
                         .as_deref()
@@ -271,17 +263,17 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             }
 
             // Children
-            if !app.goal_children.is_empty() {
+            if !app.work_children.is_empty() {
                 lines.push(Line::from(""));
                 lines.push(Line::styled(
-                    format!("Children ({}):", app.goal_children.len()),
+                    format!("Children ({}):", app.work_children.len()),
                     Style::default().fg(theme::peach()),
                 ));
-                for child in &app.goal_children {
-                    let child_type = child.goal_type.as_deref().unwrap_or("epic");
+                for child in &app.work_children {
+                    let work_type = child.work_type.as_deref().unwrap_or("epic");
                     let child_status = child.status.as_deref().unwrap_or("active");
                     lines.push(Line::styled(
-                        format!("  [{}:{}] {}", child_type, child_status, child.title),
+                        format!("  [{}:{}] {}", work_type, child_status, child.title),
                         Style::default().fg(theme::text()),
                     ));
                 }
@@ -291,7 +283,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
         })
         .unwrap_or_else(|| {
             vec![Line::styled(
-                " Select a goal",
+                " Select a work item",
                 Style::default().fg(theme::overlay0()),
             )]
         });

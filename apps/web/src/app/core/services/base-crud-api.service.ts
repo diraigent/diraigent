@@ -19,7 +19,7 @@ export abstract class BaseApiService {
  *  - list/create:   {apiServer}/{projectId}/{resource}
  *  - get/update/delete: {apiServer}/{resource}/{id}
  *
- * Subclasses must declare `readonly resource` (e.g. 'goals').
+ * Subclasses must declare `readonly resource` (e.g. 'work').
  * Each subclass defines its own `list()` with typed params; call `fetchList(params)` inside.
  */
 export abstract class BaseCrudApiService<T, C, U> extends BaseApiService {

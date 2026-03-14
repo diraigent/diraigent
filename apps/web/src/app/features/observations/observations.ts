@@ -211,7 +211,7 @@ const STATUSES: ObservationStatus[] = ['open', 'acknowledged', 'acted_on', 'dism
                   @if (item.description) {
                     <div class="mb-4">
                       <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1">{{ t('observations.fieldDescription') }}</h3>
-                      <p class="text-sm text-text-primary whitespace-pre-wrap">{{ item.description }}</p>
+                      <p class="text-sm text-text-primary whitespace-pre-wrap break-words">{{ item.description }}</p>
                     </div>
                   }
 

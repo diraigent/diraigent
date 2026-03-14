@@ -26,14 +26,21 @@ COMMIT_MSG=$(git diff --cached --stat | claude -p \
 COMMIT_BODY=$(echo "$COMMIT_MSG" | sed '/^---CHANGELOG---$/,$d')
 CHANGELOG_ENTRY=$(echo "$COMMIT_MSG" | sed '1,/^---CHANGELOG---$/d')
 
-# Prepend changelog entry
-if [ -f CHANGELOG.md ]; then
-  { echo "$CHANGELOG_ENTRY"; echo ""; cat CHANGELOG.md; } > CHANGELOG.md.tmp
+# Insert changelog entry after the "# Changelog" header
+if [ -f CHANGELOG.md ] && grep -q '^# Changelog' CHANGELOG.md; then
+  sed '/^# Changelog$/r /dev/stdin' CHANGELOG.md <<EOF > CHANGELOG.md.tmp
+
+$CHANGELOG_ENTRY
+
+---
+EOF
   mv CHANGELOG.md.tmp CHANGELOG.md
 else
-  echo "# Changelog" > CHANGELOG.md
-  echo "" >> CHANGELOG.md
-  echo "$CHANGELOG_ENTRY" >> CHANGELOG.md
+  cat > CHANGELOG.md <<EOF
+# Changelog
+
+$CHANGELOG_ENTRY
+EOF
 fi
 
 git add .
@@ -42,4 +49,7 @@ git tag "$TAG"
 
 git push origin main --tags
 git push github main --tags
+
+# Merge main back into dev so changelog + tag are present
 git checkout dev
+git merge main --no-edit

@@ -108,7 +108,7 @@ impl WorktreeManager {
     }
 
     /// Ensure a branch exists locally. If it doesn't, create it from the default branch.
-    /// Used by the feature_branch strategy to ensure the goal branch exists before
+    /// Used by the feature_branch strategy to ensure the work branch exists before
     /// creating task worktrees.
     pub fn ensure_branch(&self, branch: &str) -> Result<()> {
         if self.git_root.is_none() {
@@ -284,7 +284,7 @@ impl WorktreeManager {
     /// Merge a task branch into a specific target branch.
     ///
     /// Used by git strategies: `merge` targets the default or configured branch,
-    /// `feature_branch` targets the goal branch.
+    /// `feature_branch` targets the work branch.
     pub fn merge_to_branch(&self, task_id: &str, target_branch: &str) -> Result<()> {
         if self.git_root.is_none() {
             info!("git_mode=none, skipping merge for task {}", task_id);

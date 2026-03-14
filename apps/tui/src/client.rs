@@ -139,21 +139,20 @@ pub struct DecisionAlternative {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Goal {
+pub struct Work {
     pub id: Uuid,
     pub title: String,
     pub description: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
     #[serde(default)]
-    pub goal_type: Option<String>,
+    pub work_type: Option<String>,
     #[serde(default)]
     pub priority: Option<i32>,
     #[serde(default)]
-    pub parent_goal_id: Option<Uuid>,
+    pub parent_work_id: Option<Uuid>,
     #[serde(default)]
     pub auto_status: Option<bool>,
-    pub target_date: Option<String>,
     #[serde(default)]
     pub success_criteria: Option<serde_json::Value>,
     #[serde(default)]
@@ -165,15 +164,15 @@ pub struct Goal {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct GoalProgress {
-    pub goal_id: Uuid,
+pub struct WorkProgress {
+    pub work_id: Uuid,
     pub total_tasks: i64,
     pub done_tasks: i64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct GoalStats {
-    pub goal_id: Uuid,
+pub struct WorkStats {
+    pub work_id: Uuid,
     pub backlog_count: i64,
     pub ready_count: i64,
     pub working_count: i64,
@@ -798,12 +797,12 @@ pub struct TaskCostRow {
     pub output_tokens: i64,
 }
 
-// ── Goal Comment types ───────────────────────────────────────
+// ── Work Comment types ───────────────────────────────────────
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct GoalComment {
+pub struct WorkComment {
     pub id: Uuid,
     #[serde(default)]
-    pub goal_id: Option<Uuid>,
+    pub work_id: Option<Uuid>,
     #[serde(default)]
     pub agent_id: Option<Uuid>,
     #[serde(default)]
@@ -1074,64 +1073,64 @@ impl ApiClient {
         resp.json().await
     }
 
-    // ── Goal operations ──────────────────────────────────────
+    // ── Work operations ──────────────────────────────────────
 
-    pub async fn list_goals(&self, project_id: Uuid) -> Result<Vec<Goal>, reqwest::Error> {
+    pub async fn list_work(&self, project_id: Uuid) -> Result<Vec<Work>, reqwest::Error> {
         let req = self
             .client
-            .get(format!("{}/{}/goals", self.base_url, project_id));
+            .get(format!("{}/{}/work", self.base_url, project_id));
         let resp = self.auth(req).send().await?.error_for_status()?;
         resp.json().await
     }
 
-    pub async fn get_goal_progress(&self, goal_id: Uuid) -> Result<GoalProgress, reqwest::Error> {
+    pub async fn get_work_progress(&self, work_id: Uuid) -> Result<WorkProgress, reqwest::Error> {
         let req = self
             .client
-            .get(format!("{}/goals/{}/progress", self.base_url, goal_id));
+            .get(format!("{}/work/{}/progress", self.base_url, work_id));
         let resp = self.auth(req).send().await?.error_for_status()?;
         resp.json().await
     }
 
-    pub async fn get_goal_stats(&self, goal_id: Uuid) -> Result<GoalStats, reqwest::Error> {
+    pub async fn get_work_stats(&self, work_id: Uuid) -> Result<WorkStats, reqwest::Error> {
         let req = self
             .client
-            .get(format!("{}/goals/{}/stats", self.base_url, goal_id));
+            .get(format!("{}/work/{}/stats", self.base_url, work_id));
         let resp = self.auth(req).send().await?.error_for_status()?;
         resp.json().await
     }
 
-    pub async fn list_goal_children(&self, goal_id: Uuid) -> Result<Vec<Goal>, reqwest::Error> {
+    pub async fn list_work_children(&self, work_id: Uuid) -> Result<Vec<Work>, reqwest::Error> {
         let req = self
             .client
-            .get(format!("{}/goals/{}/children", self.base_url, goal_id));
+            .get(format!("{}/work/{}/children", self.base_url, work_id));
         let resp = self.auth(req).send().await?.error_for_status()?;
         resp.json().await
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn create_goal(
+    pub async fn create_work(
         &self,
         project_id: Uuid,
         title: &str,
         description: &str,
-        goal_type: &str,
+        work_type: &str,
         priority: i32,
-        parent_goal_id: Option<Uuid>,
+        parent_work_id: Option<Uuid>,
         auto_status: bool,
-    ) -> Result<Goal, reqwest::Error> {
+    ) -> Result<Work, reqwest::Error> {
         let mut body = serde_json::json!({
             "title": title,
             "description": description,
-            "goal_type": goal_type,
+            "work_type": work_type,
             "priority": priority,
             "auto_status": auto_status,
         });
-        if let Some(pid) = parent_goal_id {
-            body["parent_goal_id"] = serde_json::json!(pid);
+        if let Some(pid) = parent_work_id {
+            body["parent_work_id"] = serde_json::json!(pid);
         }
         let req = self
             .client
-            .post(format!("{}/{}/goals", self.base_url, project_id));
+            .post(format!("{}/{}/work", self.base_url, project_id));
         let resp = self
             .auth(req)
             .json(&body)
@@ -1141,14 +1140,14 @@ impl ApiClient {
         resp.json().await
     }
 
-    pub async fn update_goal(
+    pub async fn update_work(
         &self,
-        goal_id: Uuid,
+        work_id: Uuid,
         body: serde_json::Value,
-    ) -> Result<Goal, reqwest::Error> {
+    ) -> Result<Work, reqwest::Error> {
         let req = self
             .client
-            .put(format!("{}/goals/{}", self.base_url, goal_id));
+            .put(format!("{}/work/{}", self.base_url, work_id));
         let resp = self
             .auth(req)
             .json(&body)
@@ -1158,41 +1157,41 @@ impl ApiClient {
         resp.json().await
     }
 
-    pub async fn link_task_to_goal(
+    pub async fn link_task_to_work(
         &self,
-        goal_id: Uuid,
+        work_id: Uuid,
         task_id: Uuid,
     ) -> Result<(), reqwest::Error> {
         let req = self
             .client
-            .post(format!("{}/goals/{}/tasks", self.base_url, goal_id))
+            .post(format!("{}/work/{}/tasks", self.base_url, work_id))
             .json(&serde_json::json!({"task_id": task_id}));
         self.auth(req).send().await?.error_for_status()?;
         Ok(())
     }
 
-    pub async fn unlink_task_from_goal(
+    pub async fn unlink_task_from_work(
         &self,
-        goal_id: Uuid,
+        work_id: Uuid,
         task_id: Uuid,
     ) -> Result<(), reqwest::Error> {
         let req = self.client.delete(format!(
-            "{}/goals/{}/tasks/{}",
-            self.base_url, goal_id, task_id
+            "{}/work/{}/tasks/{}",
+            self.base_url, work_id, task_id
         ));
         self.auth(req).send().await?.error_for_status()?;
         Ok(())
     }
 
-    pub async fn list_goal_tasks(
+    pub async fn list_work_tasks(
         &self,
-        goal_id: Uuid,
+        work_id: Uuid,
         limit: i64,
         offset: i64,
     ) -> Result<Vec<Task>, reqwest::Error> {
         let req = self.client.get(format!(
-            "{}/goals/{}/tasks?limit={}&offset={}",
-            self.base_url, goal_id, limit, offset
+            "{}/work/{}/tasks?limit={}&offset={}",
+            self.base_url, work_id, limit, offset
         ));
         let resp = self.auth(req).send().await?.error_for_status()?;
         resp.json().await
@@ -1200,13 +1199,13 @@ impl ApiClient {
 
     pub async fn bulk_link_tasks(
         &self,
-        goal_id: Uuid,
+        work_id: Uuid,
         task_ids: &[Uuid],
     ) -> Result<serde_json::Value, reqwest::Error> {
         let body = serde_json::json!({ "task_ids": task_ids });
         let req = self
             .client
-            .post(format!("{}/goals/{}/tasks/bulk", self.base_url, goal_id));
+            .post(format!("{}/work/{}/tasks/bulk", self.base_url, work_id));
         let resp = self
             .auth(req)
             .json(&body)
@@ -2433,27 +2432,27 @@ impl ApiClient {
         resp.json().await
     }
 
-    // ── Goal Comment operations ─────────────────────────────────
+    // ── Work Comment operations ─────────────────────────────────
 
-    pub async fn list_goal_comments(
+    pub async fn list_work_comments(
         &self,
-        goal_id: Uuid,
-    ) -> Result<Vec<GoalComment>, reqwest::Error> {
+        work_id: Uuid,
+    ) -> Result<Vec<WorkComment>, reqwest::Error> {
         let req = self
             .client
-            .get(format!("{}/goals/{}/comments", self.base_url, goal_id));
+            .get(format!("{}/work/{}/comments", self.base_url, work_id));
         let resp = self.auth(req).send().await?.error_for_status()?;
         resp.json().await
     }
 
-    pub async fn create_goal_comment(
+    pub async fn create_work_comment(
         &self,
-        goal_id: Uuid,
+        work_id: Uuid,
         body: serde_json::Value,
-    ) -> Result<GoalComment, reqwest::Error> {
+    ) -> Result<WorkComment, reqwest::Error> {
         let req = self
             .client
-            .post(format!("{}/goals/{}/comments", self.base_url, goal_id));
+            .post(format!("{}/work/{}/comments", self.base_url, work_id));
         let resp = self
             .auth(req)
             .json(&body)
