@@ -248,6 +248,9 @@ impl DiraigentDb for PostgresDb {
     ) -> Result<Vec<Goal>, AppError> {
         repository::list_goals(&self.0, project_id, filters).await
     }
+    async fn activate_goal(&self, goal_id: Uuid) -> Result<Goal, AppError> {
+        repository::activate_goal(&self.0, goal_id).await
+    }
     async fn update_goal(&self, id: Uuid, req: &UpdateGoal) -> Result<Goal, AppError> {
         repository::update_goal(&self.0, id, req).await
     }

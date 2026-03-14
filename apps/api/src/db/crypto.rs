@@ -510,6 +510,9 @@ impl DiraigentDb for CryptoDb {
     ) -> Result<Vec<Goal>, AppError> {
         delegate!(self, list_goals, project_id, filters)
     }
+    async fn activate_goal(&self, goal_id: Uuid) -> Result<Goal, AppError> {
+        delegate!(self, activate_goal, goal_id)
+    }
     async fn update_goal(&self, id: Uuid, req: &UpdateGoal) -> Result<Goal, AppError> {
         delegate!(self, update_goal, id, req)
     }
