@@ -63,7 +63,10 @@
       "doneToday": "Heute erledigt",
       "cancelledToday": "Heute abgebrochen",
       "totalCost": "Gesamtkosten",
-      "totalCostNote": "Schätzung – entspricht möglicherweise nicht dem tatsächlichen Abo-Verbrauch"
+      "totalCostNote": "Schätzung – entspricht möglicherweise nicht dem tatsächlichen Abo-Verbrauch",
+      "tokensToday": "Tokens heute",
+      "tokensWeek": "Tokens diese Woche",
+      "tokensTotal": "Tokens gesamt"
     }
   },
   "common": {
