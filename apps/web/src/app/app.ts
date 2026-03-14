@@ -14,9 +14,9 @@ import { ChatService } from './core/services/chat.service';
   template: `
     @if (auth.isLoggedIn()) {
       <app-sidebar [class.hidden]="chat.fullscreen()" />
-      <div class="h-dvh flex flex-col"
+      <div class="h-dvh flex flex-col min-w-0 overflow-x-hidden"
            [class.lg:ml-64]="!chat.fullscreen()">
-        <main id="main-content" class="flex-[2] overflow-y-auto pt-14 lg:pt-0" tabindex="-1"
+        <main id="main-content" class="flex-[2] overflow-y-auto overflow-x-hidden pt-14 lg:pt-0 min-w-0" tabindex="-1"
               [class.hidden]="chat.fullscreen()">
           <router-outlet />
         </main>

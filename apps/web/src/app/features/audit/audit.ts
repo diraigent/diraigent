@@ -55,12 +55,12 @@ const ACTION_COLORS: Record<string, string> = {
           }
         </select>
         <!-- Entity-specific history lookup -->
-        <div class="flex gap-2">
+        <div class="flex flex-wrap gap-2">
           <input
             type="text"
             [placeholder]="t('audit.entityIdPlaceholder')"
             [(ngModel)]="entityIdQuery"
-            class="w-[280px] bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+            class="flex-1 min-w-[180px] max-w-[280px] bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
                    focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary" />
           <button (click)="loadEntityHistory()"
             [disabled]="!selectedEntityType || !entityIdQuery"
@@ -112,7 +112,7 @@ const ACTION_COLORS: Record<string, string> = {
 
         <!-- Detail panel -->
         @if (selected()) {
-          <div class="w-full lg:w-[560px] shrink-0 bg-surface rounded-lg border border-border p-4 sm:p-6 max-h-[calc(100vh-200px)] overflow-y-auto">
+          <div class="w-full lg:w-[560px] shrink-0 bg-surface rounded-lg border border-border p-4 sm:p-6 max-h-[calc(100vh-200px)] overflow-y-auto overflow-x-hidden min-w-0">
             <div class="flex items-center justify-between mb-3">
               <h2 class="text-lg font-semibold text-text-primary">{{ t('audit.entryDetail') }}</h2>
               <button (click)="selected.set(null)" class="p-1.5 text-text-secondary hover:text-text-primary rounded">
@@ -137,14 +137,14 @@ const ACTION_COLORS: Record<string, string> = {
               @if (selected()!.actor_name) {
                 <div class="text-xs text-text-secondary">{{ t('audit.actor') }}: {{ selected()!.actor_name }}</div>
               }
-              <div class="text-xs text-text-secondary">{{ t('audit.entityId') }}: {{ selected()!.entity_id }}</div>
+              <div class="text-xs text-text-secondary break-all">{{ t('audit.entityId') }}: {{ selected()!.entity_id }}</div>
             </div>
 
             <!-- Before/After diff -->
             @if (selected()!.before_state || selected()!.after_state) {
               <div class="border-t border-border pt-4">
                 <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-3">{{ t('audit.stateChanges') }}</h3>
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <!-- Before -->
                   <div>
                     <h4 class="text-xs font-medium text-ctp-red mb-1">{{ t('audit.before') }}</h4>
