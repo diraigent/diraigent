@@ -113,12 +113,6 @@ const VERIFICATION_KIND_COLORS: Record<VerificationKind, string> = {
             {{ t('tasks.claim') }}
           </button>
         }
-        @if (task().assigned_agent_id) {
-          <button (click)="releaseClick.emit()"
-            class="px-2 py-0.5 text-xs font-medium bg-ctp-red text-bg rounded-lg hover:opacity-90">
-            {{ t('tasks.release') }}
-          </button>
-        }
       </div>
 
       <!-- Meta info -->
@@ -568,7 +562,6 @@ export class TaskDetailComponent {
   closed = output<void>();
   transitionClick = output<string>();
   claimClick = output<void>();
-  releaseClick = output<void>();
   pushClick = output<string>();
   resolveClick = output<void>();
   revertClick = output<void>();

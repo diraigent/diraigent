@@ -129,7 +129,6 @@ import { TaskFormComponent } from './components/task-form/task-form';
         (flagToggle)="onFlagToggle($event.task, $event.flagged)"
         (detailTransition)="onTransition(selectedTask()!, $event)"
         (detailClaim)="onClaim(selectedTask()!)"
-        (detailRelease)="onRelease(selectedTask()!)"
         (detailPush)="onPush($event)"
         (detailResolve)="onResolve(selectedTask()!)"
         (detailRevert)="onRevert(selectedTask()!)"
@@ -523,12 +522,6 @@ export class TasksPage {
     // For web UI, we don't have an agent_id — this action is for humans via UI.
     // Claim requires an agent_id; in web context this would need selection.
     // For now, skip or show a delegate action.
-  }
-
-  onRelease(task: SpTask): void {
-    this.api.release(task.id).subscribe({
-      next: () => this.reload(),
-    });
   }
 
   onPush(branch: string): void {

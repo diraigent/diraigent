@@ -583,7 +583,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                       (stateChange)="onLinkedTaskStateChange($event.task, $event.target)"
                       (detailTransition)="onLinkedTaskStateChange(selectedLinkedTask()!, $event)"
                       (detailClaim)="onTaskClaim()"
-                      (detailRelease)="onTaskRelease(selectedLinkedTask()!)"
                       (detailPush)="onTaskPush($event)"
                       (detailResolve)="onTaskResolve(selectedLinkedTask()!)"
                       (detailRevert)="onTaskRevert(selectedLinkedTask()!)"
@@ -796,7 +795,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   (stateChange)="onUnlinkedTaskStateChange($event.task, $event.target)"
                   (detailTransition)="onUnlinkedTaskStateChange(selectedUnlinkedTask()!, $event)"
                   (detailClaim)="onTaskClaim()"
-                  (detailRelease)="onTaskRelease(selectedUnlinkedTask()!)"
                   (detailPush)="onTaskPush($event)"
                   (detailResolve)="onTaskResolve(selectedUnlinkedTask()!)"
                   (detailRevert)="onTaskRevert(selectedUnlinkedTask()!)"
@@ -857,7 +855,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   (stateChange)="onUnlinkedTaskStateChange($event.task, $event.target)"
                   (detailTransition)="onUnlinkedTaskStateChange(selectedUnlinkedTask()!, $event)"
                   (detailClaim)="onTaskClaim()"
-                  (detailRelease)="onTaskRelease(selectedUnlinkedTask()!)"
                   (detailPush)="onTaskPush($event)"
                   (detailResolve)="onTaskResolve(selectedUnlinkedTask()!)"
                   (detailRevert)="onTaskRevert(selectedUnlinkedTask()!)"
@@ -1409,20 +1406,6 @@ export class WorkPage {
 
   onTaskClaim(): void {
     // Claim requires an agent_id; not applicable in web UI context.
-  }
-
-  onTaskRelease(task: SpTask): void {
-    this.tasksApi.release(task.id).subscribe({
-      next: () => {
-        this.loadUnlinkedTasks();
-        const sel = this.selected();
-        if (sel) {
-          this.loadLinkedTasks(sel.id);
-          this.loadAllProgress([sel]);
-          this.loadStatsAndChildren(sel.id);
-        }
-      },
-    });
   }
 
   // --- Section collapse ---
