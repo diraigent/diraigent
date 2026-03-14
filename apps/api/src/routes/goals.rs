@@ -394,6 +394,7 @@ pub(crate) async fn refresh_auto_status_goals(
             priority: None,
             parent_goal_id: None,
             auto_status: None,
+            intent_type: None,
             target_date: None,
             success_criteria: None,
             metadata: None,
