@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 
 # =============================================================================
-# Stage 1: Dependencies (cached layer)
+# Stage 1: Dependencies (cached layer) — pinned to amd64 (output is arch-independent)
 # =============================================================================
-FROM node:25.6.0-alpine AS deps
+FROM --platform=linux/amd64 node:25.6.0-alpine AS deps
 
 WORKDIR /app
 
@@ -15,9 +15,9 @@ RUN --mount=type=cache,target=/root/.npm \
     npm ci --prefer-offline --no-audit
 
 # =============================================================================
-# Stage 2: Build
+# Stage 2: Build — pinned to amd64 (produces static JS/CSS, no arch dependency)
 # =============================================================================
-FROM node:25.6.0-alpine AS builder
+FROM --platform=linux/amd64 node:25.6.0-alpine AS builder
 
 WORKDIR /app
 
@@ -34,7 +34,7 @@ COPY src/ src/
 RUN npm run build:prod
 
 # =============================================================================
-# Stage 3: Runtime
+# Stage 3: Runtime — uses target platform (amd64 or arm64 nginx)
 # =============================================================================
 FROM nginx:1.29.5-alpine AS runtime
 

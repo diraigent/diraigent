@@ -121,6 +121,21 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               </button>
             }
           }
+          <button (click)="onReleaseProject()"
+            [disabled]="releasing()"
+            title="Squash-merge dev → main, tag, and push to all remotes"
+            class="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg
+                   bg-ctp-mauve/15 text-ctp-mauve hover:bg-ctp-mauve/25 transition-colors
+                   disabled:opacity-50 disabled:cursor-not-allowed">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M7 7h.01M7 3h5a1.99 1.99 0 011.41.59l7 7a2 2 0 010 2.82l-5 5a2 2 0 01-2.82 0l-7-7A2 2 0 013 10V5a2 2 0 012-2z" />
+            </svg>
+            @if (releasing()) {
+              {{ t('git.releasing') }}
+            } @else {
+              {{ t('git.release') }}
+            }
+          </button>
           <button (click)="openCreateStandaloneTask()" class="px-4 py-2 bg-ctp-green text-ctp-base rounded-lg text-sm font-medium hover:opacity-90">
             {{ t('tasks.create') }}
           </button>
@@ -1131,6 +1146,7 @@ export class WorkPage {
   mainStatus = signal<MainPushStatus | null>(null);
   pushingMain = signal(false);
   resolvingMain = signal(false);
+  releasing = signal(false);
   branchMap = signal<Map<string, BranchInfo>>(new Map());
   private gitPollSub?: Subscription;
   private detailPollSub?: Subscription;
@@ -1243,6 +1259,25 @@ export class WorkPage {
         this.mainStatus.set(null);
       },
       error: () => this.pushingMain.set(false),
+    });
+  }
+
+  onReleaseProject(): void {
+    if (!confirm('Create a new release? This will squash-merge dev → main, create a version tag, and push to all remotes.')) return;
+    this.releasing.set(true);
+    this.git.release().subscribe({
+      next: (res) => {
+        this.releasing.set(false);
+        alert(res.message);
+        this.git.mainStatus().pipe(catchError(() => of(null as MainPushStatus | null))).subscribe({
+          next: (ms) => this.mainStatus.set(ms),
+        });
+      },
+      error: (err: unknown) => {
+        this.releasing.set(false);
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        alert(`Release failed: ${errorMsg}`);
+      },
     });
   }
 

@@ -24,12 +24,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up QEMU for multi-arch
-        run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-
       - name: Create buildx builder
         run: |
-          docker buildx create --name multiarch --driver docker-container --use
+          docker buildx create --name builder --driver docker-container --use
           docker buildx inspect --bootstrap
 
       - name: Extract version from tag
@@ -47,8 +44,12 @@ jobs:
           DOCKER_BUILDKIT: "1"
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          CACHE_REF="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/api:buildcache"
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
+            --cache-from "type=registry,ref=${CACHE_REF}-amd64" \
+            --cache-from "type=registry,ref=${CACHE_REF}-arm64" \
+            --cache-to "type=inline" \
             --label "org.opencontainers.image.version=${VERSION}" \
             -f apps/api/Containerfile \
             -t "diraigent/api:${VERSION}" \
@@ -71,12 +72,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up QEMU for multi-arch
-        run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-
       - name: Create buildx builder
         run: |
-          docker buildx create --name multiarch --driver docker-container --use
+          docker buildx create --name builder --driver docker-container --use
           docker buildx inspect --bootstrap
 
       - name: Extract version from tag
@@ -94,8 +92,12 @@ jobs:
           DOCKER_BUILDKIT: "1"
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          CACHE_REF="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/orchestra:buildcache"
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
+            --cache-from "type=registry,ref=${CACHE_REF}-amd64" \
+            --cache-from "type=registry,ref=${CACHE_REF}-arm64" \
+            --cache-to "type=inline" \
             --label "org.opencontainers.image.version=${VERSION}" \
             -f apps/orchestra/Containerfile \
             -t "diraigent/orchestra:${VERSION}" \
@@ -118,12 +120,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up QEMU for multi-arch
-        run: docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-
       - name: Create buildx builder
         run: |
-          docker buildx create --name multiarch --driver docker-container --use
+          docker buildx create --name builder --driver docker-container --use
           docker buildx inspect --bootstrap
 
       - name: Extract version from tag
@@ -141,8 +140,11 @@ jobs:
           DOCKER_BUILDKIT: "1"
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          CACHE_REF="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/web:buildcache"
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
+            --cache-from "type=registry,ref=${CACHE_REF}" \
+            --cache-to "type=inline" \
             --label "org.opencontainers.image.version=${VERSION}" \
             -f apps/web/Containerfile \
             -t "diraigent/web:${VERSION}" \
