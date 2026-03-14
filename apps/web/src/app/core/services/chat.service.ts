@@ -30,6 +30,8 @@ export class ChatService {
   readonly isOpen = signal(false);
   /** Emits true when the parent layout should scroll the chat panel into view (mobile). */
   readonly scrollToChat = signal(false);
+  /** Whether the chat panel is collapsed to just the header. */
+  readonly collapsed = signal(localStorage.getItem('diraigent-chat-collapsed') === 'true');
 
   private abortController: AbortController | null = null;
   private generation = 0;
@@ -212,9 +214,18 @@ export class ChatService {
     }
   }
 
+  toggleCollapsed(): void {
+    this.collapsed.update(v => !v);
+    localStorage.setItem('diraigent-chat-collapsed', String(this.collapsed()));
+  }
+
   /** Send a message (chat is always visible). Emits scrollToChat for mobile scroll-into-view. */
   openWithMessage(text?: string): void {
     this.isOpen.set(true);
+    if (this.collapsed()) {
+      this.collapsed.set(false);
+      localStorage.setItem('diraigent-chat-collapsed', 'false');
+    }
     this.scrollToChat.set(true);
     if (text) {
       this.send(text);
