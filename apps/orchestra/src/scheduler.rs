@@ -248,6 +248,12 @@ async fn process_reaped_task(
                         if let Err(comment_err) = api.post_comment(&task_id, &msg).await {
                             warn!("failed to post merge-failure comment for {tid}: {comment_err}");
                         }
+                        // Transition to human_review so the failure is visible in the review queue
+                        if let Err(tr_err) = api.transition_task(&task_id, "human_review").await {
+                            warn!(
+                                "failed to transition {tid} to human_review after merge failure: {tr_err}"
+                            );
+                        }
                     }
                 }
             } else if git_strategy.should_push_branch() {
