@@ -1,6 +1,15 @@
 # ── Stage 1: build orchestra from Rust source ──────────────
-FROM rust:1.93-bookworm AS builder
+FROM --platform=linux/amd64 rust:1.93-bookworm AS builder
 WORKDIR /build
+
+ARG TARGETARCH
+
+# Install cross-compilation tools for arm64 (only when needed)
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu && \
+      rustup target add aarch64-unknown-linux-gnu && \
+      rm -rf /var/lib/apt/lists/*; \
+    fi
 
 # ── Layer 1: workspace manifests only (cached unless Cargo.toml/lock change) ──
 COPY Cargo.toml Cargo.lock ./
@@ -23,7 +32,12 @@ RUN mkdir -p libs/common-rust/diraigent-types/src && echo "" > libs/common-rust/
     echo "fn main(){}" > apps/orchestra/src/cli.rs
 
 # Build dependencies only (this layer is cached until Cargo.toml/lock change)
-RUN cargo build --release -p diraigent-orchestra 2>/dev/null || true
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+      cargo build --release --target aarch64-unknown-linux-gnu -p diraigent-orchestra 2>/dev/null || true; \
+    else \
+      cargo build --release -p diraigent-orchestra 2>/dev/null || true; \
+    fi
 
 # ── Layer 2: actual source code (rebuilds only app code, deps are cached) ──
 COPY libs/ libs/
@@ -35,7 +49,16 @@ RUN touch libs/common-rust/diraigent-types/src/lib.rs \
           apps/orchestra/src/main.rs \
           apps/orchestra/src/cli.rs
 
-RUN cargo build --release -p diraigent-orchestra
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+      cargo build --release --target aarch64-unknown-linux-gnu -p diraigent-orchestra && \
+      cp target/aarch64-unknown-linux-gnu/release/orchestra /usr/local/bin/orchestra && \
+      cp target/aarch64-unknown-linux-gnu/release/agent-cli /usr/local/bin/agent-cli; \
+    else \
+      cargo build --release -p diraigent-orchestra && \
+      cp target/release/orchestra /usr/local/bin/orchestra && \
+      cp target/release/agent-cli /usr/local/bin/agent-cli; \
+    fi
 
 # ── Stage 2: runtime ──────────────────────────────────────────
 FROM node:22-slim AS runtime
@@ -54,8 +77,8 @@ RUN groupadd --system --gid 1001 appgroup && \
 WORKDIR /app
 
 # Orchestra and CLI binaries
-COPY --from=builder --chown=appuser:appgroup /build/target/release/orchestra /usr/local/bin/orchestra
-COPY --from=builder --chown=appuser:appgroup /build/target/release/agent-cli /usr/local/bin/agent-cli
+COPY --from=builder --chown=appuser:appgroup /usr/local/bin/orchestra /usr/local/bin/orchestra
+COPY --from=builder --chown=appuser:appgroup /usr/local/bin/agent-cli /usr/local/bin/agent-cli
 
 # Agent docs
 COPY --from=builder --chown=appuser:appgroup /build/apps/orchestra/CLAUDE.md ./
