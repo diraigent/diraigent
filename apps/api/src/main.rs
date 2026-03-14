@@ -219,10 +219,12 @@ async fn main() -> anyhow::Result<()> {
                 let auth_required = env::var("AUTH_ISSUER").is_ok_and(|s| !s.is_empty())
                     && !env::var("DEV_USER_ID").is_ok_and(|s| !s.is_empty());
                 let chat_model = env::var("CHAT_MODEL").unwrap_or_else(|_| "sonnet".into());
+                let api_version = env!("CARGO_PKG_VERSION").to_string();
                 move || async move {
                     Json(json!({
                         "auth_required": auth_required,
                         "chat_model": chat_model,
+                        "api_version": api_version,
                     }))
                 }
             }),

@@ -8,4 +8,5 @@ export const environment = {
   authClientId: w['AUTH_CLIENT_ID'] || 'kvuNVJmjVOdhwSfmBDwlSMJw6XxExtjaib5wEDsu',
   authRedirectPath: w['AUTH_REDIRECT_PATH'] || '/auth/callback',
   authRedirectUri: w['AUTH_REDIRECT_URI'] || '',
+  appVersion: w['APP_VERSION'] || '0.1.0',
 };

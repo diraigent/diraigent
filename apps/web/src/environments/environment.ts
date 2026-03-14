@@ -6,4 +6,5 @@ export const environment = {
   authClientId: 'change-me',
   authRedirectPath: '/auth/callback',
   authRedirectUri: 'http://localhost:4200/auth/callback',
+  appVersion: '0.1.0-dev',
 };
