@@ -3,10 +3,13 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use uuid::Uuid;
 
+use tracing::warn;
+
 use crate::AppState;
 use crate::auth::AuthUser;
 use crate::authz::{OptionalAgentId, require_membership};
 use crate::error::AppError;
+use crate::event_triggers;
 use crate::models::*;
 use crate::validation;
 
@@ -38,6 +41,16 @@ async fn create(
         None,
         serde_json::json!({"event_id": e.id, "kind": e.kind, "source": e.source}),
     );
+
+    // Best-effort: process event trigger rules to auto-create observations.
+    if let Err(err) = event_triggers::process_event_triggers(&state, project_id, &e).await {
+        warn!(
+            event_id = %e.id,
+            project_id = %project_id,
+            error = %err,
+            "Failed to process event triggers"
+        );
+    }
 
     Ok(Json(e))
 }
