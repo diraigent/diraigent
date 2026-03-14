@@ -72,8 +72,12 @@ pub async fn transition_task(
         validate_playbook_step(pool, step, existing.playbook_id).await?;
     }
 
-    // Enforce dependency blocking: cannot transition to ready/wait:* if blockers are not done
-    if target_state == "ready" || is_wait_state(target_state) {
+    // Enforce dependency blocking: cannot transition to ready/wait:* if blockers are not done.
+    // Exception: when releasing from a step state (e.g. implement → ready), skip the check
+    // so agents can release blocked tasks back to the queue.
+    if (target_state == "ready" || is_wait_state(target_state))
+        && is_lifecycle_state(&existing.state)
+    {
         check_dependencies_met(pool, task_id).await?;
     }
 
