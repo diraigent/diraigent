@@ -14,7 +14,7 @@ import { ChatService } from './core/services/chat.service';
   template: `
     @if (auth.isLoggedIn()) {
       <app-sidebar />
-      <div class="lg:ml-64 h-screen flex flex-col">
+      <div class="lg:ml-64 h-dvh flex flex-col">
         <main id="main-content" class="flex-[2] overflow-y-auto pt-14 lg:pt-0" tabindex="-1">
           <router-outlet />
         </main>

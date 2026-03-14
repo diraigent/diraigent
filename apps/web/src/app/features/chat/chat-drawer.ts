@@ -105,7 +105,7 @@ import { ChatService } from '../../core/services/chat.service';
             </div>
 
             <!-- Input -->
-            <div class="border-t border-border p-3">
+            <div class="border-t border-border p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
               <div class="flex gap-2">
                 <textarea
                   #inputEl
