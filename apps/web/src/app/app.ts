@@ -13,19 +13,23 @@ import { ChatService } from './core/services/chat.service';
   imports: [RouterOutlet, SidebarComponent, ChatDrawerComponent, CreateProjectModalComponent],
   template: `
     @if (auth.isLoggedIn()) {
-      <app-sidebar />
-      <div class="lg:ml-64 h-dvh flex flex-col">
-        <main id="main-content" class="flex-[2] overflow-y-auto pt-14 lg:pt-0" tabindex="-1">
+      <app-sidebar [class.hidden]="chat.fullscreen()" />
+      <div class="h-dvh flex flex-col"
+           [class.lg:ml-64]="!chat.fullscreen()">
+        <main id="main-content" class="flex-[2] overflow-y-auto pt-14 lg:pt-0" tabindex="-1"
+              [class.hidden]="chat.fullscreen()">
           <router-outlet />
         </main>
-        <div id="chat-panel" class="border-t border-border overflow-hidden"
-             [class.flex-1]="!chat.collapsed()"
-             [class.min-h-0]="!chat.collapsed()">
+        <div id="chat-panel" class="overflow-hidden"
+             [class.border-t]="!chat.fullscreen()"
+             [class.border-border]="!chat.fullscreen()"
+             [class.flex-1]="!chat.collapsed() || chat.fullscreen()"
+             [class.min-h-0]="!chat.collapsed() || chat.fullscreen()">
           <app-chat-drawer />
         </div>
       </div>
       <!-- Mobile jump-to-chat FAB: visible only on mobile when chat panel is out of viewport -->
-      @if (showChatFab()) {
+      @if (showChatFab() && !chat.fullscreen()) {
         <button
           (click)="scrollToChat()"
           class="fixed bottom-6 right-6 z-50 lg:hidden w-14 h-14 rounded-full bg-accent text-white shadow-lg

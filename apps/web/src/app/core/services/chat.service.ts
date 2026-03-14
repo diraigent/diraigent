@@ -41,6 +41,8 @@ export class ChatService {
   readonly chatModel = signal<string>(localStorage.getItem(MODEL_STORAGE_KEY) || '');
   /** Whether the model selector dropdown is open. */
   readonly modelSelectorOpen = signal(false);
+  /** Whether the chat panel is in full-screen mode. */
+  readonly fullscreen = signal(localStorage.getItem('diraigent-chat-fullscreen') === 'true');
 
   private abortController: AbortController | null = null;
   private generation = 0;
@@ -241,6 +243,16 @@ export class ChatService {
 
   toggleModelSelector(): void {
     this.modelSelectorOpen.update(v => !v);
+  }
+
+  toggleFullscreen(): void {
+    this.fullscreen.update(v => !v);
+    localStorage.setItem('diraigent-chat-fullscreen', String(this.fullscreen()));
+    // Entering fullscreen should always expand collapsed chat
+    if (this.fullscreen() && this.collapsed()) {
+      this.collapsed.set(false);
+      localStorage.setItem('diraigent-chat-collapsed', 'false');
+    }
   }
 
   /** Send a message (chat is always visible). Emits scrollToChat for mobile scroll-into-view. */
