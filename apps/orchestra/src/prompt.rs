@@ -26,7 +26,7 @@ pub fn build_static_system_prompt(repo_root: &Path) -> String {
 
 /// Build the dynamic user prompt for Claude Code's `-p` flag.
 ///
-/// This content changes per task: identity, project context, goals,
+/// This content changes per task: identity, project context, active work,
 /// workflow steps, and task discussion. Kept separate from the static
 /// system prompt so that the system prompt can be cached across tasks.
 ///
@@ -39,7 +39,7 @@ pub fn build_static_system_prompt(repo_root: &Path) -> String {
 /// Prompt structure (order matters — earlier sections get more attention):
 /// 1. Identity
 /// 2. Project Context
-/// 3. Active Goals
+/// 3. Active Work
 /// 4. Task Discussion — human comments & task spec shown BEFORE the workflow
 ///    so the agent reads instructions before forming an implementation plan
 /// 5. Workflow (## Your Job: IMPLEMENT / REVIEW / etc.)
@@ -60,7 +60,7 @@ pub async fn build_user_prompt(
 
     let resolved_step = step_name.to_string();
     // Determine what context to include: step JSONB > hardcoded by step name.
-    // Computed before API calls so we can conditionally skip goals in the parallel block.
+    // Computed before API calls so we can conditionally skip work items in the parallel block.
     let context_level = match step_json.and_then(|s| s["context_level"].as_str()) {
         Some("full") => ContextLevel::full(),
         Some("minimal") => ContextLevel::minimal(),
@@ -71,25 +71,25 @@ pub async fn build_user_prompt(
     // Fire all independent API calls in parallel using tokio::join!.
     // Previously these ran sequentially (~200-500ms of serial latency);
     // now they overlap and complete in ~one round-trip (~30ms).
-    let include_goals = context_level.include_goals;
+    let include_work = context_level.include_work;
     let include_related = context_level.include_knowledge;
     let (
         project_res,
         task_res,
         raw_context,
-        goals_section,
+        work_section,
         comments_res,
         updates_res,
         verifications_res,
-        task_goal_ids,
+        task_work_ids,
         related_items_res,
     ) = tokio::join!(
         api.get_project(project_id),
         api.get_task(task_id),
         api.get_context_for_task(project_id, task_id),
         async {
-            if include_goals {
-                build_goals_section(api, project_id).await
+            if include_work {
+                build_work_section(api, project_id).await
             } else {
                 String::new()
             }
@@ -97,7 +97,7 @@ pub async fn build_user_prompt(
         api.get_task_comments(task_id),
         api.get_task_updates(task_id),
         api.get_verifications(project_id, task_id),
-        api.get_task_goals(task_id),
+        api.get_task_work_items(task_id),
         async {
             if include_related {
                 Some(api.get_related_items(task_id).await)
@@ -126,9 +126,10 @@ pub async fn build_user_prompt(
         }
         None => String::new(),
     };
-    // First goal ID linked to this task (if any) — used for goal inheritance
-    // when the agent creates subtasks. Empty string when the task has no goal.
-    let first_goal_id = task_goal_ids
+    // First work item ID linked to this task (if any) — used for work item
+    // inheritance when the agent creates subtasks. Empty string when the task
+    // has no work item.
+    let first_work_id = task_work_ids
         .unwrap_or_default()
         .into_iter()
         .next()
@@ -342,7 +343,7 @@ pub async fn build_user_prompt(
         review_feedback: &review_feedback,
         decompose_mode,
         project_json: project_json.as_ref(),
-        goal_id: &first_goal_id,
+        work_id: &first_work_id,
     });
 
     let step_desc_line = if step_description.is_empty() {
@@ -367,8 +368,8 @@ pub async fn build_user_prompt(
 {project_context}
 ```
 
-## Active Goals
-{goals_section}
+## Active Work
+{work_section}
 {related_context}## Task Discussion (comments & feedback from humans — follow these instructions)
 {task_spec_inline}{discussion}
 {workflow}
@@ -388,8 +389,8 @@ pub async fn build_user_prompt(
 struct ContextLevel {
     /// Include full project context (observations, knowledge, events, playbooks)
     include_full_context: bool,
-    /// Include active goals section
-    include_goals: bool,
+    /// Include active work section
+    include_work: bool,
     /// Include observations in trimmed context
     include_observations: bool,
     /// Include knowledge entries in trimmed context
@@ -406,7 +407,7 @@ impl ContextLevel {
     fn full() -> Self {
         ContextLevel {
             include_full_context: true,
-            include_goals: true,
+            include_work: true,
             include_observations: true,
             include_knowledge: true,
             include_events: true,
@@ -418,7 +419,7 @@ impl ContextLevel {
     fn minimal() -> Self {
         ContextLevel {
             include_full_context: false,
-            include_goals: false,
+            include_work: false,
             include_observations: false,
             include_knowledge: false,
             include_events: false,
@@ -430,7 +431,7 @@ impl ContextLevel {
     fn dream() -> Self {
         ContextLevel {
             include_full_context: false,
-            include_goals: true,
+            include_work: true,
             include_observations: true,
             include_knowledge: true,
             include_events: true,
@@ -444,7 +445,7 @@ impl ContextLevel {
             // Review: needs task details, agent info, decisions. Skip heavy lists.
             StepProfile::Review => ContextLevel {
                 include_full_context: false,
-                include_goals: false,
+                include_work: false,
                 include_observations: false,
                 include_knowledge: false,
                 include_events: false,
@@ -454,7 +455,7 @@ impl ContextLevel {
             // Merge: minimal -- just needs task and project basics.
             StepProfile::Merge => ContextLevel {
                 include_full_context: false,
-                include_goals: false,
+                include_work: false,
                 include_observations: false,
                 include_knowledge: false,
                 include_events: false,
@@ -464,7 +465,7 @@ impl ContextLevel {
             // Dream: needs observations and knowledge to avoid duplicates.
             StepProfile::Dream => ContextLevel {
                 include_full_context: false,
-                include_goals: true,
+                include_work: true,
                 include_observations: true,
                 include_knowledge: true,
                 include_events: true,
@@ -474,7 +475,7 @@ impl ContextLevel {
             // Implement / rework: full context.
             StepProfile::Implement => ContextLevel {
                 include_full_context: true,
-                include_goals: true,
+                include_work: true,
                 include_observations: true,
                 include_knowledge: true,
                 include_events: true,
@@ -573,29 +574,29 @@ fn build_related_context_section(related: &serde_json::Value) -> String {
     section
 }
 
-/// Build the goals section with progress info.
+/// Build the work section with progress info.
 ///
-/// Goal progress calls are parallelized using `join_all` to avoid the N+1
-/// sequential API call problem (one call per active goal).
-async fn build_goals_section(api: &ProjectsApi, project_id: &str) -> String {
-    let goals = api.get_goals(project_id).await.unwrap_or_default();
-    let active_goals: Vec<_> = goals
+/// Work item progress calls are parallelized using `join_all` to avoid the N+1
+/// sequential API call problem (one call per active work item).
+async fn build_work_section(api: &ProjectsApi, project_id: &str) -> String {
+    let work_items = api.get_work_items(project_id).await.unwrap_or_default();
+    let active_work: Vec<_> = work_items
         .iter()
-        .filter(|g| g["status"].as_str().unwrap_or("active") == "active")
+        .filter(|w| w["status"].as_str().unwrap_or("active") == "active")
         .collect();
 
-    if active_goals.is_empty() {
+    if active_work.is_empty() {
         return String::new();
     }
 
-    // Fetch all goal progress in parallel (fixes N+1 sequential calls)
-    let progress_futures: Vec<_> = active_goals
+    // Fetch all work item progress in parallel (fixes N+1 sequential calls)
+    let progress_futures: Vec<_> = active_work
         .iter()
-        .map(|g| {
-            let goal_id = g["id"].as_str().unwrap_or("").to_string();
+        .map(|w| {
+            let work_id = w["id"].as_str().unwrap_or("").to_string();
             async move {
-                if !goal_id.is_empty() {
-                    api.get_goal_progress(&goal_id).await.ok()
+                if !work_id.is_empty() {
+                    api.get_work_item_progress(&work_id).await.ok()
                 } else {
                     None
                 }
@@ -605,10 +606,10 @@ async fn build_goals_section(api: &ProjectsApi, project_id: &str) -> String {
 
     let progress_results = futures_util::future::join_all(progress_futures).await;
 
-    let mut goals_section = String::new();
-    for (g, progress) in active_goals.iter().zip(progress_results) {
-        let title = g["title"].as_str().unwrap_or("untitled");
-        let desc = g["description"].as_str().unwrap_or("");
+    let mut work_section = String::new();
+    for (w, progress) in active_work.iter().zip(progress_results) {
+        let title = w["title"].as_str().unwrap_or("untitled");
+        let desc = w["description"].as_str().unwrap_or("");
         let progress_str = progress
             .map(|p| {
                 let done = p["done_tasks"].as_u64().unwrap_or(0);
@@ -616,11 +617,11 @@ async fn build_goals_section(api: &ProjectsApi, project_id: &str) -> String {
                 format!("{done}/{total} tasks")
             })
             .unwrap_or_else(|| "progress unknown".to_string());
-        goals_section.push_str(&format!(
+        work_section.push_str(&format!(
             "- **{title}**: {desc} (progress: {progress_str})\n"
         ));
     }
-    goals_section
+    work_section
 }
 
 struct WorkflowParams<'a> {
@@ -641,9 +642,9 @@ struct WorkflowParams<'a> {
     /// Full project JSON — used for `{{project.<key>}}` substitution.
     /// Top-level fields (default_branch, slug, etc.) and metadata fields are both available.
     project_json: Option<&'a serde_json::Value>,
-    /// First goal ID linked to this task (empty string if none).
-    /// Used for goal inheritance: subtasks inherit the parent's goal.
-    goal_id: &'a str,
+    /// First work item ID linked to this task (empty string if none).
+    /// Used for work item inheritance: subtasks inherit the parent's work item.
+    work_id: &'a str,
 }
 
 /// Substitute `{{variable}}` placeholders in a step description template.
@@ -679,7 +680,7 @@ fn substitute_description(
         .replace("{{playbook_id}}", p.playbook_id)
         .replace("{{branch}}", &branch)
         .replace("{{review_feedback}}", p.review_feedback)
-        .replace("{{goal_id}}", p.goal_id);
+        .replace("{{work_id}}", p.work_id);
 
     // Apply project vars: {{project.<key>}}
     // Resolution order: top-level project fields first, then metadata fields.
@@ -737,11 +738,11 @@ fn build_workflow(p: &WorkflowParams<'_>) -> String {
         let task_id = p.task_id;
         let project_id = p.project_id;
         let playbook_id = p.playbook_id;
-        // Include goal_id in subtask creation so subtasks inherit the parent's goal.
-        let goal_id_field = if p.goal_id.is_empty() {
+        // Include work_id in subtask creation so subtasks inherit the parent's work item.
+        let work_id_field = if p.work_id.is_empty() {
             String::new()
         } else {
-            format!(r#""goal_id": "{}", "#, p.goal_id)
+            format!(r#""work_id": "{}", "#, p.work_id)
         };
         return format!(
             r#"## Your Job: DECOMPOSE INTO SUBTASKS
@@ -754,7 +755,7 @@ Instead, analyze the spec and break it into smaller, well-scoped subtasks.
 3. **Analyze the spec**: Identify logical units of work that can be implemented independently.
 4. **Create subtasks**: For each unit, create a task with a clear spec, files, test_cmd, and acceptance_criteria:
    ```
-   {agent_cli} create {project_id} '{{{goal_id_field}"parent_id": "{task_id}", "title": "...", "kind": "feature", "urgent": false, "playbook_id": "{playbook_id}", "context": {{"spec": "...", "files": ["..."], "test_cmd": "...", "acceptance_criteria": ["..."]}}}}'
+   {agent_cli} create {project_id} '{{{work_id_field}"parent_id": "{task_id}", "title": "...", "kind": "feature", "urgent": false, "playbook_id": "{playbook_id}", "context": {{"spec": "...", "files": ["..."], "test_cmd": "...", "acceptance_criteria": ["..."]}}}}'
    ```
 5. **Wire dependencies**: If subtask B depends on subtask A:
    ```
@@ -942,7 +943,7 @@ mod tests {
             review_feedback,
             decompose_mode: false,
             project_json: None,
-            goal_id: "",
+            work_id: "",
         }
     }
 
@@ -1261,7 +1262,7 @@ mod tests {
     fn context_level_implement_has_full_context() {
         let level = ContextLevel::for_step("implement");
         assert!(level.include_full_context);
-        assert!(level.include_goals);
+        assert!(level.include_work);
         assert!(level.include_observations);
         assert!(level.include_knowledge);
         assert!(level.include_events);
@@ -1273,7 +1274,7 @@ mod tests {
     fn context_level_review_has_minimal_context() {
         let level = ContextLevel::for_step("review");
         assert!(!level.include_full_context);
-        assert!(!level.include_goals);
+        assert!(!level.include_work);
         assert!(!level.include_observations);
         assert!(!level.include_knowledge);
         assert!(!level.include_events);
@@ -1284,7 +1285,7 @@ mod tests {
     fn context_level_merge_has_minimal_context() {
         let level = ContextLevel::for_step("merge");
         assert!(!level.include_full_context);
-        assert!(!level.include_goals);
+        assert!(!level.include_work);
         assert!(!level.include_observations);
         assert!(!level.include_knowledge);
         assert!(!level.include_events);
@@ -1295,7 +1296,7 @@ mod tests {
     fn context_level_dream_has_observations_but_not_full() {
         let level = ContextLevel::for_step("dream");
         assert!(!level.include_full_context);
-        assert!(level.include_goals);
+        assert!(level.include_work);
         assert!(level.include_observations);
         assert!(level.include_knowledge);
         assert!(level.include_events);
@@ -1484,7 +1485,7 @@ mod tests {
             review_feedback: "",
             decompose_mode: true,
             project_json: None,
-            goal_id: "",
+            work_id: "",
         };
         let output = build_workflow(&params);
         assert!(
@@ -1498,28 +1499,28 @@ mod tests {
     }
 
     #[test]
-    fn decompose_mode_includes_goal_id_when_present() {
+    fn decompose_mode_includes_work_id_when_present() {
         let root = PathBuf::from("/tmp/test-repo");
         let mut params = make_params("implement", "", &root);
         params.decompose_mode = true;
-        params.goal_id = "gggggggg-hhhh-iiii-jjjj-kkkkkkkkkkkk";
+        params.work_id = "gggggggg-hhhh-iiii-jjjj-kkkkkkkkkkkk";
         let output = build_workflow(&params);
         assert!(
-            output.contains(r#""goal_id": "gggggggg-hhhh-iiii-jjjj-kkkkkkkkkkkk""#),
-            "decompose mode with goal should include goal_id in create command, got: {output}"
+            output.contains(r#""work_id": "gggggggg-hhhh-iiii-jjjj-kkkkkkkkkkkk""#),
+            "decompose mode with work item should include work_id in create command, got: {output}"
         );
     }
 
     #[test]
-    fn decompose_mode_omits_goal_id_when_absent() {
+    fn decompose_mode_omits_work_id_when_absent() {
         let root = PathBuf::from("/tmp/test-repo");
         let mut params = make_params("implement", "", &root);
         params.decompose_mode = true;
-        params.goal_id = "";
+        params.work_id = "";
         let output = build_workflow(&params);
         assert!(
-            !output.contains("goal_id"),
-            "decompose mode without goal should NOT include goal_id, got: {output}"
+            !output.contains("work_id"),
+            "decompose mode without work item should NOT include work_id, got: {output}"
         );
     }
 
@@ -1652,14 +1653,14 @@ mod tests {
     }
 
     #[test]
-    fn goal_id_template_variable_substituted() {
+    fn work_id_template_variable_substituted() {
         let root = PathBuf::from("/tmp/test-repo");
         let step_json = serde_json::json!({
-            "description": "Create subtask with goal: {{goal_id}}"
+            "description": "Create subtask with work: {{work_id}}"
         });
         let params = WorkflowParams {
             step_name: "implement",
-            step_description: "Create subtask with goal: {{goal_id}}",
+            step_description: "Create subtask with work: {{work_id}}",
             step_json: Some(&step_json),
             agent_cli: "/usr/bin/agent-cli",
             task_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
@@ -1671,12 +1672,12 @@ mod tests {
             review_feedback: "",
             decompose_mode: false,
             project_json: None,
-            goal_id: "gggggggg-hhhh-iiii-jjjj-kkkkkkkkkkkk",
+            work_id: "gggggggg-hhhh-iiii-jjjj-kkkkkkkkkkkk",
         };
         let output = build_workflow(&params);
         assert!(
-            output.contains("Create subtask with goal: gggggggg-hhhh-iiii-jjjj-kkkkkkkkkkkk"),
-            "{{{{goal_id}}}} template variable should be substituted, got: {output}"
+            output.contains("Create subtask with work: gggggggg-hhhh-iiii-jjjj-kkkkkkkkkkkk"),
+            "{{{{work_id}}}} template variable should be substituted, got: {output}"
         );
     }
 }

@@ -43,10 +43,10 @@ pub enum GitStrategy {
     /// For PR-based workflows where a human reviews before merging.
     BranchOnly,
 
-    /// Goal-based feature branches. Tasks branch from and merge into a goal branch
-    /// (e.g. `goal/<slug>`). The goal branch itself is merged to default when the
-    /// goal is completed.
-    FeatureBranch { goal_branch: String },
+    /// Work-based feature branches. Tasks branch from and merge into a work branch
+    /// (e.g. `work/<slug>`). The work branch itself is merged to default when the
+    /// work item is completed.
+    FeatureBranch { work_branch: String },
 
     /// No git operations. Plain directory, no branching/merging/pushing.
     NoGit,
@@ -68,12 +68,12 @@ impl GitStrategy {
     /// Falls back to `Merge` (to default) for git-enabled projects,
     /// `NoGit` when `project_git_mode` is `"none"`.
     ///
-    /// `goal_branch` is provided externally (from task→goal lookup) and
+    /// `work_branch` is provided externally (from task→work item lookup) and
     /// only used when the strategy is `feature_branch`.
     pub fn from_playbook_metadata(
         metadata: &Value,
         project_git_mode: &str,
-        goal_branch: Option<String>,
+        work_branch: Option<String>,
     ) -> Self {
         if project_git_mode == "none" {
             return GitStrategy::NoGit;
@@ -102,14 +102,14 @@ impl GitStrategy {
                 }
             }
             Some("feature_branch") => {
-                if let Some(branch) = goal_branch {
+                if let Some(branch) = work_branch {
                     GitStrategy::FeatureBranch {
-                        goal_branch: branch,
+                        work_branch: branch,
                     }
                 } else {
-                    // No goal linked — fall back to merge-to-default
+                    // No work item linked — fall back to merge-to-default
                     tracing::warn!(
-                        "feature_branch strategy but no goal linked to task — falling back to merge"
+                        "feature_branch strategy but no work item linked to task — falling back to merge"
                     );
                     GitStrategy::Merge {
                         target_branch: None,
@@ -134,7 +134,7 @@ impl GitStrategy {
                 target_branch: None,
             }
             | GitStrategy::BranchOnly => Some(default_branch),
-            GitStrategy::FeatureBranch { goal_branch } => Some(goal_branch.as_str()),
+            GitStrategy::FeatureBranch { work_branch } => Some(work_branch.as_str()),
             GitStrategy::NoGit => None,
         }
     }
@@ -161,7 +161,7 @@ impl GitStrategy {
             GitStrategy::Merge {
                 target_branch: None,
             } => Some(default_branch),
-            GitStrategy::FeatureBranch { goal_branch } => Some(goal_branch.as_str()),
+            GitStrategy::FeatureBranch { work_branch } => Some(work_branch.as_str()),
             _ => None,
         }
     }
@@ -182,8 +182,8 @@ impl GitStrategy {
             }),
             serde_json::json!({
                 "id": "feature_branch",
-                "name": "Feature Branch (Goal-based)",
-                "description": "Tasks branch from and merge into a goal branch. The goal branch merges to default when the goal is completed.",
+                "name": "Feature Branch (Work-based)",
+                "description": "Tasks branch from and merge into a work branch. The work branch merges to default when the work item is completed.",
             }),
             serde_json::json!({
                 "id": "no_git",
@@ -224,16 +224,16 @@ pub async fn resolve_strategy(
         Ok(playbook) => {
             let metadata = &playbook["metadata"];
 
-            // Only resolve goal branch if strategy is feature_branch
-            let goal_branch = if metadata.get("git_strategy").and_then(|v| v.as_str())
+            // Only resolve work branch if strategy is feature_branch
+            let work_branch = if metadata.get("git_strategy").and_then(|v| v.as_str())
                 == Some("feature_branch")
             {
-                resolve_goal_branch(api, task).await
+                resolve_work_branch(api, task).await
             } else {
                 None
             };
 
-            GitStrategy::from_playbook_metadata(metadata, project_git_mode, goal_branch)
+            GitStrategy::from_playbook_metadata(metadata, project_git_mode, work_branch)
         }
         Err(e) => {
             tracing::warn!("failed to fetch playbook {playbook_id} for git strategy: {e}");
@@ -242,39 +242,39 @@ pub async fn resolve_strategy(
     }
 }
 
-/// Derive the goal branch name for a task by looking up its linked goals.
+/// Derive the work branch name for a task by looking up its linked work items.
 ///
-/// Returns `Some("goal/<slug>")` if the task is linked to a goal,
+/// Returns `Some("work/<slug>")` if the task is linked to a work item,
 /// `None` otherwise.
-async fn resolve_goal_branch(api: &crate::api::ProjectsApi, task: &Value) -> Option<String> {
+async fn resolve_work_branch(api: &crate::api::ProjectsApi, task: &Value) -> Option<String> {
     let task_id = task["id"].as_str()?;
-    let goal_ids = match api.get_task_goals(task_id).await {
+    let work_ids = match api.get_task_work_items(task_id).await {
         Ok(ids) if !ids.is_empty() => ids,
         Ok(_) => {
-            tracing::warn!("feature_branch strategy but task {task_id} has no linked goals");
+            tracing::warn!("feature_branch strategy but task {task_id} has no linked work items");
             return None;
         }
         Err(e) => {
-            tracing::warn!("failed to fetch goal IDs for task {task_id}: {e}");
+            tracing::warn!("failed to fetch work item IDs for task {task_id}: {e}");
             return None;
         }
     };
 
-    // Fetch the first goal's details to get its title
-    let goal_id = goal_ids[0].as_str().unwrap_or_else(|| {
-        tracing::warn!("goal ID is not a string: {}", goal_ids[0]);
+    // Fetch the first work item's details to get its title
+    let work_id = work_ids[0].as_str().unwrap_or_else(|| {
+        tracing::warn!("work item ID is not a string: {}", work_ids[0]);
         ""
     });
-    if goal_id.is_empty() {
+    if work_id.is_empty() {
         return None;
     }
-    match api.get_goal(goal_id).await {
-        Ok(goal) => {
-            let title = goal["title"].as_str().unwrap_or("unnamed");
-            Some(format!("goal/{}", slugify(title)))
+    match api.get_work_item(work_id).await {
+        Ok(work_item) => {
+            let title = work_item["title"].as_str().unwrap_or("unnamed");
+            Some(format!("work/{}", slugify(title)))
         }
         Err(e) => {
-            tracing::warn!("failed to fetch goal {goal_id} for branch name: {e}");
+            tracing::warn!("failed to fetch work item {work_id} for branch name: {e}");
             None
         }
     }
@@ -395,22 +395,22 @@ mod tests {
     }
 
     #[test]
-    fn feature_branch_with_goal() {
+    fn feature_branch_with_work_item() {
         let meta = serde_json::json!({"git_strategy": "feature_branch"});
         assert_eq!(
             GitStrategy::from_playbook_metadata(
                 &meta,
                 "standalone",
-                Some("goal/user-auth".to_string())
+                Some("work/user-auth".to_string())
             ),
             GitStrategy::FeatureBranch {
-                goal_branch: "goal/user-auth".to_string()
+                work_branch: "work/user-auth".to_string()
             }
         );
     }
 
     #[test]
-    fn feature_branch_without_goal_falls_back_to_merge() {
+    fn feature_branch_without_work_item_falls_back_to_merge() {
         let meta = serde_json::json!({"git_strategy": "feature_branch"});
         assert_eq!(
             GitStrategy::from_playbook_metadata(&meta, "standalone", None),
@@ -465,10 +465,10 @@ mod tests {
     #[test]
     fn base_branch_feature_branch() {
         let s = GitStrategy::FeatureBranch {
-            goal_branch: "goal/user-auth".to_string(),
+            work_branch: "work/user-auth".to_string(),
         };
-        assert_eq!(s.base_branch("main"), Some("goal/user-auth"));
-        assert_eq!(s.merge_target("main"), Some("goal/user-auth"));
+        assert_eq!(s.base_branch("main"), Some("work/user-auth"));
+        assert_eq!(s.merge_target("main"), Some("work/user-auth"));
         assert!(s.should_merge());
         assert!(!s.should_push_branch());
     }

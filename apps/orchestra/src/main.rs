@@ -184,7 +184,7 @@ async fn main() -> Result<()> {
         // Poll on interval, or immediately when file locks were released (queue drain).
         if locks_released || last_poll.elapsed().as_secs() >= config.poll_interval {
             spawner::poll_ready_tasks(&api, &config, &active, &lock_queue).await;
-            process_ready_goals(&api).await;
+            process_ready_work_items(&api).await;
             last_poll = std::time::Instant::now();
         }
 
@@ -239,20 +239,20 @@ fn find_research_playbook(playbooks: &[Value]) -> Option<String> {
     None
 }
 
-/// Poll all projects for goals in 'ready' status and create tasks from them.
+/// Poll all projects for work items in 'ready' status and create tasks from them.
 ///
-/// For each ready goal, the function:
-/// 1. Transitions the goal to 'processing'
-/// 2. Creates task(s) based on the goal's intent_type
-/// 3. Links the created task to the goal
-/// 4. Transitions the goal to 'active'
+/// For each ready work item, the function:
+/// 1. Transitions the work item to 'processing'
+/// 2. Creates task(s) based on the work item's intent_type
+/// 3. Links the created task to the work item
+/// 4. Transitions the work item to 'active'
 ///
-/// Errors on individual goals are logged but do not stop batch processing.
-async fn process_ready_goals(api: &ProjectsApi) {
+/// Errors on individual work items are logged but do not stop batch processing.
+async fn process_ready_work_items(api: &ProjectsApi) {
     let projects = match api.list_projects().await {
         Ok(p) => p,
         Err(e) => {
-            warn!("goals: failed to fetch projects: {e}");
+            warn!("work: failed to fetch projects: {e}");
             return;
         }
     };
@@ -271,42 +271,48 @@ async fn process_ready_goals(api: &ProjectsApi) {
             .unwrap_or("")
             .to_string();
 
-        let goals = match api.list_goals_by_status(project_id, "ready").await {
-            Ok(g) => g,
+        let work_items = match api.list_work_items_by_status(project_id, "ready").await {
+            Ok(w) => w,
             Err(e) => {
-                warn!("goals: failed to fetch ready goals for project {project_id}: {e}");
+                warn!("work: failed to fetch ready work items for project {project_id}: {e}");
                 continue;
             }
         };
 
-        for goal in &goals {
-            if let Err(e) =
-                process_single_goal(api, project_id, goal, &default_playbook_id, &playbooks).await
+        for work_item in &work_items {
+            if let Err(e) = process_single_work_item(
+                api,
+                project_id,
+                work_item,
+                &default_playbook_id,
+                &playbooks,
+            )
+            .await
             {
-                let goal_id = goal["id"].as_str().unwrap_or("unknown");
-                error!("goals: failed to process goal {goal_id}: {e:#}");
+                let work_id = work_item["id"].as_str().unwrap_or("unknown");
+                error!("work: failed to process work item {work_id}: {e:#}");
             }
         }
     }
 }
 
-/// Process a single goal: create the appropriate task and link it.
-async fn process_single_goal(
+/// Process a single work item: create the appropriate task and link it.
+async fn process_single_work_item(
     api: &ProjectsApi,
     project_id: &str,
-    goal: &Value,
+    work_item: &Value,
     default_playbook_id: &str,
     playbooks: &[Value],
 ) -> Result<()> {
-    let goal_id = goal["id"]
+    let work_id = work_item["id"]
         .as_str()
-        .ok_or_else(|| anyhow::anyhow!("goal missing id"))?;
-    let goal_title = goal["title"].as_str().unwrap_or("Untitled goal");
-    let goal_description = goal["description"].as_str().unwrap_or("");
-    let intent_type = goal["intent_type"].as_str().unwrap_or("complex");
+        .ok_or_else(|| anyhow::anyhow!("work item missing id"))?;
+    let work_title = work_item["title"].as_str().unwrap_or("Untitled work item");
+    let work_description = work_item["description"].as_str().unwrap_or("");
+    let intent_type = work_item["intent_type"].as_str().unwrap_or("complex");
 
-    // 1. Transition goal to 'processing'
-    api.update_goal_status(goal_id, "processing").await?;
+    // 1. Transition work item to 'processing'
+    api.update_work_item_status(work_id, "processing").await?;
 
     // 2. Determine task parameters based on intent_type
     let (kind, playbook_id, urgent, decompose) = match intent_type {
@@ -324,14 +330,14 @@ async fn process_single_goal(
 
     // 3. Build task body
     let mut context = serde_json::json!({
-        "spec": goal_description,
+        "spec": work_description,
     });
     if decompose {
         context["decompose"] = serde_json::json!(true);
     }
 
     let mut task_body = serde_json::json!({
-        "title": goal_title,
+        "title": work_title,
         "kind": kind,
         "playbook_id": playbook_id,
         "context": context,
@@ -346,15 +352,15 @@ async fn process_single_goal(
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("created task missing id"))?;
 
-    // 5. Link the task to the goal
-    api.link_task_to_goal(goal_id, task_id).await?;
+    // 5. Link the task to the work item
+    api.link_task_to_work_item(work_id, task_id).await?;
 
-    // 6. Transition goal to 'active'
-    api.update_goal_status(goal_id, "active").await?;
+    // 6. Transition work item to 'active'
+    api.update_work_item_status(work_id, "active").await?;
 
     info!(
-        "Processed goal {} ({}): created task {}",
-        goal_id, intent_type, task_id
+        "Processed work item {} ({}): created task {}",
+        work_id, intent_type, task_id
     );
 
     Ok(())

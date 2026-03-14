@@ -306,48 +306,52 @@ impl ProjectsApi {
         .await
     }
 
-    // ── Goal operations ───────────────────────────────────────
+    // ── Work operations ───────────────────────────────────────
 
-    pub async fn get_goals(&self, project_id: &str) -> Result<Vec<Value>> {
-        let val = self.get(&format!("/{project_id}/goals")).await?;
+    pub async fn get_work_items(&self, project_id: &str) -> Result<Vec<Value>> {
+        let val = self.get(&format!("/{project_id}/work")).await?;
         Ok(as_array(&val))
     }
 
-    /// List goals filtered by status (e.g. "ready", "active", "processing").
-    pub async fn list_goals_by_status(&self, project_id: &str, status: &str) -> Result<Vec<Value>> {
+    /// List work items filtered by status (e.g. "ready", "active", "processing").
+    pub async fn list_work_items_by_status(
+        &self,
+        project_id: &str,
+        status: &str,
+    ) -> Result<Vec<Value>> {
         let val = self
-            .get(&format!("/{project_id}/goals?status={status}"))
+            .get(&format!("/{project_id}/work?status={status}"))
             .await?;
         Ok(as_array(&val))
     }
 
-    pub async fn get_goal(&self, goal_id: &str) -> Result<Value> {
-        self.get(&format!("/goals/{goal_id}")).await
+    pub async fn get_work_item(&self, work_id: &str) -> Result<Value> {
+        self.get(&format!("/work/{work_id}")).await
     }
 
-    /// Update a goal's status (e.g. "processing", "active").
-    pub async fn update_goal_status(&self, goal_id: &str, status: &str) -> Result<Value> {
+    /// Update a work item's status (e.g. "processing", "active").
+    pub async fn update_work_item_status(&self, work_id: &str, status: &str) -> Result<Value> {
         self.put(
-            &format!("/goals/{goal_id}"),
+            &format!("/work/{work_id}"),
             &serde_json::json!({"status": status}),
         )
         .await
     }
 
-    pub async fn get_goal_progress(&self, goal_id: &str) -> Result<Value> {
-        self.get(&format!("/goals/{goal_id}/progress")).await
+    pub async fn get_work_item_progress(&self, work_id: &str) -> Result<Value> {
+        self.get(&format!("/work/{work_id}/progress")).await
     }
 
-    /// Return all goals linked to a specific task (full goal objects).
-    pub async fn get_task_goals(&self, task_id: &str) -> Result<Vec<Value>> {
-        let val = self.get(&format!("/tasks/{task_id}/goals")).await?;
+    /// Return all work items linked to a specific task (full work item objects).
+    pub async fn get_task_work_items(&self, task_id: &str) -> Result<Vec<Value>> {
+        let val = self.get(&format!("/tasks/{task_id}/work")).await?;
         Ok(as_array(&val))
     }
 
-    /// Link a task to a goal.
-    pub async fn link_task_to_goal(&self, goal_id: &str, task_id: &str) -> Result<Value> {
+    /// Link a task to a work item.
+    pub async fn link_task_to_work_item(&self, work_id: &str, task_id: &str) -> Result<Value> {
         self.post(
-            &format!("/goals/{goal_id}/tasks"),
+            &format!("/work/{work_id}/tasks"),
             &serde_json::json!({"task_id": task_id}),
         )
         .await
