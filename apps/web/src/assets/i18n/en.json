@@ -295,7 +295,8 @@
     "planCreating": "Creating tasks...",
     "planRemoveTask": "Remove from plan",
     "planTaskSpec": "Specification",
-    "planTaskCriteria": "Acceptance Criteria"
+    "planTaskCriteria": "Acceptance Criteria",
+    "planGeneratedCriteria": "Generated Success Criteria"
   },
   "work": {
     "activeGoals": "Active Goals",
