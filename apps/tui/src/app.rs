@@ -1,9 +1,9 @@
 use crate::client::{
-    Agent, AuditEntry, BranchInfo, ChangedFile, ChatMessage, Decision, GitTaskStatus, Goal,
-    GoalComment, GoalProgress, GoalStats, Integration, IntegrationAccess, KnowledgeEntry, LogEntry,
-    MainPushStatus, Member, Observation, Playbook, Project, ProjectEvent, ProjectMetrics, Report,
-    Role, SearchResult, StepTemplate, Task, TaskComment, TaskDependencies, TaskUpdate, TreeEntry,
-    Verification, Webhook, WebhookDelivery,
+    Agent, AuditEntry, BranchInfo, ChangedFile, ChatMessage, Decision, GitTaskStatus, Integration,
+    IntegrationAccess, KnowledgeEntry, LogEntry, MainPushStatus, Member, Observation, Playbook,
+    Project, ProjectEvent, ProjectMetrics, Report, Role, SearchResult, StepTemplate, Task,
+    TaskComment, TaskDependencies, TaskUpdate, TreeEntry, Verification, Webhook, WebhookDelivery,
+    Work, WorkComment, WorkProgress, WorkStats,
 };
 use ratatui::widgets::ListState;
 use uuid::Uuid;
@@ -15,7 +15,7 @@ pub enum View {
     Knowledge,
     Decisions,
     Playbooks,
-    Goals,
+    Work,
     Observations,
     Team,
     Integrations,
@@ -41,7 +41,7 @@ pub const ALL_VIEWS: &[View] = &[
     View::Knowledge,
     View::Decisions,
     View::Playbooks,
-    View::Goals,
+    View::Work,
     View::Observations,
     View::Team,
     View::Integrations,
@@ -66,7 +66,7 @@ impl View {
             View::Knowledge => "Knowledge",
             View::Decisions => "Decisions",
             View::Playbooks => "Playbooks",
-            View::Goals => "Goals",
+            View::Work => "Work",
             View::Observations => "Observations",
             View::Team => "Team",
             View::Integrations => "Integrations",
@@ -93,7 +93,7 @@ impl View {
             View::Knowledge => "3",
             View::Decisions => "4",
             View::Playbooks => "5",
-            View::Goals => "6",
+            View::Work => "6",
             View::Observations => "7",
             View::Team => "8",
             View::Integrations => "9",
@@ -121,8 +121,8 @@ pub enum Modal {
     Reply,
     Comment,
     Search,
-    GoalLink,
-    GoalStatus,
+    WorkLink,
+    WorkStatus,
     Promote,
     DependencyAdd,
     LogQuery,
@@ -138,10 +138,10 @@ pub enum Modal {
     VerificationStatus,
     VerificationKindFilter,
     VerificationStatusFilter,
-    GoalTaskPicker,
+    WorkTaskPicker,
     GlobalSearch,
     ChatInput,
-    GoalComment,
+    WorkComment,
     EventKindFilter,
     EventSeverityFilter,
     ReportDelete,
@@ -403,8 +403,8 @@ pub const WEBHOOK_EVENT_TYPES: &[&str] = &[
     "task.transitioned",
     "task.completed",
     "task.commented",
-    "goal.created",
-    "goal.updated",
+    "work.created",
+    "work.updated",
     "decision.created",
     "decision.updated",
     "observation.created",
@@ -461,15 +461,15 @@ impl Default for EventForm {
     }
 }
 
-pub const GOAL_STATUSES: &[&str] = &["active", "achieved", "paused", "abandoned"];
-pub const GOAL_TYPES: &[&str] = &["epic", "feature", "milestone", "sprint", "initiative"];
+pub const WORK_STATUSES: &[&str] = &["active", "achieved", "paused", "abandoned"];
+pub const WORK_TYPES: &[&str] = &["epic", "feature", "milestone", "sprint", "initiative"];
 
-pub struct GoalForm {
+pub struct WorkForm {
     pub title: String,
     pub description: String,
     pub success_criteria: String,
-    pub status_index: usize,    // index into GOAL_STATUSES
-    pub goal_type_index: usize, // index into GOAL_TYPES
+    pub status_index: usize,    // index into WORK_STATUSES
+    pub work_type_index: usize, // index into WORK_TYPES
     pub priority: String,       // numeric string
     pub auto_status: bool,
     pub active_field: usize, // 0=title, 1=desc, 2=criteria, 3=status, 4=type, 5=priority, 6=auto_status
@@ -477,14 +477,14 @@ pub struct GoalForm {
     pub editing_id: Option<Uuid>, // None for create, Some for edit
 }
 
-impl Default for GoalForm {
+impl Default for WorkForm {
     fn default() -> Self {
         Self {
             title: String::new(),
             description: String::new(),
             success_criteria: String::new(),
             status_index: 0,
-            goal_type_index: 0,
+            work_type_index: 0,
             priority: "0".to_string(),
             auto_status: false,
             active_field: 0,
@@ -578,7 +578,7 @@ pub struct App {
     pub playbook_form: Option<PlaybookForm>,
     pub settings_form: Option<ProjectSettingsForm>,
     pub verification_form: Option<VerificationForm>,
-    pub goal_form: Option<GoalForm>,
+    pub work_form: Option<WorkForm>,
     pub observation_form: Option<ObservationForm>,
     pub decision_form: Option<DecisionForm>,
     pub knowledge_form: Option<KnowledgeForm>,
@@ -602,10 +602,10 @@ pub struct App {
     pub knowledge: Vec<KnowledgeEntry>,
     pub decisions: Vec<Decision>,
     pub playbooks: Vec<Playbook>,
-    pub goals: Vec<Goal>,
-    pub goal_progress: Option<GoalProgress>,
-    pub goal_stats: Option<GoalStats>,
-    pub goal_children: Vec<Goal>,
+    pub work_items: Vec<Work>,
+    pub work_progress: Option<WorkProgress>,
+    pub work_stats: Option<WorkStats>,
+    pub work_children: Vec<Work>,
     pub observations: Vec<Observation>,
     pub roles: Vec<Role>,
     pub members: Vec<Member>,
@@ -625,8 +625,8 @@ pub struct App {
     pub dashboard_metrics: Option<ProjectMetrics>,
     pub dashboard_events: Vec<ProjectEvent>,
 
-    // Goal comments
-    pub goal_comments: Vec<GoalComment>,
+    // Work comments
+    pub work_comments: Vec<WorkComment>,
 
     // Step templates
     pub step_templates: Vec<StepTemplate>,
@@ -634,12 +634,12 @@ pub struct App {
     // Agent tasks (queue view)
     pub agent_tasks: Vec<Task>,
 
-    // Goal task picker
-    pub goal_tasks: Vec<Task>,
-    pub goal_unlinked_tasks: Vec<Task>,
-    pub goal_picker_selected: usize,
-    pub goal_picker_checked: std::collections::HashSet<usize>,
-    pub goal_picker_loading: bool,
+    // Work task picker
+    pub work_tasks: Vec<Task>,
+    pub work_unlinked_tasks: Vec<Task>,
+    pub work_picker_selected: usize,
+    pub work_picker_checked: std::collections::HashSet<usize>,
+    pub work_picker_loading: bool,
 
     // Verification filters
     pub verification_kind_filter: Option<String>,
@@ -663,7 +663,7 @@ pub struct App {
     pub selected_knowledge: Option<usize>,
     pub selected_decision: Option<usize>,
     pub selected_playbook: Option<usize>,
-    pub selected_goal: Option<usize>,
+    pub selected_work: Option<usize>,
     pub selected_observation: Option<usize>,
     pub selected_role: Option<usize>,
     pub selected_member: Option<usize>,
@@ -742,7 +742,7 @@ impl App {
             playbook_form: None,
             settings_form: None,
             verification_form: None,
-            goal_form: None,
+            work_form: None,
             observation_form: None,
             decision_form: None,
             knowledge_form: None,
@@ -766,10 +766,10 @@ impl App {
             knowledge: vec![],
             decisions: vec![],
             playbooks: vec![],
-            goals: vec![],
-            goal_progress: None,
-            goal_stats: None,
-            goal_children: vec![],
+            work_items: vec![],
+            work_progress: None,
+            work_stats: None,
+            work_children: vec![],
             observations: vec![],
             roles: vec![],
             members: vec![],
@@ -787,14 +787,14 @@ impl App {
             selected_report: None,
             dashboard_metrics: None,
             dashboard_events: vec![],
-            goal_comments: vec![],
+            work_comments: vec![],
             step_templates: vec![],
             agent_tasks: vec![],
-            goal_tasks: vec![],
-            goal_unlinked_tasks: vec![],
-            goal_picker_selected: 0,
-            goal_picker_checked: std::collections::HashSet::new(),
-            goal_picker_loading: false,
+            work_tasks: vec![],
+            work_unlinked_tasks: vec![],
+            work_picker_selected: 0,
+            work_picker_checked: std::collections::HashSet::new(),
+            work_picker_loading: false,
             verification_kind_filter: None,
             verification_status_filter: None,
             log_entries: vec![],
@@ -812,7 +812,7 @@ impl App {
             selected_knowledge: None,
             selected_decision: None,
             selected_playbook: None,
-            selected_goal: None,
+            selected_work: None,
             selected_observation: None,
             selected_role: None,
             selected_member: None,
@@ -865,7 +865,7 @@ impl App {
             View::Knowledge => self.knowledge.len(),
             View::Decisions => self.decisions.len(),
             View::Playbooks => self.playbooks.len(),
-            View::Goals => self.goals.len(),
+            View::Work => self.work_items.len(),
             View::Observations => self.observations.len(),
             View::Team => self.roles.len(),
             View::Integrations => self.integrations.len(),
@@ -891,7 +891,7 @@ impl App {
             View::Knowledge => self.selected_knowledge,
             View::Decisions => self.selected_decision,
             View::Playbooks => self.selected_playbook,
-            View::Goals => self.selected_goal,
+            View::Work => self.selected_work,
             View::Observations => self.selected_observation,
             View::Team => self.selected_role,
             View::Integrations => self.selected_integration,
@@ -921,7 +921,7 @@ impl App {
             View::Knowledge => self.selected_knowledge = idx,
             View::Decisions => self.selected_decision = idx,
             View::Playbooks => self.selected_playbook = idx,
-            View::Goals => self.selected_goal = idx,
+            View::Work => self.selected_work = idx,
             View::Observations => self.selected_observation = idx,
             View::Team => self.selected_role = idx,
             View::Integrations => self.selected_integration = idx,

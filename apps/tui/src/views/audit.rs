@@ -10,7 +10,7 @@ use crate::theme;
 fn entity_color(entity_type: &str) -> ratatui::style::Color {
     match entity_type {
         "task" => theme::blue(),
-        "goal" => theme::green(),
+        "work" => theme::green(),
         "decision" => theme::mauve(),
         "observation" => theme::peach(),
         "member" => theme::teal(),
