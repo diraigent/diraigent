@@ -15,7 +15,7 @@ const ENTITY_TYPE_COLORS: Record<string, string> = {
   membership: 'bg-ctp-pink/20 text-ctp-pink',
   integration: 'bg-ctp-mauve/20 text-ctp-mauve',
   playbook: 'bg-ctp-lavender/20 text-ctp-lavender',
-  goal: 'bg-ctp-green/20 text-ctp-green',
+  work: 'bg-ctp-green/20 text-ctp-green',
 };
 
 const ACTION_COLORS: Record<string, string> = {
