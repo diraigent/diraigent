@@ -28,6 +28,8 @@ export class ChatService {
   readonly error = signal<string | null>(null);
   readonly canSend = computed(() => !!this.project.projectId());
   readonly isOpen = signal(false);
+  /** Emits true when the parent layout should scroll the chat panel into view (mobile). */
+  readonly scrollToChat = signal(false);
 
   private abortController: AbortController | null = null;
   private generation = 0;
@@ -210,9 +212,10 @@ export class ChatService {
     }
   }
 
-  /** Open the chat drawer and optionally pre-send a message. */
+  /** Send a message (chat is always visible). Emits scrollToChat for mobile scroll-into-view. */
   openWithMessage(text?: string): void {
     this.isOpen.set(true);
+    this.scrollToChat.set(true);
     if (text) {
       this.send(text);
     }
