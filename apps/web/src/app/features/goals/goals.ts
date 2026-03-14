@@ -1,4 +1,4 @@
-import { Component, ChangeDetectorRef, inject, signal, computed, effect, DestroyRef, PLATFORM_ID } from '@angular/core';
+import { Component, ChangeDetectorRef, inject, signal, computed, effect, DestroyRef, PLATFORM_ID, ViewEncapsulation } from '@angular/core';
 import { NgTemplateOutlet, DatePipe, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TranslocoModule } from '@jsverse/transloco';
@@ -73,6 +73,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
   selector: 'app-work',
   standalone: true,
   imports: [TranslocoModule, FormsModule, DatePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent, CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList],
+  encapsulation: ViewEncapsulation.None,
   styles: [`
     .cdk-drag-animating {
       transition: none !important;
@@ -684,7 +685,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               (stateChange)="onUnlinkedTaskStateChange($event.task, $event.target)"
               (detailTransition)="onUnlinkedTaskStateChange(selectedUnlinkedTask()!, $event)"
               (detailClaim)="onTaskClaim()"
-              (detailRelease)="onTaskRelease(selectedUnlinkedTask()!)"
               (detailPush)="onTaskPush($event)"
               (detailResolve)="onTaskResolve(selectedUnlinkedTask()!)"
               (detailRevert)="onTaskRevert(selectedUnlinkedTask()!)"
@@ -735,8 +735,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                 (stateChange)="onUnlinkedTaskStateChange($event.task, $event.target)"
                 (detailTransition)="onUnlinkedTaskStateChange(selectedUnlinkedTask()!, $event)"
                 (detailClaim)="onTaskClaim()"
-                (detailRelease)="onTaskRelease(selectedUnlinkedTask()!)"
-                (detailPush)="onTaskPush($event)"
+                  (detailPush)="onTaskPush($event)"
                 (detailResolve)="onTaskResolve(selectedUnlinkedTask()!)"
                 (detailRevert)="onTaskRevert(selectedUnlinkedTask()!)"
                 (detailPostUpdate)="onUnlinkedTaskPostUpdate($event)"
