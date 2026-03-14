@@ -1941,6 +1941,28 @@ pub struct EventObservationRuleFilters {
     pub offset: Option<i64>,
 }
 
+// ── Related Items ──
+
+/// A single related item (knowledge, decision, or observation) with a relevance score.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelatedItem {
+    pub entity_type: String,
+    pub id: Uuid,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<String>,
+    pub relevance_score: f64,
+    pub reason: String,
+}
+
+/// Grouped related items by entity type.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelatedItems {
+    pub knowledge: Vec<RelatedItem>,
+    pub decisions: Vec<RelatedItem>,
+    pub observations: Vec<RelatedItem>,
+}
+
 /// Used by the stale-task detector to carry task+agent info across backends.
 #[derive(Debug)]
 pub struct StaleTaskInfo {
