@@ -75,7 +75,8 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
   imports: [TranslocoModule, FormsModule, DatePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent, CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList],
   styles: [`
     .cdk-drag-animating {
-      transition: transform 250ms cubic-bezier(0, 0, 0.2, 1);
+      transition: none !important;
+      transform: none !important;
     }
     .cdk-drop-list-dragging .cdk-drag:not(.cdk-drag-placeholder) {
       transition: transform 250ms cubic-bezier(0, 0, 0.2, 1);

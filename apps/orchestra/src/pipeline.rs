@@ -176,8 +176,12 @@ pub async fn check_next_step(api: &ProjectsApi, task_id: &str) -> Result<StepOut
         return Ok(StepOutcome::AlreadyReady);
     }
 
-    warn!("task {tid} in unexpected state '{state}' — skipping merge");
-    Ok(StepOutcome::UnexpectedState(state.to_string()))
+    // The task is in a step state (e.g. "review", "implement") — it was already
+    // claimed for the next pipeline step before this reap ran.  This is a normal
+    // race: the spawner picked up the ready task faster than the reaper could
+    // check.  No action needed — the new worker owns it now.
+    info!("task {tid} already in step state '{state}' — already claimed, no action needed");
+    Ok(StepOutcome::AlreadyReady)
 }
 
 /// Count the number of `blocker` updates posted on a task.
