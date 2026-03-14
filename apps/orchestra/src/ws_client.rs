@@ -294,8 +294,10 @@ async fn connect_and_run(
                                 m.set_auto_push(auto_push);
                                 m
                             };
-                            let response = crate::git_handler::handle_git_request(
+                            let response = crate::git_handler::handle_git_request_with_events(
                                 &wm,
+                                &api_clone,
+                                &project_id.to_string(),
                                 &query_type,
                                 prefix.as_deref(),
                                 task_id.as_deref(),
