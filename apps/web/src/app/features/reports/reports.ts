@@ -102,7 +102,7 @@ const REPORT_KIND_COLORS: Record<ReportKind, string> = {
 
         <!-- Detail panel -->
         @if (selected()) {
-          <div detail class="w-full lg:w-[520px] shrink-0 bg-surface rounded-lg border border-border p-4 sm:p-6 max-h-[calc(100vh-200px)] overflow-y-auto">
+          <div detail class="w-full lg:w-[520px] shrink-0 bg-surface rounded-lg border border-border p-4 sm:p-6 max-h-[calc(100vh-200px)] overflow-y-auto overflow-x-hidden min-w-0">
             <div class="flex items-center justify-between mb-3">
               <h2 class="text-lg font-semibold text-text-primary">{{ selected()!.title }}</h2>
               <button (click)="selected.set(null)" class="p-1.5 text-text-secondary hover:text-text-primary rounded">

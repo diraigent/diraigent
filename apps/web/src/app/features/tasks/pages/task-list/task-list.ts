@@ -330,7 +330,7 @@ type SortDir = 'asc' | 'desc';
 
             <!-- Expanded details -->
             @if (selectedId() === task.id) {
-              <div class="border-t border-border">
+              <div class="border-t border-border overflow-x-hidden">
                 <app-task-detail
                   [embedded]="true"
                   [task]="task"

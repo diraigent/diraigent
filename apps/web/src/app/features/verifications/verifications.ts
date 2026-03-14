@@ -139,7 +139,7 @@ const KIND_COLORS: Record<VerificationKind, string> = {
 
         <!-- Detail panel -->
         @if (selected()) {
-          <div class="w-full lg:w-[520px] shrink-0 bg-surface rounded-lg border border-border p-4 sm:p-6 max-h-[calc(100vh-200px)] overflow-y-auto">
+          <div class="w-full lg:w-[520px] shrink-0 bg-surface rounded-lg border border-border p-4 sm:p-6 max-h-[calc(100vh-200px)] overflow-y-auto overflow-x-hidden min-w-0">
             <div class="flex items-center justify-between mb-3">
               <h2 class="text-lg font-semibold text-text-primary">{{ selected()!.title }}</h2>
               <button (click)="selected.set(null)" class="p-1.5 text-text-secondary hover:text-text-primary rounded">
@@ -175,7 +175,7 @@ const KIND_COLORS: Record<VerificationKind, string> = {
             @if (selected()!.detail) {
               <div class="mb-4">
                 <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1">{{ t('verifications.fieldDetail') }}</h3>
-                <p class="text-sm text-text-primary whitespace-pre-wrap">{{ selected()!.detail }}</p>
+                <p class="text-sm text-text-primary whitespace-pre-wrap break-words">{{ selected()!.detail }}</p>
               </div>
             }
 
@@ -184,7 +184,7 @@ const KIND_COLORS: Record<VerificationKind, string> = {
               <div class="mb-4">
                 <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1">{{ t('verifications.fieldTask') }}</h3>
                 <button (click)="showTaskPreview(selected()!.task_id!)"
-                  class="text-sm text-accent font-mono hover:underline cursor-pointer">{{ selected()!.task_id }}</button>
+                  class="text-sm text-accent font-mono hover:underline cursor-pointer break-all">{{ selected()!.task_id }}</button>
               </div>
             }
 
