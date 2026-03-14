@@ -168,14 +168,14 @@ Decompose the following work item into 3-8 concrete, implementable tasks. Each t
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to call Anthropic API");
-            AppError::Internal(format!("Failed to call AI service: {e}"))
+            AppError::BadGateway(format!("Failed to call AI service: {e}"))
         })?;
 
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
         tracing::error!(status = %status, body = %body, "Anthropic API returned error");
-        return Err(AppError::Internal(format!(
+        return Err(AppError::BadGateway(format!(
             "AI service returned {status}: {body}"
         )));
     }
