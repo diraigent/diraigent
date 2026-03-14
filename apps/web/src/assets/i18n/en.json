@@ -64,7 +64,10 @@
       "doneToday": "Done Today",
       "cancelledToday": "Cancelled Today",
       "totalCost": "Total Spend",
-      "totalCostNote": "Estimation only — may not reflect actual subscription usage"
+      "totalCostNote": "Estimation only — may not reflect actual subscription usage",
+      "tokensToday": "Tokens Today",
+      "tokensWeek": "Tokens This Week",
+      "tokensTotal": "Total Tokens"
     }
   },
   "common": {

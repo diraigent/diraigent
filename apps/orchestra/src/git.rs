@@ -1194,39 +1194,45 @@ impl WorktreeManager {
             bail!("git_mode=none: release operations not supported");
         }
 
-        let db = &self.default_branch;
-        let source = source_branch.unwrap_or("dev");
+        // Release target is always "main" (production branch).
+        // default_branch is the dev branch (e.g. "dev"), which is the default source.
+        let target = "main";
+        let source = source_branch.unwrap_or(&self.default_branch);
 
         // Verify source branch exists
         self.git(&["rev-parse", "--verify", source])
             .with_context(|| format!("source branch '{source}' does not exist"))?;
 
-        // Checkout default branch
+        // Checkout target (production) branch
         let current = self.git_output(&["rev-parse", "--abbrev-ref", "HEAD"])?;
-        if current.trim() != db {
-            self.git(&["checkout", db])
-                .with_context(|| format!("checkout {db} for release"))?;
+        if current.trim() != target {
+            self.git(&["checkout", target])
+                .with_context(|| format!("checkout {target} for release"))?;
         }
 
         // Pull latest if remote is configured
         if self
-            .git_output(&["config", "--get", &format!("branch.{db}.remote")])
+            .git_output(&["config", "--get", &format!("branch.{target}.remote")])
             .is_ok()
         {
-            self.run_git(&["pull", "--rebase", "origin", db], GIT_NET_TIMEOUT_SECS)
-                .ok(); // Best-effort; may fail if no remote
+            self.run_git(
+                &["pull", "--rebase", "origin", target],
+                GIT_NET_TIMEOUT_SECS,
+            )
+            .ok(); // Best-effort; may fail if no remote
         }
 
         // Check if there's anything to merge
-        let diff_check = self.git_output(&["rev-list", "--count", &format!("{db}..{source}")])?;
+        let diff_check =
+            self.git_output(&["rev-list", "--count", &format!("{target}..{source}")])?;
         let commit_count: i32 = diff_check.trim().parse().unwrap_or(0);
         if commit_count == 0 {
-            bail!("nothing to release: {source} has no new commits over {db}");
+            bail!("nothing to release: {source} has no new commits over {target}");
         }
 
         // Squash merge
         self.git(&["merge", "--squash", source])
-            .with_context(|| format!("squash merge {source} into {db}"))?;
+            .with_context(|| format!("squash merge {source} into {target}"))?;
 
         // Build commit message from git log if not provided
         let commit_msg = if let Some(msg) = message {
@@ -1238,10 +1244,10 @@ impl WorktreeManager {
                     "log",
                     "--oneline",
                     "--no-merges",
-                    &format!("{db}..{source}"),
+                    &format!("{target}..{source}"),
                 ])
                 .unwrap_or_default();
-            format!("release: squash merge {source} into {db}\n\n{log}")
+            format!("release: squash merge {source} into {target}\n\n{log}")
         };
 
         self.git(&["commit", "-m", &commit_msg])
@@ -1277,10 +1283,10 @@ impl WorktreeManager {
 
         let mut push_results = Vec::new();
         for remote in &remotes {
-            // Push default branch
-            match self.run_git(&["push", remote, db], GIT_NET_TIMEOUT_SECS) {
-                Ok(_) => push_results.push(format!("pushed {db} to {remote}")),
-                Err(e) => push_results.push(format!("failed to push {db} to {remote}: {e}")),
+            // Push target branch
+            match self.run_git(&["push", remote, target], GIT_NET_TIMEOUT_SECS) {
+                Ok(_) => push_results.push(format!("pushed {target} to {remote}")),
+                Err(e) => push_results.push(format!("failed to push {target} to {remote}: {e}")),
             }
             // Push tag
             match self.run_git(&["push", remote, &tag], GIT_NET_TIMEOUT_SECS) {
