@@ -253,6 +253,8 @@ async fn process_reaped_task(
                             warn!(
                                 "failed to transition {tid} to human_review after merge failure: {tr_err}"
                             );
+                        } else {
+                            info!("task {tid} moved to human_review after merge failure");
                         }
                     }
                 }
