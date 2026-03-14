@@ -52,8 +52,8 @@ pub async fn create_task(
     };
 
     let task = sqlx::query_as::<_, Task>(
-        "INSERT INTO diraigent.task (project_id, title, kind, state, urgent, context, required_capabilities, playbook_id, playbook_step, decision_id, plan_id, created_by, file_scope, parent_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        "INSERT INTO diraigent.task (project_id, title, kind, state, urgent, context, required_capabilities, playbook_id, playbook_step, decision_id, created_by, file_scope, parent_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING *",
     )
     .bind(project_id)
@@ -66,7 +66,6 @@ pub async fn create_task(
     .bind(playbook_id)
     .bind(if playbook_id.is_some() { Some(0i32) } else { None })
     .bind(req.decision_id)
-    .bind(req.plan_id)
     .bind(created_by)
     .bind(&file_scope)
     .bind(req.parent_id)
@@ -237,15 +236,9 @@ pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Resu
         None => existing.parent_id,
     };
 
-    // Double-Option: None → keep existing, Some(v) → use v (which may be None to clear).
-    let plan_id = match &req.plan_id {
-        Some(v) => *v,
-        None => existing.plan_id,
-    };
-
     let task = sqlx::query_as::<_, Task>(
         "UPDATE diraigent.task
-         SET title = $2, kind = $3, urgent = $4, context = $5, required_capabilities = $6, playbook_step = $7, playbook_id = $8, flagged = $9, file_scope = $10, parent_id = $11, plan_id = $12
+         SET title = $2, kind = $3, urgent = $4, context = $5, required_capabilities = $6, playbook_step = $7, playbook_id = $8, flagged = $9, file_scope = $10, parent_id = $11
          WHERE id = $1 RETURNING *",
     )
     .bind(task_id)
@@ -259,7 +252,6 @@ pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Resu
     .bind(flagged)
     .bind(file_scope)
     .bind(parent_id)
-    .bind(plan_id)
     .fetch_one(pool)
     .await?;
 

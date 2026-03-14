@@ -79,7 +79,6 @@ async fn create(
         goal_id: None,
         file_scope: None,
         parent_id: None,
-        plan_id: None,
     };
 
     match state

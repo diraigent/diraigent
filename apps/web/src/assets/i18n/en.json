@@ -19,8 +19,7 @@
     "reports": "Reports",
     "reference": "Reference",
     "stepTemplates": "Step Templates",
-    "work": "Work",
-    "plans": "Plans"
+    "work": "Work"
   },
   "review": {
     "awaitingReview": "Awaiting Review",
@@ -293,39 +292,6 @@
     "backlog": "Backlog",
     "completed": "Completed",
     "archived": "Archived"
-  },
-  "plans": {
-    "create": "New Plan",
-    "createTitle": "Create Plan",
-    "editTitle": "Edit Plan",
-    "searchPlaceholder": "Search plans...",
-    "allStatuses": "All Statuses",
-    "fieldTitle": "Title",
-    "fieldDescription": "Description",
-    "progress": "Progress",
-    "tasks": "tasks",
-    "linkedTasks": "Tasks",
-    "addTask": "Add Task",
-    "taskId": "Task ID",
-    "taskIdPlaceholder": "Enter task UUID...",
-    "add": "Add",
-    "noTasks": "No tasks in this plan yet.",
-    "viewTasks": "View Tasks",
-    "markComplete": "Mark Complete",
-    "reactivate": "Reactivate",
-    "inProgress": "in progress",
-    "cancelled": "cancelled",
-    "updatedAt": "Updated",
-    "createdAt": "Created",
-    "cancel": "Cancel",
-    "save": "Save",
-    "edit": "Edit",
-    "delete": "Delete",
-    "status": {
-      "active": "Active",
-      "completed": "Completed",
-      "cancelled": "Cancelled"
-    }
   },
   "decisions": {
     "create": "New Decision",
@@ -710,7 +676,6 @@
     "decomposeHint": "— agent will split this into subtasks on first run",
     "parentTask": "Parent Task",
     "subtasks": "Subtasks",
-    "planMembership": "Plan",
     "hasParent": "Has parent task",
     "hierarchyView": "Hierarchy",
     "flatView": "Flat",

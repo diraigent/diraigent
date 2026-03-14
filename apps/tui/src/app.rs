@@ -1,9 +1,9 @@
 use crate::client::{
     Agent, AuditEntry, BranchInfo, ChangedFile, ChatMessage, Decision, GitTaskStatus, Goal,
     GoalComment, GoalProgress, GoalStats, Integration, IntegrationAccess, KnowledgeEntry, LogEntry,
-    MainPushStatus, Member, Observation, Plan, PlanProgress, Playbook, Project, ProjectEvent,
-    ProjectMetrics, Report, Role, SearchResult, StepTemplate, Task, TaskComment, TaskDependencies,
-    TaskUpdate, TreeEntry, Verification, Webhook, WebhookDelivery,
+    MainPushStatus, Member, Observation, Playbook, Project, ProjectEvent, ProjectMetrics, Report,
+    Role, SearchResult, StepTemplate, Task, TaskComment, TaskDependencies, TaskUpdate, TreeEntry,
+    Verification, Webhook, WebhookDelivery,
 };
 use ratatui::widgets::ListState;
 use uuid::Uuid;
@@ -32,7 +32,6 @@ pub enum View {
     Events,
     Webhooks,
     StepTemplates,
-    Plans,
 }
 
 pub const ALL_VIEWS: &[View] = &[
@@ -57,7 +56,6 @@ pub const ALL_VIEWS: &[View] = &[
     View::Events,
     View::Webhooks,
     View::StepTemplates,
-    View::Plans,
 ];
 
 impl View {
@@ -85,7 +83,6 @@ impl View {
             View::Events => "Events",
             View::Webhooks => "Webhooks",
             View::StepTemplates => "Step Templates",
-            View::Plans => "Plans",
         }
     }
 
@@ -113,7 +110,6 @@ impl View {
             View::Events => "E",
             View::Webhooks => "W",
             View::StepTemplates => "T",
-            View::Plans => "N",
         }
     }
 }
@@ -637,12 +633,6 @@ pub struct App {
     // Step templates
     pub step_templates: Vec<StepTemplate>,
 
-    // Plans
-    pub plans: Vec<Plan>,
-    pub plan_tasks: Vec<Task>,
-    pub plan_progress: Option<PlanProgress>,
-    pub selected_plan: Option<usize>,
-
     // Agent tasks (queue view)
     pub agent_tasks: Vec<Task>,
 
@@ -801,10 +791,6 @@ impl App {
             dashboard_events: vec![],
             goal_comments: vec![],
             step_templates: vec![],
-            plans: vec![],
-            plan_tasks: vec![],
-            plan_progress: None,
-            selected_plan: None,
             agent_tasks: vec![],
             goal_tasks: vec![],
             goal_unlinked_tasks: vec![],
@@ -897,7 +883,6 @@ impl App {
             View::Reports => self.reports.len(),
             View::Webhooks => self.webhooks.len(),
             View::Events => self.filtered_events().len(),
-            View::Plans => self.plans.len(),
         }
     }
 
@@ -924,7 +909,6 @@ impl App {
             View::Reports => self.selected_report,
             View::Webhooks => self.selected_webhook,
             View::Events => self.selected_event,
-            View::Plans => self.selected_plan,
         }
     }
 
@@ -955,7 +939,6 @@ impl App {
             View::Reports => self.selected_report = idx,
             View::Webhooks => self.selected_webhook = idx,
             View::Events => self.selected_event = idx,
-            View::Plans => self.selected_plan = idx,
         }
     }
 

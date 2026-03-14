@@ -193,7 +193,9 @@ pub async fn link_task_goal(
     task_id: Uuid,
 ) -> Result<TaskGoal, AppError> {
     let tg = sqlx::query_as::<_, TaskGoal>(
-        "INSERT INTO diraigent.task_goal (task_id, goal_id) VALUES ($1, $2) RETURNING *",
+        "INSERT INTO diraigent.task_goal (task_id, goal_id, position)
+         VALUES ($1, $2, (SELECT COALESCE(MAX(position), 0) + 1 FROM diraigent.task_goal WHERE goal_id = $2))
+         RETURNING *",
     )
     .bind(task_id)
     .bind(goal_id)
@@ -355,7 +357,7 @@ pub async fn list_goal_tasks(
         "SELECT t.* FROM diraigent.task t
          JOIN diraigent.task_goal tg ON t.id = tg.task_id
          WHERE tg.goal_id = $1
-         ORDER BY t.urgent DESC, t.created_at DESC
+         ORDER BY tg.position ASC, t.urgent DESC, t.created_at DESC
          LIMIT $2 OFFSET $3",
     )
     .bind(goal_id)
@@ -390,6 +392,57 @@ pub async fn bulk_link_tasks(
     .execute(pool)
     .await?;
     Ok(result.rows_affected() as i64)
+}
+
+pub async fn reorder_goal_tasks(
+    pool: &PgPool,
+    goal_id: Uuid,
+    task_ids: &[Uuid],
+) -> Result<Vec<Task>, AppError> {
+    if task_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Validate all task_ids are linked to this goal
+    let count: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM diraigent.task_goal WHERE goal_id = $1 AND task_id = ANY($2)",
+    )
+    .bind(goal_id)
+    .bind(task_ids)
+    .fetch_one(pool)
+    .await?;
+
+    if count.0 != task_ids.len() as i64 {
+        return Err(AppError::Validation(
+            "Some task IDs are not linked to this goal".into(),
+        ));
+    }
+
+    let indexes: Vec<i32> = (0..task_ids.len() as i32).collect();
+
+    sqlx::query(
+        "UPDATE diraigent.task_goal SET position = data.new_pos
+         FROM (SELECT unnest($1::uuid[]) AS tid, unnest($2::int[]) AS new_pos) data
+         WHERE diraigent.task_goal.goal_id = $3 AND diraigent.task_goal.task_id = data.tid",
+    )
+    .bind(task_ids)
+    .bind(&indexes)
+    .bind(goal_id)
+    .execute(pool)
+    .await?;
+
+    // Return tasks in new order
+    let tasks = sqlx::query_as::<_, Task>(
+        "SELECT t.* FROM diraigent.task t
+         JOIN diraigent.task_goal tg ON t.id = tg.task_id
+         WHERE tg.goal_id = $1
+         ORDER BY tg.position ASC",
+    )
+    .bind(goal_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(tasks)
 }
 
 // ── Goal Comments ──

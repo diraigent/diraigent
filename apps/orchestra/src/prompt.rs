@@ -144,14 +144,6 @@ pub async fn build_user_prompt(
         .unwrap_or("")
         .to_string();
 
-    // Extract plan_id from the task — used for plan inheritance when
-    // the agent creates subtasks via decomposition.
-    let current_plan_id = task_json
-        .as_ref()
-        .and_then(|t| t["plan_id"].as_str())
-        .unwrap_or("")
-        .to_string();
-
     // Process raw project context: decrypt and optionally trim based on step type.
     let project_context = if context_level.include_full_context {
         raw_context
@@ -351,7 +343,6 @@ pub async fn build_user_prompt(
         decompose_mode,
         project_json: project_json.as_ref(),
         goal_id: &first_goal_id,
-        plan_id: &current_plan_id,
     });
 
     let step_desc_line = if step_description.is_empty() {
@@ -654,9 +645,6 @@ struct WorkflowParams<'a> {
     /// First goal ID linked to this task (empty string if none).
     /// Used for goal inheritance: subtasks inherit the parent's goal.
     goal_id: &'a str,
-    /// Plan ID from the current task (empty string if none).
-    /// Used for plan inheritance: subtasks inherit the parent's plan.
-    plan_id: &'a str,
 }
 
 /// Substitute `{{variable}}` placeholders in a step description template.
@@ -692,8 +680,7 @@ fn substitute_description(
         .replace("{{playbook_id}}", p.playbook_id)
         .replace("{{branch}}", &branch)
         .replace("{{review_feedback}}", p.review_feedback)
-        .replace("{{goal_id}}", p.goal_id)
-        .replace("{{plan_id}}", p.plan_id);
+        .replace("{{goal_id}}", p.goal_id);
 
     // Apply project vars: {{project.<key>}}
     // Resolution order: top-level project fields first, then metadata fields.
@@ -757,12 +744,6 @@ fn build_workflow(p: &WorkflowParams<'_>) -> String {
         } else {
             format!(r#""goal_id": "{}", "#, p.goal_id)
         };
-        // Include plan_id in subtask creation so subtasks inherit the parent's plan.
-        let plan_id_field = if p.plan_id.is_empty() {
-            String::new()
-        } else {
-            format!(r#""plan_id": "{}", "#, p.plan_id)
-        };
         return format!(
             r#"## Your Job: DECOMPOSE INTO SUBTASKS
 
@@ -774,7 +755,7 @@ Instead, analyze the spec and break it into smaller, well-scoped subtasks.
 3. **Analyze the spec**: Identify logical units of work that can be implemented independently.
 4. **Create subtasks**: For each unit, create a task with a clear spec, files, test_cmd, and acceptance_criteria:
    ```
-   {agent_cli} create {project_id} '{{{goal_id_field}{plan_id_field}"parent_id": "{task_id}", "title": "...", "kind": "feature", "urgent": false, "playbook_id": "{playbook_id}", "context": {{"spec": "...", "files": ["..."], "test_cmd": "...", "acceptance_criteria": ["..."]}}}}'
+   {agent_cli} create {project_id} '{{{goal_id_field}"parent_id": "{task_id}", "title": "...", "kind": "feature", "urgent": false, "playbook_id": "{playbook_id}", "context": {{"spec": "...", "files": ["..."], "test_cmd": "...", "acceptance_criteria": ["..."]}}}}'
    ```
 5. **Wire dependencies**: If subtask B depends on subtask A:
    ```
@@ -963,7 +944,6 @@ mod tests {
             decompose_mode: false,
             project_json: None,
             goal_id: "",
-            plan_id: "",
         }
     }
 
@@ -1506,7 +1486,6 @@ mod tests {
             decompose_mode: true,
             project_json: None,
             goal_id: "",
-            plan_id: "",
         };
         let output = build_workflow(&params);
         assert!(
@@ -1558,32 +1537,6 @@ mod tests {
     }
 
     #[test]
-    fn decompose_mode_includes_plan_id_when_present() {
-        let root = PathBuf::from("/tmp/test-repo");
-        let mut params = make_params("implement", "", &root);
-        params.decompose_mode = true;
-        params.plan_id = "llllllll-mmmm-nnnn-oooo-pppppppppppp";
-        let output = build_workflow(&params);
-        assert!(
-            output.contains(r#""plan_id": "llllllll-mmmm-nnnn-oooo-pppppppppppp""#),
-            "decompose mode with plan should include plan_id in create command, got: {output}"
-        );
-    }
-
-    #[test]
-    fn decompose_mode_omits_plan_id_when_absent() {
-        let root = PathBuf::from("/tmp/test-repo");
-        let mut params = make_params("implement", "", &root);
-        params.decompose_mode = true;
-        params.plan_id = "";
-        let output = build_workflow(&params);
-        assert!(
-            !output.contains("plan_id"),
-            "decompose mode without plan should NOT include plan_id, got: {output}"
-        );
-    }
-
-    #[test]
     fn decompose_mode_guideline_mentions_parent_id() {
         let root = PathBuf::from("/tmp/test-repo");
         let mut params = make_params("implement", "", &root);
@@ -1592,36 +1545,6 @@ mod tests {
         assert!(
             output.contains("parent_id"),
             "decompose mode guidelines should mention parent_id, got: {output}"
-        );
-    }
-
-    #[test]
-    fn plan_id_template_variable_substituted() {
-        let root = PathBuf::from("/tmp/test-repo");
-        let step_json = serde_json::json!({
-            "description": "Plan: {{plan_id}}"
-        });
-        let params = WorkflowParams {
-            step_name: "implement",
-            step_description: "Plan: {{plan_id}}",
-            step_json: Some(&step_json),
-            agent_cli: "/usr/bin/agent-cli",
-            task_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-            project_id: "11111111-2222-3333-4444-555555555555",
-            short_id: "aaaaaaaa-bbb",
-            repo_root: &root,
-            api_base: "http://localhost:8082",
-            playbook_id: "pppppppp-qqqq-rrrr-ssss-tttttttttttt",
-            review_feedback: "",
-            decompose_mode: false,
-            project_json: None,
-            goal_id: "",
-            plan_id: "llllllll-mmmm-nnnn-oooo-pppppppppppp",
-        };
-        let output = build_workflow(&params);
-        assert!(
-            output.contains("Plan: llllllll-mmmm-nnnn-oooo-pppppppppppp"),
-            "{{{{plan_id}}}} template variable should be substituted, got: {output}"
         );
     }
 
@@ -1750,7 +1673,6 @@ mod tests {
             decompose_mode: false,
             project_json: None,
             goal_id: "gggggggg-hhhh-iiii-jjjj-kkkkkkkkkkkk",
-            plan_id: "",
         };
         let output = build_workflow(&params);
         assert!(

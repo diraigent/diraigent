@@ -257,14 +257,6 @@ fn render_detail(f: &mut Frame, area: Rect, app: &mut App) {
             ]));
         }
 
-        // Plan membership
-        if let Some(plan_id) = t.plan_id {
-            lines.push(Line::from(vec![
-                Span::styled("Plan: ", Style::default().fg(theme::subtext0())),
-                Span::styled(format!("{}", plan_id), Style::default().fg(theme::mauve())),
-            ]));
-        }
-
         // Subtasks section
         if !app.subtasks.is_empty() {
             lines.push(Line::styled(
