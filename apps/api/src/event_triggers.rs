@@ -6,7 +6,6 @@ use uuid::Uuid;
 use crate::AppState;
 use crate::error::AppError;
 use crate::models::*;
-use crate::repository;
 
 /// Process event triggers: find matching rules and create observations.
 ///
@@ -16,14 +15,15 @@ pub async fn process_event_triggers(
     project_id: Uuid,
     event: &Event,
 ) -> Result<Vec<Observation>, AppError> {
-    let rules = repository::find_matching_rules(
-        &state.pool,
-        project_id,
-        &event.kind,
-        &event.source,
-        Some(&event.severity),
-    )
-    .await?;
+    let rules = state
+        .db
+        .find_matching_event_rules(
+            project_id,
+            &event.kind,
+            &event.source,
+            Some(&event.severity),
+        )
+        .await?;
 
     let mut observations = Vec::new();
 

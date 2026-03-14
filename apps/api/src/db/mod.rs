@@ -780,4 +780,30 @@ pub trait DiraigentDb: Send + Sync {
         filters: &TaskLogFilters,
     ) -> Result<i64, AppError>;
     async fn get_task_log_by_id(&self, id: Uuid) -> Result<TaskLog, AppError>;
+
+    // ── Event Observation Rules ────────────────────────────────────────────
+    async fn create_event_observation_rule(
+        &self,
+        project_id: Uuid,
+        req: &CreateEventObservationRule,
+    ) -> Result<EventObservationRule, AppError>;
+    async fn get_event_observation_rule(&self, id: Uuid) -> Result<EventObservationRule, AppError>;
+    async fn list_event_observation_rules(
+        &self,
+        project_id: Uuid,
+        filters: &EventObservationRuleFilters,
+    ) -> Result<Vec<EventObservationRule>, AppError>;
+    async fn update_event_observation_rule(
+        &self,
+        id: Uuid,
+        req: &UpdateEventObservationRule,
+    ) -> Result<EventObservationRule, AppError>;
+    async fn delete_event_observation_rule(&self, id: Uuid) -> Result<(), AppError>;
+    async fn find_matching_event_rules(
+        &self,
+        project_id: Uuid,
+        event_kind: &str,
+        event_source: &str,
+        event_severity: Option<&str>,
+    ) -> Result<Vec<EventObservationRule>, AppError>;
 }

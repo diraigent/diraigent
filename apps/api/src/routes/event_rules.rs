@@ -9,7 +9,6 @@ use crate::auth::AuthUser;
 use crate::authz::{OptionalAgentId, require_membership};
 use crate::error::AppError;
 use crate::models::*;
-use crate::repository;
 use crate::validation;
 
 pub fn routes() -> Router<AppState> {
@@ -36,7 +35,10 @@ async fn create_event_rule(
 ) -> Result<Json<EventObservationRule>, AppError> {
     validation::validate_create_event_observation_rule(&req)?;
     require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
-    let rule = repository::create_event_observation_rule(&state.pool, project_id, &req).await?;
+    let rule = state
+        .db
+        .create_event_observation_rule(project_id, &req)
+        .await?;
 
     state.fire_event(
         project_id,
@@ -59,7 +61,10 @@ async fn list_event_rules(
     Query(filters): Query<EventObservationRuleFilters>,
 ) -> Result<Json<Vec<EventObservationRule>>, AppError> {
     require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
-    let rules = repository::list_event_observation_rules(&state.pool, project_id, &filters).await?;
+    let rules = state
+        .db
+        .list_event_observation_rules(project_id, &filters)
+        .await?;
     Ok(Json(rules))
 }
 
@@ -69,7 +74,7 @@ async fn get_event_rule(
     OptionalAgentId(agent_id): OptionalAgentId,
     Path(id): Path<Uuid>,
 ) -> Result<Json<EventObservationRule>, AppError> {
-    let rule = repository::get_event_observation_rule(&state.pool, id).await?;
+    let rule = state.db.get_event_observation_rule(id).await?;
     require_membership(state.db.as_ref(), agent_id, user_id, rule.project_id).await?;
     Ok(Json(rule))
 }
@@ -81,7 +86,7 @@ async fn update_event_rule(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateEventObservationRule>,
 ) -> Result<Json<EventObservationRule>, AppError> {
-    let existing = repository::get_event_observation_rule(&state.pool, id).await?;
+    let existing = state.db.get_event_observation_rule(id).await?;
     require_membership(state.db.as_ref(), agent_id, user_id, existing.project_id).await?;
     // Validate fields if present
     if let Some(ref name) = req.name
@@ -128,7 +133,7 @@ async fn update_event_rule(
             "title_template must be non-empty".into(),
         ));
     }
-    let rule = repository::update_event_observation_rule(&state.pool, id, &req).await?;
+    let rule = state.db.update_event_observation_rule(id, &req).await?;
     Ok(Json(rule))
 }
 
@@ -138,9 +143,9 @@ async fn delete_event_rule(
     OptionalAgentId(agent_id): OptionalAgentId,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, AppError> {
-    let existing = repository::get_event_observation_rule(&state.pool, id).await?;
+    let existing = state.db.get_event_observation_rule(id).await?;
     require_membership(state.db.as_ref(), agent_id, user_id, existing.project_id).await?;
-    repository::delete_event_observation_rule(&state.pool, id).await?;
+    state.db.delete_event_observation_rule(id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -150,7 +155,7 @@ async fn toggle_event_rule(
     OptionalAgentId(agent_id): OptionalAgentId,
     Path(id): Path<Uuid>,
 ) -> Result<Json<EventObservationRule>, AppError> {
-    let existing = repository::get_event_observation_rule(&state.pool, id).await?;
+    let existing = state.db.get_event_observation_rule(id).await?;
     require_membership(state.db.as_ref(), agent_id, user_id, existing.project_id).await?;
     let update = UpdateEventObservationRule {
         enabled: Some(!existing.enabled),
@@ -163,6 +168,6 @@ async fn toggle_event_rule(
         title_template: None,
         description_template: None,
     };
-    let rule = repository::update_event_observation_rule(&state.pool, id, &update).await?;
+    let rule = state.db.update_event_observation_rule(id, &update).await?;
     Ok(Json(rule))
 }
