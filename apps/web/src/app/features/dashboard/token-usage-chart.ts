@@ -8,6 +8,7 @@ import {
   LineElement,
   PointElement,
   LinearScale,
+  LogarithmicScale,
   CategoryScale,
   Filler,
   Tooltip,
@@ -15,7 +16,7 @@ import {
 } from 'chart.js';
 import { DiraigentApiService, TokenDayCount } from '../../core/services/diraigent-api.service';
 
-Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Filler, Tooltip, Legend);
+Chart.register(LineController, LineElement, PointElement, LinearScale, LogarithmicScale, CategoryScale, Filler, Tooltip, Legend);
 
 type TimeRange = 7 | 30 | 90;
 
@@ -87,7 +88,7 @@ export class TokenUsageChartComponent {
       datasets: [
         {
           label: 'Input Tokens',
-          data: data.map(d => d.input_tokens),
+          data: data.map(d => d.input_tokens || null),  // null for zero to avoid log(0)
           borderColor: '#89b4fa',  // ctp-blue
           backgroundColor: 'rgba(137, 180, 250, 0.1)',
           fill: true,
@@ -95,10 +96,11 @@ export class TokenUsageChartComponent {
           pointRadius: 2,
           pointHoverRadius: 5,
           borderWidth: 2,
+          spanGaps: true,
         },
         {
           label: 'Output Tokens',
-          data: data.map(d => d.output_tokens),
+          data: data.map(d => d.output_tokens || null),  // null for zero to avoid log(0)
           borderColor: '#a6e3a1',  // ctp-green
           backgroundColor: 'rgba(166, 227, 161, 0.1)',
           fill: true,
@@ -106,6 +108,7 @@ export class TokenUsageChartComponent {
           pointRadius: 2,
           pointHoverRadius: 5,
           borderWidth: 2,
+          spanGaps: true,
         },
       ],
     };
@@ -163,7 +166,8 @@ export class TokenUsageChartComponent {
         },
       },
       y: {
-        beginAtZero: true,
+        type: 'logarithmic',
+        min: 1,
         grid: {
           color: 'rgba(69, 71, 90, 0.3)',
         },
@@ -172,7 +176,11 @@ export class TokenUsageChartComponent {
           font: { size: 10 },
           callback: function(value) {
             const num = Number(value ?? 0);
-            if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + 'M';
+            // Only show ticks at powers of 10 to avoid clutter on log scale
+            if (num <= 0) return '';
+            const log = Math.log10(num);
+            if (Math.abs(log - Math.round(log)) > 0.01) return '';
+            if (num >= 1_000_000) return (num / 1_000_000).toFixed(0) + 'M';
             if (num >= 1_000) return (num / 1_000).toFixed(0) + 'K';
             return num.toString();
           },
