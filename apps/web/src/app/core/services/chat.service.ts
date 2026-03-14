@@ -37,10 +37,15 @@ export class ChatService {
   readonly scrollToChat = signal(false);
   /** Whether the chat panel is collapsed to just the header. */
   readonly collapsed = signal(localStorage.getItem('diraigent-chat-collapsed') === 'true');
+<<<<<<< HEAD
   /** The chat model name — user-selected or from server config. */
   readonly chatModel = signal<string>(localStorage.getItem(MODEL_STORAGE_KEY) || '');
   /** Whether the model selector dropdown is open. */
   readonly modelSelectorOpen = signal(false);
+=======
+>>>>>>> agent/task-eaeed8ff-bdb
+  /** Whether the chat panel is in full-screen mode. */
+  readonly fullscreen = signal(localStorage.getItem('diraigent-chat-fullscreen') === 'true');
 
   private abortController: AbortController | null = null;
   private generation = 0;
@@ -233,6 +238,7 @@ export class ChatService {
     localStorage.setItem('diraigent-chat-collapsed', String(this.collapsed()));
   }
 
+<<<<<<< HEAD
   setModel(model: string): void {
     this.chatModel.set(model);
     localStorage.setItem(MODEL_STORAGE_KEY, model);
@@ -241,6 +247,18 @@ export class ChatService {
 
   toggleModelSelector(): void {
     this.modelSelectorOpen.update(v => !v);
+  }
+
+=======
+>>>>>>> agent/task-eaeed8ff-bdb
+  toggleFullscreen(): void {
+    this.fullscreen.update(v => !v);
+    localStorage.setItem('diraigent-chat-fullscreen', String(this.fullscreen()));
+    // Entering fullscreen should always expand collapsed chat
+    if (this.fullscreen() && this.collapsed()) {
+      this.collapsed.set(false);
+      localStorage.setItem('diraigent-chat-collapsed', 'false');
+    }
   }
 
   /** Send a message (chat is always visible). Emits scrollToChat for mobile scroll-into-view. */
