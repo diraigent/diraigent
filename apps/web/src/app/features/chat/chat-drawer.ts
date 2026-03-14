@@ -6,25 +6,9 @@ import { ChatService } from '../../core/services/chat.service';
   selector: 'app-chat-drawer',
   standalone: true,
   imports: [FormsModule],
-  styles: [`:host { display: contents; }`],
+  styles: [`:host { display: block; height: 100%; }`],
   template: `
-    <!-- Floating action button -->
-    <button
-      (click)="toggle()"
-      class="fixed bottom-11 right-6 z-[60] w-14 h-14 rounded-full bg-accent text-white shadow-lg
-             hover:opacity-90 transition-all flex items-center justify-center"
-      [class.hidden]="chat.isOpen()">
-      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round"
-              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-      </svg>
-    </button>
-
-    <!-- Drawer -->
-    @if (chat.isOpen()) {
-      <div class="fixed bottom-11 right-6 z-[60] flex flex-col
-                  w-[840px] max-w-[calc(100vw-2rem)] h-[min(80vh,800px)]
-                  rounded-2xl shadow-2xl border border-border bg-surface overflow-hidden">
+      <div class="h-full flex flex-col bg-surface overflow-hidden">
 
         <!-- Header -->
         <div class="flex items-center justify-between px-4 py-3 border-b border-border bg-bg-subtle">
@@ -33,16 +17,11 @@ import { ChatService } from '../../core/services/chat.service';
             <button (click)="chat.clear()" class="text-xs text-text-secondary hover:text-text-primary transition-colors">
               Clear
             </button>
-            <button (click)="toggle()" class="text-text-secondary hover:text-text-primary transition-colors">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
           </div>
         </div>
 
         <!-- Messages -->
-        <div #messageList class="flex-1 overflow-y-auto p-4 space-y-3" (scroll)="onScroll()">
+        <div #messageList class="flex-1 overflow-y-auto min-h-0 p-4 space-y-3" (scroll)="onScroll()">
           @if (!chat.canSend()) {
             <div class="flex flex-col items-center justify-center h-full text-center px-6">
               <div class="text-text-muted text-sm">
@@ -130,7 +109,6 @@ import { ChatService } from '../../core/services/chat.service';
           </div>
         </div>
       </div>
-    }
   `,
 })
 export class ChatDrawerComponent {
@@ -147,23 +125,14 @@ export class ChatDrawerComponent {
     effect(() => {
       this.chat.messages();
       this.chat.streamingText();
-      const isOpen = this.chat.isOpen();
 
       untracked(() => {
-        // Whenever the drawer opens, reset scroll tracking and jump to bottom.
-        if (isOpen) {
-          this.userScrolledUp = false;
-        }
         if (!this.userScrolledUp) {
           // Defer one microtask so Angular has flushed DOM changes first.
           setTimeout(() => this.scrollToBottom(), 0);
         }
       });
     });
-  }
-
-  toggle(): void {
-    this.chat.isOpen.update(v => !v);
   }
 
   /**
