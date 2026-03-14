@@ -101,7 +101,7 @@ pub trait DiraigentDb: Send + Sync {
     async fn list_dependencies(&self, task_id: Uuid) -> Result<TaskDependencies, AppError>;
     async fn list_blocked_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError>;
     async fn list_flagged_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError>;
-    async fn list_goal_linked_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError>;
+    async fn list_work_linked_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError>;
     async fn list_tasks_with_blocker_updates(
         &self,
         project_id: Uuid,
@@ -155,67 +155,67 @@ pub trait DiraigentDb: Send + Sync {
     /// OR if the agent has no owner_id set (legacy agents created before ownership tracking).
     async fn verify_agent_owner(&self, agent_id: Uuid, user_id: Uuid) -> Result<bool, AppError>;
 
-    // ── Goals ─────────────────────────────────────────────────────────────────
-    async fn create_goal(
+    // ── Work ──────────────────────────────────────────────────────────────────
+    async fn create_work(
         &self,
         project_id: Uuid,
-        req: &CreateGoal,
+        req: &CreateWork,
         created_by: Uuid,
-    ) -> Result<Goal, AppError>;
-    async fn get_goal_by_id(&self, id: Uuid) -> Result<Goal, AppError>;
-    async fn list_goals(
+    ) -> Result<Work, AppError>;
+    async fn get_work_by_id(&self, id: Uuid) -> Result<Work, AppError>;
+    async fn list_works(
         &self,
         project_id: Uuid,
-        filters: &GoalFilters,
-    ) -> Result<Vec<Goal>, AppError>;
-    async fn activate_goal(&self, goal_id: Uuid) -> Result<Goal, AppError>;
-    async fn update_goal(&self, id: Uuid, req: &UpdateGoal) -> Result<Goal, AppError>;
-    async fn delete_goal(&self, id: Uuid) -> Result<(), AppError>;
-    async fn link_task_goal(&self, goal_id: Uuid, task_id: Uuid) -> Result<TaskGoal, AppError>;
-    async fn unlink_task_goal(&self, goal_id: Uuid, task_id: Uuid) -> Result<(), AppError>;
-    async fn get_goal_progress(&self, goal_id: Uuid) -> Result<GoalProgress, AppError>;
-    async fn list_goal_tasks(
+        filters: &WorkFilters,
+    ) -> Result<Vec<Work>, AppError>;
+    async fn activate_work(&self, work_id: Uuid) -> Result<Work, AppError>;
+    async fn update_work(&self, id: Uuid, req: &UpdateWork) -> Result<Work, AppError>;
+    async fn delete_work(&self, id: Uuid) -> Result<(), AppError>;
+    async fn link_task_work(&self, work_id: Uuid, task_id: Uuid) -> Result<TaskWork, AppError>;
+    async fn unlink_task_work(&self, work_id: Uuid, task_id: Uuid) -> Result<(), AppError>;
+    async fn get_work_progress(&self, work_id: Uuid) -> Result<WorkProgress, AppError>;
+    async fn list_work_tasks(
         &self,
-        goal_id: Uuid,
+        work_id: Uuid,
         limit: i64,
         offset: i64,
     ) -> Result<Vec<Task>, AppError>;
-    async fn count_goal_tasks(&self, goal_id: Uuid) -> Result<i64, AppError>;
-    async fn bulk_link_tasks(&self, goal_id: Uuid, task_ids: &[Uuid]) -> Result<i64, AppError>;
-    async fn get_goal_stats(&self, goal_id: Uuid) -> Result<GoalStats, AppError>;
-    async fn compute_auto_status(&self, goal_id: Uuid) -> Result<Option<String>, AppError>;
-    async fn list_auto_status_goal_ids_for_task(
+    async fn count_work_tasks(&self, work_id: Uuid) -> Result<i64, AppError>;
+    async fn bulk_link_tasks(&self, work_id: Uuid, task_ids: &[Uuid]) -> Result<i64, AppError>;
+    async fn get_work_stats(&self, work_id: Uuid) -> Result<WorkStats, AppError>;
+    async fn compute_auto_status(&self, work_id: Uuid) -> Result<Option<String>, AppError>;
+    async fn list_auto_status_work_ids_for_task(
         &self,
         task_id: Uuid,
     ) -> Result<Vec<Uuid>, AppError>;
-    async fn reorder_goals(
+    async fn reorder_works(
         &self,
         project_id: Uuid,
-        goal_ids: &[Uuid],
-    ) -> Result<Vec<Goal>, AppError>;
-    /// Return all goal IDs linked to a task (no auto_status filter).
-    async fn get_goal_ids_for_task(&self, task_id: Uuid) -> Result<Vec<Uuid>, AppError>;
-    /// Return distinct goal IDs inherited from an agent's active tasks in a project.
-    async fn get_agent_inherited_goal_ids(
+        work_ids: &[Uuid],
+    ) -> Result<Vec<Work>, AppError>;
+    /// Return all work IDs linked to a task (no auto_status filter).
+    async fn get_work_ids_for_task(&self, task_id: Uuid) -> Result<Vec<Uuid>, AppError>;
+    /// Return distinct work IDs inherited from an agent's active tasks in a project.
+    async fn get_agent_inherited_work_ids(
         &self,
         agent_id: Uuid,
         project_id: Uuid,
         exclude_task_id: Uuid,
     ) -> Result<Vec<Uuid>, AppError>;
-    async fn list_goals_for_task(&self, task_id: Uuid) -> Result<Vec<Goal>, AppError>;
+    async fn list_works_for_task(&self, task_id: Uuid) -> Result<Vec<Work>, AppError>;
 
-    // ── Goal Comments ──────────────────────────────────────────────────────────
-    async fn create_goal_comment(
+    // ── Work Comments ──────────────────────────────────────────────────────────
+    async fn create_work_comment(
         &self,
-        goal_id: Uuid,
-        req: &CreateGoalComment,
+        work_id: Uuid,
+        req: &CreateWorkComment,
         user_id: Option<Uuid>,
-    ) -> Result<GoalComment, AppError>;
-    async fn list_goal_comments(
+    ) -> Result<WorkComment, AppError>;
+    async fn list_work_comments(
         &self,
-        goal_id: Uuid,
+        work_id: Uuid,
         p: &Pagination,
-    ) -> Result<Vec<GoalComment>, AppError>;
+    ) -> Result<Vec<WorkComment>, AppError>;
 
     // ── Knowledge ─────────────────────────────────────────────────────────────
     async fn create_knowledge(
@@ -315,10 +315,10 @@ pub trait DiraigentDb: Send + Sync {
         default_retention_days: i32,
     ) -> Result<u64, AppError>;
 
-    // ── Goal Task Reordering ──────────────────────────────────────────────────
-    async fn reorder_goal_tasks(
+    // ── Work Task Reordering ──────────────────────────────────────────────────
+    async fn reorder_work_tasks(
         &self,
-        goal_id: Uuid,
+        work_id: Uuid,
         task_ids: &[Uuid],
     ) -> Result<Vec<Task>, AppError>;
 

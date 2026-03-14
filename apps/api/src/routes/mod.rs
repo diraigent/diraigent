@@ -8,7 +8,6 @@ mod event_rules;
 mod events;
 mod files;
 mod git;
-pub(crate) mod goals;
 mod integrations;
 mod knowledge;
 mod locks;
@@ -31,6 +30,7 @@ mod tasks;
 mod tenants;
 mod verifications;
 mod webhooks;
+pub(crate) mod work;
 mod ws;
 
 use std::future::Future;
@@ -73,7 +73,7 @@ pub fn router() -> Router<AppState> {
         .merge(tasks::routes())
         .merge(changed_files::routes())
         .merge(agents::routes())
-        .merge(goals::routes())
+        .merge(work::routes())
         .merge(knowledge::routes())
         .merge(decisions::routes())
         .merge(observations::routes())

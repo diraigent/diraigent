@@ -179,7 +179,7 @@ impl DiraigentDb for CryptoDb {
                 required_capabilities: req.required_capabilities.clone(),
                 playbook_id: req.playbook_id,
                 decision_id: req.decision_id,
-                goal_id: req.goal_id,
+                work_id: req.work_id,
                 file_scope: req.file_scope.clone(),
                 parent_id: req.parent_id,
             };
@@ -357,8 +357,8 @@ impl DiraigentDb for CryptoDb {
     async fn list_flagged_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError> {
         delegate!(self, list_flagged_task_ids, project_id)
     }
-    async fn list_goal_linked_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError> {
-        delegate!(self, list_goal_linked_task_ids, project_id)
+    async fn list_work_linked_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError> {
+        delegate!(self, list_work_linked_task_ids, project_id)
     }
     async fn list_tasks_with_blocker_updates(
         &self,
@@ -489,80 +489,80 @@ impl DiraigentDb for CryptoDb {
         delegate!(self, verify_agent_owner, agent_id, user_id)
     }
 
-    // ── Goals (no encrypted fields) ──
-    async fn create_goal(
+    // ── Work (no encrypted fields) ──
+    async fn create_work(
         &self,
         project_id: Uuid,
-        req: &CreateGoal,
+        req: &CreateWork,
         created_by: Uuid,
-    ) -> Result<Goal, AppError> {
-        delegate!(self, create_goal, project_id, req, created_by)
+    ) -> Result<Work, AppError> {
+        delegate!(self, create_work, project_id, req, created_by)
     }
-    async fn get_goal_by_id(&self, id: Uuid) -> Result<Goal, AppError> {
-        delegate!(self, get_goal_by_id, id)
+    async fn get_work_by_id(&self, id: Uuid) -> Result<Work, AppError> {
+        delegate!(self, get_work_by_id, id)
     }
-    async fn list_goals(
+    async fn list_works(
         &self,
         project_id: Uuid,
-        filters: &GoalFilters,
-    ) -> Result<Vec<Goal>, AppError> {
-        delegate!(self, list_goals, project_id, filters)
+        filters: &WorkFilters,
+    ) -> Result<Vec<Work>, AppError> {
+        delegate!(self, list_works, project_id, filters)
     }
-    async fn activate_goal(&self, goal_id: Uuid) -> Result<Goal, AppError> {
-        delegate!(self, activate_goal, goal_id)
+    async fn activate_work(&self, work_id: Uuid) -> Result<Work, AppError> {
+        delegate!(self, activate_work, work_id)
     }
-    async fn update_goal(&self, id: Uuid, req: &UpdateGoal) -> Result<Goal, AppError> {
-        delegate!(self, update_goal, id, req)
+    async fn update_work(&self, id: Uuid, req: &UpdateWork) -> Result<Work, AppError> {
+        delegate!(self, update_work, id, req)
     }
-    async fn delete_goal(&self, id: Uuid) -> Result<(), AppError> {
-        delegate!(self, delete_goal, id)
+    async fn delete_work(&self, id: Uuid) -> Result<(), AppError> {
+        delegate!(self, delete_work, id)
     }
-    async fn link_task_goal(&self, goal_id: Uuid, task_id: Uuid) -> Result<TaskGoal, AppError> {
-        delegate!(self, link_task_goal, goal_id, task_id)
+    async fn link_task_work(&self, work_id: Uuid, task_id: Uuid) -> Result<TaskWork, AppError> {
+        delegate!(self, link_task_work, work_id, task_id)
     }
-    async fn unlink_task_goal(&self, goal_id: Uuid, task_id: Uuid) -> Result<(), AppError> {
-        delegate!(self, unlink_task_goal, goal_id, task_id)
+    async fn unlink_task_work(&self, work_id: Uuid, task_id: Uuid) -> Result<(), AppError> {
+        delegate!(self, unlink_task_work, work_id, task_id)
     }
-    async fn get_goal_progress(&self, goal_id: Uuid) -> Result<GoalProgress, AppError> {
-        delegate!(self, get_goal_progress, goal_id)
+    async fn get_work_progress(&self, work_id: Uuid) -> Result<WorkProgress, AppError> {
+        delegate!(self, get_work_progress, work_id)
     }
-    async fn list_goal_tasks(
+    async fn list_work_tasks(
         &self,
-        goal_id: Uuid,
+        work_id: Uuid,
         limit: i64,
         offset: i64,
     ) -> Result<Vec<Task>, AppError> {
-        delegate!(self, list_goal_tasks, goal_id, limit, offset)
+        delegate!(self, list_work_tasks, work_id, limit, offset)
     }
-    async fn count_goal_tasks(&self, goal_id: Uuid) -> Result<i64, AppError> {
-        delegate!(self, count_goal_tasks, goal_id)
+    async fn count_work_tasks(&self, work_id: Uuid) -> Result<i64, AppError> {
+        delegate!(self, count_work_tasks, work_id)
     }
-    async fn bulk_link_tasks(&self, goal_id: Uuid, task_ids: &[Uuid]) -> Result<i64, AppError> {
-        delegate!(self, bulk_link_tasks, goal_id, task_ids)
+    async fn bulk_link_tasks(&self, work_id: Uuid, task_ids: &[Uuid]) -> Result<i64, AppError> {
+        delegate!(self, bulk_link_tasks, work_id, task_ids)
     }
-    async fn get_goal_stats(&self, goal_id: Uuid) -> Result<GoalStats, AppError> {
-        delegate!(self, get_goal_stats, goal_id)
+    async fn get_work_stats(&self, work_id: Uuid) -> Result<WorkStats, AppError> {
+        delegate!(self, get_work_stats, work_id)
     }
-    async fn compute_auto_status(&self, goal_id: Uuid) -> Result<Option<String>, AppError> {
-        delegate!(self, compute_auto_status, goal_id)
+    async fn compute_auto_status(&self, work_id: Uuid) -> Result<Option<String>, AppError> {
+        delegate!(self, compute_auto_status, work_id)
     }
-    async fn list_auto_status_goal_ids_for_task(
+    async fn list_auto_status_work_ids_for_task(
         &self,
         task_id: Uuid,
     ) -> Result<Vec<Uuid>, AppError> {
-        delegate!(self, list_auto_status_goal_ids_for_task, task_id)
+        delegate!(self, list_auto_status_work_ids_for_task, task_id)
     }
-    async fn reorder_goals(
+    async fn reorder_works(
         &self,
         project_id: Uuid,
-        goal_ids: &[Uuid],
-    ) -> Result<Vec<Goal>, AppError> {
-        delegate!(self, reorder_goals, project_id, goal_ids)
+        work_ids: &[Uuid],
+    ) -> Result<Vec<Work>, AppError> {
+        delegate!(self, reorder_works, project_id, work_ids)
     }
-    async fn get_goal_ids_for_task(&self, task_id: Uuid) -> Result<Vec<Uuid>, AppError> {
-        delegate!(self, get_goal_ids_for_task, task_id)
+    async fn get_work_ids_for_task(&self, task_id: Uuid) -> Result<Vec<Uuid>, AppError> {
+        delegate!(self, get_work_ids_for_task, task_id)
     }
-    async fn get_agent_inherited_goal_ids(
+    async fn get_agent_inherited_work_ids(
         &self,
         agent_id: Uuid,
         project_id: Uuid,
@@ -570,30 +570,30 @@ impl DiraigentDb for CryptoDb {
     ) -> Result<Vec<Uuid>, AppError> {
         delegate!(
             self,
-            get_agent_inherited_goal_ids,
+            get_agent_inherited_work_ids,
             agent_id,
             project_id,
             exclude_task_id
         )
     }
-    async fn list_goals_for_task(&self, task_id: Uuid) -> Result<Vec<Goal>, AppError> {
-        delegate!(self, list_goals_for_task, task_id)
+    async fn list_works_for_task(&self, task_id: Uuid) -> Result<Vec<Work>, AppError> {
+        delegate!(self, list_works_for_task, task_id)
     }
-    // ── Goal Comments ──
-    async fn create_goal_comment(
+    // ── Work Comments ──
+    async fn create_work_comment(
         &self,
-        goal_id: Uuid,
-        req: &CreateGoalComment,
+        work_id: Uuid,
+        req: &CreateWorkComment,
         user_id: Option<Uuid>,
-    ) -> Result<GoalComment, AppError> {
-        delegate!(self, create_goal_comment, goal_id, req, user_id)
+    ) -> Result<WorkComment, AppError> {
+        delegate!(self, create_work_comment, work_id, req, user_id)
     }
-    async fn list_goal_comments(
+    async fn list_work_comments(
         &self,
-        goal_id: Uuid,
+        work_id: Uuid,
         p: &Pagination,
-    ) -> Result<Vec<GoalComment>, AppError> {
-        delegate!(self, list_goal_comments, goal_id, p)
+    ) -> Result<Vec<WorkComment>, AppError> {
+        delegate!(self, list_work_comments, work_id, p)
     }
 
     // ── Knowledge (encrypt content) ──
@@ -886,13 +886,13 @@ impl DiraigentDb for CryptoDb {
         )
     }
 
-    // ── Goal task reordering (no encrypted fields) ──
-    async fn reorder_goal_tasks(
+    // ── Work task reordering (no encrypted fields) ──
+    async fn reorder_work_tasks(
         &self,
-        goal_id: Uuid,
+        work_id: Uuid,
         task_ids: &[Uuid],
     ) -> Result<Vec<Task>, AppError> {
-        delegate!(self, reorder_goal_tasks, goal_id, task_ids)
+        delegate!(self, reorder_work_tasks, work_id, task_ids)
     }
 
     // ── Playbooks (no encrypted fields) ──
