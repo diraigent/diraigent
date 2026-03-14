@@ -10,6 +10,7 @@ import { GitApiService, TaskBranchStatus } from '../../core/services/git-api.ser
 import { ReviewSseService } from '../../core/services/review-sse.service';
 import { NavBadgeService } from '../../core/services/nav-badge.service';
 import { ObservationsPage } from '../observations/observations';
+import { DecisionsPage } from '../decisions/decisions';
 
 export type ReviewCategory = 'human_review' | 'blocker' | 'conflict';
 
@@ -27,7 +28,7 @@ export interface ReviewTask {
 @Component({
   selector: 'app-review',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, DatePipe, SlicePipe, ObservationsPage],
+  imports: [TranslocoModule, FormsModule, DatePipe, SlicePipe, ObservationsPage, DecisionsPage],
   template: `
     <div class="p-3 sm:p-6" *transloco="let t">
       <!-- Header -->
@@ -67,10 +68,27 @@ export interface ReviewTask {
             <span class="absolute bottom-0 left-0 right-0 h-0.5 bg-accent rounded-t"></span>
           }
         </button>
+        <button (click)="activeTab.set('decisions')"
+          class="px-4 py-2 text-sm font-medium transition-colors relative"
+          [class.text-accent]="activeTab() === 'decisions'"
+          [class.text-text-secondary]="activeTab() !== 'decisions'"
+          [class.hover:text-text-primary]="activeTab() !== 'decisions'">
+          {{ t('review.tabDecisions') }}
+          @if (badges.proposedDecisions() > 0) {
+            <span class="ml-1.5 min-w-[1.25rem] h-5 px-1 rounded-full bg-ctp-blue/20 text-ctp-blue text-[10px] font-semibold inline-flex items-center justify-center leading-none">
+              {{ badges.proposedDecisions() > 99 ? '99+' : badges.proposedDecisions() }}
+            </span>
+          }
+          @if (activeTab() === 'decisions') {
+            <span class="absolute bottom-0 left-0 right-0 h-0.5 bg-accent rounded-t"></span>
+          }
+        </button>
       </div>
 
       @if (activeTab() === 'observations') {
         <app-observations />
+      } @else if (activeTab() === 'decisions') {
+        <app-decisions />
       } @else {
 
       <!-- Review tab content -->
@@ -327,7 +345,7 @@ export class ReviewPage implements OnDestroy {
   private reviewSse = inject(ReviewSseService);
   badges = inject(NavBadgeService);
 
-  activeTab = signal<'review' | 'observations'>('review');
+  activeTab = signal<'review' | 'observations' | 'decisions'>('review');
   reviewItems = signal<ReviewTask[]>([]);
   loading = signal(false);
   actioning = signal<string | null>(null);
