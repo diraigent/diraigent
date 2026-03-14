@@ -177,6 +177,8 @@ pub struct ChatStreamParams {
     pub project_id: Uuid,
     pub user_id: Uuid,
     pub messages: Vec<Message>,
+    /// Optional model override from the client. Falls back to CHAT_MODEL env var, then "sonnet".
+    pub model: Option<String>,
     pub tx: mpsc::Sender<ChatSseEvent>,
     pub api_base: String,
     pub auth_header: String,
@@ -189,11 +191,14 @@ pub async fn run_chat_stream(p: ChatStreamParams) {
         project_id,
         user_id,
         messages,
+        model: model_override,
         tx,
         api_base,
         auth_header,
     } = p;
-    let model = std::env::var("CHAT_MODEL").unwrap_or_else(|_| "sonnet".into());
+    let model = model_override
+        .filter(|m| !m.is_empty())
+        .unwrap_or_else(|| std::env::var("CHAT_MODEL").unwrap_or_else(|_| "sonnet".into()));
     let system_prompt = build_system_prompt(db.as_ref(), project_id, &api_base, &auth_header).await;
     let session_id = Uuid::now_v7().to_string();
 

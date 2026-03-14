@@ -14,6 +14,11 @@ interface ActiveTool {
 }
 
 const STORAGE_PREFIX = 'diraigent-chat-';
+const MODEL_STORAGE_KEY = 'diraigent-chat-model';
+
+/** Available chat models. */
+export const CHAT_MODELS = ['sonnet', 'opus', 'haiku'] as const;
+export type ChatModel = (typeof CHAT_MODELS)[number];
 
 @Injectable({ providedIn: 'root' })
 export class ChatService {
@@ -32,8 +37,10 @@ export class ChatService {
   readonly scrollToChat = signal(false);
   /** Whether the chat panel is collapsed to just the header. */
   readonly collapsed = signal(localStorage.getItem('diraigent-chat-collapsed') === 'true');
-  /** The chat model name from the server config. */
-  readonly chatModel = signal<string>('');
+  /** The chat model name — user-selected or from server config. */
+  readonly chatModel = signal<string>(localStorage.getItem(MODEL_STORAGE_KEY) || '');
+  /** Whether the model selector dropdown is open. */
+  readonly modelSelectorOpen = signal(false);
 
   private abortController: AbortController | null = null;
   private generation = 0;
@@ -95,10 +102,14 @@ export class ChatService {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
+      const body: Record<string, unknown> = { messages: history };
+      const selectedModel = this.chatModel();
+      if (selectedModel) body['model'] = selectedModel;
+
       const resp = await fetch(`${environment.apiServer}/${projectId}/chat`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ messages: history }),
+        body: JSON.stringify(body),
         signal: this.abortController.signal,
       });
 
@@ -222,6 +233,16 @@ export class ChatService {
     localStorage.setItem('diraigent-chat-collapsed', String(this.collapsed()));
   }
 
+  setModel(model: string): void {
+    this.chatModel.set(model);
+    localStorage.setItem(MODEL_STORAGE_KEY, model);
+    this.modelSelectorOpen.set(false);
+  }
+
+  toggleModelSelector(): void {
+    this.modelSelectorOpen.update(v => !v);
+  }
+
   /** Send a message (chat is always visible). Emits scrollToChat for mobile scroll-into-view. */
   openWithMessage(text?: string): void {
     this.isOpen.set(true);
@@ -256,7 +277,8 @@ export class ChatService {
       const res = await fetch(`${environment.apiServer}/config`);
       if (!res.ok) return;
       const data = await res.json();
-      if (data.chat_model) {
+      // Only use server default if user hasn't explicitly selected a model
+      if (data.chat_model && !localStorage.getItem(MODEL_STORAGE_KEY)) {
         this.chatModel.set(data.chat_model);
       }
     } catch {

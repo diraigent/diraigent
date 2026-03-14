@@ -23,6 +23,8 @@ pub fn routes() -> Router<AppState> {
 #[derive(Debug, Deserialize)]
 struct ChatRequest {
     messages: Vec<Message>,
+    #[serde(default)]
+    model: Option<String>,
 }
 
 async fn chat_handler(
@@ -63,6 +65,7 @@ async fn chat_handler(
         project_id,
         user_id,
         messages: req.messages,
+        model: req.model,
         tx,
         api_base,
         auth_header,
