@@ -111,7 +111,7 @@ pub const MEMBERSHIP_STATUSES: &[&str] = &["active", "inactive", "suspended"];
 ///   ready      → <step_name> (via claim), cancelled
 ///   <step>     → done (final step), wait:<next> (more steps), ready (release), cancelled
 ///   wait:<next> → <next> (via claim), cancelled
-///   done       → backlog (reopen only)
+///   done       → backlog (reopen), human_review
 ///   cancelled  → backlog (reopen)
 ///
 /// "human_review" is a playbook step name, not a lifecycle state.
@@ -140,8 +140,8 @@ pub fn can_transition(current: &str, target: &str) -> bool {
             !is_lifecycle_state(target) || matches!(target, "backlog" | "cancelled")
         }
         "done" => {
-            // done is terminal — only reopen to backlog
-            target == "backlog"
+            // done is terminal — reopen to backlog, or move to human_review
+            target == "backlog" || target == "human_review"
         }
         "cancelled" => target == "backlog",
         _ if is_wait_state(current) => {
