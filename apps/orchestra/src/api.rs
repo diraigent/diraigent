@@ -269,6 +269,11 @@ impl ProjectsApi {
         self.get(&format!("/playbooks/{playbook_id}")).await
     }
 
+    pub async fn list_playbooks(&self) -> Result<Vec<Value>> {
+        let val = self.get("/playbooks").await?;
+        Ok(as_array(&val))
+    }
+
     pub async fn get_step_template(&self, template_id: &str) -> Result<Value> {
         self.get(&format!("/step-templates/{template_id}")).await
     }
@@ -308,8 +313,25 @@ impl ProjectsApi {
         Ok(as_array(&val))
     }
 
+    /// List goals filtered by status (e.g. "ready", "active", "processing").
+    pub async fn list_goals_by_status(&self, project_id: &str, status: &str) -> Result<Vec<Value>> {
+        let val = self
+            .get(&format!("/{project_id}/goals?status={status}"))
+            .await?;
+        Ok(as_array(&val))
+    }
+
     pub async fn get_goal(&self, goal_id: &str) -> Result<Value> {
         self.get(&format!("/goals/{goal_id}")).await
+    }
+
+    /// Update a goal's status (e.g. "processing", "active").
+    pub async fn update_goal_status(&self, goal_id: &str, status: &str) -> Result<Value> {
+        self.put(
+            &format!("/goals/{goal_id}"),
+            &serde_json::json!({"status": status}),
+        )
+        .await
     }
 
     pub async fn get_goal_progress(&self, goal_id: &str) -> Result<Value> {
@@ -320,6 +342,15 @@ impl ProjectsApi {
     pub async fn get_task_goals(&self, task_id: &str) -> Result<Vec<Value>> {
         let val = self.get(&format!("/tasks/{task_id}/goals")).await?;
         Ok(as_array(&val))
+    }
+
+    /// Link a task to a goal.
+    pub async fn link_task_to_goal(&self, goal_id: &str, task_id: &str) -> Result<Value> {
+        self.post(
+            &format!("/goals/{goal_id}/tasks"),
+            &serde_json::json!({"task_id": task_id}),
+        )
+        .await
     }
 
     // ── Verification operations ────────────────────────────────
