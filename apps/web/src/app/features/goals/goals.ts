@@ -514,9 +514,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                     <button (click)="openCreateTaskForGoal()" class="px-3 py-1.5 text-xs bg-ctp-green text-bg rounded hover:opacity-90">
                       {{ t('goals.createTaskBtn') }}
                     </button>
-                    <button (click)="openTaskPicker()" class="px-3 py-1.5 text-xs bg-accent text-bg rounded hover:opacity-90">
-                      {{ t('goals.linkTasksBtn') }}
-                    </button>
                     @if (statsMap().get(selected()!.id)?.backlog_count) {
                       <button (click)="startAllBacklogTasks()" class="px-3 py-1.5 text-xs bg-ctp-blue text-bg rounded hover:opacity-90">
                         {{ t('goals.startAllBtn') }}
