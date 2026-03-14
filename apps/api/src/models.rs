@@ -35,10 +35,6 @@ pub const GOAL_STATUSES: &[&str] = &[
 ];
 pub const GOAL_INTENT_TYPES: &[&str] =
     &["complex", "simple", "hotfix", "investigation", "refactor"];
-<<<<<<< HEAD
-pub const PLAN_STATUSES: &[&str] = &["active", "completed", "cancelled"];
-=======
->>>>>>> dev
 pub const GOAL_TYPES: &[&str] = &["epic", "feature", "milestone", "sprint", "initiative"];
 pub const KNOWLEDGE_CATEGORIES: &[&str] = &[
     "architecture",

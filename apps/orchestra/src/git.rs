@@ -1285,10 +1285,7 @@ impl WorktreeManager {
     }
 
     /// Generate date-based release tag: v{YYYYMMDD}-{NN}
-<<<<<<< HEAD
-=======
     /// Generate date-time based release tag: v{YYYYMMDD}-{HHMM}
->>>>>>> dev
     fn generate_release_tag(&self) -> Result<String> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1296,25 +1293,10 @@ impl WorktreeManager {
             .as_secs();
         let days = now / 86400;
         let (y, m, d) = unix_days_to_ymd(days as i64);
-<<<<<<< HEAD
-        let today = format!("{y:04}{m:02}{d:02}");
-        let tag_prefix = format!("v{today}-");
-        let existing_tags = self
-            .git_output(&["tag", "-l", &format!("{tag_prefix}*")])
-            .unwrap_or_default();
-        let next_seq = existing_tags
-            .lines()
-            .filter_map(|t| t.strip_prefix(&tag_prefix)?.parse::<i32>().ok())
-            .max()
-            .map(|n| n + 1)
-            .unwrap_or(1);
-        Ok(format!("{tag_prefix}{:02}", next_seq))
-=======
         let day_secs = now % 86400;
         let h = day_secs / 3600;
         let min = (day_secs % 3600) / 60;
         Ok(format!("v{y:04}{m:02}{d:02}-{h:02}{min:02}"))
->>>>>>> dev
     }
 
     /// Built-in release logic (original squash-merge implementation).
@@ -1364,6 +1346,7 @@ impl WorktreeManager {
         let commit_msg = if let Some(msg) = message {
             msg.to_string()
         } else {
+            // Summarize commits being merged
             let log = self
                 .git_output(&[
                     "log",

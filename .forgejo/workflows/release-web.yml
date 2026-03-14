@@ -36,14 +36,9 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-<<<<<<< HEAD
-  amd64:
-    name: Web (amd64)
-=======
   # Promote: re-tag the existing amd64 image from deploy (no rebuild)
   promote-amd64:
     name: Web (promote amd64)
->>>>>>> dev
     needs: [check]
     if: needs.check.outputs.changed == 'true'
     runs-on: docker
@@ -53,32 +48,10 @@ jobs:
         username: ${{ github.repository_owner }}
         password: ${{ secrets.FORGEJO_TOKEN }}
     steps:
-<<<<<<< HEAD
-      - uses: actions/checkout@v4
-      - name: Create buildx builder
-        run: docker buildx create --name builder --driver docker-container --use && docker buildx inspect --bootstrap
-=======
->>>>>>> dev
       - name: Login to registries
         run: |
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
           docker login ${{ vars.REGISTRY_URL }} -u ${{ github.repository_owner }} -p ${{ secrets.FORGEJO_TOKEN }}
-<<<<<<< HEAD
-      - name: Build and push
-        run: |
-          VERSION="${GITHUB_REF_NAME}"
-          FORGEJO="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/web"
-          docker buildx build \
-            --platform linux/amd64 \
-            --label "org.opencontainers.image.version=${VERSION}" \
-            -f apps/web/Containerfile \
-            -t "diraigent/web:${VERSION}-amd64" \
-            -t "${FORGEJO}:${VERSION}-amd64" \
-            --push apps/web/
-
-  arm64:
-    name: Web (arm64)
-=======
       - name: Re-tag existing amd64 image
         run: |
           VERSION="${GITHUB_REF_NAME}"
@@ -94,7 +67,6 @@ jobs:
   # Build: only arm64 needs a fresh build
   build-arm64:
     name: Web (build arm64)
->>>>>>> dev
     needs: [check]
     if: needs.check.outputs.changed == 'true'
     runs-on: docker
@@ -125,11 +97,7 @@ jobs:
 
   manifest:
     name: Web (manifest)
-<<<<<<< HEAD
-    needs: [amd64, arm64]
-=======
     needs: [promote-amd64, build-arm64]
->>>>>>> dev
     runs-on: docker
     container:
       image: ${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/ci-deploy:latest
