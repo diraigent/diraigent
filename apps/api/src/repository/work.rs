@@ -7,36 +7,36 @@ use crate::models::*;
 use super::projects::get_project_by_id;
 use super::{Table, delete_by_id, fetch_by_id};
 
-// ── Goals ──
+// ── Work ──
 
-pub async fn create_goal(
+pub async fn create_work(
     pool: &PgPool,
     project_id: Uuid,
-    req: &CreateGoal,
+    req: &CreateWork,
     created_by: Uuid,
-) -> Result<Goal, AppError> {
+) -> Result<Work, AppError> {
     let _ = get_project_by_id(pool, project_id).await?;
     let success_criteria = req
         .success_criteria
         .clone()
         .unwrap_or(serde_json::json!([]));
     let metadata = req.metadata.clone().unwrap_or(serde_json::json!({}));
-    let goal_type = req.goal_type.as_deref().unwrap_or("epic");
+    let work_type = req.work_type.as_deref().unwrap_or("epic");
     let priority = req.priority.unwrap_or(0);
     let auto_status = req.auto_status.unwrap_or(false);
 
-    let goal = sqlx::query_as::<_, Goal>(
-        "INSERT INTO diraigent.goal (project_id, title, description, goal_type, priority, parent_goal_id, auto_status, intent_type, target_date, success_criteria, metadata, created_by, sort_order)
+    let work = sqlx::query_as::<_, Work>(
+        "INSERT INTO diraigent.work (project_id, title, description, work_type, priority, parent_work_id, auto_status, intent_type, target_date, success_criteria, metadata, created_by, sort_order)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                 (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM diraigent.goal WHERE project_id = $1))
+                 (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM diraigent.work WHERE project_id = $1))
          RETURNING *",
     )
     .bind(project_id)
     .bind(&req.title)
     .bind(&req.description)
-    .bind(goal_type)
+    .bind(work_type)
     .bind(priority)
-    .bind(req.parent_goal_id)
+    .bind(req.parent_work_id)
     .bind(auto_status)
     .bind(&req.intent_type)
     .bind(req.target_date)
@@ -46,87 +46,87 @@ pub async fn create_goal(
     .fetch_one(pool)
     .await?;
 
-    Ok(goal)
+    Ok(work)
 }
 
-pub async fn get_goal_by_id(pool: &PgPool, id: Uuid) -> Result<Goal, AppError> {
-    fetch_by_id(pool, Table::Goal, id, "Goal not found").await
+pub async fn get_work_by_id(pool: &PgPool, id: Uuid) -> Result<Work, AppError> {
+    fetch_by_id(pool, Table::Work, id, "Work not found").await
 }
 
-pub async fn activate_goal(pool: &PgPool, goal_id: Uuid) -> Result<Goal, AppError> {
+pub async fn activate_work(pool: &PgPool, work_id: Uuid) -> Result<Work, AppError> {
     // Try to activate: only from 'active' or 'paused'
-    let maybe = sqlx::query_as::<_, Goal>(
-        "UPDATE diraigent.goal SET status = 'ready', updated_at = now()
+    let maybe = sqlx::query_as::<_, Work>(
+        "UPDATE diraigent.work SET status = 'ready', updated_at = now()
          WHERE id = $1 AND status IN ('active', 'paused')
          RETURNING *",
     )
-    .bind(goal_id)
+    .bind(work_id)
     .fetch_optional(pool)
     .await?;
 
-    if let Some(goal) = maybe {
-        return Ok(goal);
+    if let Some(work) = maybe {
+        return Ok(work);
     }
 
     // No rows affected — check why
-    let existing = get_goal_by_id(pool, goal_id).await?; // 404 if not found
+    let existing = get_work_by_id(pool, work_id).await?; // 404 if not found
     match existing.status.as_str() {
         "ready" | "processing" => Err(AppError::Conflict(format!(
-            "Goal is already {}",
+            "Work item is already {}",
             existing.status
         ))),
         "achieved" | "abandoned" => Err(AppError::Validation(format!(
-            "Cannot activate a goal with status '{}'",
+            "Cannot activate a work item with status '{}'",
             existing.status
         ))),
         _ => Err(AppError::Validation(format!(
-            "Cannot activate a goal with status '{}'",
+            "Cannot activate a work item with status '{}'",
             existing.status
         ))),
     }
 }
 
-pub async fn list_goals(
+pub async fn list_works(
     pool: &PgPool,
     project_id: Uuid,
-    filters: &GoalFilters,
-) -> Result<Vec<Goal>, AppError> {
+    filters: &WorkFilters,
+) -> Result<Vec<Work>, AppError> {
     let limit = filters.limit.unwrap_or(50).min(100);
     let offset = filters.offset.unwrap_or(0);
     let top_level = filters.top_level.unwrap_or(false);
 
-    let goals = sqlx::query_as::<_, Goal>(
-        "SELECT * FROM diraigent.goal
+    let works = sqlx::query_as::<_, Work>(
+        "SELECT * FROM diraigent.work
          WHERE project_id = $1
            AND ($2::text IS NULL OR status = $2)
-           AND ($3::text IS NULL OR goal_type = $3)
-           AND ($4::uuid IS NULL OR parent_goal_id = $4)
-           AND (NOT $5 OR parent_goal_id IS NULL)
+           AND ($3::text IS NULL OR work_type = $3)
+           AND ($4::uuid IS NULL OR parent_work_id = $4)
+           AND (NOT $5 OR parent_work_id IS NULL)
          ORDER BY sort_order ASC, created_at DESC
          LIMIT $6 OFFSET $7",
     )
     .bind(project_id)
     .bind(&filters.status)
-    .bind(&filters.goal_type)
-    .bind(filters.parent_goal_id)
+    .bind(&filters.work_type)
+    .bind(filters.parent_work_id)
     .bind(top_level)
     .bind(limit)
     .bind(offset)
     .fetch_all(pool)
     .await?;
 
-    Ok(goals)
+    Ok(works)
 }
 
-pub async fn update_goal(pool: &PgPool, id: Uuid, req: &UpdateGoal) -> Result<Goal, AppError> {
-    let existing = get_goal_by_id(pool, id).await?;
+pub async fn update_work(pool: &PgPool, id: Uuid, req: &UpdateWork) -> Result<Work, AppError> {
+    let existing = get_work_by_id(pool, id).await?;
 
     // Self-parent check
-    if let Some(Some(parent_id)) = req.parent_goal_id
+    if let Some(Some(parent_id)) = req.parent_work_id
         && parent_id == id
     {
         return Err(AppError::Validation(
-            "A goal cannot be its own parent".into(),
+            "A work item cannot be its own parent".into(),
         ));
     }
 
@@ -136,11 +136,11 @@ pub async fn update_goal(pool: &PgPool, id: Uuid, req: &UpdateGoal) -> Result<Go
         .as_deref()
         .or(existing.description.as_deref());
     let status = req.status.as_deref().unwrap_or(&existing.status);
-    let goal_type = req.goal_type.as_deref().unwrap_or(&existing.goal_type);
+    let work_type = req.work_type.as_deref().unwrap_or(&existing.work_type);
     let priority = req.priority.unwrap_or(existing.priority);
     let auto_status = req.auto_status.unwrap_or(existing.auto_status);
-    let parent_goal_id = match req.parent_goal_id {
-        None => existing.parent_goal_id, // no change
+    let parent_work_id = match req.parent_work_id {
+        None => existing.parent_work_id, // no change
         Some(None) => None,              // clear
         Some(Some(pid)) => Some(pid),    // set
     };
@@ -157,10 +157,10 @@ pub async fn update_goal(pool: &PgPool, id: Uuid, req: &UpdateGoal) -> Result<Go
     let metadata = req.metadata.as_ref().unwrap_or(&existing.metadata);
     let sort_order = req.sort_order.unwrap_or(existing.sort_order);
 
-    let goal = sqlx::query_as::<_, Goal>(
-        "UPDATE diraigent.goal
-         SET title = $2, description = $3, status = $4, goal_type = $5, priority = $6,
-             parent_goal_id = $7, auto_status = $8, intent_type = $9, target_date = $10,
+    let work = sqlx::query_as::<_, Work>(
+        "UPDATE diraigent.work
+         SET title = $2, description = $3, status = $4, work_type = $5, priority = $6,
+             parent_work_id = $7, auto_status = $8, intent_type = $9, target_date = $10,
              success_criteria = $11, metadata = $12, sort_order = $13
          WHERE id = $1 RETURNING *",
     )
@@ -168,9 +168,9 @@ pub async fn update_goal(pool: &PgPool, id: Uuid, req: &UpdateGoal) -> Result<Go
     .bind(title)
     .bind(description)
     .bind(status)
-    .bind(goal_type)
+    .bind(work_type)
     .bind(priority)
-    .bind(parent_goal_id)
+    .bind(parent_work_id)
     .bind(auto_status)
     .bind(intent_type)
     .bind(target_date)
@@ -180,25 +180,25 @@ pub async fn update_goal(pool: &PgPool, id: Uuid, req: &UpdateGoal) -> Result<Go
     .fetch_one(pool)
     .await?;
 
-    Ok(goal)
+    Ok(work)
 }
 
-pub async fn delete_goal(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
-    delete_by_id(pool, Table::Goal, id, "Goal not found").await
+pub async fn delete_work(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
+    delete_by_id(pool, Table::Work, id, "Work not found").await
 }
 
-pub async fn link_task_goal(
+pub async fn link_task_work(
     pool: &PgPool,
-    goal_id: Uuid,
+    work_id: Uuid,
     task_id: Uuid,
-) -> Result<TaskGoal, AppError> {
-    let tg = sqlx::query_as::<_, TaskGoal>(
-        "INSERT INTO diraigent.task_goal (task_id, goal_id, position)
-         VALUES ($1, $2, (SELECT COALESCE(MAX(position), 0) + 1 FROM diraigent.task_goal WHERE goal_id = $2))
+) -> Result<TaskWork, AppError> {
+    let tw = sqlx::query_as::<_, TaskWork>(
+        "INSERT INTO diraigent.task_work (task_id, work_id, position)
+         VALUES ($1, $2, (SELECT COALESCE(MAX(position), 0) + 1 FROM diraigent.task_work WHERE work_id = $2))
          RETURNING *",
     )
     .bind(task_id)
-    .bind(goal_id)
+    .bind(work_id)
     .fetch_one(pool)
     .await
     .map_err(|e| match &e {
@@ -207,12 +207,12 @@ pub async fn link_task_goal(
         }
         _ => e.into(),
     })?;
-    Ok(tg)
+    Ok(tw)
 }
 
-pub async fn unlink_task_goal(pool: &PgPool, goal_id: Uuid, task_id: Uuid) -> Result<(), AppError> {
-    let result = sqlx::query("DELETE FROM diraigent.task_goal WHERE goal_id = $1 AND task_id = $2")
-        .bind(goal_id)
+pub async fn unlink_task_work(pool: &PgPool, work_id: Uuid, task_id: Uuid) -> Result<(), AppError> {
+    let result = sqlx::query("DELETE FROM diraigent.task_work WHERE work_id = $1 AND task_id = $2")
+        .bind(work_id)
         .bind(task_id)
         .execute(pool)
         .await?;
@@ -222,35 +222,35 @@ pub async fn unlink_task_goal(pool: &PgPool, goal_id: Uuid, task_id: Uuid) -> Re
     Ok(())
 }
 
-pub async fn get_goal_progress(pool: &PgPool, goal_id: Uuid) -> Result<GoalProgress, AppError> {
-    let _ = get_goal_by_id(pool, goal_id).await?;
+pub async fn get_work_progress(pool: &PgPool, work_id: Uuid) -> Result<WorkProgress, AppError> {
+    let _ = get_work_by_id(pool, work_id).await?;
 
     let row = sqlx::query_as::<_, (i64, i64)>(
         "WITH RECURSIVE descendants AS (
-            SELECT id FROM diraigent.goal WHERE id = $1
+            SELECT id FROM diraigent.work WHERE id = $1
             UNION ALL
-            SELECT g.id FROM diraigent.goal g JOIN descendants d ON g.parent_goal_id = d.id
+            SELECT w.id FROM diraigent.work w JOIN descendants d ON w.parent_work_id = d.id
         )
         SELECT
-            COUNT(DISTINCT tg.task_id)::bigint,
-            COUNT(DISTINCT tg.task_id) FILTER (WHERE t.state = 'done')::bigint
-         FROM diraigent.task_goal tg
-         JOIN diraigent.task t ON t.id = tg.task_id
-         WHERE tg.goal_id IN (SELECT id FROM descendants)",
+            COUNT(DISTINCT tw.task_id)::bigint,
+            COUNT(DISTINCT tw.task_id) FILTER (WHERE t.state = 'done')::bigint
+         FROM diraigent.task_work tw
+         JOIN diraigent.task t ON t.id = tw.task_id
+         WHERE tw.work_id IN (SELECT id FROM descendants)",
     )
-    .bind(goal_id)
+    .bind(work_id)
     .fetch_one(pool)
     .await?;
 
-    Ok(GoalProgress {
-        goal_id,
+    Ok(WorkProgress {
+        work_id,
         total_tasks: row.0,
         done_tasks: row.1,
     })
 }
 
-pub async fn get_goal_stats(pool: &PgPool, goal_id: Uuid) -> Result<GoalStats, AppError> {
-    let _ = get_goal_by_id(pool, goal_id).await?;
+pub async fn get_work_stats(pool: &PgPool, work_id: Uuid) -> Result<WorkStats, AppError> {
+    let _ = get_work_by_id(pool, work_id).await?;
 
     let row = sqlx::query_as::<_, (
         i64, i64, i64, i64, i64, i64,
@@ -261,9 +261,9 @@ pub async fn get_goal_stats(pool: &PgPool, goal_id: Uuid) -> Result<GoalStats, A
         Option<chrono::DateTime<chrono::Utc>>,
     )>(
         "WITH tasks AS (
-            SELECT t.* FROM diraigent.task_goal tg
-            JOIN diraigent.task t ON t.id = tg.task_id
-            WHERE tg.goal_id = $1
+            SELECT t.* FROM diraigent.task_work tw
+            JOIN diraigent.task t ON t.id = tw.task_id
+            WHERE tw.work_id = $1
         ),
         blocked AS (
             SELECT DISTINCT td.task_id FROM diraigent.task_dependency td
@@ -292,12 +292,12 @@ pub async fn get_goal_stats(pool: &PgPool, goal_id: Uuid) -> Result<GoalStats, A
             MIN(created_at) FILTER (WHERE state NOT IN ('done','cancelled')) AS oldest_open_task_date
         FROM tasks",
     )
-    .bind(goal_id)
+    .bind(work_id)
     .fetch_one(pool)
     .await?;
 
-    Ok(GoalStats {
-        goal_id,
+    Ok(WorkStats {
+        work_id,
         backlog_count: row.0,
         ready_count: row.1,
         working_count: row.2,
@@ -314,18 +314,18 @@ pub async fn get_goal_stats(pool: &PgPool, goal_id: Uuid) -> Result<GoalStats, A
     })
 }
 
-pub async fn compute_auto_status(pool: &PgPool, goal_id: Uuid) -> Result<Option<String>, AppError> {
+pub async fn compute_auto_status(pool: &PgPool, work_id: Uuid) -> Result<Option<String>, AppError> {
     let row = sqlx::query_as::<_, (i64, i64, i64, i64)>(
         "SELECT
             COUNT(*) AS total,
             COUNT(*) FILTER (WHERE t.state = 'done') AS done,
             COUNT(*) FILTER (WHERE t.state = 'cancelled') AS cancelled,
             COUNT(*) FILTER (WHERE t.state NOT IN ('backlog','ready','done','cancelled')) AS working
-         FROM diraigent.task_goal tg
-         JOIN diraigent.task t ON t.id = tg.task_id
-         WHERE tg.goal_id = $1",
+         FROM diraigent.task_work tw
+         JOIN diraigent.task t ON t.id = tw.task_id
+         WHERE tw.work_id = $1",
     )
-    .bind(goal_id)
+    .bind(work_id)
     .fetch_one(pool)
     .await?;
 
@@ -346,21 +346,21 @@ pub async fn compute_auto_status(pool: &PgPool, goal_id: Uuid) -> Result<Option<
     Ok(Some("active".to_string()))
 }
 
-pub async fn list_goal_tasks(
+pub async fn list_work_tasks(
     pool: &PgPool,
-    goal_id: Uuid,
+    work_id: Uuid,
     limit: i64,
     offset: i64,
 ) -> Result<Vec<Task>, AppError> {
-    let _ = get_goal_by_id(pool, goal_id).await?;
+    let _ = get_work_by_id(pool, work_id).await?;
     let tasks = sqlx::query_as::<_, Task>(
         "SELECT t.* FROM diraigent.task t
-         JOIN diraigent.task_goal tg ON t.id = tg.task_id
-         WHERE tg.goal_id = $1
-         ORDER BY tg.position ASC, t.urgent DESC, t.created_at DESC
+         JOIN diraigent.task_work tw ON t.id = tw.task_id
+         WHERE tw.work_id = $1
+         ORDER BY tw.position ASC, t.urgent DESC, t.created_at DESC
          LIMIT $2 OFFSET $3",
     )
-    .bind(goal_id)
+    .bind(work_id)
     .bind(limit)
     .bind(offset)
     .fetch_all(pool)
@@ -368,9 +368,9 @@ pub async fn list_goal_tasks(
     Ok(tasks)
 }
 
-pub async fn count_goal_tasks(pool: &PgPool, goal_id: Uuid) -> Result<i64, AppError> {
-    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM diraigent.task_goal WHERE goal_id = $1")
-        .bind(goal_id)
+pub async fn count_work_tasks(pool: &PgPool, work_id: Uuid) -> Result<i64, AppError> {
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM diraigent.task_work WHERE work_id = $1")
+        .bind(work_id)
         .fetch_one(pool)
         .await?;
     Ok(row.0)
@@ -378,92 +378,92 @@ pub async fn count_goal_tasks(pool: &PgPool, goal_id: Uuid) -> Result<i64, AppEr
 
 pub async fn bulk_link_tasks(
     pool: &PgPool,
-    goal_id: Uuid,
+    work_id: Uuid,
     task_ids: &[Uuid],
 ) -> Result<i64, AppError> {
-    let _ = get_goal_by_id(pool, goal_id).await?;
+    let _ = get_work_by_id(pool, work_id).await?;
     let result = sqlx::query(
-        "INSERT INTO diraigent.task_goal (task_id, goal_id)
+        "INSERT INTO diraigent.task_work (task_id, work_id)
          SELECT unnest($2::uuid[]), $1
          ON CONFLICT DO NOTHING",
     )
-    .bind(goal_id)
+    .bind(work_id)
     .bind(task_ids)
     .execute(pool)
     .await?;
     Ok(result.rows_affected() as i64)
 }
 
-pub async fn reorder_goal_tasks(
+pub async fn reorder_work_tasks(
     pool: &PgPool,
-    goal_id: Uuid,
+    work_id: Uuid,
     task_ids: &[Uuid],
 ) -> Result<Vec<Task>, AppError> {
     if task_ids.is_empty() {
         return Ok(vec![]);
     }
 
-    // Validate all task_ids are linked to this goal
+    // Validate all task_ids are linked to this work item
     let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM diraigent.task_goal WHERE goal_id = $1 AND task_id = ANY($2)",
+        "SELECT COUNT(*) FROM diraigent.task_work WHERE work_id = $1 AND task_id = ANY($2)",
     )
-    .bind(goal_id)
+    .bind(work_id)
     .bind(task_ids)
     .fetch_one(pool)
     .await?;
 
     if count.0 != task_ids.len() as i64 {
         return Err(AppError::Validation(
-            "Some task IDs are not linked to this goal".into(),
+            "Some task IDs are not linked to this work item".into(),
         ));
     }
 
     let indexes: Vec<i32> = (0..task_ids.len() as i32).collect();
 
     sqlx::query(
-        "UPDATE diraigent.task_goal SET position = data.new_pos
+        "UPDATE diraigent.task_work SET position = data.new_pos
          FROM (SELECT unnest($1::uuid[]) AS tid, unnest($2::int[]) AS new_pos) data
-         WHERE diraigent.task_goal.goal_id = $3 AND diraigent.task_goal.task_id = data.tid",
+         WHERE diraigent.task_work.work_id = $3 AND diraigent.task_work.task_id = data.tid",
     )
     .bind(task_ids)
     .bind(&indexes)
-    .bind(goal_id)
+    .bind(work_id)
     .execute(pool)
     .await?;
 
     // Return tasks in new order
     let tasks = sqlx::query_as::<_, Task>(
         "SELECT t.* FROM diraigent.task t
-         JOIN diraigent.task_goal tg ON t.id = tg.task_id
-         WHERE tg.goal_id = $1
-         ORDER BY tg.position ASC",
+         JOIN diraigent.task_work tw ON t.id = tw.task_id
+         WHERE tw.work_id = $1
+         ORDER BY tw.position ASC",
     )
-    .bind(goal_id)
+    .bind(work_id)
     .fetch_all(pool)
     .await?;
 
     Ok(tasks)
 }
 
-// ── Goal Comments ──
+// ── Work Comments ──
 
-pub async fn create_goal_comment(
+pub async fn create_work_comment(
     pool: &PgPool,
-    goal_id: Uuid,
-    req: &CreateGoalComment,
+    work_id: Uuid,
+    req: &CreateWorkComment,
     user_id: Option<Uuid>,
-) -> Result<GoalComment, AppError> {
+) -> Result<WorkComment, AppError> {
     let metadata = req
         .metadata
         .clone()
         .unwrap_or(serde_json::Value::Object(Default::default()));
 
-    let comment = sqlx::query_as::<_, GoalComment>(
-        "INSERT INTO diraigent.goal_comment (goal_id, agent_id, user_id, content, metadata)
+    let comment = sqlx::query_as::<_, WorkComment>(
+        "INSERT INTO diraigent.work_comment (work_id, agent_id, user_id, content, metadata)
          VALUES ($1, $2, $3, $4, $5)
          RETURNING *",
     )
-    .bind(goal_id)
+    .bind(work_id)
     .bind(req.agent_id)
     .bind(user_id)
     .bind(&req.content)
@@ -474,19 +474,19 @@ pub async fn create_goal_comment(
     Ok(comment)
 }
 
-pub async fn list_goal_comments(
+pub async fn list_work_comments(
     pool: &PgPool,
-    goal_id: Uuid,
+    work_id: Uuid,
     p: &Pagination,
-) -> Result<Vec<GoalComment>, AppError> {
+) -> Result<Vec<WorkComment>, AppError> {
     let limit = p.limit.unwrap_or(50).min(100);
     let offset = p.offset.unwrap_or(0);
 
-    let comments = sqlx::query_as::<_, GoalComment>(
-        "SELECT * FROM diraigent.goal_comment WHERE goal_id = $1
+    let comments = sqlx::query_as::<_, WorkComment>(
+        "SELECT * FROM diraigent.work_comment WHERE work_id = $1
          ORDER BY created_at ASC LIMIT $2 OFFSET $3",
     )
-    .bind(goal_id)
+    .bind(work_id)
     .bind(limit)
     .bind(offset)
     .fetch_all(pool)
@@ -495,28 +495,28 @@ pub async fn list_goal_comments(
     Ok(comments)
 }
 
-pub async fn list_goals_for_task(pool: &PgPool, task_id: Uuid) -> Result<Vec<Goal>, AppError> {
-    let goals = sqlx::query_as::<_, Goal>(
-        "SELECT g.* FROM diraigent.goal g
-         JOIN diraigent.task_goal tg ON tg.goal_id = g.id
-         WHERE tg.task_id = $1
-         ORDER BY g.sort_order ASC, g.created_at ASC",
+pub async fn list_works_for_task(pool: &PgPool, task_id: Uuid) -> Result<Vec<Work>, AppError> {
+    let works = sqlx::query_as::<_, Work>(
+        "SELECT w.* FROM diraigent.work w
+         JOIN diraigent.task_work tw ON tw.work_id = w.id
+         WHERE tw.task_id = $1
+         ORDER BY w.sort_order ASC, w.created_at ASC",
     )
     .bind(task_id)
     .fetch_all(pool)
     .await?;
 
-    Ok(goals)
+    Ok(works)
 }
 
-pub async fn list_auto_status_goal_ids_for_task(
+pub async fn list_auto_status_work_ids_for_task(
     pool: &PgPool,
     task_id: Uuid,
 ) -> Result<Vec<Uuid>, AppError> {
     let ids = sqlx::query_as::<_, (Uuid,)>(
-        "SELECT g.id FROM diraigent.goal g
-         JOIN diraigent.task_goal tg ON tg.goal_id = g.id
-         WHERE tg.task_id = $1 AND g.auto_status = true",
+        "SELECT w.id FROM diraigent.work w
+         JOIN diraigent.task_work tw ON tw.work_id = w.id
+         WHERE tw.task_id = $1 AND w.auto_status = true",
     )
     .bind(task_id)
     .fetch_all(pool)
@@ -525,58 +525,58 @@ pub async fn list_auto_status_goal_ids_for_task(
     Ok(ids.into_iter().map(|r| r.0).collect())
 }
 
-pub async fn reorder_goals(
+pub async fn reorder_works(
     pool: &PgPool,
     project_id: Uuid,
-    goal_ids: &[Uuid],
-) -> Result<Vec<Goal>, AppError> {
-    if goal_ids.is_empty() {
+    work_ids: &[Uuid],
+) -> Result<Vec<Work>, AppError> {
+    if work_ids.is_empty() {
         return Ok(vec![]);
     }
 
-    // Validate all goal_ids belong to the given project
+    // Validate all work_ids belong to the given project
     let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM diraigent.goal WHERE id = ANY($1) AND project_id = $2",
+        "SELECT COUNT(*) FROM diraigent.work WHERE id = ANY($1) AND project_id = $2",
     )
-    .bind(goal_ids)
+    .bind(work_ids)
     .bind(project_id)
     .fetch_one(pool)
     .await?;
 
-    if count.0 != goal_ids.len() as i64 {
+    if count.0 != work_ids.len() as i64 {
         return Err(AppError::Validation(
-            "Some goal IDs do not belong to this project".into(),
+            "Some work IDs do not belong to this project".into(),
         ));
     }
 
-    // Build sort_order updates: goal_ids[i] gets sort_order = i
-    let indexes: Vec<i32> = (0..goal_ids.len() as i32).collect();
+    // Build sort_order updates: work_ids[i] gets sort_order = i
+    let indexes: Vec<i32> = (0..work_ids.len() as i32).collect();
 
     sqlx::query(
-        "UPDATE diraigent.goal SET sort_order = data.new_order
+        "UPDATE diraigent.work SET sort_order = data.new_order
          FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::int[]) AS new_order) data
-         WHERE diraigent.goal.id = data.id",
+         WHERE diraigent.work.id = data.id",
     )
-    .bind(goal_ids)
+    .bind(work_ids)
     .bind(&indexes)
     .execute(pool)
     .await?;
 
-    // Return the updated goals in new sort order
-    let goals = sqlx::query_as::<_, Goal>(
-        "SELECT * FROM diraigent.goal WHERE project_id = $1 ORDER BY sort_order ASC, created_at DESC",
+    // Return the updated work items in new sort order
+    let works = sqlx::query_as::<_, Work>(
+        "SELECT * FROM diraigent.work WHERE project_id = $1 ORDER BY sort_order ASC, created_at DESC",
     )
     .bind(project_id)
     .fetch_all(pool)
     .await?;
 
-    Ok(goals)
+    Ok(works)
 }
 
-/// Return all goal IDs linked to a task (no auto_status filter).
-pub async fn get_goal_ids_for_task(pool: &PgPool, task_id: Uuid) -> Result<Vec<Uuid>, AppError> {
+/// Return all work IDs linked to a task (no auto_status filter).
+pub async fn get_work_ids_for_task(pool: &PgPool, task_id: Uuid) -> Result<Vec<Uuid>, AppError> {
     let ids = sqlx::query_as::<_, (Uuid,)>(
-        "SELECT tg.goal_id FROM diraigent.task_goal tg WHERE tg.task_id = $1",
+        "SELECT tw.work_id FROM diraigent.task_work tw WHERE tw.task_id = $1",
     )
     .bind(task_id)
     .fetch_all(pool)
@@ -585,19 +585,19 @@ pub async fn get_goal_ids_for_task(pool: &PgPool, task_id: Uuid) -> Result<Vec<U
     Ok(ids.into_iter().map(|r| r.0).collect())
 }
 
-/// Return distinct goal IDs from all active (non-done/cancelled) tasks
+/// Return distinct work IDs from all active (non-done/cancelled) tasks
 /// assigned to the given agent in the given project, excluding a specific task.
-/// Used to inherit goal associations when an agent creates subtasks.
-pub async fn get_agent_inherited_goal_ids(
+/// Used to inherit work associations when an agent creates subtasks.
+pub async fn get_agent_inherited_work_ids(
     pool: &PgPool,
     agent_id: Uuid,
     project_id: Uuid,
     exclude_task_id: Uuid,
 ) -> Result<Vec<Uuid>, AppError> {
     let ids = sqlx::query_as::<_, (Uuid,)>(
-        "SELECT DISTINCT tg.goal_id
-         FROM diraigent.task_goal tg
-         JOIN diraigent.task t ON t.id = tg.task_id
+        "SELECT DISTINCT tw.work_id
+         FROM diraigent.task_work tw
+         JOIN diraigent.task t ON t.id = tw.task_id
          WHERE t.assigned_agent_id = $1
            AND t.project_id = $2
            AND t.state NOT IN ('done', 'cancelled')

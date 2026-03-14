@@ -111,20 +111,20 @@ pub async fn list_tasks(
     let search_pattern = filters.search.as_deref().map(|s| format!("%{}%", s));
 
     let mut extra_where = String::new();
-    if filters.goal_id.is_some() {
+    if filters.work_id.is_some() {
         extra_where
-            .push_str(" AND id IN (SELECT task_id FROM diraigent.task_goal WHERE goal_id = $9)");
+            .push_str(" AND id IN (SELECT task_id FROM diraigent.task_work WHERE work_id = $9)");
     }
     if filters.unlinked == Some(true) {
         extra_where.push_str(
-            " AND NOT EXISTS (SELECT 1 FROM diraigent.task_goal tg WHERE tg.task_id = diraigent.task.id)",
+            " AND NOT EXISTS (SELECT 1 FROM diraigent.task_work tw WHERE tw.task_id = diraigent.task.id)",
         );
     }
     if filters.root_only == Some(true) {
         extra_where.push_str(" AND parent_id IS NULL");
     }
 
-    let (limit_param, offset_param) = if filters.goal_id.is_some() {
+    let (limit_param, offset_param) = if filters.work_id.is_some() {
         ("$10", "$11")
     } else {
         ("$9", "$10")
@@ -144,8 +144,8 @@ pub async fn list_tasks(
         .bind(filters.decision_id)
         .bind(filters.parent_id);
 
-    if let Some(goal_id) = filters.goal_id {
-        query = query.bind(goal_id);
+    if let Some(work_id) = filters.work_id {
+        query = query.bind(work_id);
     }
 
     let tasks = query.bind(limit).bind(offset).fetch_all(pool).await?;
@@ -329,14 +329,14 @@ pub async fn list_flagged_task_ids(pool: &PgPool, project_id: Uuid) -> Result<Ve
     Ok(ids.into_iter().map(|(id,)| id).collect())
 }
 
-pub async fn list_goal_linked_task_ids(
+pub async fn list_work_linked_task_ids(
     pool: &PgPool,
     project_id: Uuid,
 ) -> Result<Vec<Uuid>, AppError> {
     let ids: Vec<(Uuid,)> = sqlx::query_as(
-        "SELECT DISTINCT tg.task_id
-         FROM diraigent.task_goal tg
-         JOIN diraigent.task t ON tg.task_id = t.id
+        "SELECT DISTINCT tw.task_id
+         FROM diraigent.task_work tw
+         JOIN diraigent.task t ON tw.task_id = t.id
          WHERE t.project_id = $1",
     )
     .bind(project_id)
@@ -625,13 +625,13 @@ pub async fn count_tasks(
     let search_pattern = filters.search.as_deref().map(|s| format!("%{}%", s));
 
     let mut extra_where = String::new();
-    if filters.goal_id.is_some() {
+    if filters.work_id.is_some() {
         extra_where
-            .push_str(" AND id IN (SELECT task_id FROM diraigent.task_goal WHERE goal_id = $9)");
+            .push_str(" AND id IN (SELECT task_id FROM diraigent.task_work WHERE work_id = $9)");
     }
     if filters.unlinked == Some(true) {
         extra_where.push_str(
-            " AND NOT EXISTS (SELECT 1 FROM diraigent.task_goal tg WHERE tg.task_id = diraigent.task.id)",
+            " AND NOT EXISTS (SELECT 1 FROM diraigent.task_work tw WHERE tw.task_id = diraigent.task.id)",
         );
     }
     if filters.root_only == Some(true) {
@@ -652,8 +652,8 @@ pub async fn count_tasks(
         .bind(filters.decision_id)
         .bind(filters.parent_id);
 
-    if let Some(goal_id) = filters.goal_id {
-        query = query.bind(goal_id);
+    if let Some(work_id) = filters.work_id {
+        query = query.bind(work_id);
     }
 
     let row: (i64,) = query.fetch_one(pool).await?;

@@ -27,8 +27,8 @@ pub fn routes() -> Router<AppState> {
             get(list_tasks_with_blocker_updates),
         )
         .route(
-            "/{project_id}/tasks/goal-linked",
-            get(list_goal_linked_task_ids),
+            "/{project_id}/tasks/work-linked",
+            get(list_work_linked_task_ids),
         )
         .route(
             "/{project_id}/tasks/bulk/transition",
@@ -64,7 +64,7 @@ pub fn routes() -> Router<AppState> {
             "/tasks/{task_id}/comments",
             get(list_task_comments).post(create_task_comment),
         )
-        .route("/tasks/{task_id}/goals", get(list_task_goals))
+        .route("/tasks/{task_id}/work", get(list_task_works))
         .route("/tasks/{task_id}/children", get(list_task_children))
         .route("/tasks/{task_id}/related", get(get_related_items))
         .route("/tasks/{task_id}/cost", post(record_task_cost))
@@ -86,9 +86,9 @@ async fn create_task(
         let _ = state.db.get_playbook_by_id(playbook_id).await?;
     }
 
-    // If goal_id provided, verify the goal exists before creating the task
-    if let Some(goal_id) = req.goal_id {
-        let _ = state.db.get_goal_by_id(goal_id).await?;
+    // If work_id provided, verify the work item exists before creating the task
+    if let Some(work_id) = req.work_id {
+        let _ = state.db.get_work_by_id(work_id).await?;
     }
 
     // If parent_id provided, verify the parent task exists and belongs to the same project
@@ -123,35 +123,35 @@ async fn create_task(
         );
     }
 
-    // If goal_id provided, link the new task to the goal atomically
-    if let Some(goal_id) = req.goal_id {
-        state.db.link_task_goal(goal_id, task.id).await?;
-        super::goals::refresh_auto_status_goals(&state, task.id, agent_id).await;
+    // If work_id provided, link the new task to the work item atomically
+    if let Some(work_id) = req.work_id {
+        state.db.link_task_work(work_id, task.id).await?;
+        super::work::refresh_auto_status_works(&state, task.id, agent_id).await;
     }
 
-    // Inherit goals from the creating agent's active tasks (subtask goal inheritance)
+    // Inherit work links from the creating agent's active tasks (subtask work inheritance)
     if let Some(aid) = agent_id
-        && let Ok(inherited_goal_ids) = state
+        && let Ok(inherited_work_ids) = state
             .db
-            .get_agent_inherited_goal_ids(aid, project_id, task.id)
+            .get_agent_inherited_work_ids(aid, project_id, task.id)
             .await
     {
-        for goal_id in inherited_goal_ids {
-            // Skip if already linked via explicit goal_id
-            if req.goal_id == Some(goal_id) {
+        for work_id in inherited_work_ids {
+            // Skip if already linked via explicit work_id
+            if req.work_id == Some(work_id) {
                 continue;
             }
-            if let Err(e) = state.db.link_task_goal(goal_id, task.id).await {
+            if let Err(e) = state.db.link_task_work(work_id, task.id).await {
                 tracing::warn!(
                     task_id = %task.id,
-                    goal_id = %goal_id,
+                    work_id = %work_id,
                     error = %e,
-                    "Failed to inherit goal link from agent's active task"
+                    "Failed to inherit work link from agent's active task"
                 );
             }
         }
-        // Refresh auto-status for any newly inherited goals
-        super::goals::refresh_auto_status_goals(&state, task.id, agent_id).await;
+        // Refresh auto-status for any newly inherited work items
+        super::work::refresh_auto_status_works(&state, task.id, agent_id).await;
     }
 
     Ok(Json(task))
@@ -210,14 +210,14 @@ async fn list_flagged_task_ids(
     Ok(Json(ids))
 }
 
-async fn list_goal_linked_task_ids(
+async fn list_work_linked_task_ids(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
     OptionalAgentId(agent_id): OptionalAgentId,
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<Vec<Uuid>>, AppError> {
     require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
-    let ids = state.db.list_goal_linked_task_ids(project_id).await?;
+    let ids = state.db.list_work_linked_task_ids(project_id).await?;
     Ok(Json(ids))
 }
 
@@ -232,8 +232,8 @@ async fn list_tasks_with_blocker_updates(
     Ok(Json(tasks))
 }
 
-/// Return all goal IDs linked to a task.
-async fn list_task_goals(
+/// Return all work IDs linked to a task.
+async fn list_task_works(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
     OptionalAgentId(agent_id): OptionalAgentId,
@@ -241,7 +241,7 @@ async fn list_task_goals(
 ) -> Result<Json<Vec<Uuid>>, AppError> {
     let task = state.db.get_task_by_id(task_id).await?;
     require_membership(state.db.as_ref(), agent_id, user_id, task.project_id).await?;
-    let ids = state.db.get_goal_ids_for_task(task_id).await?;
+    let ids = state.db.get_work_ids_for_task(task_id).await?;
     Ok(Json(ids))
 }
 
@@ -460,8 +460,8 @@ async fn transition_task(
     // Sync linked report status when a task transitions to done or cancelled.
     sync_report_status(&state, task_id, &task.state).await;
 
-    // Refresh auto-status goals linked to this task.
-    crate::routes::goals::refresh_auto_status_goals(&state, task_id, agent_id).await;
+    // Refresh auto-status work items linked to this task.
+    crate::routes::work::refresh_auto_status_works(&state, task_id, agent_id).await;
 
     Ok(Json(task))
 }
@@ -810,7 +810,7 @@ async fn bulk_operate(
                                     Some(user_id),
                                     serde_json::json!({"task_id": task_id, "title": new_task.title, "from": old_state, "to": new_task.state}),
                                 );
-                                crate::routes::goals::refresh_auto_status_goals(
+                                crate::routes::work::refresh_auto_status_works(
                                     state, *task_id, agent_id,
                                 )
                                 .await;

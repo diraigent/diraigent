@@ -25,7 +25,7 @@ pub const AGENT_STATUSES: &[&str] = &["idle", "working", "offline", "revoked"];
 pub const UPDATE_KINDS: &[&str] = &[
     "progress", "blocker", "question", "artifact", "review", "note",
 ];
-pub const GOAL_STATUSES: &[&str] = &[
+pub const WORK_STATUSES: &[&str] = &[
     "active",
     "achieved",
     "abandoned",
@@ -33,9 +33,9 @@ pub const GOAL_STATUSES: &[&str] = &[
     "ready",
     "processing",
 ];
-pub const GOAL_INTENT_TYPES: &[&str] =
+pub const WORK_INTENT_TYPES: &[&str] =
     &["complex", "simple", "hotfix", "investigation", "refactor"];
-pub const GOAL_TYPES: &[&str] = &["epic", "feature", "milestone", "sprint", "initiative"];
+pub const WORK_TYPES: &[&str] = &["epic", "feature", "milestone", "sprint", "initiative"];
 pub const KNOWLEDGE_CATEGORIES: &[&str] = &[
     "architecture",
     "convention",
@@ -558,8 +558,8 @@ pub struct CreateTask {
     pub playbook_id: Option<Uuid>,
     /// Optional FK to the decision that originated this task.
     pub decision_id: Option<Uuid>,
-    /// Optional goal to link the new task to (inserts into task_goal join table).
-    pub goal_id: Option<Uuid>,
+    /// Optional work item to link the new task to (inserts into task_work join table).
+    pub work_id: Option<Uuid>,
     /// File paths this task intends to modify (for branch overlap detection).
     pub file_scope: Option<Vec<String>>,
     /// Optional parent task ID for plan decomposition (self-referencing FK).
@@ -642,15 +642,15 @@ pub struct HeartbeatRequest {
 // ── Domain Models ──
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct Goal {
+pub struct Work {
     pub id: Uuid,
     pub project_id: Uuid,
     pub title: String,
     pub description: Option<String>,
     pub status: String,
-    pub goal_type: String,
+    pub work_type: String,
     pub priority: i32,
-    pub parent_goal_id: Option<Uuid>,
+    pub parent_work_id: Option<Uuid>,
     pub auto_status: bool,
     pub intent_type: Option<String>,
     pub target_date: Option<DateTime<Utc>>,
@@ -663,18 +663,18 @@ pub struct Goal {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct TaskGoal {
+pub struct TaskWork {
     pub task_id: Uuid,
-    pub goal_id: Uuid,
+    pub work_id: Uuid,
     pub position: i32,
 }
 
-// ── Goal Comments ──
+// ── Work Comments ──
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct GoalComment {
+pub struct WorkComment {
     pub id: Uuid,
-    pub goal_id: Uuid,
+    pub work_id: Uuid,
     pub agent_id: Option<Uuid>,
     pub user_id: Option<Uuid>,
     pub content: String,
@@ -793,12 +793,12 @@ pub struct Event {
 // ── New Request DTOs ──
 
 #[derive(Debug, Deserialize)]
-pub struct CreateGoal {
+pub struct CreateWork {
     pub title: String,
     pub description: Option<String>,
-    pub goal_type: Option<String>,
+    pub work_type: Option<String>,
     pub priority: Option<i32>,
-    pub parent_goal_id: Option<Uuid>,
+    pub parent_work_id: Option<Uuid>,
     pub auto_status: Option<bool>,
     pub intent_type: Option<String>,
     pub target_date: Option<DateTime<Utc>>,
@@ -807,14 +807,14 @@ pub struct CreateGoal {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct UpdateGoal {
+pub struct UpdateWork {
     pub title: Option<String>,
     pub description: Option<String>,
     pub status: Option<String>,
-    pub goal_type: Option<String>,
+    pub work_type: Option<String>,
     pub priority: Option<i32>,
     #[serde(default, deserialize_with = "deserialize_double_option")]
-    pub parent_goal_id: Option<Option<Uuid>>,
+    pub parent_work_id: Option<Option<Uuid>>,
     pub auto_status: Option<bool>,
     #[serde(default, deserialize_with = "deserialize_double_option")]
     pub intent_type: Option<Option<String>>,
@@ -825,12 +825,12 @@ pub struct UpdateGoal {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ReorderGoals {
-    pub goal_ids: Vec<Uuid>,
+pub struct ReorderWorks {
+    pub work_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct LinkTaskGoal {
+pub struct LinkTaskWork {
     pub task_id: Uuid,
 }
 
@@ -840,15 +840,15 @@ pub struct BulkLinkTasks {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct CreateGoalComment {
+pub struct CreateWorkComment {
     pub agent_id: Option<Uuid>,
     pub content: String,
     pub metadata: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ReorderGoalTasks {
-    /// Ordered list of task IDs — position in the array becomes the order within the goal.
+pub struct ReorderWorkTasks {
+    /// Ordered list of task IDs — position in the array becomes the order within the work item.
     pub task_ids: Vec<Uuid>,
 }
 
@@ -954,10 +954,10 @@ pub struct CreateEvent {
 }
 
 #[derive(Debug, Deserialize, Default)]
-pub struct GoalFilters {
+pub struct WorkFilters {
     pub status: Option<String>,
-    pub goal_type: Option<String>,
-    pub parent_goal_id: Option<Uuid>,
+    pub work_type: Option<String>,
+    pub parent_work_id: Option<Uuid>,
     pub top_level: Option<bool>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
@@ -1004,15 +1004,15 @@ pub struct EventFilters {
 }
 
 #[derive(Debug, Serialize)]
-pub struct GoalProgress {
-    pub goal_id: Uuid,
+pub struct WorkProgress {
+    pub work_id: Uuid,
     pub total_tasks: i64,
     pub done_tasks: i64,
 }
 
 #[derive(Debug, Serialize)]
-pub struct GoalStats {
-    pub goal_id: Uuid,
+pub struct WorkStats {
+    pub work_id: Uuid,
     pub backlog_count: i64,
     pub ready_count: i64,
     pub working_count: i64,
@@ -1400,9 +1400,9 @@ pub struct TaskFilters {
     pub hide_done_before: Option<DateTime<Utc>>,
     /// Filter tasks linked to a specific decision
     pub decision_id: Option<Uuid>,
-    /// Filter tasks linked to a specific goal
-    pub goal_id: Option<Uuid>,
-    /// When true, return only tasks not linked to any goal
+    /// Filter tasks linked to a specific work item
+    pub work_id: Option<Uuid>,
+    /// When true, return only tasks not linked to any work item
     pub unlinked: Option<bool>,
     /// Filter tasks by parent task ID (exact match)
     pub parent_id: Option<Uuid>,

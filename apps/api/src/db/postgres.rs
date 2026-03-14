@@ -145,8 +145,8 @@ impl DiraigentDb for PostgresDb {
     async fn list_flagged_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError> {
         repository::list_flagged_task_ids(&self.0, project_id).await
     }
-    async fn list_goal_linked_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError> {
-        repository::list_goal_linked_task_ids(&self.0, project_id).await
+    async fn list_work_linked_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError> {
+        repository::list_work_linked_task_ids(&self.0, project_id).await
     }
     async fn list_tasks_with_blocker_updates(
         &self,
@@ -229,107 +229,107 @@ impl DiraigentDb for PostgresDb {
         repository::verify_agent_owner(&self.0, agent_id, user_id).await
     }
 
-    // Goals
-    async fn create_goal(
+    // Work
+    async fn create_work(
         &self,
         project_id: Uuid,
-        req: &CreateGoal,
+        req: &CreateWork,
         created_by: Uuid,
-    ) -> Result<Goal, AppError> {
-        repository::create_goal(&self.0, project_id, req, created_by).await
+    ) -> Result<Work, AppError> {
+        repository::create_work(&self.0, project_id, req, created_by).await
     }
-    async fn get_goal_by_id(&self, id: Uuid) -> Result<Goal, AppError> {
-        repository::get_goal_by_id(&self.0, id).await
+    async fn get_work_by_id(&self, id: Uuid) -> Result<Work, AppError> {
+        repository::get_work_by_id(&self.0, id).await
     }
-    async fn list_goals(
+    async fn list_works(
         &self,
         project_id: Uuid,
-        filters: &GoalFilters,
-    ) -> Result<Vec<Goal>, AppError> {
-        repository::list_goals(&self.0, project_id, filters).await
+        filters: &WorkFilters,
+    ) -> Result<Vec<Work>, AppError> {
+        repository::list_works(&self.0, project_id, filters).await
     }
-    async fn activate_goal(&self, goal_id: Uuid) -> Result<Goal, AppError> {
-        repository::activate_goal(&self.0, goal_id).await
+    async fn activate_work(&self, work_id: Uuid) -> Result<Work, AppError> {
+        repository::activate_work(&self.0, work_id).await
     }
-    async fn update_goal(&self, id: Uuid, req: &UpdateGoal) -> Result<Goal, AppError> {
-        repository::update_goal(&self.0, id, req).await
+    async fn update_work(&self, id: Uuid, req: &UpdateWork) -> Result<Work, AppError> {
+        repository::update_work(&self.0, id, req).await
     }
-    async fn delete_goal(&self, id: Uuid) -> Result<(), AppError> {
-        repository::delete_goal(&self.0, id).await
+    async fn delete_work(&self, id: Uuid) -> Result<(), AppError> {
+        repository::delete_work(&self.0, id).await
     }
-    async fn link_task_goal(&self, goal_id: Uuid, task_id: Uuid) -> Result<TaskGoal, AppError> {
-        repository::link_task_goal(&self.0, goal_id, task_id).await
+    async fn link_task_work(&self, work_id: Uuid, task_id: Uuid) -> Result<TaskWork, AppError> {
+        repository::link_task_work(&self.0, work_id, task_id).await
     }
-    async fn unlink_task_goal(&self, goal_id: Uuid, task_id: Uuid) -> Result<(), AppError> {
-        repository::unlink_task_goal(&self.0, goal_id, task_id).await
+    async fn unlink_task_work(&self, work_id: Uuid, task_id: Uuid) -> Result<(), AppError> {
+        repository::unlink_task_work(&self.0, work_id, task_id).await
     }
-    async fn get_goal_progress(&self, goal_id: Uuid) -> Result<GoalProgress, AppError> {
-        repository::get_goal_progress(&self.0, goal_id).await
+    async fn get_work_progress(&self, work_id: Uuid) -> Result<WorkProgress, AppError> {
+        repository::get_work_progress(&self.0, work_id).await
     }
-    async fn list_goal_tasks(
+    async fn list_work_tasks(
         &self,
-        goal_id: Uuid,
+        work_id: Uuid,
         limit: i64,
         offset: i64,
     ) -> Result<Vec<Task>, AppError> {
-        repository::list_goal_tasks(&self.0, goal_id, limit, offset).await
+        repository::list_work_tasks(&self.0, work_id, limit, offset).await
     }
-    async fn count_goal_tasks(&self, goal_id: Uuid) -> Result<i64, AppError> {
-        repository::count_goal_tasks(&self.0, goal_id).await
+    async fn count_work_tasks(&self, work_id: Uuid) -> Result<i64, AppError> {
+        repository::count_work_tasks(&self.0, work_id).await
     }
-    async fn bulk_link_tasks(&self, goal_id: Uuid, task_ids: &[Uuid]) -> Result<i64, AppError> {
-        repository::bulk_link_tasks(&self.0, goal_id, task_ids).await
+    async fn bulk_link_tasks(&self, work_id: Uuid, task_ids: &[Uuid]) -> Result<i64, AppError> {
+        repository::bulk_link_tasks(&self.0, work_id, task_ids).await
     }
-    async fn get_goal_stats(&self, goal_id: Uuid) -> Result<GoalStats, AppError> {
-        repository::get_goal_stats(&self.0, goal_id).await
+    async fn get_work_stats(&self, work_id: Uuid) -> Result<WorkStats, AppError> {
+        repository::get_work_stats(&self.0, work_id).await
     }
-    async fn compute_auto_status(&self, goal_id: Uuid) -> Result<Option<String>, AppError> {
-        repository::compute_auto_status(&self.0, goal_id).await
+    async fn compute_auto_status(&self, work_id: Uuid) -> Result<Option<String>, AppError> {
+        repository::compute_auto_status(&self.0, work_id).await
     }
-    async fn list_auto_status_goal_ids_for_task(
+    async fn list_auto_status_work_ids_for_task(
         &self,
         task_id: Uuid,
     ) -> Result<Vec<Uuid>, AppError> {
-        repository::list_auto_status_goal_ids_for_task(&self.0, task_id).await
+        repository::list_auto_status_work_ids_for_task(&self.0, task_id).await
     }
-    async fn reorder_goals(
+    async fn reorder_works(
         &self,
         project_id: Uuid,
-        goal_ids: &[Uuid],
-    ) -> Result<Vec<Goal>, AppError> {
-        repository::reorder_goals(&self.0, project_id, goal_ids).await
+        work_ids: &[Uuid],
+    ) -> Result<Vec<Work>, AppError> {
+        repository::reorder_works(&self.0, project_id, work_ids).await
     }
-    async fn get_goal_ids_for_task(&self, task_id: Uuid) -> Result<Vec<Uuid>, AppError> {
-        repository::get_goal_ids_for_task(&self.0, task_id).await
+    async fn get_work_ids_for_task(&self, task_id: Uuid) -> Result<Vec<Uuid>, AppError> {
+        repository::get_work_ids_for_task(&self.0, task_id).await
     }
-    async fn get_agent_inherited_goal_ids(
+    async fn get_agent_inherited_work_ids(
         &self,
         agent_id: Uuid,
         project_id: Uuid,
         exclude_task_id: Uuid,
     ) -> Result<Vec<Uuid>, AppError> {
-        repository::get_agent_inherited_goal_ids(&self.0, agent_id, project_id, exclude_task_id)
+        repository::get_agent_inherited_work_ids(&self.0, agent_id, project_id, exclude_task_id)
             .await
     }
-    async fn list_goals_for_task(&self, task_id: Uuid) -> Result<Vec<Goal>, AppError> {
-        repository::list_goals_for_task(&self.0, task_id).await
+    async fn list_works_for_task(&self, task_id: Uuid) -> Result<Vec<Work>, AppError> {
+        repository::list_works_for_task(&self.0, task_id).await
     }
 
-    // Goal Comments
-    async fn create_goal_comment(
+    // Work Comments
+    async fn create_work_comment(
         &self,
-        goal_id: Uuid,
-        req: &CreateGoalComment,
+        work_id: Uuid,
+        req: &CreateWorkComment,
         user_id: Option<Uuid>,
-    ) -> Result<GoalComment, AppError> {
-        repository::create_goal_comment(&self.0, goal_id, req, user_id).await
+    ) -> Result<WorkComment, AppError> {
+        repository::create_work_comment(&self.0, work_id, req, user_id).await
     }
-    async fn list_goal_comments(
+    async fn list_work_comments(
         &self,
-        goal_id: Uuid,
+        work_id: Uuid,
         p: &Pagination,
-    ) -> Result<Vec<GoalComment>, AppError> {
-        repository::list_goal_comments(&self.0, goal_id, p).await
+    ) -> Result<Vec<WorkComment>, AppError> {
+        repository::list_work_comments(&self.0, work_id, p).await
     }
 
     // Knowledge
@@ -480,13 +480,13 @@ impl DiraigentDb for PostgresDb {
         repository::delete_old_observations_all_projects(&self.0, default_retention_days).await
     }
 
-    // Goal task reordering
-    async fn reorder_goal_tasks(
+    // Work task reordering
+    async fn reorder_work_tasks(
         &self,
-        goal_id: Uuid,
+        work_id: Uuid,
         task_ids: &[Uuid],
     ) -> Result<Vec<Task>, AppError> {
-        repository::reorder_goal_tasks(&self.0, goal_id, task_ids).await
+        repository::reorder_work_tasks(&self.0, work_id, task_ids).await
     }
 
     // Playbooks
