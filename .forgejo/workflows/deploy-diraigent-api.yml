@@ -26,11 +26,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create buildx builder
-        run: |
-          docker buildx create --name builder --driver docker-container --use
-          docker buildx inspect --bootstrap
-
       - name: Login to Forgejo Container Registry
         run: docker login ${{ vars.REGISTRY_URL }} -u ${{ github.repository_owner }} -p ${{ secrets.FORGEJO_TOKEN }}
 
@@ -41,10 +36,10 @@ jobs:
           COMMIT_SHA=$(echo "${{ github.sha }}" | head -c 7)
           TIMESTAMP=$(date -u +%Y%m%d-%H%M%S)
           IMAGE="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/api"
-          docker buildx build \
-            --cache-from "type=registry,ref=${IMAGE}:buildcache" \
-            --cache-to "type=registry,ref=${IMAGE}:buildcache,mode=max" \
+          docker build \
             -f apps/api/Containerfile \
             -t "${IMAGE}:latest" \
             -t "${IMAGE}:main-${TIMESTAMP}-${COMMIT_SHA}" \
-            --push .
+            .
+          docker push "${IMAGE}:latest"
+          docker push "${IMAGE}:main-${TIMESTAMP}-${COMMIT_SHA}"

@@ -35,8 +35,6 @@ jobs:
           FORGEJO="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/api"
           docker buildx build \
             --platform linux/amd64 \
-            --cache-from "type=registry,ref=${FORGEJO}:buildcache-amd64" \
-            --cache-to "type=registry,ref=${FORGEJO}:buildcache-amd64,mode=max" \
             --label "org.opencontainers.image.version=${VERSION}" \
             -f apps/api/Containerfile \
             -t "diraigent/api:${VERSION}-amd64" \
@@ -65,8 +63,6 @@ jobs:
           FORGEJO="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/api"
           docker buildx build \
             --platform linux/arm64 \
-            --cache-from "type=registry,ref=${FORGEJO}:buildcache-arm64" \
-            --cache-to "type=registry,ref=${FORGEJO}:buildcache-arm64,mode=max" \
             --label "org.opencontainers.image.version=${VERSION}" \
             -f apps/api/Containerfile \
             -t "diraigent/api:${VERSION}-arm64" \
@@ -131,8 +127,6 @@ jobs:
           FORGEJO="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/orchestra"
           docker buildx build \
             --platform linux/amd64 \
-            --cache-from "type=registry,ref=${FORGEJO}:buildcache-amd64" \
-            --cache-to "type=registry,ref=${FORGEJO}:buildcache-amd64,mode=max" \
             --label "org.opencontainers.image.version=${VERSION}" \
             -f apps/orchestra/Containerfile \
             -t "diraigent/orchestra:${VERSION}-amd64" \
@@ -161,8 +155,6 @@ jobs:
           FORGEJO="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/orchestra"
           docker buildx build \
             --platform linux/arm64 \
-            --cache-from "type=registry,ref=${FORGEJO}:buildcache-arm64" \
-            --cache-to "type=registry,ref=${FORGEJO}:buildcache-arm64,mode=max" \
             --label "org.opencontainers.image.version=${VERSION}" \
             -f apps/orchestra/Containerfile \
             -t "diraigent/orchestra:${VERSION}-arm64" \
@@ -225,8 +217,6 @@ jobs:
           FORGEJO="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/web"
           docker buildx build \
             --platform linux/amd64 \
-            --cache-from "type=registry,ref=${FORGEJO}:buildcache-amd64" \
-            --cache-to "type=registry,ref=${FORGEJO}:buildcache-amd64,mode=max" \
             --label "org.opencontainers.image.version=${VERSION}" \
             -f apps/web/Containerfile \
             -t "diraigent/web:${VERSION}-amd64" \
@@ -255,8 +245,6 @@ jobs:
           FORGEJO="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/web"
           docker buildx build \
             --platform linux/arm64 \
-            --cache-from "type=registry,ref=${FORGEJO}:buildcache-arm64" \
-            --cache-to "type=registry,ref=${FORGEJO}:buildcache-arm64,mode=max" \
             --label "org.opencontainers.image.version=${VERSION}" \
             -f apps/web/Containerfile \
             -t "diraigent/web:${VERSION}-arm64" \
