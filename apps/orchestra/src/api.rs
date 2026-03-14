@@ -389,6 +389,14 @@ impl ProjectsApi {
         self.post(&format!("/{project_id}/decisions"), body).await
     }
 
+    // ── Related items operations ────────────────────────────
+
+    /// Fetch related knowledge, decisions, and observations for a task.
+    /// Returns a JSON object with `knowledge`, `decisions`, and `observations` arrays.
+    pub async fn get_related_items(&self, task_id: &str) -> Result<Value> {
+        self.get(&format!("/tasks/{task_id}/related")).await
+    }
+
     // ── File lock operations ─────────────────────────────────
 
     /// Acquire file locks for a task. Returns Ok on success, Err on conflict (409)
