@@ -40,6 +40,7 @@
     "agent": "Agent",
     "tabReview": "Menschliche Überprüfung",
     "tabObservations": "Beobachtungen",
+    "tabDecisions": "Entscheidungen",
     "blocked": "Blockiert",
     "mergeConflict": "Merge-Konflikt",
     "blockers": "Blocker",
