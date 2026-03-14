@@ -226,10 +226,10 @@
     "tabTemplates": "Schrittvorlagen"
   },
   "goals": {
-    "create": "Neues Ziel",
-    "createTitle": "Ziel erstellen",
-    "editTitle": "Ziel bearbeiten",
-    "searchPlaceholder": "Ziele suchen...",
+    "create": "Neues Arbeitselement",
+    "createTitle": "Arbeitselement erstellen",
+    "editTitle": "Arbeitselement bearbeiten",
+    "searchPlaceholder": "Arbeitselemente suchen...",
     "allStatuses": "Alle Status",
     "fieldTitle": "Titel",
     "fieldDescription": "Beschreibung",
@@ -263,7 +263,7 @@
     "clearDone": "Erledigte löschen"
   },
   "work": {
-    "activeGoals": "Aktive Ziele",
+    "activeGoals": "Aktive Arbeitselemente",
     "activeTasks": "Aktive Aufgaben",
     "backlog": "Backlog",
     "completed": "Abgeschlossen",
@@ -609,7 +609,7 @@
     "flagged": "Markiert",
     "flag": "Aufgabe markieren",
     "unflag": "Markierung entfernen",
-    "linkedToGoal": "Mit einem Ziel verknüpft",
+    "linkedToWork": "Mit einem Arbeitselement verknüpft",
     "depIdPlaceholder": "Aufgaben-UUID als Abhängigkeit",
     "addDep": "Hinzufügen",
     "updates": "Aktualisierungen",

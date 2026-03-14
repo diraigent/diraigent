@@ -103,7 +103,7 @@ export interface TaskListFilters {
   limit?: number;
   offset?: number;
   hide_done_before?: string;
-  goal_id?: string;
+  work_id?: string;
   unlinked?: boolean;
 }
 
@@ -115,7 +115,7 @@ export interface CreateTaskRequest {
   required_capabilities?: string[];
   playbook_id?: string;
   decision_id?: string;
-  goal_id?: string;
+  work_id?: string;
   parent_id?: string;
 }
 
@@ -177,7 +177,7 @@ export class TasksApiService extends BaseCrudApiService<SpTask, CreateTaskReques
     if (filters?.limit != null) params = params.set('limit', filters.limit);
     if (filters?.offset != null) params = params.set('offset', filters.offset);
     if (filters?.hide_done_before) params = params.set('hide_done_before', filters.hide_done_before);
-    if (filters?.goal_id) params = params.set('goal_id', filters.goal_id);
+    if (filters?.work_id) params = params.set('work_id', filters.work_id);
     if (filters?.unlinked) params = params.set('unlinked', 'true');
     return this.http.get<PaginatedResponse<SpTask>>(`${this.baseUrl}/${projectId}/tasks`, { params });
   }
@@ -226,9 +226,9 @@ export class TasksApiService extends BaseCrudApiService<SpTask, CreateTaskReques
     return this.http.get<string[]>(`${this.baseUrl}/${this.projectId}/tasks/blocked`);
   }
 
-  listGoalLinkedIds(): Observable<string[]> {
+  listWorkLinkedIds(): Observable<string[]> {
     if (!this.projectId) return EMPTY;
-    return this.http.get<string[]>(`${this.baseUrl}/${this.projectId}/tasks/goal-linked`);
+    return this.http.get<string[]>(`${this.baseUrl}/${this.projectId}/tasks/work-linked`);
   }
 
   listFlaggedIds(): Observable<string[]> {

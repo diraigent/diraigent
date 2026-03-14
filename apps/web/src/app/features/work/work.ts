@@ -15,15 +15,15 @@ import {
 } from '@angular/cdk/drag-drop';
 import { ProjectContext } from '../../core/services/project-context.service';
 import {
-  GoalsApiService,
-  SpGoal,
-  GoalStatus,
-  GoalType,
-  GoalTodo,
-  SpGoalCreate,
-  SpGoalProgress,
-  SpGoalStats,
-} from '../../core/services/goals-api.service';
+  WorkApiService,
+  SpWork,
+  WorkStatus,
+  WorkType,
+  WorkTodo,
+  SpWorkCreate,
+  SpWorkProgress,
+  SpWorkStats,
+} from '../../core/services/work-api.service';
 import {
   TasksApiService,
   SpTask,
@@ -41,25 +41,25 @@ import { PlaybooksApiService, SpPlaybook } from '../../core/services/playbooks-a
 import { GitApiService, BranchInfo, MainPushStatus, TaskBranchStatus } from '../../core/services/git-api.service';
 import { ChatService } from '../../core/services/chat.service';
 
-const STATUSES: GoalStatus[] = ['active', 'achieved', 'paused', 'abandoned'];
+const STATUSES: WorkStatus[] = ['active', 'achieved', 'paused', 'abandoned'];
 
-const STATUS_COLORS: Record<GoalStatus, string> = {
+const STATUS_COLORS: Record<WorkStatus, string> = {
   active: 'bg-ctp-green/20 text-ctp-green',
   achieved: 'bg-ctp-blue/20 text-ctp-blue',
   paused: 'bg-ctp-yellow/20 text-ctp-yellow',
   abandoned: 'bg-ctp-overlay0/20 text-ctp-overlay0',
 };
 
-const PROGRESS_COLORS: Record<GoalStatus, string> = {
+const PROGRESS_COLORS: Record<WorkStatus, string> = {
   active: 'bg-ctp-green',
   achieved: 'bg-ctp-blue',
   paused: 'bg-ctp-yellow',
   abandoned: 'bg-ctp-overlay0',
 };
 
-const GOAL_TYPES: GoalType[] = ['epic', 'feature', 'milestone', 'sprint', 'initiative'];
+const GOAL_TYPES: WorkType[] = ['epic', 'feature', 'milestone', 'sprint', 'initiative'];
 
-const TYPE_COLORS: Record<GoalType, string> = {
+const TYPE_COLORS: Record<WorkType, string> = {
   epic: 'bg-ctp-mauve/20 text-ctp-mauve',
   feature: 'bg-ctp-blue/20 text-ctp-blue',
   milestone: 'bg-ctp-peach/20 text-ctp-peach',
@@ -164,7 +164,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
           }
         </select>
         <select
-          [(ngModel)]="selectedGoalType"
+          [(ngModel)]="selectedWorkType"
           (ngModelChange)="loadGoals()"
           class="bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
                  focus:outline-none focus:ring-1 focus:ring-accent">
@@ -259,7 +259,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                 <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
                   {{ t('goals.status.' + goal.status) }}
                 </span>
-                <select [(ngModel)]="formGoalType" (change)="saveInlineField()"
+                <select [(ngModel)]="formWorkType" (change)="saveInlineField()"
                   class="text-xs rounded-lg px-2 py-1 border border-border bg-surface text-text-primary
                          focus:outline-none focus:ring-1 focus:ring-accent">
                   @for (gt of goalTypes; track gt) {
@@ -893,7 +893,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               </div>
               <div>
                 <label for="goal-type" class="block text-sm text-text-secondary mb-1">{{ t('goals.fieldType') }}</label>
-                <select id="goal-type" [(ngModel)]="formGoalType"
+                <select id="goal-type" [(ngModel)]="formWorkType"
                   class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
                          focus:outline-none focus:ring-1 focus:ring-accent">
                   @for (gt of goalTypes; track gt) {
@@ -1028,7 +1028,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
   `,
 })
 export class WorkPage {
-  private api = inject(GoalsApiService);
+  private api = inject(WorkApiService);
   private tasksApi = inject(TasksApiService);
   private verificationsApi = inject(VerificationsApiService);
   private playbooksApi = inject(PlaybooksApiService);
@@ -1046,27 +1046,27 @@ export class WorkPage {
   readonly goalTypes = GOAL_TYPES;
   readonly taskStates = TASK_STATES;
 
-  items = signal<SpGoal[]>([]);
+  items = signal<SpWork[]>([]);
   loading = signal(false);
-  selected = signal<SpGoal | null>(null);
+  selected = signal<SpWork | null>(null);
   searchQuery = signal('');
   selectedStatus = '';
-  selectedGoalType = '';
-  progressMap = signal<Map<string, SpGoalProgress>>(new Map());
-  statsMap = signal<Map<string, SpGoalStats>>(new Map());
-  childrenMap = signal<Map<string, SpGoal[]>>(new Map());
+  selectedWorkType = '';
+  progressMap = signal<Map<string, SpWorkProgress>>(new Map());
+  statsMap = signal<Map<string, SpWorkStats>>(new Map());
+  childrenMap = signal<Map<string, SpWork[]>>(new Map());
 
   showForm = signal(false);
-  editing = signal<SpGoal | null>(null);
+  editing = signal<SpWork | null>(null);
   formTitle = '';
   formDescription = '';
   formCriteria = '';
-  formGoalType: GoalType = 'epic';
+  formWorkType: WorkType = 'epic';
   formPriority = 0;
   formAutoStatus = false;
 
   // Todos
-  goalTodos = signal<GoalTodo[]>([]);
+  goalTodos = signal<WorkTodo[]>([]);
   newTodoText = '';
   private nextTodoId = 1;
   hasDoneTodos = computed(() => this.goalTodos().some(todo => todo.done));
@@ -1414,7 +1414,7 @@ export class WorkPage {
     });
   }
 
-  dropGoal(event: CdkDragDrop<SpGoal[]>): void {
+  dropGoal(event: CdkDragDrop<SpWork[]>): void {
     if (event.previousIndex === event.currentIndex) return;
     const active = [...this.activeGoals()];
     moveItemInArray(active, event.previousIndex, event.currentIndex);
@@ -1440,8 +1440,8 @@ export class WorkPage {
 
   loadGoals(): void {
     this.loading.set(true);
-    const status = this.selectedStatus as GoalStatus | '';
-    const goalType = this.selectedGoalType as GoalType | '';
+    const status = this.selectedStatus as WorkStatus | '';
+    const goalType = this.selectedWorkType as WorkType | '';
     this.api.list(status || undefined, goalType || undefined).subscribe({
       next: (items) => {
         this.items.set(items);
@@ -1456,8 +1456,8 @@ export class WorkPage {
     });
   }
 
-  private loadAllProgress(goals: SpGoal[]): void {
-    const map = new Map<string, SpGoalProgress>();
+  private loadAllProgress(goals: SpWork[]): void {
+    const map = new Map<string, SpWorkProgress>();
     let remaining = goals.length;
     if (remaining === 0) {
       this.progressMap.set(map);
@@ -1479,8 +1479,8 @@ export class WorkPage {
     this.loadAllStats(goals);
   }
 
-  private loadAllStats(goals: SpGoal[]): void {
-    const map = new Map<string, SpGoalStats>(this.statsMap());
+  private loadAllStats(goals: SpWork[]): void {
+    const map = new Map<string, SpWorkStats>(this.statsMap());
     let remaining = goals.length;
     if (remaining === 0) return;
     for (const goal of goals) {
@@ -1498,7 +1498,7 @@ export class WorkPage {
     }
   }
 
-  selectItem(goal: SpGoal): void {
+  selectItem(goal: SpWork): void {
     this.selected.set(goal.id === this.selected()?.id ? null : goal);
     this.statsFilter.set('');
     this.selectedLinkedTask.set(null);
@@ -1506,7 +1506,7 @@ export class WorkPage {
       this.formTitle = goal.title;
       this.formDescription = goal.description;
       this.formCriteria = goal.success_criteria;
-      this.formGoalType = goal.goal_type;
+      this.formWorkType = goal.goal_type;
       this.formPriority = goal.priority;
       this.formAutoStatus = goal.auto_status;
       this.loadTodos(goal);
@@ -1549,15 +1549,15 @@ export class WorkPage {
     });
   }
 
-  statusColor(status: GoalStatus): string {
+  statusColor(status: WorkStatus): string {
     return STATUS_COLORS[status] ?? '';
   }
 
-  progressColor(status: GoalStatus): string {
+  progressColor(status: WorkStatus): string {
     return PROGRESS_COLORS[status] ?? '';
   }
 
-  typeColor(type: GoalType): string {
+  typeColor(type: WorkType): string {
     return TYPE_COLORS[type] ?? '';
   }
 
@@ -1569,7 +1569,7 @@ export class WorkPage {
     this.statsFilter.set('');
   }
 
-  transitionStatus(goal: SpGoal, newStatus: GoalStatus): void {
+  transitionStatus(goal: SpWork, newStatus: WorkStatus): void {
     this.api.update(goal.id, { status: newStatus }).subscribe({
       next: () => this.loadGoals(),
     });
@@ -1580,7 +1580,7 @@ export class WorkPage {
     this.formTitle = '';
     this.formDescription = '';
     this.formCriteria = '';
-    this.formGoalType = 'epic';
+    this.formWorkType = 'epic';
     this.formPriority = 0;
     this.formAutoStatus = false;
     this.showForm.set(true);
@@ -1593,7 +1593,7 @@ export class WorkPage {
       sel.title === this.formTitle &&
       sel.description === this.formDescription &&
       sel.success_criteria === this.formCriteria &&
-      sel.goal_type === this.formGoalType &&
+      sel.goal_type === this.formWorkType &&
       sel.priority === this.formPriority &&
       sel.auto_status === this.formAutoStatus
     ) {
@@ -1604,7 +1604,7 @@ export class WorkPage {
         title: this.formTitle,
         description: this.formDescription,
         success_criteria: this.formCriteria,
-        goal_type: this.formGoalType,
+        goal_type: this.formWorkType,
         priority: this.formPriority,
         auto_status: this.formAutoStatus,
       })
@@ -1625,7 +1625,7 @@ export class WorkPage {
         title: this.formTitle,
         description: this.formDescription,
         success_criteria: this.formCriteria,
-        goal_type: this.formGoalType,
+        goal_type: this.formWorkType,
         priority: this.formPriority,
         auto_status: this.formAutoStatus,
       }).subscribe({
@@ -1635,11 +1635,11 @@ export class WorkPage {
         },
       });
     } else {
-      const data: SpGoalCreate = {
+      const data: SpWorkCreate = {
         title: this.formTitle,
         description: this.formDescription,
         success_criteria: this.formCriteria,
-        goal_type: this.formGoalType,
+        goal_type: this.formWorkType,
         priority: this.formPriority,
         auto_status: this.formAutoStatus,
       };
@@ -1652,7 +1652,7 @@ export class WorkPage {
     }
   }
 
-  confirmDelete(goal: SpGoal): void {
+  confirmDelete(goal: SpWork): void {
     this.api.delete(goal.id).subscribe({
       next: () => {
         this.selected.set(null);
@@ -1663,8 +1663,8 @@ export class WorkPage {
 
   // --- Todos ---
 
-  private loadTodos(goal: SpGoal): void {
-    const raw = (goal.metadata?.['todos'] as GoalTodo[] | undefined) ?? [];
+  private loadTodos(goal: SpWork): void {
+    const raw = (goal.metadata?.['todos'] as WorkTodo[] | undefined) ?? [];
     this.goalTodos.set(raw);
     this.nextTodoId = raw.reduce((max, t) => Math.max(max, t.id + 1), 1);
     this.newTodoText = '';
@@ -1673,7 +1673,7 @@ export class WorkPage {
   addTodo(): void {
     const text = this.newTodoText.trim();
     if (!text) return;
-    const todo: GoalTodo = { id: this.nextTodoId++, text, done: false };
+    const todo: WorkTodo = { id: this.nextTodoId++, text, done: false };
     const updated = [...this.goalTodos(), todo];
     this.goalTodos.set(updated);
     this.newTodoText = '';
@@ -1698,7 +1698,7 @@ export class WorkPage {
     this.saveTodos(updated);
   }
 
-  private saveTodos(todos: GoalTodo[]): void {
+  private saveTodos(todos: WorkTodo[]): void {
     const sel = this.selected();
     if (!sel) return;
     const metadata = { ...(sel.metadata ?? {}), todos };
@@ -2018,7 +2018,7 @@ export class WorkPage {
   onCreateTask(req: CreateTaskRequest): void {
     const sel = this.selected();
     if (!sel) return;
-    req.goal_id = sel.id;
+    req.work_id = sel.id;
     this.tasksApi.create(req).subscribe({
       next: () => {
         this.closeTaskForm();
