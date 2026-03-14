@@ -315,7 +315,7 @@ pub async fn list_goal_tasks(
         "SELECT t.* FROM diraigent.task t
          JOIN diraigent.task_goal tg ON t.id = tg.task_id
          WHERE tg.goal_id = $1
-         ORDER BY t.priority DESC, t.created_at DESC
+         ORDER BY t.urgent DESC, t.created_at DESC
          LIMIT $2 OFFSET $3",
     )
     .bind(goal_id)

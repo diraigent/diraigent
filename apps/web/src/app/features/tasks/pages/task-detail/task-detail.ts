@@ -132,16 +132,12 @@ const VERIFICATION_KIND_COLORS: Record<VerificationKind, string> = {
             }
           </select>
         </div>
-        <div>
-          <span class="text-text-muted text-xs">{{ t('tasks.priority') }}</span>
-          <select (change)="onPriorityChange($event)"
-            class="w-full bg-surface text-text-primary text-xs rounded px-2 py-1 border border-border mt-0.5">
-            <option [value]="1" [selected]="task().priority === 1">1 — Critical</option>
-            <option [value]="2" [selected]="task().priority === 2">2 — High</option>
-            <option [value]="3" [selected]="task().priority === 3">3 — Medium</option>
-            <option [value]="4" [selected]="task().priority === 4">4 — Low</option>
-            <option [value]="5" [selected]="task().priority === 5">5 — Lowest</option>
-          </select>
+        <div class="flex items-end">
+          <label class="flex items-center gap-1.5 cursor-pointer select-none mt-0.5">
+            <input type="checkbox" [checked]="task().urgent" (change)="onUrgentToggle()"
+              class="w-3.5 h-3.5 rounded border-border bg-surface text-ctp-red focus:ring-ctp-red focus:ring-1" />
+            <span class="text-xs" [class]="task().urgent ? 'text-ctp-red font-medium' : 'text-text-secondary'">{{ t('tasks.urgent') }}</span>
+          </label>
         </div>
         <div>
           <span class="text-text-muted text-xs">{{ t('tasks.agent') }}</span>
@@ -306,6 +302,56 @@ const VERIFICATION_KIND_COLORS: Record<VerificationKind, string> = {
               <p class="text-xs text-text-secondary line-clamp-3">{{ task().decision!.rationale_excerpt }}</p>
             }
           </div>
+        </div>
+      }
+
+      <!-- Parent Task -->
+      @if (parentTask()) {
+        <div class="mb-4">
+          <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">{{ t('tasks.parentTask') }}</h3>
+          <button (click)="navigateToTask.emit(parentTask()!.id)"
+            class="flex items-center gap-2 bg-bg rounded-lg px-3 py-2 border border-border hover:border-accent/50 transition-colors cursor-pointer w-full text-left">
+            <svg class="w-4 h-4 shrink-0 text-ctp-mauve" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M9 5l7 7-7 7" />
+            </svg>
+            <span class="px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0 {{ stateColor(parentTask()!.state) }}">{{ parentTask()!.state }}</span>
+            <span class="text-text-secondary text-xs">#{{ parentTask()!.number }}</span>
+            <span class="text-sm text-text-primary truncate">{{ parentTask()!.title }}</span>
+          </button>
+        </div>
+      }
+
+      <!-- Subtasks -->
+      @if (subtasks().length > 0) {
+        <div class="mb-4">
+          <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">{{ t('tasks.subtasks') }}</h3>
+          <div class="space-y-1">
+            @for (child of subtasks(); track child.id) {
+              <button (click)="navigateToTask.emit(child.id)"
+                class="flex items-center gap-2 bg-bg rounded px-3 py-1.5 border border-border hover:border-accent/50 transition-colors cursor-pointer w-full text-left">
+                <span class="px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0 {{ stateColor(child.state) }}">{{ child.state }}</span>
+                <span class="text-text-secondary text-xs">#{{ child.number }}</span>
+                <span class="text-xs text-text-primary truncate flex-1">{{ child.title }}</span>
+                @if (child.assigned_agent_id) {
+                  <span class="text-[10px] text-text-muted font-mono shrink-0">{{ child.assigned_agent_id | slice:0:8 }}</span>
+                }
+              </button>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Plan membership -->
+      @if (planName()) {
+        <div class="mb-4">
+          <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">{{ t('tasks.planMembership') }}</h3>
+          <button (click)="navigateToPlan.emit(task().plan_id!)"
+            class="flex items-center gap-2 bg-bg rounded-lg px-3 py-2 border border-border hover:border-accent/50 transition-colors cursor-pointer w-full text-left">
+            <svg class="w-4 h-4 shrink-0 text-ctp-teal" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            <span class="text-sm text-text-primary">{{ planName() }}</span>
+          </button>
         </div>
       }
 
@@ -515,6 +561,9 @@ export class TaskDetailComponent {
   updatesLoading = input(false);
   commentsLoading = input(false);
   kinds = input<string[]>(DEFAULT_TASK_KINDS);
+  parentTask = input<SpTask | null>(null);
+  subtasks = input<SpTask[]>([]);
+  planName = input<string | null>(null);
 
   closed = output<void>();
   transitionClick = output<string>();
@@ -531,6 +580,8 @@ export class TaskDetailComponent {
   playbookChange = output<string | null>();
   playbookStepChange = output<number>();
   inlineUpdate = output<UpdateTaskRequest>();
+  navigateToTask = output<string>();
+  navigateToPlan = output<string>();
 
   depId = '';
   confirmingDelete = false;
@@ -641,11 +692,8 @@ export class TaskDetailComponent {
     }
   }
 
-  onPriorityChange(event: Event): void {
-    const value = Number((event.target as HTMLSelectElement).value);
-    if (value !== this.task().priority) {
-      this.inlineUpdate.emit({ priority: value });
-    }
+  onUrgentToggle(): void {
+    this.inlineUpdate.emit({ urgent: !this.task().urgent });
   }
 
   startSpecEdit(): void {

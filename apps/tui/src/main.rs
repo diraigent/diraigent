@@ -81,7 +81,11 @@ enum ApiMsg {
     GoalComments(Vec<client::GoalComment>),
     StepTemplates(Vec<client::StepTemplate>),
     AgentTasks(Vec<client::Task>),
+    Subtasks(Vec<client::Task>),
     ObservationsCleanup(client::CleanupObservationsResult),
+    Plans(Vec<client::Plan>),
+    PlanTasksList(Vec<client::Task>),
+    PlanProgressMsg(client::PlanProgress),
     Error(String),
 }
 
@@ -144,6 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             metrics,
             recent_events,
             webhooks,
+            plans,
         ) = tokio::join!(
             api.list_tasks(pid),
             api.list_playbooks(pid),
@@ -161,6 +166,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             api.get_project_metrics(pid, None),
             api.list_recent_events(pid),
             api.list_webhooks(pid),
+            api.list_plans(pid),
         );
         if let Ok(resp) = tasks {
             let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
@@ -209,6 +215,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         if let Ok(resp) = webhooks {
             let _ = tx.send(ApiMsg::Webhooks(resp)).await;
+        }
+        if let Ok(resp) = plans {
+            let _ = tx.send(ApiMsg::Plans(resp)).await;
         }
     }
 
@@ -265,11 +274,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let api = api.clone();
                 let tx = tx.clone();
                 tokio::spawn(async move {
-                    let (updates, comments, deps, git_status) = tokio::join!(
+                    let (updates, comments, deps, git_status, subtasks) = tokio::join!(
                         api.get_task_updates(tid),
                         api.get_task_comments(tid),
                         api.list_task_dependencies(tid),
                         api.get_git_task_status(tid),
+                        api.list_subtasks(tid),
                     );
                     if let Ok(updates) = updates {
                         let _ = tx.send(ApiMsg::TaskUpdates(updates)).await;
@@ -282,6 +292,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     if let Ok(status) = git_status {
                         let _ = tx.send(ApiMsg::GitTaskStatus(status)).await;
+                    }
+                    if let Ok(subtasks) = subtasks {
+                        let _ = tx.send(ApiMsg::Subtasks(subtasks)).await;
                     }
                 });
             }
@@ -517,6 +530,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::AgentTasks(tasks) => {
                     app.agent_tasks = tasks;
                 }
+                ApiMsg::Subtasks(tasks) => {
+                    app.subtasks = tasks;
+                }
                 ApiMsg::ObservationsCleanup(result) => {
                     app.last_error = Some(format!(
                         "Cleanup: {} deleted (dismissed={}, ack={}, acted={}, resolved={}, dup={})",
@@ -538,6 +554,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         });
                     }
                 }
+                ApiMsg::Plans(p) => app.plans = p,
+                ApiMsg::PlanTasksList(tasks) => app.plan_tasks = tasks,
+                ApiMsg::PlanProgressMsg(p) => app.plan_progress = Some(p),
                 ApiMsg::Error(e) => app.last_error = Some(e),
             }
         }
@@ -606,6 +625,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 View::Webhooks => views::webhooks::render(f, main_layout[1], &mut app),
                 View::Reports => views::reports::render(f, main_layout[1], &mut app),
                 View::Dashboard => views::dashboard::render(f, main_layout[1], &mut app),
+                View::Plans => views::plans::render(f, main_layout[1], &mut app),
                 View::StepTemplates => {
                     let label = app.view.label();
                     let block = ratatui::widgets::Block::default()
@@ -1352,14 +1372,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
 
-                // Priority
+                // Urgent toggle
                 {
-                    let val = format!("◀ {} ▶", form.priority);
+                    let val = if form.urgent { "⚡ Urgent" } else { "  Normal" };
                     render_field(
                         f,
                         field_chunks[2],
-                        "Priority:",
-                        &val,
+                        "Urgent:",
+                        val,
                         form.active_field == 2,
                         (0, 0),
                     );
@@ -1511,14 +1531,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
 
-                // Priority
+                // Urgent toggle
                 {
-                    let val = format!("◀ {} ▶", form.priority);
+                    let val = if form.urgent { "⚡ Urgent" } else { "  Normal" };
                     render_field(
                         f,
                         field_chunks[2],
-                        "Priority:",
-                        &val,
+                        "Urgent:",
+                        val,
                         form.active_field == 2,
                         (0, 0),
                     );
@@ -2684,7 +2704,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let task_id = form.task_id;
                                 let title = form.title.clone();
                                 let kind = TASK_KINDS[form.kind_index].to_string();
-                                let priority = form.priority;
+                                let urgent = form.urgent;
                                 let spec = form.spec.clone();
                                 let pid = app.current_project;
                                 app.task_edit_form = None;
@@ -2697,7 +2717,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             serde_json::json!({
                                                 "title": title,
                                                 "kind": kind,
-                                                "priority": priority,
+                                                "urgent": urgent,
                                                 "context": { "spec": spec }
                                             }),
                                         )
@@ -2728,9 +2748,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             2 => {
-                                if form.priority > 1 {
-                                    form.priority -= 1;
-                                }
+                                form.urgent = !form.urgent;
                             }
                             0 => {
                                 if form.cursor > 0 {
@@ -2749,9 +2767,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 form.kind_index = (form.kind_index + 1) % TASK_KINDS.len();
                             }
                             2 => {
-                                if form.priority < 5 {
-                                    form.priority += 1;
-                                }
+                                form.urgent = !form.urgent;
                             }
                             0 => {
                                 if form.cursor < form.title.chars().count() {
@@ -2799,6 +2815,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 form.title.insert(bp, c);
                                 form.cursor += 1;
                             }
+                            2 => {
+                                // Space or Enter toggle urgent
+                                if c == ' ' {
+                                    form.urgent = !form.urgent;
+                                }
+                            }
                             3 => {
                                 let bp = form
                                     .spec
@@ -2833,7 +2855,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if !form.title.is_empty() {
                                 let title = form.title.clone();
                                 let kind = TASK_KINDS[form.kind_index].to_string();
-                                let priority = form.priority;
+                                let urgent = form.urgent;
                                 let spec = form.spec.clone();
                                 let playbook_id = if form.playbook_index > 0 {
                                     app.playbooks.get(form.playbook_index - 1).map(|pb| pb.id)
@@ -2851,7 +2873,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 pid,
                                                 &title,
                                                 &kind,
-                                                priority,
+                                                urgent,
                                                 &spec,
                                                 playbook_id,
                                             )
@@ -2883,9 +2905,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             2 => {
-                                if form.priority > 1 {
-                                    form.priority -= 1;
-                                }
+                                form.urgent = !form.urgent;
                             }
                             3 => {
                                 // Playbook selector: 0=None, 1..=N=playbooks
@@ -2912,9 +2932,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 form.kind_index = (form.kind_index + 1) % TASK_KINDS.len();
                             }
                             2 => {
-                                if form.priority < 5 {
-                                    form.priority += 1;
-                                }
+                                form.urgent = !form.urgent;
                             }
                             3 => {
                                 // Playbook selector
@@ -2966,6 +2984,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     .unwrap_or(form.title.len());
                                 form.title.insert(bp, c);
                                 form.cursor += 1;
+                            }
+                            2 => {
+                                // Space toggles urgent
+                                if c == ' ' {
+                                    form.urgent = !form.urgent;
+                                }
                             }
                             4 => {
                                 let bp = form
@@ -5803,7 +5827,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         let pid = app.current_project;
                                         tokio::spawn(async move {
                                             if let Err(e) = api
-                                                .promote_observation(obs_id, &title, &kind, 3)
+                                                .promote_observation(obs_id, &title, &kind, false)
                                                 .await
                                             {
                                                 let _ = tx
@@ -7279,7 +7303,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             task_id: task.id,
                                             title: task.title.clone(),
                                             kind_index,
-                                            priority: task.priority.clamp(1, 5) as u8,
+                                            urgent: task.urgent,
                                             spec,
                                             active_field: 0,
                                             cursor: task.title.chars().count(),
@@ -7425,9 +7449,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                            // h = entity history (Audit view)
+                            // h = toggle hierarchy (Tasks view) or entity history (Audit view)
                             KeyCode::Char('h') => {
-                                if app.view == View::Audit {
+                                if app.view == View::Tasks {
+                                    app.show_hierarchy = !app.show_hierarchy;
+                                } else if app.view == View::Audit {
                                     if let Some(entry) =
                                         app.selected_audit.and_then(|i| app.audit_log.get(i))
                                     {
@@ -7815,6 +7841,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             tokio::spawn(async move {
                                 if let Ok(comments) = api.list_goal_comments(gid).await {
                                     let _ = tx.send(ApiMsg::GoalComments(comments)).await;
+                                }
+                            });
+                        }
+                    }
+                }
+
+                // Fetch plan tasks/progress on selection change
+                if app.modal == Modal::None
+                    && app.view == View::Plans
+                    && matches!(
+                        key.code,
+                        KeyCode::Up | KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('k')
+                    )
+                {
+                    if let Some(plan) = app.selected_plan.and_then(|i| app.plans.get(i)) {
+                        let pid = plan.id;
+                        {
+                            let api = api.clone();
+                            let tx = tx.clone();
+                            tokio::spawn(async move {
+                                if let Ok(tasks) = api.get_plan_tasks(pid, 50, 0).await {
+                                    let _ = tx.send(ApiMsg::PlanTasksList(tasks)).await;
+                                }
+                            });
+                        }
+                        {
+                            let api = api.clone();
+                            let tx = tx.clone();
+                            tokio::spawn(async move {
+                                if let Ok(progress) = api.get_plan_progress(pid).await {
+                                    let _ = tx.send(ApiMsg::PlanProgressMsg(progress)).await;
                                 }
                             });
                         }

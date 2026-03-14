@@ -39,6 +39,20 @@ export const routes: Routes = [
     loadComponent: () => import('./features/decisions/decisions').then(m => m.DecisionsPage),
   },
   {
+    path: 'plans',
+    canActivate: [AuthGuard],
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./features/plans/pages/plan-list/plan-list').then(m => m.PlanListPage),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./features/plans/pages/plan-detail/plan-detail').then(m => m.PlanDetailPage),
+      },
+    ],
+  },
+  {
     path: 'playbooks',
     canActivate: [AuthGuard],
     loadComponent: () => import('./features/playbooks/playbooks').then(m => m.PlaybooksPage),

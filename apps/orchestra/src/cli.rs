@@ -429,7 +429,7 @@ async fn main() -> Result<()> {
             if json {
                 println!("{}", serde_json::to_string_pretty(&tasks)?);
             } else {
-                print_task_table(&tasks, &["number", "id", "priority", "title"]);
+                print_task_table(&tasks, &["number", "id", "urgent", "title"]);
             }
         }
         Commands::Task { task_id } => {
@@ -582,6 +582,15 @@ fn print_task_table(tasks: &[serde_json::Value], columns: &[&str]) {
                         }
                     }
                     serde_json::Value::Number(n) => n.to_string(),
+                    serde_json::Value::Bool(b) => {
+                        if *col == "urgent" && *b {
+                            "⚡".to_string()
+                        } else if *col == "urgent" {
+                            String::new()
+                        } else {
+                            b.to_string()
+                        }
+                    }
                     _ => val.to_string(),
                 }
             })

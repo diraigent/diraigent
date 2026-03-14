@@ -6,10 +6,10 @@ import { SpTask, SpTaskUpdate, SpTaskComment, SpTaskDependencies, ChangedFileSum
 import { BranchInfo, TaskBranchStatus } from '../../../../core/services/git-api.service';
 import { SpVerification } from '../../../../core/services/verifications-api.service';
 import { SpPlaybook } from '../../../../core/services/playbooks-api.service';
-import { TASK_PRIORITY_LABELS, taskStateColor, taskTransitions } from '../../../../shared/ui-constants';
+import { taskStateColor, taskTransitions } from '../../../../shared/ui-constants';
 import { TaskDetailComponent } from '../task-detail/task-detail';
 
-type SortField = 'title' | 'kind' | 'state' | 'priority' | 'created_at' | 'assigned_agent_id';
+type SortField = 'title' | 'kind' | 'state' | 'urgent' | 'created_at' | 'assigned_agent_id';
 type SortDir = 'asc' | 'desc';
 
 @Component({
@@ -68,6 +68,18 @@ type SortDir = 'asc' | 'desc';
             {{ t('tasks.unlinkedOnly') }}
           } @else {
             {{ t('tasks.allTasks') }}
+          }
+        </button>
+        <button (click)="hierarchyView.set(!hierarchyView())"
+          class="text-sm px-3 py-2 rounded-lg border transition-colors cursor-pointer"
+          [class]="hierarchyView()
+            ? 'bg-ctp-teal/10 border-ctp-teal/30 text-ctp-teal hover:bg-ctp-teal/20'
+            : 'bg-surface border-border text-text-secondary hover:bg-surface-hover'"
+          [title]="t('tasks.hierarchyToggle')">
+          @if (hierarchyView()) {
+            {{ t('tasks.hierarchyView') }}
+          } @else {
+            {{ t('tasks.flatView') }}
           }
         </button>
       </div>
@@ -130,7 +142,7 @@ type SortDir = 'asc' | 'desc';
           <option value="created_at">{{ t('tasks.created') }}</option>
           <option value="title">{{ t('tasks.title') }}</option>
           <option value="state">{{ t('tasks.state') }}</option>
-          <option value="priority">{{ t('tasks.priority') }}</option>
+          <option value="urgent">{{ t('tasks.urgent') }}</option>
           <option value="kind">{{ t('tasks.kind') }}</option>
         </select>
         <!-- Desktop sort buttons -->
@@ -159,6 +171,7 @@ type SortDir = 'asc' | 'desc';
                [class.ring-1]="selectedId() === task.id"
                [class.ring-accent]="selectedId() === task.id"
                [class.bg-accent/5]="selectedIds().has(task.id) && selectedId() !== task.id"
+               [class.ml-6]="hierarchyView() && task.parent_id && isChildVisible(task)"
                [attr.data-task-id]="task.id">
             <!-- Accordion header — always visible -->
             <div class="flex items-center gap-2 md:gap-3 px-3 py-2.5 cursor-pointer" tabindex="0" role="button"
@@ -184,6 +197,22 @@ type SortDir = 'asc' | 'desc';
                     <span class="inline-flex items-center px-1 py-0.5 rounded text-[10px] font-medium bg-ctp-red/15 text-ctp-red" [title]="t('tasks.blocked')">
                       <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      </svg>
+                    </span>
+                  }
+                  @if (hierarchyView() && hasChildren(task.id)) {
+                    <button class="inline-flex items-center px-1 py-0.5 rounded text-[10px] font-medium bg-ctp-teal/15 text-ctp-teal cursor-pointer hover:bg-ctp-teal/25"
+                            (click)="toggleParentCollapse($event, task.id)"
+                            [title]="collapsedParents().has(task.id) ? t('tasks.expandChildren') : t('tasks.collapseChildren')">
+                      <svg class="w-3 h-3 transition-transform" [class.rotate-90]="!collapsedParents().has(task.id)" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  }
+                  @if (task.parent_id) {
+                    <span class="inline-flex items-center px-1 py-0.5 rounded text-[10px] font-medium bg-ctp-teal/15 text-ctp-teal" [title]="t('tasks.hasParent')">
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M9 5l7 7-7 7" />
                       </svg>
                     </span>
                   }
@@ -236,9 +265,9 @@ type SortDir = 'asc' | 'desc';
                         (click)="toggleStateMenu($event, task.id)">
                     {{ task.state }}
                   </button>
-                  <span class="text-xs {{ priorityInfo(task.priority).color }}">
-                    {{ priorityInfo(task.priority).label }}
-                  </span>
+                  @if (task.urgent) {
+                    <span class="text-xs text-ctp-red font-medium">Urgent</span>
+                  }
                   <span class="text-text-secondary text-xs">{{ task.kind }}</span>
                 </div>
               </div>
@@ -263,8 +292,10 @@ type SortDir = 'asc' | 'desc';
                   </div>
                 }
               </div>
-              <span class="hidden md:inline-block text-xs w-20 text-center shrink-0 {{ priorityInfo(task.priority).color }}">
-                {{ priorityInfo(task.priority).label }}
+              <span class="hidden md:inline-block text-xs w-20 text-center shrink-0">
+                @if (task.urgent) {
+                  <span class="text-ctp-red font-medium">Urgent</span>
+                }
               </span>
               <span class="hidden lg:inline-block text-text-muted text-xs w-32 text-right shrink-0 whitespace-nowrap">
                 {{ task.created_at | date:'MMM d, HH:mm' }}
@@ -316,6 +347,9 @@ type SortDir = 'asc' | 'desc';
                   [updatesLoading]="detailLoading()"
                   [commentsLoading]="detailLoading()"
                   [kinds]="detailKinds()"
+                  [parentTask]="detailParentTask()"
+                  [subtasks]="detailSubtasks()"
+                  [planName]="detailPlanName()"
                   (closed)="onDetailClosed(task)"
                   (transitionClick)="detailTransition.emit($event)"
                   (claimClick)="detailClaim.emit()"
@@ -330,7 +364,9 @@ type SortDir = 'asc' | 'desc';
                   (deleteClick)="detailDelete.emit()"
                   (playbookChange)="detailPlaybookChange.emit($event)"
                   (playbookStepChange)="detailPlaybookStepChange.emit($event)"
-                  (inlineUpdate)="detailInlineUpdate.emit($event)" />
+                  (inlineUpdate)="detailInlineUpdate.emit($event)"
+                  (navigateToTask)="detailNavigateToTask.emit($event)"
+                  (navigateToPlan)="detailNavigateToPlan.emit($event)" />
               </div>
             } @else if (expandedIds().has(task.id)) {
               <div class="px-3 pb-3 ml-7 space-y-1.5 border-t border-border pt-2.5 text-xs">
@@ -433,6 +469,9 @@ export class TaskListComponent {
   detailResolving = input(false);
   detailLoading = input(false);
   detailKinds = input<string[]>([]);
+  detailParentTask = input<SpTask | null>(null);
+  detailSubtasks = input<SpTask[]>([]);
+  detailPlanName = input<string | null>(null);
 
   taskSelect = output<SpTask>();
   stateChange = output<{ task: SpTask; target: string }>();
@@ -461,6 +500,8 @@ export class TaskListComponent {
   detailPlaybookChange = output<string | null>();
   detailPlaybookStepChange = output<number>();
   detailInlineUpdate = output<UpdateTaskRequest>();
+  detailNavigateToTask = output<string>();
+  detailNavigateToPlan = output<string>();
 
   readonly Math = Math;
   states = input<string[]>(['backlog', 'ready', 'working', 'implement', 'review', 'merge', 'human_review', 'done', 'cancelled']);
@@ -472,11 +513,13 @@ export class TaskListComponent {
   selectedIds = signal<Set<string>>(new Set());
   bulkTransitionOpen = signal(false);
   expandedIds = signal<Set<string>>(new Set());
+  hierarchyView = signal(false);
+  collapsedParents = signal<Set<string>>(new Set());
   readonly sortColumns: { field: SortField; label: string }[] = [
     { field: 'title', label: 'Title' },
     { field: 'kind', label: 'Kind' },
     { field: 'state', label: 'State' },
-    { field: 'priority', label: 'Priority' },
+    { field: 'urgent', label: 'Urgent' },
     { field: 'created_at', label: 'Created' },
     { field: 'assigned_agent_id', label: 'Agent' },
   ];
@@ -503,10 +546,37 @@ export class TaskListComponent {
       if (av == null && bv == null) return 0;
       if (av == null) return 1;
       if (bv == null) return -1;
-      const cmp = typeof av === 'number' ? av - (bv as number) : String(av).localeCompare(String(bv));
+      const cmp = typeof av === 'number' ? av - (bv as unknown as number)
+        : typeof av === 'boolean' ? Number(bv) - Number(av)
+        : String(av).localeCompare(String(bv));
       return dir === 'asc' ? cmp : -cmp;
     });
-    return list;
+
+    if (!this.hierarchyView()) return list;
+
+    // Build hierarchy: group children under parents
+    const collapsed = this.collapsedParents();
+    const childMap = new Map<string, SpTask[]>();
+    const roots: SpTask[] = [];
+    for (const task of list) {
+      if (task.parent_id && list.some(t => t.id === task.parent_id)) {
+        const siblings = childMap.get(task.parent_id) ?? [];
+        siblings.push(task);
+        childMap.set(task.parent_id, siblings);
+      } else {
+        roots.push(task);
+      }
+    }
+    // Flatten: parent followed by children
+    const result: SpTask[] = [];
+    for (const root of roots) {
+      result.push(root);
+      if (!collapsed.has(root.id)) {
+        const children = childMap.get(root.id);
+        if (children) result.push(...children);
+      }
+    }
+    return result;
   });
 
   allSelected = computed(() => {
@@ -639,13 +709,30 @@ export class TaskListComponent {
   protected readonly stateColor = taskStateColor;
   protected readonly getTransitions = taskTransitions;
 
-  priorityInfo(priority: number): { label: string; color: string } {
-    return TASK_PRIORITY_LABELS[priority] ?? { label: String(priority), color: 'text-text-secondary' };
-  }
-
   getBranch(taskId: string): BranchInfo | undefined {
     // Task ID prefix is the first 12 chars
     const prefix = taskId.substring(0, 12);
     return this.branchMap().get(prefix);
+  }
+
+  // Hierarchy helpers
+
+  hasChildren(taskId: string): boolean {
+    return this.tasks().some(t => t.parent_id === taskId);
+  }
+
+  isChildVisible(task: SpTask): boolean {
+    return !!task.parent_id && this.tasks().some(t => t.id === task.parent_id);
+  }
+
+  toggleParentCollapse(event: Event, taskId: string): void {
+    event.stopPropagation();
+    const next = new Set(this.collapsedParents());
+    if (next.has(taskId)) {
+      next.delete(taskId);
+    } else {
+      next.add(taskId);
+    }
+    this.collapsedParents.set(next);
   }
 }

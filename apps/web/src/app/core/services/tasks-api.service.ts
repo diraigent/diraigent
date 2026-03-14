@@ -23,7 +23,7 @@ export interface SpTask {
   title: string;
   kind: string;
   state: string;
-  priority: number;
+  urgent: boolean;
   context: Record<string, unknown>;
   assigned_agent_id: string | null;
   claimed_at: string | null;
@@ -40,6 +40,9 @@ export interface SpTask {
   completed_at: string | null;
   reverted_at: string | null;
   flagged: boolean;
+  parent_id: string | null;
+  plan_id: string | null;
+  plan_position: number;
   /** Enriched field — only present on GET /tasks/:id */
   decision?: SpDecisionSummary | null;
   input_tokens: number;
@@ -109,18 +112,19 @@ export interface TaskListFilters {
 export interface CreateTaskRequest {
   title: string;
   kind?: string;
-  priority?: number;
+  urgent?: boolean;
   context?: Record<string, unknown>;
   required_capabilities?: string[];
   playbook_id?: string;
   decision_id?: string;
   goal_id?: string;
+  parent_id?: string;
 }
 
 export interface UpdateTaskRequest {
   title?: string;
   kind?: string;
-  priority?: number;
+  urgent?: boolean;
   context?: Record<string, unknown>;
   required_capabilities?: string[];
   playbook_id?: string | null;
@@ -280,5 +284,11 @@ export class TasksApiService extends BaseCrudApiService<SpTask, CreateTaskReques
 
   getChangedFile(taskId: string, fileId: string): Observable<ChangedFile> {
     return this.http.get<ChangedFile>(`${this.baseUrl}/tasks/${taskId}/changed-files/${fileId}`);
+  }
+
+  // Hierarchy
+
+  listChildren(taskId: string): Observable<SpTask[]> {
+    return this.http.get<SpTask[]>(`${this.baseUrl}/tasks/${taskId}/children`);
   }
 }

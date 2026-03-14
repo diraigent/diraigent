@@ -5,14 +5,20 @@ use tokio::task::JoinHandle;
 use tracing::{error, info, warn};
 
 use crate::api::ProjectsApi;
-use crate::config::ActiveTasks;
+use crate::config::{ActiveTasks, LockQueue};
 use crate::git_strategy::GitAction;
 use crate::pipeline::{self, StepOutcome};
 use crate::project_paths;
 use crate::task_id::TaskId;
 
 /// Collect finished tasks and process them (check pipeline state, merge/cleanup).
-pub async fn reap_finished(api: &ProjectsApi, projects_path: &Path, active: &ActiveTasks) {
+/// Returns `true` if any file locks were released (triggers immediate re-poll for queued tasks).
+pub async fn reap_finished(
+    api: &ProjectsApi,
+    projects_path: &Path,
+    active: &ActiveTasks,
+    lock_queue: &LockQueue,
+) -> bool {
     // Collect finished tasks under a short-lived lock to avoid blocking poll_ready_tasks.
     let finished: Vec<(String, JoinHandle<()>)> = {
         let mut tasks = active.lock().await;
@@ -31,18 +37,23 @@ pub async fn reap_finished(api: &ProjectsApi, projects_path: &Path, active: &Act
 
     let futures: Vec<_> = finished
         .into_iter()
-        .map(|(task_id, handle)| process_reaped_task(api, projects_path, task_id, handle))
+        .map(|(task_id, handle)| {
+            process_reaped_task(api, projects_path, task_id, handle, lock_queue)
+        })
         .collect();
-    futures_util::future::join_all(futures).await;
+    let results = futures_util::future::join_all(futures).await;
+    results.iter().any(|released| *released)
 }
 
 /// Process a single reaped task: join the handle, check pipeline state, and merge/cleanup.
+/// Returns `true` if file locks were released (so queued tasks can be retried).
 async fn process_reaped_task(
     api: &ProjectsApi,
     projects_path: &Path,
     task_id: String,
     handle: JoinHandle<()>,
-) {
+    lock_queue: &LockQueue,
+) -> bool {
     let tid = TaskId::new(task_id.as_str());
     match handle.await {
         Ok(()) => {
@@ -58,7 +69,7 @@ async fn process_reaped_task(
             if let Err(comment_err) = api.post_comment(&task_id, &msg).await {
                 warn!("failed to post blocker comment for {tid}: {comment_err}");
             }
-            return;
+            return false;
         }
     }
 
@@ -77,9 +88,12 @@ async fn process_reaped_task(
             if let Err(comment_err) = api.post_comment(&task_id, &msg).await {
                 warn!("failed to post pipeline-error comment for {tid}: {comment_err}");
             }
-            return;
+            return false;
         }
     };
+
+    // Track project_id for file lock release on terminal outcomes.
+    let mut release_lock_project_id: Option<String> = None;
 
     match outcome {
         StepOutcome::Continue => {
@@ -96,7 +110,7 @@ async fn process_reaped_task(
                     error!(
                         "reap {tid}: failed to resolve project WM for {project_id}: {e} — skipping git action"
                     );
-                    return;
+                    return false;
                 }
             };
 
@@ -150,13 +164,14 @@ async fn process_reaped_task(
             project_id,
             git_strategy,
         } => {
+            release_lock_project_id = Some(project_id.clone());
             let wm = match project_paths::create_project_wm(api, &project_id, projects_path).await {
                 Ok(wm) => wm,
                 Err(e) => {
                     error!(
                         "reap {tid}: failed to resolve project WM for {project_id}: {e} — skipping merge"
                     );
-                    return;
+                    return false;
                 }
             };
 
@@ -209,6 +224,7 @@ async fn process_reaped_task(
             tracing::debug!("task {tid} in human_review — no action needed");
         }
         StepOutcome::Cancelled { project_id } => {
+            release_lock_project_id = Some(project_id.clone());
             info!("task {tid} cancelled — removing worktree (no merge)");
             if let Ok(wm) = project_paths::create_project_wm(api, &project_id, projects_path).await
             {
@@ -226,20 +242,69 @@ async fn process_reaped_task(
         }
         StepOutcome::UnexpectedState(state) => {
             warn!("task {tid} in unexpected state '{state}' — skipping merge, keeping worktree");
+            let msg = format!(
+                "Task in unexpected state \'{state}\' after worker completed — \
+                 skipping merge and pipeline advancement. \
+                 Worktree preserved for investigation."
+            );
+            if let Err(comment_err) = api.post_comment(&task_id, &msg).await {
+                warn!("failed to post unexpected-state comment for {tid}: {comment_err}");
+            }
+            // Fetch task to get project_id for lock release
+            release_lock_project_id = api
+                .get_task(&task_id)
+                .await
+                .ok()
+                .and_then(|t| t["project_id"].as_str().map(|s| s.to_string()));
         }
     }
+
+    // Release file locks for terminal outcomes.
+    // Continue/ContinueWithGitAction/AlreadyReady keep locks since the task is still in-pipeline.
+    let mut locks_released = false;
+    if let Some(ref pid) = release_lock_project_id {
+        match api.release_file_locks(pid, &task_id).await {
+            Ok(_) => {
+                locks_released = true;
+                // Clear lock-queue entries for this project so queued tasks retry immediately.
+                let mut queue = lock_queue.lock().await;
+                let unblocked: Vec<String> = queue
+                    .iter()
+                    .filter(|(_, entry)| entry.project_id == *pid)
+                    .map(|(task_id, _)| task_id.clone())
+                    .collect();
+                if !unblocked.is_empty() {
+                    for id in &unblocked {
+                        queue.remove(id);
+                    }
+                    info!(
+                        "reap {tid}: unblocked {} queued task(s) in project {pid}",
+                        unblocked.len()
+                    );
+                }
+            }
+            Err(e) => {
+                warn!("reap {tid}: failed to release file locks: {e}");
+            }
+        }
+    }
+    locks_released
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::api::ProjectsApi;
-    use crate::config::ActiveTasks;
+    use crate::config::{ActiveTasks, LockQueue};
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::Mutex;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn new_lock_queue() -> LockQueue {
+        Arc::new(Mutex::new(HashMap::new()))
+    }
 
     /// Mount a project mock that returns git_mode="none" so create_project_wm
     /// produces a disabled WM. Task JSON must include `project_id` matching this.
@@ -308,7 +373,7 @@ mod tests {
         let reap_api = Arc::clone(&api);
         let reap_active = Arc::clone(&active);
         let reap_handle = tokio::spawn(async move {
-            reap_finished(&reap_api, &pp, &reap_active).await;
+            reap_finished(&reap_api, &pp, &reap_active, &new_lock_queue()).await;
         });
 
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -317,7 +382,7 @@ mod tests {
         let poll_active = Arc::clone(&active);
         let poll_result = tokio::time::timeout(
             std::time::Duration::from_millis(50),
-            crate::spawner::poll_ready_tasks(&poll_api, &config, &poll_active),
+            crate::spawner::poll_ready_tasks(&poll_api, &config, &poll_active, &new_lock_queue()),
         )
         .await;
 
@@ -356,7 +421,7 @@ mod tests {
         tokio::task::yield_now().await;
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
-        reap_finished(&api, &std::env::temp_dir(), &active).await;
+        reap_finished(&api, &std::env::temp_dir(), &active, &new_lock_queue()).await;
 
         let tasks = active.lock().await;
         assert!(tasks.is_empty());
@@ -388,7 +453,7 @@ mod tests {
         }
         tokio::task::yield_now().await;
 
-        reap_finished(&api, &std::env::temp_dir(), &active).await;
+        reap_finished(&api, &std::env::temp_dir(), &active, &new_lock_queue()).await;
 
         let tasks = active.lock().await;
         assert!(tasks.is_empty());
@@ -424,7 +489,7 @@ mod tests {
         }
         tokio::task::yield_now().await;
 
-        reap_finished(&api, tmp.path(), &active).await;
+        reap_finished(&api, tmp.path(), &active, &new_lock_queue()).await;
 
         assert!(!worktree_path.exists());
     }
@@ -467,10 +532,86 @@ mod tests {
         }
         tokio::task::yield_now().await;
 
-        reap_finished(&api, tmp.path(), &active).await;
+        reap_finished(&api, tmp.path(), &active, &new_lock_queue()).await;
 
         assert!(!wt_dir.exists());
         let tasks = active.lock().await;
         assert!(tasks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn reap_finished_clears_lock_queue_on_lock_release() {
+        let server = MockServer::start().await;
+        let project_id = "proj-1";
+
+        // Task that is done → triggers lock release
+        Mock::given(method("GET"))
+            .and(path("/tasks/task-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "task-1", "state": "done", "playbook_id": null, "playbook_step": 0,
+                "project_id": project_id,
+            })))
+            .mount(&server)
+            .await;
+
+        mount_nogit_project(&server, project_id).await;
+
+        // Lock release succeeds
+        Mock::given(method("DELETE"))
+            .and(path("/proj-1/locks/task-1"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"released": 1})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
+        let lock_queue = new_lock_queue();
+
+        // Pre-populate lock queue with a task blocked on the same project
+        {
+            let mut queue = lock_queue.lock().await;
+            queue.insert(
+                "blocked-task-1".to_string(),
+                crate::config::LockQueueEntry {
+                    project_id: project_id.to_string(),
+                    queued_at: std::time::Instant::now(),
+                },
+            );
+            // Also add a task from a different project (should NOT be cleared)
+            queue.insert(
+                "other-project-task".to_string(),
+                crate::config::LockQueueEntry {
+                    project_id: "proj-2".to_string(),
+                    queued_at: std::time::Instant::now(),
+                },
+            );
+        }
+
+        // Insert a finished task
+        {
+            let mut tasks = active.lock().await;
+            tasks.insert("task-1".to_string(), tokio::spawn(async {}));
+        }
+        tokio::task::yield_now().await;
+
+        let locks_released = reap_finished(&api, &std::env::temp_dir(), &active, &lock_queue).await;
+
+        // Should return true (locks were released)
+        assert!(locks_released);
+
+        // Blocked task for proj-1 should be removed from queue
+        let queue = lock_queue.lock().await;
+        assert!(
+            !queue.contains_key("blocked-task-1"),
+            "blocked task for same project should be dequeued"
+        );
+        // Task from different project should remain
+        assert!(
+            queue.contains_key("other-project-task"),
+            "task from different project should remain in queue"
+        );
     }
 }

@@ -3,8 +3,11 @@
 use tracing::{error, info, warn};
 
 use crate::api::ProjectsApi;
-use crate::config::{ActiveTasks, Config};
+use crate::config::{ActiveTasks, Config, LockQueue, LockQueueEntry};
 use crate::git::WorktreeManager;
+
+/// How long a task stays in the lock queue before being retried regardless.
+const LOCK_QUEUE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
 use crate::git_strategy;
 use crate::pipeline;
 use crate::project_paths;
@@ -12,7 +15,12 @@ use crate::step_profile;
 use crate::task_id::TaskId;
 use crate::worker;
 
-pub async fn poll_ready_tasks(api: &ProjectsApi, config: &Config, active: &ActiveTasks) {
+pub async fn poll_ready_tasks(
+    api: &ProjectsApi,
+    config: &Config,
+    active: &ActiveTasks,
+    lock_queue: &LockQueue,
+) {
     let tasks = active.lock().await;
     if tasks.len() >= config.max_workers {
         return;
@@ -83,11 +91,24 @@ pub async fn poll_ready_tasks(api: &ProjectsApi, config: &Config, active: &Activ
             }
             drop(tasks);
 
+            // Skip tasks in the lock queue (blocked on file locks).
+            // If the TTL expired, remove and retry.
+            {
+                let mut queue = lock_queue.lock().await;
+                if let Some(entry) = queue.get(task_id) {
+                    if entry.queued_at.elapsed() < LOCK_QUEUE_TTL {
+                        continue; // Still blocked, skip
+                    }
+                    // TTL expired — remove and retry
+                    queue.remove(task_id);
+                }
+            }
+
             let title = task["title"].as_str().unwrap_or("");
             let tid = TaskId::new(task_id);
             info!("poll: picked up {tid} \"{title}\"");
 
-            spawn_worker(api, config, active, task_id, project_id).await;
+            spawn_worker(api, config, active, task_id, project_id, lock_queue).await;
         }
     }
 }
@@ -98,6 +119,7 @@ pub async fn spawn_worker(
     active: &ActiveTasks,
     task_id: &str,
     project_id: &str,
+    lock_queue: &LockQueue,
 ) {
     let tid = TaskId::new(task_id);
 
@@ -157,6 +179,49 @@ pub async fn spawn_worker(
                 .await;
             }
             return;
+        }
+    }
+
+    // Extract context.files for file lock acquisition
+    let context_files: Vec<String> = task_data
+        .as_ref()
+        .and_then(|t| t["context"]["files"].as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Acquire file locks if the task declares file scope
+    if !context_files.is_empty() {
+        match api
+            .acquire_file_locks(project_id, task_id, &context_files)
+            .await
+        {
+            Ok(_) => {
+                info!(
+                    "spawn {tid}: acquired file locks for {} path(s)",
+                    context_files.len()
+                );
+            }
+            Err(e) => {
+                let msg = format!("{e:#}");
+                if msg.contains("409") {
+                    info!("spawn {tid}: queued — file scope conflicts with active task");
+                    let mut queue = lock_queue.lock().await;
+                    queue.insert(
+                        task_id.to_string(),
+                        LockQueueEntry {
+                            project_id: project_id.to_string(),
+                            queued_at: std::time::Instant::now(),
+                        },
+                    );
+                } else {
+                    warn!("spawn {tid}: failed to acquire file locks: {msg} — skipping spawn");
+                }
+                return;
+            }
         }
     }
 
@@ -332,12 +397,16 @@ pub async fn spawn_worker(
 mod tests {
     use super::*;
     use crate::api::ProjectsApi;
-    use crate::config::{ActiveTasks, Config};
+    use crate::config::{ActiveTasks, Config, LockQueue};
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::Mutex;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn new_lock_queue() -> LockQueue {
+        Arc::new(Mutex::new(HashMap::new()))
+    }
 
     fn standard_playbook() -> serde_json::Value {
         serde_json::json!({
@@ -444,7 +513,15 @@ mod tests {
         let config = test_config(&server.uri(), 3);
         let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
 
-        spawn_worker(&api, &config, &active, task_id, project_id).await;
+        spawn_worker(
+            &api,
+            &config,
+            &active,
+            task_id,
+            project_id,
+            &new_lock_queue(),
+        )
+        .await;
 
         let tasks = active.lock().await;
         assert!(!tasks.contains_key(task_id));
@@ -507,7 +584,15 @@ mod tests {
         let config = test_config(&server.uri(), 3);
         let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
 
-        spawn_worker(&api, &config, &active, task_id, project_id).await;
+        spawn_worker(
+            &api,
+            &config,
+            &active,
+            task_id,
+            project_id,
+            &new_lock_queue(),
+        )
+        .await;
     }
 
     #[tokio::test]
@@ -551,7 +636,15 @@ mod tests {
         let config = test_config(&server.uri(), 0);
         let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
 
-        spawn_worker(&api, &config, &active, task_id, project_id).await;
+        spawn_worker(
+            &api,
+            &config,
+            &active,
+            task_id,
+            project_id,
+            &new_lock_queue(),
+        )
+        .await;
     }
 
     #[tokio::test]
@@ -595,7 +688,15 @@ mod tests {
         let config = test_config(&server.uri(), 3);
         let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
 
-        spawn_worker(&api, &config, &active, task_id, project_id).await;
+        spawn_worker(
+            &api,
+            &config,
+            &active,
+            task_id,
+            project_id,
+            &new_lock_queue(),
+        )
+        .await;
     }
 
     #[tokio::test]
@@ -658,7 +759,15 @@ mod tests {
         let config = test_config(&server.uri(), 3);
         let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
 
-        spawn_worker(&api, &config, &active, task_id, project_id).await;
+        spawn_worker(
+            &api,
+            &config,
+            &active,
+            task_id,
+            project_id,
+            &new_lock_queue(),
+        )
+        .await;
 
         let tasks = active.lock().await;
         assert!(!tasks.contains_key(task_id));
@@ -715,6 +824,73 @@ mod tests {
         let config = test_config(&server.uri(), 3);
         let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
 
-        spawn_worker(&api, &config, &active, task_id, project_id).await;
+        spawn_worker(
+            &api,
+            &config,
+            &active,
+            task_id,
+            project_id,
+            &new_lock_queue(),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn spawn_worker_queues_task_on_file_lock_conflict() {
+        let server = MockServer::start().await;
+        let task_id = "task-1";
+        let project_id = "proj-1";
+
+        // Task with context.files that will trigger lock acquisition
+        Mock::given(method("GET"))
+            .and(path("/tasks/task-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": task_id, "title": "Test task", "state": "implement",
+                "playbook_id": "pb-1", "playbook_step": 0,
+                "context": { "files": ["src/*.rs"] }
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/playbooks/pb-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(standard_playbook()))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/tasks/task-1/updates"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .mount(&server)
+            .await;
+
+        // Lock acquisition returns 409 conflict
+        Mock::given(method("POST"))
+            .and(path("/proj-1/locks"))
+            .respond_with(ResponseTemplate::new(409).set_body_json(serde_json::json!({
+                "error": "Path 'src/*.rs' conflicts with existing lock held by task other-task"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        mount_project_mock(&server, None).await;
+
+        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let config = test_config(&server.uri(), 3);
+        let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
+        let lock_queue = new_lock_queue();
+
+        spawn_worker(&api, &config, &active, task_id, project_id, &lock_queue).await;
+
+        // Task should NOT be in active workers (spawn was skipped)
+        let tasks = active.lock().await;
+        assert!(!tasks.contains_key(task_id));
+        drop(tasks);
+
+        // Task SHOULD be in the lock queue
+        let queue = lock_queue.lock().await;
+        assert!(queue.contains_key(task_id));
+        assert_eq!(queue[task_id].project_id, project_id);
     }
 }

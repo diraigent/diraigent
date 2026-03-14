@@ -1,8 +1,11 @@
 import { Component, inject, signal, effect, HostListener, ViewChild, ElementRef, DestroyRef } from '@angular/core';
+import { Router } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { HttpClient } from '@angular/common/http';
 import { Subscription, timer, switchMap, forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
+import { environment } from '../../../environments/environment';
 import { ProjectContext } from '../../core/services/project-context.service';
 import { ChatService } from '../../core/services/chat.service';
 import {
@@ -125,6 +128,9 @@ import { TaskFormComponent } from './components/task-form/task-form';
         [detailResolving]="resolving()"
         [detailLoading]="detailLoading()"
         [detailKinds]="filterKinds()"
+        [detailParentTask]="parentTask()"
+        [detailSubtasks]="subtasks()"
+        [detailPlanName]="planName()"
         (taskSelect)="selectTask($event)"
         (stateChange)="onTransition($event.task, $event.target)"
         (searchChange)="onSearchChange($event)"
@@ -149,7 +155,9 @@ import { TaskFormComponent } from './components/task-form/task-form';
         (detailDelete)="onDelete(selectedTask()!)"
         (detailPlaybookChange)="onPlaybookChange(selectedTask()!, $event)"
         (detailPlaybookStepChange)="onPlaybookStepChange(selectedTask()!, $event)"
-        (detailInlineUpdate)="onInlineUpdate(selectedTask()!, $event)" />
+        (detailInlineUpdate)="onInlineUpdate(selectedTask()!, $event)"
+        (detailNavigateToTask)="onNavigateToTask($event)"
+        (detailNavigateToPlan)="onNavigateToPlan($event)" />
 
       <!-- Create/Edit form -->
       <app-task-form
@@ -179,6 +187,8 @@ export class TasksPage {
   private projectApi = inject(DiraigentApiService);
   private ctx = inject(ProjectContext);
   private chat = inject(ChatService);
+  private router = inject(Router);
+  private httpClient = inject(HttpClient);
   private el = inject(ElementRef);
   private destroyRef = inject(DestroyRef);
   private pollSub?: Subscription;
@@ -218,6 +228,9 @@ export class TasksPage {
   branchMap = signal<Map<string, BranchInfo>>(new Map());
   detailLoading = signal(false);
   playbooks = signal<SpPlaybook[]>([]);
+  parentTask = signal<SpTask | null>(null);
+  subtasks = signal<SpTask[]>([]);
+  planName = signal<string | null>(null);
 
   /** Dynamic states derived from playbooks. */
   filterStates = signal<string[]>(['backlog', 'ready', 'working', 'implement', 'review', 'merge', 'human_review', 'done', 'cancelled']);
@@ -362,8 +375,12 @@ export class TasksPage {
       this.taskVerifications.set([]);
       this.taskChangedFiles.set([]);
       this.taskGitStatus.set(null);
+      this.parentTask.set(null);
+      this.subtasks.set([]);
+      this.planName.set(null);
       this.loadTaskDetail(nextTask.id);
       this.loadGitStatus(nextTask.id);
+      this.loadHierarchyData(nextTask);
       this.startDetailPolling(nextTask.id);
       // Scroll selected row into view
       requestAnimationFrame(() => {
@@ -460,9 +477,13 @@ export class TasksPage {
     this.taskVerifications.set([]);
     this.taskChangedFiles.set([]);
     this.taskGitStatus.set(null);
+    this.parentTask.set(null);
+    this.subtasks.set([]);
+    this.planName.set(null);
     if (task) {
       this.loadTaskDetail(task.id);
       this.loadGitStatus(task.id);
+      this.loadHierarchyData(task);
       this.startDetailPolling(task.id);
     } else {
       this.stopDetailPolling();
@@ -759,6 +780,43 @@ export class TasksPage {
     });
   }
 
+  onNavigateToTask(taskId: string): void {
+    // Find the task in the current list and select it
+    const task = this.tasks().find(t => t.id === taskId);
+    if (task) {
+      this.selectTask(task);
+    } else {
+      // Task not in current page — fetch it and select it
+      this.api.get(taskId).pipe(
+        catchError(() => of(null)),
+        takeUntilDestroyed(this.destroyRef),
+      ).subscribe({
+        next: (t) => {
+          if (t) {
+            this.selectedTask.set(t);
+            this.taskUpdates.set([]);
+            this.taskComments.set([]);
+            this.taskDependencies.set({ depends_on: [], blocks: [] });
+            this.taskVerifications.set([]);
+            this.taskChangedFiles.set([]);
+            this.taskGitStatus.set(null);
+            this.parentTask.set(null);
+            this.subtasks.set([]);
+            this.planName.set(null);
+            this.loadTaskDetail(t.id);
+            this.loadGitStatus(t.id);
+            this.loadHierarchyData(t);
+            this.startDetailPolling(t.id);
+          }
+        },
+      });
+    }
+  }
+
+  onNavigateToPlan(planId: string): void {
+    this.router.navigate(['/plans', planId]);
+  }
+
   // -- Private --
 
   private buildFilters(): TaskListFilters {
@@ -881,5 +939,47 @@ export class TasksPage {
         }
       },
     });
+  }
+
+  private loadHierarchyData(task: SpTask): void {
+    // Load parent task if parent_id is set
+    if (task.parent_id) {
+      this.api.get(task.parent_id).pipe(
+        catchError(() => of(null)),
+        takeUntilDestroyed(this.destroyRef),
+      ).subscribe({
+        next: (parent) => {
+          if (this.selectedTask()?.id === task.id) {
+            this.parentTask.set(parent);
+          }
+        },
+      });
+    }
+
+    // Load child tasks
+    this.api.listChildren(task.id).pipe(
+      catchError(() => of([] as SpTask[])),
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe({
+      next: (children) => {
+        if (this.selectedTask()?.id === task.id) {
+          this.subtasks.set(children);
+        }
+      },
+    });
+
+    // Load plan name if plan_id is set
+    if (task.plan_id) {
+      this.httpClient.get<{ title: string }>(`${environment.apiServer}/plans/${task.plan_id}`).pipe(
+        catchError(() => of(null)),
+        takeUntilDestroyed(this.destroyRef),
+      ).subscribe({
+        next: (plan) => {
+          if (this.selectedTask()?.id === task.id && plan) {
+            this.planName.set(plan.title);
+          }
+        },
+      });
+    }
   }
 }

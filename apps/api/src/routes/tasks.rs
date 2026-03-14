@@ -64,6 +64,7 @@ pub fn routes() -> Router<AppState> {
             get(list_task_comments).post(create_task_comment),
         )
         .route("/tasks/{task_id}/goals", get(list_task_goals))
+        .route("/tasks/{task_id}/children", get(list_task_children))
         .route("/tasks/{task_id}/cost", post(record_task_cost))
 }
 
@@ -86,6 +87,16 @@ async fn create_task(
     // If goal_id provided, verify the goal exists before creating the task
     if let Some(goal_id) = req.goal_id {
         let _ = state.db.get_goal_by_id(goal_id).await?;
+    }
+
+    // If parent_id provided, verify the parent task exists and belongs to the same project
+    if let Some(parent_id) = req.parent_id {
+        let parent = state.db.get_task_by_id(parent_id).await?;
+        if parent.project_id != project_id {
+            return Err(AppError::UnprocessableEntity(
+                "parent task must belong to the same project".into(),
+            ));
+        }
     }
 
     let task = state.db.create_task(project_id, &req, user_id).await?;
@@ -230,6 +241,19 @@ async fn list_task_goals(
     require_membership(state.db.as_ref(), agent_id, user_id, task.project_id).await?;
     let ids = state.db.get_goal_ids_for_task(task_id).await?;
     Ok(Json(ids))
+}
+
+/// Return direct child tasks of a given parent task.
+async fn list_task_children(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
+    Path(task_id): Path<Uuid>,
+) -> Result<Json<Vec<Task>>, AppError> {
+    let task = state.db.get_task_by_id(task_id).await?;
+    require_membership(state.db.as_ref(), agent_id, user_id, task.project_id).await?;
+    let children = state.db.list_task_children(task_id).await?;
+    Ok(Json(children))
 }
 
 async fn get_task(

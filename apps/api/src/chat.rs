@@ -139,8 +139,8 @@ pub async fn build_system_prompt(
         prompt.push_str("## Active Tasks\n");
         for t in &tasks {
             prompt.push_str(&format!(
-                "- [{}] {} (state: {}, priority: {}, kind: {})\n",
-                t.id, t.title, t.state, t.priority, t.kind
+                "- [{}] {} (state: {}, urgent: {}, kind: {})\n",
+                t.id, t.title, t.state, t.urgent, t.kind
             ));
         }
         prompt.push('\n');

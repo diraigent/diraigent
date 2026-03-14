@@ -23,14 +23,6 @@ const IN_PROGRESS_STATES = new Set(['working', 'implement', 'review', 'merge', '
 const isActive = (s: string) => ACTIVE_STATES.has(s) || s.startsWith('wait:');
 const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('wait:');
 
-const PRIORITY_LABELS: Record<number, string> = {
-  1: 'Critical',
-  2: 'High',
-  3: 'Medium',
-  4: 'Low',
-  5: 'Lowest',
-};
-
 @Component({
   selector: 'app-dashboard',
   standalone: true,
@@ -104,7 +96,7 @@ const PRIORITY_LABELS: Record<number, string> = {
                 <th class="px-4 py-3 font-medium">{{ t('tasks.title') }}</th>
                 <th class="px-4 py-3 font-medium w-24">{{ t('tasks.kind') }}</th>
                 <th class="px-4 py-3 font-medium w-28">{{ t('tasks.state') }}</th>
-                <th class="px-4 py-3 font-medium w-24">{{ t('tasks.priority') }}</th>
+                <th class="px-4 py-3 font-medium w-24">{{ t('tasks.urgent') }}</th>
                 <th class="px-4 py-3 font-medium w-36">{{ t('tasks.created') }}</th>
               </tr>
             </thead>
@@ -133,8 +125,10 @@ const PRIORITY_LABELS: Record<number, string> = {
                       </div>
                     }
                   </td>
-                  <td class="px-4 py-3 text-xs {{ priorityColor(row.task.priority) }}">
-                    {{ priorityLabel(row.task.priority) }}
+                  <td class="px-4 py-3 text-xs">
+                    @if (row.task.urgent) {
+                      <span class="text-ctp-red font-medium">Urgent</span>
+                    }
                   </td>
                   <td class="px-4 py-3 text-text-muted text-xs whitespace-nowrap">
                     {{ row.task.created_at | date:'MMM d, y' }}
@@ -200,7 +194,7 @@ export class DashboardPage {
         }
       }
     }
-    // Sort: in-progress first, then ready, then backlog; within same state sort by priority asc
+    // Sort: in-progress first, then ready, then backlog; urgent tasks first within same state group
     const statePriority = (s: string): number => {
       if (isInProgress(s)) return 0;
       if (s === 'ready') return 1;
@@ -209,7 +203,7 @@ export class DashboardPage {
     rows.sort((a, b) => {
       const sp = statePriority(a.task.state) - statePriority(b.task.state);
       if (sp !== 0) return sp;
-      return a.task.priority - b.task.priority;
+      return (b.task.urgent ? 1 : 0) - (a.task.urgent ? 1 : 0);
     });
     return rows;
   });
@@ -251,21 +245,6 @@ export class DashboardPage {
         );
       },
     });
-  }
-
-  priorityLabel(priority: number): string {
-    return PRIORITY_LABELS[priority] ?? String(priority);
-  }
-
-  priorityColor(priority: number): string {
-    const colors: Record<number, string> = {
-      1: 'text-ctp-red',
-      2: 'text-ctp-peach',
-      3: 'text-ctp-yellow',
-      4: 'text-ctp-blue',
-      5: 'text-ctp-overlay0',
-    };
-    return colors[priority] ?? 'text-text-secondary';
   }
 
   private startPolling(): void {

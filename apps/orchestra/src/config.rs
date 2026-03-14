@@ -34,6 +34,17 @@ pub struct Config {
 
 pub type ActiveTasks = Arc<Mutex<HashMap<String, JoinHandle<()>>>>;
 
+/// Entry for a task blocked on file lock acquisition.
+/// Tracked by the orchestra so we skip wasteful re-polls until the lock is released.
+#[derive(Clone)]
+pub struct LockQueueEntry {
+    pub project_id: String,
+    pub queued_at: std::time::Instant,
+}
+
+/// Map of task_id → LockQueueEntry for tasks waiting for file locks to be released.
+pub type LockQueue = Arc<Mutex<HashMap<String, LockQueueEntry>>>;
+
 impl Config {
     pub fn from_env() -> Result<Self> {
         let exe_dir = std::env::current_exe()

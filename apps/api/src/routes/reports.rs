@@ -71,12 +71,15 @@ async fn create(
     let create_task = CreateTask {
         title: format!("Report: {}", r.title),
         kind: Some("research".to_string()),
-        priority: Some(5),
+        urgent: None,
         context: Some(task_context),
         required_capabilities: None,
         playbook_id: Some(playbook_id),
         decision_id: None,
         goal_id: None,
+        file_scope: None,
+        parent_id: None,
+        plan_id: None,
     };
 
     match state

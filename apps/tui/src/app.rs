@@ -1,9 +1,9 @@
 use crate::client::{
     Agent, AuditEntry, BranchInfo, ChangedFile, ChatMessage, Decision, GitTaskStatus, Goal,
     GoalComment, GoalProgress, GoalStats, Integration, IntegrationAccess, KnowledgeEntry, LogEntry,
-    MainPushStatus, Member, Observation, Playbook, Project, ProjectEvent, ProjectMetrics, Report,
-    Role, SearchResult, StepTemplate, Task, TaskComment, TaskDependencies, TaskUpdate, TreeEntry,
-    Verification, Webhook, WebhookDelivery,
+    MainPushStatus, Member, Observation, Plan, PlanProgress, Playbook, Project, ProjectEvent,
+    ProjectMetrics, Report, Role, SearchResult, StepTemplate, Task, TaskComment, TaskDependencies,
+    TaskUpdate, TreeEntry, Verification, Webhook, WebhookDelivery,
 };
 use ratatui::widgets::ListState;
 use uuid::Uuid;
@@ -32,6 +32,7 @@ pub enum View {
     Events,
     Webhooks,
     StepTemplates,
+    Plans,
 }
 
 pub const ALL_VIEWS: &[View] = &[
@@ -56,6 +57,7 @@ pub const ALL_VIEWS: &[View] = &[
     View::Events,
     View::Webhooks,
     View::StepTemplates,
+    View::Plans,
 ];
 
 impl View {
@@ -83,6 +85,7 @@ impl View {
             View::Events => "Events",
             View::Webhooks => "Webhooks",
             View::StepTemplates => "Step Templates",
+            View::Plans => "Plans",
         }
     }
 
@@ -110,6 +113,7 @@ impl View {
             View::Events => "E",
             View::Webhooks => "W",
             View::StepTemplates => "T",
+            View::Plans => "N",
         }
     }
 }
@@ -169,28 +173,15 @@ pub const TASK_KINDS: &[&str] = &[
 pub const VERIFICATION_KINDS: &[&str] = &["test", "acceptance", "sign_off"];
 pub const VERIFICATION_STATUSES: &[&str] = &["pass", "fail", "pending", "skipped"];
 
+#[derive(Default)]
 pub struct TaskForm {
     pub title: String,
     pub kind_index: usize,
-    pub priority: u8,
+    pub urgent: bool,
     pub spec: String,
     pub playbook_index: usize, // 0 = None, 1+ = playbook from list
-    pub active_field: usize,   // 0=title, 1=kind, 2=priority, 3=playbook, 4=spec
+    pub active_field: usize,   // 0=title, 1=kind, 2=urgent, 3=playbook, 4=spec
     pub cursor: usize,
-}
-
-impl Default for TaskForm {
-    fn default() -> Self {
-        Self {
-            title: String::new(),
-            kind_index: 0,
-            priority: 3,
-            spec: String::new(),
-            playbook_index: 0,
-            active_field: 0,
-            cursor: 0,
-        }
-    }
 }
 
 pub struct VerificationForm {
@@ -341,9 +332,9 @@ pub struct TaskEditForm {
     pub task_id: uuid::Uuid,
     pub title: String,
     pub kind_index: usize,
-    pub priority: u8,
+    pub urgent: bool,
     pub spec: String,
-    pub active_field: usize, // 0=title, 1=kind, 2=priority, 3=spec
+    pub active_field: usize, // 0=title, 1=kind, 2=urgent, 3=spec
     pub cursor: usize,
 }
 
@@ -646,6 +637,12 @@ pub struct App {
     // Step templates
     pub step_templates: Vec<StepTemplate>,
 
+    // Plans
+    pub plans: Vec<Plan>,
+    pub plan_tasks: Vec<Task>,
+    pub plan_progress: Option<PlanProgress>,
+    pub selected_plan: Option<usize>,
+
     // Agent tasks (queue view)
     pub agent_tasks: Vec<Task>,
 
@@ -711,6 +708,10 @@ pub struct App {
     // Bulk selection
     pub bulk_selected: std::collections::HashSet<uuid::Uuid>,
     pub bulk_mode: bool,
+
+    // Task hierarchy
+    pub show_hierarchy: bool,
+    pub subtasks: Vec<Task>,
 
     // Git view
     pub branches: Vec<BranchInfo>,
@@ -800,6 +801,10 @@ impl App {
             dashboard_events: vec![],
             goal_comments: vec![],
             step_templates: vec![],
+            plans: vec![],
+            plan_tasks: vec![],
+            plan_progress: None,
+            selected_plan: None,
             agent_tasks: vec![],
             goal_tasks: vec![],
             goal_unlinked_tasks: vec![],
@@ -844,6 +849,8 @@ impl App {
             show_changed_files: false,
             bulk_selected: std::collections::HashSet::new(),
             bulk_mode: false,
+            show_hierarchy: false,
+            subtasks: vec![],
             branches: vec![],
             current_branch: String::new(),
             main_push_status: None,
@@ -890,6 +897,7 @@ impl App {
             View::Reports => self.reports.len(),
             View::Webhooks => self.webhooks.len(),
             View::Events => self.filtered_events().len(),
+            View::Plans => self.plans.len(),
         }
     }
 
@@ -916,6 +924,7 @@ impl App {
             View::Reports => self.selected_report,
             View::Webhooks => self.selected_webhook,
             View::Events => self.selected_event,
+            View::Plans => self.selected_plan,
         }
     }
 
@@ -946,6 +955,7 @@ impl App {
             View::Reports => self.selected_report = idx,
             View::Webhooks => self.selected_webhook = idx,
             View::Events => self.selected_event = idx,
+            View::Plans => self.selected_plan = idx,
         }
     }
 

@@ -15,7 +15,8 @@ const TASK_FILTERS_WHERE: &str = "WHERE project_id = $1 \
     AND ($4::uuid IS NULL OR assigned_agent_id = $4) \
     AND ($5::text IS NULL OR title ILIKE $5) \
     AND ($6::timestamptz IS NULL OR state NOT IN ('done', 'cancelled') OR COALESCE(completed_at, updated_at) >= $6) \
-    AND ($7::uuid IS NULL OR decision_id = $7)";
+    AND ($7::uuid IS NULL OR decision_id = $7) \
+    AND ($8::uuid IS NULL OR parent_id = $8)";
 
 // ── Tasks ──
 
@@ -35,7 +36,8 @@ pub async fn create_task(
         .clone()
         .unwrap_or(serde_json::Value::Object(Default::default()));
     let capabilities = req.required_capabilities.clone().unwrap_or_default();
-    let priority = req.priority.unwrap_or(0);
+    let file_scope = req.file_scope.clone().unwrap_or_default();
+    let urgent = req.urgent.unwrap_or(false);
 
     // Use explicit playbook_id, or fall back to project default
     let playbook_id = req.playbook_id.or(project.default_playbook_id);
@@ -50,21 +52,24 @@ pub async fn create_task(
     };
 
     let task = sqlx::query_as::<_, Task>(
-        "INSERT INTO diraigent.task (project_id, title, kind, state, priority, context, required_capabilities, playbook_id, playbook_step, decision_id, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        "INSERT INTO diraigent.task (project_id, title, kind, state, urgent, context, required_capabilities, playbook_id, playbook_step, decision_id, plan_id, created_by, file_scope, parent_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          RETURNING *",
     )
     .bind(project_id)
     .bind(&req.title)
     .bind(kind)
     .bind(initial_state)
-    .bind(priority)
+    .bind(urgent)
     .bind(&context)
     .bind(&capabilities)
     .bind(playbook_id)
     .bind(if playbook_id.is_some() { Some(0i32) } else { None })
     .bind(req.decision_id)
+    .bind(req.plan_id)
     .bind(created_by)
+    .bind(&file_scope)
+    .bind(req.parent_id)
     .fetch_one(pool)
     .await?;
 
@@ -80,7 +85,7 @@ pub async fn list_tasks_by_decision(
     decision_id: Uuid,
 ) -> Result<Vec<TaskSummaryForDecision>, AppError> {
     let items = sqlx::query_as::<_, TaskSummaryForDecision>(
-        "SELECT id, number, title, kind, state, priority, created_at
+        "SELECT id, number, title, kind, state, urgent, created_at
          FROM diraigent.task
          WHERE decision_id = $1
          ORDER BY created_at ASC",
@@ -109,18 +114,21 @@ pub async fn list_tasks(
     let mut extra_where = String::new();
     if filters.goal_id.is_some() {
         extra_where
-            .push_str(" AND id IN (SELECT task_id FROM diraigent.task_goal WHERE goal_id = $8)");
+            .push_str(" AND id IN (SELECT task_id FROM diraigent.task_goal WHERE goal_id = $9)");
     }
     if filters.unlinked == Some(true) {
         extra_where.push_str(
             " AND NOT EXISTS (SELECT 1 FROM diraigent.task_goal tg WHERE tg.task_id = diraigent.task.id)",
         );
     }
+    if filters.root_only == Some(true) {
+        extra_where.push_str(" AND parent_id IS NULL");
+    }
 
     let (limit_param, offset_param) = if filters.goal_id.is_some() {
-        ("$9", "$10")
+        ("$10", "$11")
     } else {
-        ("$8", "$9")
+        ("$9", "$10")
     };
 
     let sql = format!(
@@ -134,7 +142,8 @@ pub async fn list_tasks(
         .bind(filters.agent_id)
         .bind(&search_pattern)
         .bind(filters.hide_done_before)
-        .bind(filters.decision_id);
+        .bind(filters.decision_id)
+        .bind(filters.parent_id);
 
     if let Some(goal_id) = filters.goal_id {
         query = query.bind(goal_id);
@@ -160,7 +169,7 @@ pub async fn list_ready_tasks(
                JOIN diraigent.task t2 ON td.depends_on = t2.id
                WHERE td.task_id = t.id AND t2.state != 'done'
            )
-         ORDER BY t.priority ASC, t.created_at ASC
+         ORDER BY t.urgent DESC, t.created_at ASC
          LIMIT $2 OFFSET $3",
     )
     .bind(project_id)
@@ -212,7 +221,7 @@ pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Resu
 
     let title = req.title.as_deref().unwrap_or(&existing.title);
     let kind = req.kind.as_deref().unwrap_or(&existing.kind);
-    let priority = req.priority.unwrap_or(existing.priority);
+    let urgent = req.urgent.unwrap_or(existing.urgent);
     let context = req.context.as_ref().unwrap_or(&existing.context);
     let capabilities = req
         .required_capabilities
@@ -220,21 +229,37 @@ pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Resu
         .unwrap_or(&existing.required_capabilities);
     let playbook_step = req.playbook_step.or(existing.playbook_step);
     let flagged = req.flagged.unwrap_or(existing.flagged);
+    let file_scope = req.file_scope.as_ref().unwrap_or(&existing.file_scope);
+
+    // Double-Option: None → keep existing, Some(v) → use v (which may be None to clear).
+    let parent_id = match &req.parent_id {
+        Some(v) => *v,
+        None => existing.parent_id,
+    };
+
+    // Double-Option: None → keep existing, Some(v) → use v (which may be None to clear).
+    let plan_id = match &req.plan_id {
+        Some(v) => *v,
+        None => existing.plan_id,
+    };
 
     let task = sqlx::query_as::<_, Task>(
         "UPDATE diraigent.task
-         SET title = $2, kind = $3, priority = $4, context = $5, required_capabilities = $6, playbook_step = $7, playbook_id = $8, flagged = $9
+         SET title = $2, kind = $3, urgent = $4, context = $5, required_capabilities = $6, playbook_step = $7, playbook_id = $8, flagged = $9, file_scope = $10, parent_id = $11, plan_id = $12
          WHERE id = $1 RETURNING *",
     )
     .bind(task_id)
     .bind(title)
     .bind(kind)
-    .bind(priority)
+    .bind(urgent)
     .bind(context)
     .bind(capabilities)
     .bind(playbook_step)
     .bind(playbook_id)
     .bind(flagged)
+    .bind(file_scope)
+    .bind(parent_id)
+    .bind(plan_id)
     .fetch_one(pool)
     .await?;
 
@@ -289,6 +314,17 @@ pub async fn list_blocked_task_ids(pool: &PgPool, project_id: Uuid) -> Result<Ve
     .fetch_all(pool)
     .await?;
     Ok(ids.into_iter().map(|(id,)| id).collect())
+}
+
+/// List direct children of a task (tasks whose parent_id matches).
+pub async fn list_task_children(pool: &PgPool, parent_id: Uuid) -> Result<Vec<Task>, AppError> {
+    let tasks = sqlx::query_as::<_, Task>(
+        "SELECT * FROM diraigent.task WHERE parent_id = $1 ORDER BY urgent DESC, created_at ASC",
+    )
+    .bind(parent_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(tasks)
 }
 
 /// Returns task IDs that have been flagged (bookmarked) by a user.
@@ -599,12 +635,15 @@ pub async fn count_tasks(
     let mut extra_where = String::new();
     if filters.goal_id.is_some() {
         extra_where
-            .push_str(" AND id IN (SELECT task_id FROM diraigent.task_goal WHERE goal_id = $8)");
+            .push_str(" AND id IN (SELECT task_id FROM diraigent.task_goal WHERE goal_id = $9)");
     }
     if filters.unlinked == Some(true) {
         extra_where.push_str(
             " AND NOT EXISTS (SELECT 1 FROM diraigent.task_goal tg WHERE tg.task_id = diraigent.task.id)",
         );
+    }
+    if filters.root_only == Some(true) {
+        extra_where.push_str(" AND parent_id IS NULL");
     }
 
     let sql = format!(
@@ -618,7 +657,8 @@ pub async fn count_tasks(
         .bind(filters.agent_id)
         .bind(&search_pattern)
         .bind(filters.hide_done_before)
-        .bind(filters.decision_id);
+        .bind(filters.decision_id)
+        .bind(filters.parent_id);
 
     if let Some(goal_id) = filters.goal_id {
         query = query.bind(goal_id);
@@ -626,6 +666,34 @@ pub async fn count_tasks(
 
     let row: (i64,) = query.fetch_one(pool).await?;
 
+    Ok(row.0)
+}
+
+// ── Subtasks (parent-child) ──
+
+pub async fn list_subtasks(
+    pool: &PgPool,
+    parent_id: Uuid,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<Task>, AppError> {
+    let tasks = sqlx::query_as::<_, Task>(
+        "SELECT * FROM diraigent.task WHERE parent_id = $1
+         ORDER BY created_at ASC LIMIT $2 OFFSET $3",
+    )
+    .bind(parent_id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
+    Ok(tasks)
+}
+
+pub async fn count_subtasks(pool: &PgPool, parent_id: Uuid) -> Result<i64, AppError> {
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM diraigent.task WHERE parent_id = $1")
+        .bind(parent_id)
+        .fetch_one(pool)
+        .await?;
     Ok(row.0)
 }
 

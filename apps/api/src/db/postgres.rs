@@ -104,6 +104,17 @@ impl DiraigentDb for PostgresDb {
     async fn delete_task(&self, task_id: Uuid) -> Result<(), AppError> {
         repository::delete_task(&self.0, task_id).await
     }
+    async fn list_subtasks(
+        &self,
+        parent_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<Task>, AppError> {
+        repository::list_subtasks(&self.0, parent_id, limit, offset).await
+    }
+    async fn count_subtasks(&self, parent_id: Uuid) -> Result<i64, AppError> {
+        repository::count_subtasks(&self.0, parent_id).await
+    }
     async fn update_task_cost(
         &self,
         task_id: Uuid,
@@ -142,6 +153,9 @@ impl DiraigentDb for PostgresDb {
         project_id: Uuid,
     ) -> Result<Vec<Task>, AppError> {
         repository::list_tasks_with_blocker_updates(&self.0, project_id).await
+    }
+    async fn list_task_children(&self, parent_id: Uuid) -> Result<Vec<Task>, AppError> {
+        repository::list_task_children(&self.0, parent_id).await
     }
 
     // Task Updates
@@ -455,6 +469,68 @@ impl DiraigentDb for PostgresDb {
         project_id: Uuid,
     ) -> Result<CleanupObservationsResult, AppError> {
         repository::cleanup_observations(&self.0, project_id).await
+    }
+    async fn delete_old_observations_all_projects(
+        &self,
+        default_retention_days: i32,
+    ) -> Result<u64, AppError> {
+        repository::delete_old_observations_all_projects(&self.0, default_retention_days).await
+    }
+
+    // Plans
+    async fn create_plan(
+        &self,
+        project_id: Uuid,
+        req: &CreatePlan,
+        created_by: Uuid,
+    ) -> Result<Plan, AppError> {
+        repository::create_plan(&self.0, project_id, req, created_by).await
+    }
+    async fn get_plan_by_id(&self, id: Uuid) -> Result<Plan, AppError> {
+        repository::get_plan_by_id(&self.0, id).await
+    }
+    async fn list_plans(
+        &self,
+        project_id: Uuid,
+        filters: &PlanFilters,
+    ) -> Result<Vec<Plan>, AppError> {
+        repository::list_plans(&self.0, project_id, filters).await
+    }
+    async fn count_plans(&self, project_id: Uuid, filters: &PlanFilters) -> Result<i64, AppError> {
+        repository::count_plans(&self.0, project_id, filters).await
+    }
+    async fn update_plan(&self, id: Uuid, req: &UpdatePlan) -> Result<Plan, AppError> {
+        repository::update_plan(&self.0, id, req).await
+    }
+    async fn delete_plan(&self, id: Uuid) -> Result<(), AppError> {
+        repository::delete_plan(&self.0, id).await
+    }
+    async fn add_task_to_plan(&self, plan_id: Uuid, task_id: Uuid) -> Result<Task, AppError> {
+        repository::add_task_to_plan(&self.0, plan_id, task_id).await
+    }
+    async fn remove_task_from_plan(&self, plan_id: Uuid, task_id: Uuid) -> Result<(), AppError> {
+        repository::remove_task_from_plan(&self.0, plan_id, task_id).await
+    }
+    async fn list_plan_tasks(
+        &self,
+        plan_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<Task>, AppError> {
+        repository::list_plan_tasks(&self.0, plan_id, limit, offset).await
+    }
+    async fn count_plan_tasks(&self, plan_id: Uuid) -> Result<i64, AppError> {
+        repository::count_plan_tasks(&self.0, plan_id).await
+    }
+    async fn reorder_plan_tasks(
+        &self,
+        plan_id: Uuid,
+        task_ids: &[Uuid],
+    ) -> Result<Vec<Task>, AppError> {
+        repository::reorder_plan_tasks(&self.0, plan_id, task_ids).await
+    }
+    async fn get_plan_progress(&self, plan_id: Uuid) -> Result<PlanProgress, AppError> {
+        repository::get_plan_progress(&self.0, plan_id).await
     }
 
     // Playbooks

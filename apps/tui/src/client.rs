@@ -45,7 +45,7 @@ pub struct Task {
     pub kind: String,
     pub state: String,
     #[serde(default)]
-    pub priority: i32,
+    pub urgent: bool,
     pub assigned_agent_id: Option<Uuid>,
     #[serde(default)]
     pub context: serde_json::Value,
@@ -60,6 +60,10 @@ pub struct Task {
     pub cost_usd: f64,
     #[serde(default)]
     pub flagged: bool,
+    #[serde(default)]
+    pub parent_id: Option<Uuid>,
+    #[serde(default)]
+    pub plan_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -533,6 +537,40 @@ pub struct Report {
     pub updated_at: Option<String>,
 }
 
+// ── Plan types ───────────────────────────────────────────────
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Plan {
+    pub id: Uuid,
+    #[serde(default)]
+    pub project_id: Option<Uuid>,
+    pub title: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
+    #[serde(default)]
+    pub created_by: Option<Uuid>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PlanProgress {
+    pub plan_id: Uuid,
+    #[serde(default)]
+    pub total_tasks: i64,
+    #[serde(default)]
+    pub done_tasks: i64,
+    #[serde(default)]
+    pub cancelled_tasks: i64,
+    #[serde(default)]
+    pub working_tasks: i64,
+}
+
 // ── Event types ──────────────────────────────────────────────
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Event {
@@ -989,14 +1027,14 @@ impl ApiClient {
         project_id: Uuid,
         title: &str,
         kind: &str,
-        priority: u8,
+        urgent: bool,
         spec: &str,
         playbook_id: Option<Uuid>,
     ) -> Result<Task, reqwest::Error> {
         let mut body = serde_json::json!({
             "title": title,
             "kind": kind,
-            "priority": priority,
+            "urgent": urgent,
             "context": { "spec": spec }
         });
         if let Some(pid) = playbook_id {
@@ -1028,6 +1066,14 @@ impl ApiClient {
             .send()
             .await?
             .error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn list_subtasks(&self, task_id: Uuid) -> Result<Vec<Task>, reqwest::Error> {
+        let req = self
+            .client
+            .get(format!("{}/tasks/{}/subtasks", self.base_url, task_id));
+        let resp = self.auth(req).send().await?.error_for_status()?;
         resp.json().await
     }
 
@@ -1221,6 +1267,57 @@ impl ApiClient {
         resp.json().await
     }
 
+    // ── Plan operations ───────────────────────────────────────
+
+    pub async fn list_plans(&self, project_id: Uuid) -> Result<Vec<Plan>, reqwest::Error> {
+        let req = self.client.get(format!(
+            "{}/{}/plans?limit=100&offset=0",
+            self.base_url, project_id
+        ));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        let body: serde_json::Value = resp.json().await?;
+        let plans: Vec<Plan> = body
+            .get("data")
+            .and_then(|d| serde_json::from_value(d.clone()).ok())
+            .unwrap_or_default();
+        Ok(plans)
+    }
+
+    pub async fn get_plan(&self, plan_id: Uuid) -> Result<Plan, reqwest::Error> {
+        let req = self
+            .client
+            .get(format!("{}/plans/{}", self.base_url, plan_id));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn get_plan_tasks(
+        &self,
+        plan_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<Task>, reqwest::Error> {
+        let req = self.client.get(format!(
+            "{}/plans/{}/tasks?limit={}&offset={}",
+            self.base_url, plan_id, limit, offset
+        ));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        let body: serde_json::Value = resp.json().await?;
+        let tasks: Vec<Task> = body
+            .get("data")
+            .and_then(|d| serde_json::from_value(d.clone()).ok())
+            .unwrap_or_default();
+        Ok(tasks)
+    }
+
+    pub async fn get_plan_progress(&self, plan_id: Uuid) -> Result<PlanProgress, reqwest::Error> {
+        let req = self
+            .client
+            .get(format!("{}/plans/{}/progress", self.base_url, plan_id));
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
     // ── Observation operations ────────────────────────────────
 
     pub async fn list_observations(
@@ -1281,12 +1378,12 @@ impl ApiClient {
         id: Uuid,
         title: &str,
         kind: &str,
-        priority: u8,
+        urgent: bool,
     ) -> Result<(), reqwest::Error> {
         let req = self
             .client
             .post(format!("{}/observations/{}/promote", self.base_url, id))
-            .json(&serde_json::json!({"title": title, "kind": kind, "priority": priority}));
+            .json(&serde_json::json!({"title": title, "kind": kind, "urgent": urgent}));
         self.auth(req).send().await?.error_for_status()?;
         Ok(())
     }

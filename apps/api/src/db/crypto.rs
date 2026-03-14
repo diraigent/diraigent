@@ -170,7 +170,7 @@ impl DiraigentDb for CryptoDb {
             let encrypted_req = CreateTask {
                 title: req.title.clone(),
                 kind: req.kind.clone(),
-                priority: req.priority,
+                urgent: req.urgent,
                 context: req
                     .context
                     .as_ref()
@@ -180,6 +180,9 @@ impl DiraigentDb for CryptoDb {
                 playbook_id: req.playbook_id,
                 decision_id: req.decision_id,
                 goal_id: req.goal_id,
+                file_scope: req.file_scope.clone(),
+                parent_id: req.parent_id,
+                plan_id: req.plan_id,
             };
             let mut task = self
                 .inner
@@ -238,7 +241,7 @@ impl DiraigentDb for CryptoDb {
             let encrypted_req = UpdateTask {
                 title: req.title.clone(),
                 kind: req.kind.clone(),
-                priority: req.priority,
+                urgent: req.urgent,
                 context: req
                     .context
                     .as_ref()
@@ -247,7 +250,10 @@ impl DiraigentDb for CryptoDb {
                 required_capabilities: req.required_capabilities.clone(),
                 playbook_step: req.playbook_step,
                 playbook_id: req.playbook_id,
+                plan_id: req.plan_id,
                 flagged: req.flagged,
+                file_scope: req.file_scope.clone(),
+                parent_id: req.parent_id,
             };
             let mut task = self.inner.update_task(task_id, &encrypted_req).await?;
             Self::decrypt_task(dek, &mut task)?;
@@ -295,6 +301,25 @@ impl DiraigentDb for CryptoDb {
 
     async fn delete_task(&self, task_id: Uuid) -> Result<(), AppError> {
         delegate!(self, delete_task, task_id)
+    }
+    async fn list_subtasks(
+        &self,
+        parent_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<Task>, AppError> {
+        let mut tasks = self.inner.list_subtasks(parent_id, limit, offset).await?;
+        if let Some(first) = tasks.first()
+            && let Some(dek) = self.dek_for_project(first.project_id).await?
+        {
+            for t in &mut tasks {
+                Self::decrypt_task(&dek, t)?;
+            }
+        }
+        Ok(tasks)
+    }
+    async fn count_subtasks(&self, parent_id: Uuid) -> Result<i64, AppError> {
+        delegate!(self, count_subtasks, parent_id)
     }
 
     async fn update_task_cost(
@@ -346,6 +371,18 @@ impl DiraigentDb for CryptoDb {
             .list_tasks_with_blocker_updates(project_id)
             .await?;
         if let Some(dek) = self.dek_for_project(project_id).await? {
+            for t in &mut tasks {
+                Self::decrypt_task(&dek, t)?;
+            }
+        }
+        Ok(tasks)
+    }
+
+    async fn list_task_children(&self, parent_id: Uuid) -> Result<Vec<Task>, AppError> {
+        let mut tasks = self.inner.list_task_children(parent_id).await?;
+        if let Some(first) = tasks.first()
+            && let Some(dek) = self.dek_for_project(first.project_id).await?
+        {
             for t in &mut tasks {
                 Self::decrypt_task(&dek, t)?;
             }
@@ -836,6 +873,72 @@ impl DiraigentDb for CryptoDb {
         project_id: Uuid,
     ) -> Result<CleanupObservationsResult, AppError> {
         delegate!(self, cleanup_observations, project_id)
+    }
+    async fn delete_old_observations_all_projects(
+        &self,
+        default_retention_days: i32,
+    ) -> Result<u64, AppError> {
+        delegate!(
+            self,
+            delete_old_observations_all_projects,
+            default_retention_days
+        )
+    }
+
+    // ── Plans (no encrypted fields) ──
+    async fn create_plan(
+        &self,
+        project_id: Uuid,
+        req: &CreatePlan,
+        created_by: Uuid,
+    ) -> Result<Plan, AppError> {
+        delegate!(self, create_plan, project_id, req, created_by)
+    }
+    async fn get_plan_by_id(&self, id: Uuid) -> Result<Plan, AppError> {
+        delegate!(self, get_plan_by_id, id)
+    }
+    async fn list_plans(
+        &self,
+        project_id: Uuid,
+        filters: &PlanFilters,
+    ) -> Result<Vec<Plan>, AppError> {
+        delegate!(self, list_plans, project_id, filters)
+    }
+    async fn count_plans(&self, project_id: Uuid, filters: &PlanFilters) -> Result<i64, AppError> {
+        delegate!(self, count_plans, project_id, filters)
+    }
+    async fn update_plan(&self, id: Uuid, req: &UpdatePlan) -> Result<Plan, AppError> {
+        delegate!(self, update_plan, id, req)
+    }
+    async fn delete_plan(&self, id: Uuid) -> Result<(), AppError> {
+        delegate!(self, delete_plan, id)
+    }
+    async fn add_task_to_plan(&self, plan_id: Uuid, task_id: Uuid) -> Result<Task, AppError> {
+        delegate!(self, add_task_to_plan, plan_id, task_id)
+    }
+    async fn remove_task_from_plan(&self, plan_id: Uuid, task_id: Uuid) -> Result<(), AppError> {
+        delegate!(self, remove_task_from_plan, plan_id, task_id)
+    }
+    async fn list_plan_tasks(
+        &self,
+        plan_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<Task>, AppError> {
+        delegate!(self, list_plan_tasks, plan_id, limit, offset)
+    }
+    async fn count_plan_tasks(&self, plan_id: Uuid) -> Result<i64, AppError> {
+        delegate!(self, count_plan_tasks, plan_id)
+    }
+    async fn reorder_plan_tasks(
+        &self,
+        plan_id: Uuid,
+        task_ids: &[Uuid],
+    ) -> Result<Vec<Task>, AppError> {
+        delegate!(self, reorder_plan_tasks, plan_id, task_ids)
+    }
+    async fn get_plan_progress(&self, plan_id: Uuid) -> Result<PlanProgress, AppError> {
+        delegate!(self, get_plan_progress, plan_id)
     }
 
     // ── Playbooks (no encrypted fields) ──

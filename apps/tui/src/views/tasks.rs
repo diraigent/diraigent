@@ -33,6 +33,12 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
 fn render_task_list(f: &mut Frame, area: Rect, app: &mut App) {
     let title = if app.bulk_mode {
         format!(" Tasks [BULK: {} selected] ", app.bulk_selected.len())
+    } else if app.show_hierarchy {
+        if app.search_query.is_empty() {
+            " Tasks [hierarchy] ".to_string()
+        } else {
+            format!(" Tasks [hierarchy|filter: {}] ", app.search_query)
+        }
     } else if app.search_query.is_empty() {
         " Tasks ".to_string()
     } else {
@@ -90,11 +96,22 @@ fn render_task_list(f: &mut Frame, area: Rect, app: &mut App) {
                 String::new()
             };
 
+            // Hierarchy indicator for child tasks
+            let hierarchy_prefix = if app.show_hierarchy && t.parent_id.is_some() {
+                "  └─ "
+            } else {
+                ""
+            };
+
             ListItem::new(Line::from(vec![
                 Span::styled(bulk_marker.to_string(), Style::default().fg(theme::peach())),
                 Span::styled(
                     flag_marker.to_string(),
                     Style::default().fg(theme::yellow()),
+                ),
+                Span::styled(
+                    hierarchy_prefix.to_string(),
+                    Style::default().fg(theme::overlay0()),
                 ),
                 Span::styled(
                     format!(" {} ", timestamp),
@@ -198,8 +215,11 @@ fn render_detail(f: &mut Frame, area: Rect, app: &mut App) {
                     if t.kind.is_empty() { "—" } else { &t.kind },
                     Style::default().fg(theme::text()),
                 ),
-                Span::styled("  Priority: ", Style::default().fg(theme::subtext0())),
-                Span::styled(t.priority.to_string(), Style::default().fg(theme::text())),
+                if t.urgent {
+                    Span::styled("  ⚡ Urgent", Style::default().fg(theme::red()))
+                } else {
+                    Span::styled("", Style::default())
+                },
             ]),
             Line::from(vec![
                 Span::styled("Agent: ", Style::default().fg(theme::subtext0())),
@@ -222,6 +242,50 @@ fn render_detail(f: &mut Frame, area: Rect, app: &mut App) {
                 ),
             ]),
         ];
+
+        // Parent task link
+        if let Some(parent_id) = t.parent_id {
+            let parent_info = app
+                .tasks
+                .iter()
+                .find(|pt| pt.id == parent_id)
+                .map(|pt| format!("#{} {}", pt.number, pt.title))
+                .unwrap_or_else(|| format!("{}", parent_id));
+            lines.push(Line::from(vec![
+                Span::styled("Parent: ", Style::default().fg(theme::subtext0())),
+                Span::styled(parent_info, Style::default().fg(theme::blue())),
+            ]));
+        }
+
+        // Plan membership
+        if let Some(plan_id) = t.plan_id {
+            lines.push(Line::from(vec![
+                Span::styled("Plan: ", Style::default().fg(theme::subtext0())),
+                Span::styled(format!("{}", plan_id), Style::default().fg(theme::mauve())),
+            ]));
+        }
+
+        // Subtasks section
+        if !app.subtasks.is_empty() {
+            lines.push(Line::styled(
+                "── Subtasks ──",
+                Style::default().fg(theme::surface1()),
+            ));
+            for sub in &app.subtasks {
+                let sub_icon = state_badge::task_state_icon(&sub.state);
+                let sub_style = state_badge::task_state_style(&sub.state);
+                lines.push(Line::from(vec![
+                    Span::styled(format!("  {} ", sub_icon), sub_style),
+                    Span::styled(
+                        format!("#{} ", sub.number),
+                        Style::default().fg(theme::overlay1()),
+                    ),
+                    Span::styled(format!("{:9} ", sub.state), sub_style),
+                    Span::styled(sub.title.clone(), Style::default().fg(theme::text())),
+                ]));
+            }
+            lines.push(Line::from(""));
+        }
 
         // Git branch status (if available)
         if let Some(ref git_status) = app.git_task_status {

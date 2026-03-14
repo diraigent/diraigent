@@ -244,9 +244,6 @@ pub fn validate_create_task(req: &CreateTask, pkg: Option<&Package>) -> Result<(
             "task kind",
         )?;
     }
-    if let Some(priority) = req.priority {
-        validate_priority(priority)?;
-    }
     if let Some(ref ctx) = req.context {
         validate_json_payload(ctx, "context")?;
     }
@@ -268,20 +265,8 @@ pub fn validate_update_task(req: &UpdateTask, pkg: Option<&Package>) -> Result<(
             "task kind",
         )?;
     }
-    if let Some(priority) = req.priority {
-        validate_priority(priority)?;
-    }
     if let Some(ref ctx) = req.context {
         validate_json_payload(ctx, "context")?;
-    }
-    Ok(())
-}
-
-fn validate_priority(priority: i32) -> Result<(), AppError> {
-    if !(-1000..=1000).contains(&priority) {
-        return Err(AppError::Validation(
-            "Priority must be between -1000 and 1000".into(),
-        ));
     }
     Ok(())
 }
@@ -340,6 +325,17 @@ fn validate_authorities(auths: &[String]) -> Result<(), AppError> {
     Ok(())
 }
 
+// ── Priority (used by Goal, not Task) ──
+
+fn validate_priority(priority: i32) -> Result<(), AppError> {
+    if !(-1000..=1000).contains(&priority) {
+        return Err(AppError::Validation(
+            "Priority must be between -1000 and 1000".into(),
+        ));
+    }
+    Ok(())
+}
+
 // ── Goal ──
 
 pub fn validate_create_goal(req: &CreateGoal) -> Result<(), AppError> {
@@ -365,6 +361,29 @@ pub fn validate_update_goal(req: &UpdateGoal) -> Result<(), AppError> {
     }
     if let Some(priority) = req.priority {
         validate_priority(priority)?;
+    }
+    Ok(())
+}
+
+// ── Plan ──
+
+pub fn validate_create_plan(req: &CreatePlan) -> Result<(), AppError> {
+    validate_str_len(&req.title, 1, 500, "Plan title")?;
+    if let Some(ref m) = req.metadata {
+        validate_json_payload(m, "metadata")?;
+    }
+    Ok(())
+}
+
+pub fn validate_update_plan(req: &UpdatePlan) -> Result<(), AppError> {
+    if let Some(ref title) = req.title {
+        validate_str_len(title, 1, 500, "Plan title")?;
+    }
+    if let Some(ref status) = req.status {
+        validate_enum_member(status, models::PLAN_STATUSES, "plan status")?;
+    }
+    if let Some(ref m) = req.metadata {
+        validate_json_payload(m, "metadata")?;
     }
     Ok(())
 }

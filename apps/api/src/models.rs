@@ -26,6 +26,7 @@ pub const UPDATE_KINDS: &[&str] = &[
     "progress", "blocker", "question", "artifact", "review", "note",
 ];
 pub const GOAL_STATUSES: &[&str] = &["active", "achieved", "abandoned", "paused"];
+pub const PLAN_STATUSES: &[&str] = &["active", "completed", "cancelled"];
 pub const GOAL_TYPES: &[&str] = &["epic", "feature", "milestone", "sprint", "initiative"];
 pub const KNOWLEDGE_CATEGORIES: &[&str] = &[
     "architecture",
@@ -379,7 +380,7 @@ pub struct Task {
     pub title: String,
     pub kind: String,
     pub state: String,
-    pub priority: i32,
+    pub urgent: bool,
     pub context: serde_json::Value,
     pub assigned_agent_id: Option<Uuid>,
     pub claimed_at: Option<DateTime<Utc>>,
@@ -391,6 +392,12 @@ pub struct Task {
     pub playbook_step: Option<i32>,
     /// FK to the decision that originated this task (nullable).
     pub decision_id: Option<Uuid>,
+    /// FK to a parent task for plan decomposition (nullable, self-referencing).
+    pub parent_id: Option<Uuid>,
+    /// FK to the plan this task belongs to (nullable).
+    pub plan_id: Option<Uuid>,
+    /// Position within the plan's landing sequence (0-indexed).
+    pub plan_position: i32,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -399,6 +406,9 @@ pub struct Task {
     pub reverted_at: Option<DateTime<Utc>>,
     /// User-toggleable flag (bookmark) for tracking tasks of interest.
     pub flagged: bool,
+    /// File paths this task intends to modify — used by the orchestra
+    /// to detect branch overlap and serialize conflicting work.
+    pub file_scope: Vec<String>,
     /// Accumulated LLM input tokens across all completed steps.
     pub input_tokens: i64,
     /// Accumulated LLM output tokens across all completed steps.
@@ -433,7 +443,7 @@ pub struct TaskSummaryForDecision {
     pub title: String,
     pub kind: String,
     pub state: String,
-    pub priority: i32,
+    pub urgent: bool,
     pub created_at: DateTime<Utc>,
 }
 
@@ -537,7 +547,7 @@ pub struct UpdateProject {
 pub struct CreateTask {
     pub title: String,
     pub kind: Option<String>,
-    pub priority: Option<i32>,
+    pub urgent: Option<bool>,
     pub context: Option<serde_json::Value>,
     pub required_capabilities: Option<Vec<String>>,
     pub playbook_id: Option<Uuid>,
@@ -545,21 +555,35 @@ pub struct CreateTask {
     pub decision_id: Option<Uuid>,
     /// Optional goal to link the new task to (inserts into task_goal join table).
     pub goal_id: Option<Uuid>,
+    /// File paths this task intends to modify (for branch overlap detection).
+    pub file_scope: Option<Vec<String>>,
+    /// Optional parent task ID for plan decomposition (self-referencing FK).
+    pub parent_id: Option<Uuid>,
+    /// Optional FK to the plan this task belongs to.
+    pub plan_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateTask {
     pub title: Option<String>,
     pub kind: Option<String>,
-    pub priority: Option<i32>,
+    pub urgent: Option<bool>,
     pub context: Option<serde_json::Value>,
     pub required_capabilities: Option<Vec<String>>,
     pub playbook_step: Option<i32>,
     /// Double-Option: None = don't change, Some(None) = clear, Some(Some(id)) = set.
     #[serde(default, deserialize_with = "deserialize_double_option")]
     pub playbook_id: Option<Option<Uuid>>,
+    /// Double-Option: None = don't change, Some(None) = clear, Some(Some(id)) = set.
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    pub plan_id: Option<Option<Uuid>>,
     /// User-toggleable flag (bookmark).
     pub flagged: Option<bool>,
+    /// File paths this task intends to modify (for branch overlap detection).
+    pub file_scope: Option<Vec<String>>,
+    /// Double-Option: None = don't change, Some(None) = clear, Some(Some(id)) = set parent.
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    pub parent_id: Option<Option<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -749,6 +773,24 @@ pub struct Playbook {
     pub parent_version: Option<i32>,
 }
 
+// ── Plan ──
+
+/// A plan groups related tasks with an ordered landing (merge) sequence.
+/// When an agent decomposes work into multiple subtasks, the plan coordinates
+/// merge order to prevent conflicts.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Plan {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub title: String,
+    pub description: Option<String>,
+    pub status: String,
+    pub metadata: serde_json::Value,
+    pub created_by: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Event {
     pub id: Uuid,
@@ -815,6 +857,51 @@ pub struct CreateGoalComment {
     pub agent_id: Option<Uuid>,
     pub content: String,
     pub metadata: Option<serde_json::Value>,
+}
+
+// ── Plan DTOs ──
+
+#[derive(Debug, Deserialize)]
+pub struct CreatePlan {
+    pub title: String,
+    pub description: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdatePlan {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub status: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReorderPlanTasks {
+    /// Ordered list of task IDs — position in the array becomes the landing order.
+    pub task_ids: Vec<Uuid>,
+}
+
+/// Request to add a task to a plan.
+#[derive(Debug, Deserialize)]
+pub struct AddTaskToPlan {
+    pub task_id: Uuid,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct PlanFilters {
+    pub status: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlanProgress {
+    pub plan_id: Uuid,
+    pub total_tasks: i64,
+    pub done_tasks: i64,
+    pub cancelled_tasks: i64,
+    pub working_tasks: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -997,7 +1084,7 @@ pub struct GoalStats {
 pub struct PromoteObservation {
     pub title: Option<String>,
     pub kind: Option<String>,
-    pub priority: Option<i32>,
+    pub urgent: Option<bool>,
     pub playbook_id: Option<Uuid>,
 }
 
@@ -1008,6 +1095,7 @@ pub struct CleanupObservationsResult {
     pub deleted_acted_on: i64,
     pub deleted_resolved: i64,
     pub deleted_duplicates: i64,
+    pub deleted_old: i64,
     pub total_deleted: i64,
 }
 
@@ -1368,6 +1456,10 @@ pub struct TaskFilters {
     pub goal_id: Option<Uuid>,
     /// When true, return only tasks not linked to any goal
     pub unlinked: Option<bool>,
+    /// Filter tasks by parent task ID (exact match)
+    pub parent_id: Option<Uuid>,
+    /// When true, return only top-level tasks (parent_id IS NULL)
+    pub root_only: Option<bool>,
 }
 
 // ── Metrics ──

@@ -131,6 +131,7 @@ async fn main() -> Result<()> {
     info!("listening (workers={})", config.max_workers);
 
     let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
+    let lock_queue: config::LockQueue = Arc::new(Mutex::new(HashMap::new()));
 
     // Spawn WebSocket client loop (handles chat + git requests)
     {
@@ -156,7 +157,7 @@ async fn main() -> Result<()> {
     }
 
     // Initial poll
-    spawner::poll_ready_tasks(&api, &config, &active).await;
+    spawner::poll_ready_tasks(&api, &config, &active, &lock_queue).await;
 
     // Main polling loop
     let mut last_poll = std::time::Instant::now();
@@ -166,8 +167,9 @@ async fn main() -> Result<()> {
             break;
         }
 
-        // Reap finished tasks
-        scheduler::reap_finished(&api, &config.projects_path, &active).await;
+        // Reap finished tasks — returns true if file locks were released.
+        let locks_released =
+            scheduler::reap_finished(&api, &config.projects_path, &active, &lock_queue).await;
 
         // Heartbeat every 60s
         if last_heartbeat.elapsed().as_secs() >= 60 {
@@ -177,9 +179,9 @@ async fn main() -> Result<()> {
             last_heartbeat = std::time::Instant::now();
         }
 
-        // Poll on interval
-        if last_poll.elapsed().as_secs() >= config.poll_interval {
-            spawner::poll_ready_tasks(&api, &config, &active).await;
+        // Poll on interval, or immediately when file locks were released (queue drain).
+        if locks_released || last_poll.elapsed().as_secs() >= config.poll_interval {
+            spawner::poll_ready_tasks(&api, &config, &active, &lock_queue).await;
             last_poll = std::time::Instant::now();
         }
 
@@ -198,7 +200,7 @@ async fn main() -> Result<()> {
     // Wait for active workers to finish (children should exit from SIGTERM)
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
-        scheduler::reap_finished(&api, &config.projects_path, &active).await;
+        scheduler::reap_finished(&api, &config.projects_path, &active, &lock_queue).await;
         if active.lock().await.is_empty() {
             break;
         }
