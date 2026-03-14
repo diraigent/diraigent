@@ -31,6 +31,10 @@ pub fn routes() -> Router<AppState> {
         .route("/goals/{goal_id}/stats", get(get_stats))
         .route("/goals/{goal_id}/children", get(list_children))
         .route(
+            "/{project_id}/goals/{goal_id}/activate",
+            post(activate_goal),
+        )
+        .route(
             "/goals/{goal_id}/comments",
             post(create_goal_comment).get(list_goal_comments),
         )
@@ -146,6 +150,39 @@ async fn delete_goal(
     .await?;
     state.db.delete_goal(goal_id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn activate_goal(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
+    Path((project_id, goal_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<Goal>, AppError> {
+    require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
+
+    // Verify the goal belongs to this project
+    let existing = state.db.get_goal_by_id(goal_id).await?;
+    if existing.project_id != project_id {
+        return Err(AppError::NotFound("Goal not found".into()));
+    }
+
+    let goal = state.db.activate_goal(goal_id).await?;
+
+    state.fire_event(
+        project_id,
+        "goal.activated",
+        "goal",
+        goal_id,
+        agent_id,
+        Some(user_id),
+        serde_json::json!({
+            "goal_id": goal_id,
+            "project_id": project_id,
+            "intent_type": goal.intent_type,
+        }),
+    );
+
+    Ok(Json(goal))
 }
 
 async fn link_task(

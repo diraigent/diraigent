@@ -168,6 +168,7 @@ pub trait DiraigentDb: Send + Sync {
         project_id: Uuid,
         filters: &GoalFilters,
     ) -> Result<Vec<Goal>, AppError>;
+    async fn activate_goal(&self, goal_id: Uuid) -> Result<Goal, AppError>;
     async fn update_goal(&self, id: Uuid, req: &UpdateGoal) -> Result<Goal, AppError>;
     async fn delete_goal(&self, id: Uuid) -> Result<(), AppError>;
     async fn link_task_goal(&self, goal_id: Uuid, task_id: Uuid) -> Result<TaskGoal, AppError>;

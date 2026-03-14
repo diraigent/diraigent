@@ -53,6 +53,39 @@ pub async fn get_goal_by_id(pool: &PgPool, id: Uuid) -> Result<Goal, AppError> {
     fetch_by_id(pool, Table::Goal, id, "Goal not found").await
 }
 
+pub async fn activate_goal(pool: &PgPool, goal_id: Uuid) -> Result<Goal, AppError> {
+    // Try to activate: only from 'active' or 'paused'
+    let maybe = sqlx::query_as::<_, Goal>(
+        "UPDATE diraigent.goal SET status = 'ready', updated_at = now()
+         WHERE id = $1 AND status IN ('active', 'paused')
+         RETURNING *",
+    )
+    .bind(goal_id)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(goal) = maybe {
+        return Ok(goal);
+    }
+
+    // No rows affected — check why
+    let existing = get_goal_by_id(pool, goal_id).await?; // 404 if not found
+    match existing.status.as_str() {
+        "ready" | "processing" => Err(AppError::Conflict(format!(
+            "Goal is already {}",
+            existing.status
+        ))),
+        "achieved" | "abandoned" => Err(AppError::Validation(format!(
+            "Cannot activate a goal with status '{}'",
+            existing.status
+        ))),
+        _ => Err(AppError::Validation(format!(
+            "Cannot activate a goal with status '{}'",
+            existing.status
+        ))),
+    }
+}
+
 pub async fn list_goals(
     pool: &PgPool,
     project_id: Uuid,
