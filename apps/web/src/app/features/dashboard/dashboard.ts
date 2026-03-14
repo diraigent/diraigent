@@ -224,7 +224,7 @@ export class DashboardPage {
     });
 
     const weekTasks = allTasks.filter(t => {
-      if (isInProgress(t.state)) return true;
+      if (isInProgress(t.state) && t.claimed_at && new Date(t.claimed_at) >= weekStart) return true;
       if (t.state === 'done' && t.completed_at && new Date(t.completed_at) >= weekStart) return true;
       return false;
     });
