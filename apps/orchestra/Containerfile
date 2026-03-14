@@ -6,8 +6,10 @@ ARG TARGETARCH
 
 # Install cross-compilation tools for arm64 (only when needed)
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
+      dpkg --add-architecture arm64 && \
       apt-get update && apt-get install -y --no-install-recommends \
-        gcc-aarch64-linux-gnu libc6-dev-arm64-cross && \
+        gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
+        libssl-dev:arm64 && \
       rustup target add aarch64-unknown-linux-gnu && \
       rm -rf /var/lib/apt/lists/*; \
     fi
@@ -34,6 +36,8 @@ RUN mkdir -p libs/common-rust/diraigent-types/src && echo "" > libs/common-rust/
 
 # Build dependencies only (this layer is cached until Cargo.toml/lock change)
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
+      PKG_CONFIG_ALLOW_CROSS=1 \
+      PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
       CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
       cargo build --release --target aarch64-unknown-linux-gnu -p diraigent-orchestra 2>/dev/null || true; \
     else \
@@ -51,6 +55,8 @@ RUN touch libs/common-rust/diraigent-types/src/lib.rs \
           apps/orchestra/src/cli.rs
 
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
+      PKG_CONFIG_ALLOW_CROSS=1 \
+      PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
       CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
       cargo build --release --target aarch64-unknown-linux-gnu -p diraigent-orchestra && \
       cp target/aarch64-unknown-linux-gnu/release/orchestra /usr/local/bin/orchestra && \
