@@ -1,0 +1,128 @@
+name: Release Web
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+
+concurrency:
+  group: release-web
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check for changes
+    runs-on: docker
+    container:
+      image: ${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/ci-deploy:latest
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.FORGEJO_TOKEN }}
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect changes since last tag
+        id: diff
+        run: |
+          PREV_TAG=$(git tag --sort=-v:refname | grep '^v[0-9]' | sed -n '2p')
+          if [ -z "$PREV_TAG" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "$PREV_TAG"..HEAD -- apps/web/ | grep -q .; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  amd64:
+    name: Web (amd64)
+    needs: [check]
+    if: needs.check.outputs.changed == 'true'
+    runs-on: docker
+    container:
+      image: ${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/ci-deploy:latest
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.FORGEJO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create buildx builder
+        run: docker buildx create --name builder --driver docker-container --use && docker buildx inspect --bootstrap
+      - name: Login to registries
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          docker login ${{ vars.REGISTRY_URL }} -u ${{ github.repository_owner }} -p ${{ secrets.FORGEJO_TOKEN }}
+      - name: Build and push
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          FORGEJO="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/web"
+          docker buildx build \
+            --platform linux/amd64 \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            -f apps/web/Containerfile \
+            -t "diraigent/web:${VERSION}-amd64" \
+            -t "${FORGEJO}:${VERSION}-amd64" \
+            --push apps/web/
+
+  arm64:
+    name: Web (arm64)
+    needs: [check]
+    if: needs.check.outputs.changed == 'true'
+    runs-on: docker
+    container:
+      image: ${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/ci-deploy:latest
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.FORGEJO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create buildx builder
+        run: docker buildx create --name builder --driver docker-container --use && docker buildx inspect --bootstrap
+      - name: Login to registries
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          docker login ${{ vars.REGISTRY_URL }} -u ${{ github.repository_owner }} -p ${{ secrets.FORGEJO_TOKEN }}
+      - name: Build and push
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          FORGEJO="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/web"
+          docker buildx build \
+            --platform linux/arm64 \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            -f apps/web/Containerfile \
+            -t "diraigent/web:${VERSION}-arm64" \
+            -t "${FORGEJO}:${VERSION}-arm64" \
+            --push apps/web/
+
+  manifest:
+    name: Web (manifest)
+    needs: [amd64, arm64]
+    runs-on: docker
+    container:
+      image: ${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/ci-deploy:latest
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.FORGEJO_TOKEN }}
+    steps:
+      - name: Login to registries
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          docker login ${{ vars.REGISTRY_URL }} -u ${{ github.repository_owner }} -p ${{ secrets.FORGEJO_TOKEN }}
+      - name: Create and push manifests
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          FORGEJO="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/web"
+
+          docker buildx imagetools create \
+            -t "diraigent/web:${VERSION}" \
+            -t "diraigent/web:latest" \
+            "diraigent/web:${VERSION}-amd64" \
+            "diraigent/web:${VERSION}-arm64"
+
+          docker buildx imagetools create \
+            -t "${FORGEJO}:${VERSION}" \
+            -t "${FORGEJO}:latest" \
+            "${FORGEJO}:${VERSION}-amd64" \
+            "${FORGEJO}:${VERSION}-arm64"

@@ -4,6 +4,7 @@ mod api;
 mod constants;
 mod context;
 mod crypto;
+mod diraigent_config;
 mod git;
 mod prompt;
 mod step_profile;

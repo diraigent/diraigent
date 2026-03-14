@@ -343,6 +343,9 @@ pub fn validate_create_goal(req: &CreateGoal) -> Result<(), AppError> {
     if let Some(ref goal_type) = req.goal_type {
         validate_enum_member(goal_type, models::GOAL_TYPES, "goal type")?;
     }
+    if let Some(ref intent_type) = req.intent_type {
+        validate_enum_member(intent_type, models::GOAL_INTENT_TYPES, "goal intent type")?;
+    }
     if let Some(priority) = req.priority {
         validate_priority(priority)?;
     }
@@ -358,6 +361,9 @@ pub fn validate_update_goal(req: &UpdateGoal) -> Result<(), AppError> {
     }
     if let Some(ref goal_type) = req.goal_type {
         validate_enum_member(goal_type, models::GOAL_TYPES, "goal type")?;
+    }
+    if let Some(Some(ref intent_type)) = req.intent_type {
+        validate_enum_member(intent_type, models::GOAL_INTENT_TYPES, "goal intent type")?;
     }
     if let Some(priority) = req.priority {
         validate_priority(priority)?;

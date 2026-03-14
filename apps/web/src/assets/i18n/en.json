@@ -41,6 +41,7 @@
     "agent": "Agent",
     "tabReview": "Human Review",
     "tabObservations": "Observations",
+    "tabDecisions": "Decisions",
     "blocked": "Blocked",
     "mergeConflict": "Merge Conflict",
     "blockers": "Blockers",

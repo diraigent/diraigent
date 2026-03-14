@@ -25,7 +25,16 @@ pub const AGENT_STATUSES: &[&str] = &["idle", "working", "offline", "revoked"];
 pub const UPDATE_KINDS: &[&str] = &[
     "progress", "blocker", "question", "artifact", "review", "note",
 ];
-pub const GOAL_STATUSES: &[&str] = &["active", "achieved", "abandoned", "paused"];
+pub const GOAL_STATUSES: &[&str] = &[
+    "active",
+    "achieved",
+    "abandoned",
+    "paused",
+    "ready",
+    "processing",
+];
+pub const GOAL_INTENT_TYPES: &[&str] =
+    &["complex", "simple", "hotfix", "investigation", "refactor"];
 pub const PLAN_STATUSES: &[&str] = &["active", "completed", "cancelled"];
 pub const GOAL_TYPES: &[&str] = &["epic", "feature", "milestone", "sprint", "initiative"];
 pub const KNOWLEDGE_CATEGORIES: &[&str] = &[
@@ -653,6 +662,7 @@ pub struct Goal {
     pub priority: i32,
     pub parent_goal_id: Option<Uuid>,
     pub auto_status: bool,
+    pub intent_type: Option<String>,
     pub target_date: Option<DateTime<Utc>>,
     pub success_criteria: serde_json::Value,
     pub metadata: serde_json::Value,
@@ -817,6 +827,7 @@ pub struct CreateGoal {
     pub priority: Option<i32>,
     pub parent_goal_id: Option<Uuid>,
     pub auto_status: Option<bool>,
+    pub intent_type: Option<String>,
     pub target_date: Option<DateTime<Utc>>,
     pub success_criteria: Option<serde_json::Value>,
     pub metadata: Option<serde_json::Value>,
@@ -832,6 +843,8 @@ pub struct UpdateGoal {
     #[serde(default, deserialize_with = "deserialize_double_option")]
     pub parent_goal_id: Option<Option<Uuid>>,
     pub auto_status: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    pub intent_type: Option<Option<String>>,
     pub target_date: Option<DateTime<Utc>>,
     pub success_criteria: Option<serde_json::Value>,
     pub metadata: Option<serde_json::Value>,
@@ -1939,6 +1952,28 @@ pub struct EventObservationRuleFilters {
     pub enabled: Option<bool>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+}
+
+// ── Related Items ──
+
+/// A single related item (knowledge, decision, or observation) with a relevance score.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelatedItem {
+    pub entity_type: String,
+    pub id: Uuid,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<String>,
+    pub relevance_score: f64,
+    pub reason: String,
+}
+
+/// Grouped related items by entity type.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RelatedItems {
+    pub knowledge: Vec<RelatedItem>,
+    pub decisions: Vec<RelatedItem>,
+    pub observations: Vec<RelatedItem>,
 }
 
 /// Used by the stale-task detector to carry task+agent info across backends.

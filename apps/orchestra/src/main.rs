@@ -6,6 +6,7 @@ mod config;
 mod constants;
 mod context;
 mod crypto;
+mod diraigent_config;
 mod git;
 mod git_handler;
 mod git_provisioner;
@@ -27,11 +28,12 @@ mod ws_protocol;
 use anyhow::Result;
 use api::ProjectsApi;
 use config::{ActiveTasks, Config};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::Mutex;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -182,6 +184,7 @@ async fn main() -> Result<()> {
         // Poll on interval, or immediately when file locks were released (queue drain).
         if locks_released || last_poll.elapsed().as_secs() >= config.poll_interval {
             spawner::poll_ready_tasks(&api, &config, &active, &lock_queue).await;
+            process_ready_goals(&api).await;
             last_poll = std::time::Instant::now();
         }
 
@@ -214,5 +217,145 @@ async fn main() -> Result<()> {
 
     std::fs::remove_file(&config.lockfile).ok();
     info!("shutdown complete");
+    Ok(())
+}
+
+/// Find a Research playbook ID from the list of available playbooks.
+/// Looks for a playbook with "Research" in the title or "research" in tags.
+fn find_research_playbook(playbooks: &[Value]) -> Option<String> {
+    for pb in playbooks {
+        let title = pb["title"].as_str().unwrap_or("");
+        if title.to_lowercase().contains("research") {
+            return pb["id"].as_str().map(|s| s.to_string());
+        }
+        if let Some(tags) = pb["tags"].as_array() {
+            for tag in tags {
+                if tag.as_str().map(|t| t == "research").unwrap_or(false) {
+                    return pb["id"].as_str().map(|s| s.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Poll all projects for goals in 'ready' status and create tasks from them.
+///
+/// For each ready goal, the function:
+/// 1. Transitions the goal to 'processing'
+/// 2. Creates task(s) based on the goal's intent_type
+/// 3. Links the created task to the goal
+/// 4. Transitions the goal to 'active'
+///
+/// Errors on individual goals are logged but do not stop batch processing.
+async fn process_ready_goals(api: &ProjectsApi) {
+    let projects = match api.list_projects().await {
+        Ok(p) => p,
+        Err(e) => {
+            warn!("goals: failed to fetch projects: {e}");
+            return;
+        }
+    };
+
+    // Cache playbooks once per poll cycle (for research playbook lookup)
+    let playbooks = api.list_playbooks().await.unwrap_or_default();
+
+    for project in &projects {
+        let project_id = match project["id"].as_str() {
+            Some(id) => id,
+            None => continue,
+        };
+
+        let default_playbook_id = project["default_playbook_id"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+
+        let goals = match api.list_goals_by_status(project_id, "ready").await {
+            Ok(g) => g,
+            Err(e) => {
+                warn!("goals: failed to fetch ready goals for project {project_id}: {e}");
+                continue;
+            }
+        };
+
+        for goal in &goals {
+            if let Err(e) =
+                process_single_goal(api, project_id, goal, &default_playbook_id, &playbooks).await
+            {
+                let goal_id = goal["id"].as_str().unwrap_or("unknown");
+                error!("goals: failed to process goal {goal_id}: {e:#}");
+            }
+        }
+    }
+}
+
+/// Process a single goal: create the appropriate task and link it.
+async fn process_single_goal(
+    api: &ProjectsApi,
+    project_id: &str,
+    goal: &Value,
+    default_playbook_id: &str,
+    playbooks: &[Value],
+) -> Result<()> {
+    let goal_id = goal["id"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("goal missing id"))?;
+    let goal_title = goal["title"].as_str().unwrap_or("Untitled goal");
+    let goal_description = goal["description"].as_str().unwrap_or("");
+    let intent_type = goal["intent_type"].as_str().unwrap_or("complex");
+
+    // 1. Transition goal to 'processing'
+    api.update_goal_status(goal_id, "processing").await?;
+
+    // 2. Determine task parameters based on intent_type
+    let (kind, playbook_id, urgent, decompose) = match intent_type {
+        "simple" => ("feature", default_playbook_id.to_string(), false, false),
+        "hotfix" => ("bug", default_playbook_id.to_string(), true, false),
+        "investigation" => {
+            let research_pb = find_research_playbook(playbooks)
+                .unwrap_or_else(|| default_playbook_id.to_string());
+            ("research", research_pb, false, false)
+        }
+        "refactor" => ("refactor", default_playbook_id.to_string(), false, false),
+        // "complex", null/missing, or any unknown type → decompose
+        _ => ("feature", default_playbook_id.to_string(), false, true),
+    };
+
+    // 3. Build task body
+    let mut context = serde_json::json!({
+        "spec": goal_description,
+    });
+    if decompose {
+        context["decompose"] = serde_json::json!(true);
+    }
+
+    let mut task_body = serde_json::json!({
+        "title": goal_title,
+        "kind": kind,
+        "playbook_id": playbook_id,
+        "context": context,
+    });
+    if urgent {
+        task_body["urgent"] = serde_json::json!(true);
+    }
+
+    // 4. Create the task
+    let created_task = api.create_task(project_id, &task_body).await?;
+    let task_id = created_task["id"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("created task missing id"))?;
+
+    // 5. Link the task to the goal
+    api.link_task_to_goal(goal_id, task_id).await?;
+
+    // 6. Transition goal to 'active'
+    api.update_goal_status(goal_id, "active").await?;
+
+    info!(
+        "Processed goal {} ({}): created task {}",
+        goal_id, intent_type, task_id
+    );
+
     Ok(())
 }

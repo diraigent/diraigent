@@ -32,11 +32,14 @@ export class ChatService {
   readonly scrollToChat = signal(false);
   /** Whether the chat panel is collapsed to just the header. */
   readonly collapsed = signal(localStorage.getItem('diraigent-chat-collapsed') === 'true');
+  /** The chat model name from the server config. */
+  readonly chatModel = signal<string>('');
 
   private abortController: AbortController | null = null;
   private generation = 0;
 
   constructor() {
+    this.fetchChatModel();
     // Load stored messages on init and when project changes
     effect(() => {
       const pid = this.project.projectId();
@@ -246,5 +249,18 @@ export class ChatService {
     this.error.set(null);
     this.abortController?.abort();
     this.abortController = null;
+  }
+
+  private async fetchChatModel(): Promise<void> {
+    try {
+      const res = await fetch(`${environment.apiServer}/config`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.chat_model) {
+        this.chatModel.set(data.chat_model);
+      }
+    } catch {
+      // Config endpoint unavailable — leave model blank
+    }
   }
 }

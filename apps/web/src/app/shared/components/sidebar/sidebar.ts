@@ -53,9 +53,9 @@ export class SidebarComponent {
   /** Track which groups are expanded */
   private expandedGroups = new Set<string>();
 
-  /** Combined badge for review queue: human reviews + open observations */
+  /** Combined badge for review queue: human reviews + open observations + proposed decisions */
   private reviewQueueBadge = computed(() =>
-    this.badges.humanReviewCount() + this.badges.openObservations(),
+    this.badges.humanReviewCount() + this.badges.openObservations() + this.badges.proposedDecisions(),
   );
 
   readonly navEntries: NavEntry[] = [
@@ -65,7 +65,6 @@ export class SidebarComponent {
       labelKey: 'nav.reference',
       icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10',
       children: [
-        { path: '/decisions', labelKey: 'nav.decisions', icon: 'M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3', badge: this.badges.proposedDecisions },
         { path: '/knowledge', labelKey: 'nav.knowledge', icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253' },
         { path: '/verifications', labelKey: 'nav.verifications', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
         { path: '/reports', labelKey: 'nav.reports', icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },

@@ -2,6 +2,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::AppState;
@@ -65,6 +66,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/tasks/{task_id}/goals", get(list_task_goals))
         .route("/tasks/{task_id}/children", get(list_task_children))
+        .route("/tasks/{task_id}/related", get(get_related_items))
         .route("/tasks/{task_id}/cost", post(record_task_cost))
 }
 
@@ -254,6 +256,41 @@ async fn list_task_children(
     require_membership(state.db.as_ref(), agent_id, user_id, task.project_id).await?;
     let children = state.db.list_task_children(task_id).await?;
     Ok(Json(children))
+}
+
+/// Query parameters for the related-items endpoint.
+#[derive(Debug, Deserialize)]
+struct RelatedItemsQuery {
+    /// Maximum number of items to return per entity type (default 5, max 20).
+    limit: Option<i64>,
+}
+
+/// `GET /tasks/{task_id}/related`
+///
+/// Return knowledge entries, decisions, and observations related to the given
+/// task, ranked by relevance. Uses keyword and file-path matching against the
+/// task's title, spec, acceptance criteria, and context.files.
+async fn get_related_items(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
+    Path(task_id): Path<Uuid>,
+    Query(params): Query<RelatedItemsQuery>,
+) -> Result<Json<RelatedItems>, AppError> {
+    let task = state.db.get_task_by_id(task_id).await?;
+    require_membership(state.db.as_ref(), agent_id, user_id, task.project_id).await?;
+
+    let limit = params.limit.unwrap_or(5).clamp(1, 20) as usize;
+
+    let mut related =
+        crate::repository::find_related_for_task(&state.pool, task.project_id, &task).await?;
+
+    // Cap each entity-type list to the requested limit.
+    related.knowledge.truncate(limit);
+    related.decisions.truncate(limit);
+    related.observations.truncate(limit);
+
+    Ok(Json(related))
 }
 
 async fn get_task(

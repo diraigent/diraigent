@@ -1,5 +1,73 @@
 # Changelog
 
+## v20260314-1320
+
+### API
+- **Goal activation endpoint**: `POST /{project_id}/goals/{goal_id}/activate` to trigger goal processing
+- **Goal intent types**: `intent_type` column on goals; status lifecycle extended with `ready`/`processing` states
+- **Related items endpoint**: `GET /tasks/{id}/related` returns contextually related items via text-based relevance matching
+- **Event-observation rules**: Full CRUD API for rules that auto-create observations when matching events fire
+- **Event trigger engine**: Automatically creates observations from matching event-observation rules
+- **Enriched agent context**: Task context now includes relevant knowledge entries and decisions
+- **Tasks page removed**: Tasks are now accessed through goals
+
+### Orchestra
+- **`.diraigent/` project config**: Repos can now include a `.diraigent/` folder with hook scripts (`release.sh`, etc.) and a `config.toml` for template selection
+- **Configurable release strategy**: Release can use built-in templates (`squash-merge`, `merge-commit`, `tag-only`) or a custom script with env vars (`DIRAIGENT_PROJECT_PATH`, `DIRAIGENT_BRANCH`, `DIRAIGENT_TARGET_BRANCH`, `DIRAIGENT_VERSION`)
+- **Goal processing**: Orchestra polls for ready goals and auto-creates tasks
+- **Git event emission**: Merge, push, revert, and release operations now emit structured events to the API
+
+### Web Dashboard
+- **Show chat model** in AI assistant header
+- **Decisions moved** from reference nav group to review queue tab
+- **Fix week token count** including all in-progress tasks regardless of date
+- **Fix goal drag-and-drop** snapping back
+
+### CI/CD
+- **Split release workflows**: Monolith `release-diraigent.yml` replaced with per-app workflows (`release-api.yml`, `release-orchestra.yml`, `release-web.yml`) with change detection — unchanged apps skip builds entirely
+- **Reduced runner contention**: Max 2 runner slots per app instead of 6+ simultaneous builds
+
+---
+
+## v202603014-03 — 2026-03-14
+
+### API
+- **Plan entity**: Full CRUD API with ordered task sequences
+- **Task parent-child hierarchy**: `parent_id` column, child listing, subtask count
+- **File scope**: `file_scope` column on tasks for branch overlap detection
+- **Sequential task queuing**: Overlapping file scopes are queued instead of running in parallel
+- **Priority → urgent toggle**: Replaced numeric priority with boolean `urgent` flag
+- **Auto-delete old observations**: Configurable retention period
+- **Release feature**: Squash-merge dev → main with tagging and multi-remote push
+
+### Orchestra
+- **File lock acquisition/release** for safe parallel task execution
+- **Priority → urgent flag** in CLI and agent prompt
+- **Propagate parent_id and plan_id** when agents decompose tasks into subtasks
+- **Post comment on UnexpectedState** outcome for better debugging
+
+### Web Dashboard
+- **3-panel layout redesign**: Chat panel converted from floating overlay to always-visible inline panel with collapsible animation
+- **Plan management**: Plan list page, detail page with task ordering
+- **Task hierarchy views**: Parent-child relationships and plan membership displayed
+- **Priority → urgent toggle** across all task views
+- **Token usage stats**: Today/week/total on dashboard
+- **Mobile improvements**: Jump-to-chat FAB, CDK drag-drop disabled on touch devices, playbook builder responsive grid
+- **Chat UX**: Tool messages collapsed into single spinner indicator
+- **Goal drag-and-drop fixes**
+
+### TUI
+- **Plans view** with task list and progress display
+- **Task parent-child hierarchy** rendering
+- **Priority → urgent toggle**
+
+### CI/CD
+- **Release workflow**: Added release button with squash-merge and tagging support
+- Forgejo release jobs split per architecture
+- Deploy workflows switched to buildx
+
+---
+
 ## v20260313-03 — 2026-03-13
 
 ### API
