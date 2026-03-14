@@ -14,11 +14,6 @@ export const routes: Routes = [
     loadComponent: () => import('./features/goals/goals').then(m => m.WorkPage),
   },
   {
-    path: 'tasks',
-    redirectTo: 'work',
-    pathMatch: 'full',
-  },
-  {
     path: 'review',
     canActivate: [AuthGuard],
     loadComponent: () => import('./features/review/review').then(m => m.ReviewPage),
