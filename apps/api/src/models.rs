@@ -653,7 +653,6 @@ pub struct Goal {
     pub parent_goal_id: Option<Uuid>,
     pub auto_status: bool,
     pub intent_type: Option<String>,
-    pub target_date: Option<DateTime<Utc>>,
     pub success_criteria: serde_json::Value,
     pub metadata: serde_json::Value,
     pub sort_order: i32,
@@ -801,7 +800,6 @@ pub struct CreateGoal {
     pub parent_goal_id: Option<Uuid>,
     pub auto_status: Option<bool>,
     pub intent_type: Option<String>,
-    pub target_date: Option<DateTime<Utc>>,
     pub success_criteria: Option<serde_json::Value>,
     pub metadata: Option<serde_json::Value>,
 }
@@ -818,7 +816,6 @@ pub struct UpdateGoal {
     pub auto_status: Option<bool>,
     #[serde(default, deserialize_with = "deserialize_double_option")]
     pub intent_type: Option<Option<String>>,
-    pub target_date: Option<DateTime<Utc>>,
     pub success_criteria: Option<serde_json::Value>,
     pub metadata: Option<serde_json::Value>,
     pub sort_order: Option<i32>,

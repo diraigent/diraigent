@@ -18,7 +18,6 @@ export interface SpGoal {
   parent_goal_id: string | null;
   auto_status: boolean;
   success_criteria: string;
-  target_date: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
   created_by: string;
@@ -63,7 +62,6 @@ export interface SpGoalCreate {
   title: string;
   description: string;
   success_criteria: string;
-  target_date?: string | null;
   goal_type?: GoalType;
   priority?: number;
   parent_goal_id?: string | null;
@@ -81,7 +79,6 @@ export interface SpGoalUpdate {
   description?: string;
   status?: GoalStatus;
   success_criteria?: string;
-  target_date?: string | null;
   goal_type?: GoalType;
   priority?: number;
   parent_goal_id?: string | null;

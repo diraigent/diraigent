@@ -243,9 +243,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   </div>
                 </div>
               }
-              @if (goal.target_date) {
-                <p class="text-xs text-text-muted mt-1 ml-6">{{ t('goals.targetDate') }}: {{ goal.target_date | date:'mediumDate' }}</p>
-              }
             }
           </button>
 
@@ -499,14 +496,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
                          focus:outline-none focus:ring-1 focus:ring-accent resize-y"
                   [placeholder]="t('goals.fieldCriteria')"></textarea>
-              </div>
-
-              <!-- Target date -->
-              <div class="mb-4">
-                <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1">{{ t('goals.targetDate') }}</h3>
-                <input type="date" [(ngModel)]="formTargetDate" (change)="saveInlineField()"
-                  class="bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                         focus:outline-none focus:ring-1 focus:ring-accent" />
               </div>
 
               <!-- Linked Tasks -->
@@ -909,12 +898,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                          focus:outline-none focus:ring-1 focus:ring-accent resize-y"></textarea>
               </div>
               <div>
-                <label for="goal-target-date" class="block text-sm text-text-secondary mb-1">{{ t('goals.targetDate') }}</label>
-                <input id="goal-target-date" type="date" [(ngModel)]="formTargetDate"
-                  class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                         focus:outline-none focus:ring-1 focus:ring-accent" />
-              </div>
-              <div>
                 <label for="goal-type" class="block text-sm text-text-secondary mb-1">{{ t('goals.fieldType') }}</label>
                 <select id="goal-type" [(ngModel)]="formGoalType"
                   class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
@@ -1084,7 +1067,6 @@ export class WorkPage {
   formTitle = '';
   formDescription = '';
   formCriteria = '';
-  formTargetDate = '';
   formGoalType: GoalType = 'epic';
   formPriority = 0;
   formAutoStatus = false;
@@ -1531,7 +1513,6 @@ export class WorkPage {
       this.formTitle = goal.title;
       this.formDescription = goal.description;
       this.formCriteria = goal.success_criteria;
-      this.formTargetDate = goal.target_date ?? '';
       this.formGoalType = goal.goal_type;
       this.formPriority = goal.priority;
       this.formAutoStatus = goal.auto_status;
@@ -1606,7 +1587,6 @@ export class WorkPage {
     this.formTitle = '';
     this.formDescription = '';
     this.formCriteria = '';
-    this.formTargetDate = '';
     this.formGoalType = 'epic';
     this.formPriority = 0;
     this.formAutoStatus = false;
@@ -1620,7 +1600,6 @@ export class WorkPage {
       sel.title === this.formTitle &&
       sel.description === this.formDescription &&
       sel.success_criteria === this.formCriteria &&
-      (sel.target_date ?? '') === this.formTargetDate &&
       sel.goal_type === this.formGoalType &&
       sel.priority === this.formPriority &&
       sel.auto_status === this.formAutoStatus
@@ -1632,7 +1611,6 @@ export class WorkPage {
         title: this.formTitle,
         description: this.formDescription,
         success_criteria: this.formCriteria,
-        target_date: this.formTargetDate || null,
         goal_type: this.formGoalType,
         priority: this.formPriority,
         auto_status: this.formAutoStatus,
@@ -1648,14 +1626,12 @@ export class WorkPage {
   }
 
   submitForm(): void {
-    const targetDate = this.formTargetDate || null;
     const existing = this.editing();
     if (existing) {
       this.api.update(existing.id, {
         title: this.formTitle,
         description: this.formDescription,
         success_criteria: this.formCriteria,
-        target_date: targetDate,
         goal_type: this.formGoalType,
         priority: this.formPriority,
         auto_status: this.formAutoStatus,
@@ -1670,7 +1646,6 @@ export class WorkPage {
         title: this.formTitle,
         description: this.formDescription,
         success_criteria: this.formCriteria,
-        target_date: targetDate,
         goal_type: this.formGoalType,
         priority: this.formPriority,
         auto_status: this.formAutoStatus,

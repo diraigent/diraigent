@@ -609,7 +609,6 @@ async fn build_goals_section(api: &ProjectsApi, project_id: &str) -> String {
     for (g, progress) in active_goals.iter().zip(progress_results) {
         let title = g["title"].as_str().unwrap_or("untitled");
         let desc = g["description"].as_str().unwrap_or("");
-        let target = g["target_date"].as_str().unwrap_or("no date");
         let progress_str = progress
             .map(|p| {
                 let done = p["done_tasks"].as_u64().unwrap_or(0);
@@ -618,7 +617,7 @@ async fn build_goals_section(api: &ProjectsApi, project_id: &str) -> String {
             })
             .unwrap_or_else(|| "progress unknown".to_string());
         goals_section.push_str(&format!(
-            "- **{title}**: {desc} (target: {target}, progress: {progress_str})\n"
+            "- **{title}**: {desc} (progress: {progress_str})\n"
         ));
     }
     goals_section

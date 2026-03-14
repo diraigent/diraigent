@@ -26,8 +26,8 @@ pub async fn create_goal(
     let auto_status = req.auto_status.unwrap_or(false);
 
     let goal = sqlx::query_as::<_, Goal>(
-        "INSERT INTO diraigent.goal (project_id, title, description, goal_type, priority, parent_goal_id, auto_status, intent_type, target_date, success_criteria, metadata, created_by, sort_order)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+        "INSERT INTO diraigent.goal (project_id, title, description, goal_type, priority, parent_goal_id, auto_status, intent_type, success_criteria, metadata, created_by, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
                  (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM diraigent.goal WHERE project_id = $1))
          RETURNING *",
     )
@@ -39,7 +39,6 @@ pub async fn create_goal(
     .bind(req.parent_goal_id)
     .bind(auto_status)
     .bind(&req.intent_type)
-    .bind(req.target_date)
     .bind(&success_criteria)
     .bind(&metadata)
     .bind(created_by)
@@ -149,7 +148,6 @@ pub async fn update_goal(pool: &PgPool, id: Uuid, req: &UpdateGoal) -> Result<Go
         Some(None) => None,                      // clear
         Some(Some(v)) => Some(v.as_str()),       // set
     };
-    let target_date = req.target_date.or(existing.target_date);
     let success_criteria = req
         .success_criteria
         .as_ref()
@@ -160,8 +158,8 @@ pub async fn update_goal(pool: &PgPool, id: Uuid, req: &UpdateGoal) -> Result<Go
     let goal = sqlx::query_as::<_, Goal>(
         "UPDATE diraigent.goal
          SET title = $2, description = $3, status = $4, goal_type = $5, priority = $6,
-             parent_goal_id = $7, auto_status = $8, intent_type = $9, target_date = $10,
-             success_criteria = $11, metadata = $12, sort_order = $13
+             parent_goal_id = $7, auto_status = $8, intent_type = $9,
+             success_criteria = $10, metadata = $11, sort_order = $12
          WHERE id = $1 RETURNING *",
     )
     .bind(id)
@@ -173,7 +171,6 @@ pub async fn update_goal(pool: &PgPool, id: Uuid, req: &UpdateGoal) -> Result<Go
     .bind(parent_goal_id)
     .bind(auto_status)
     .bind(intent_type)
-    .bind(target_date)
     .bind(success_criteria)
     .bind(metadata)
     .bind(sort_order)
