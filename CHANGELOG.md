@@ -1,9 +1,35 @@
-## v20260314-1902 (2026-03-14)
-- Resolved merge conflicts in web app from concurrent feature branches
-- Automated release workflow with changelog generation and git tagging
-- Releases now automatically push tags to both Forgejo and GitHub mirror
-
 # Changelog
+
+## v20260314-1902 (2026-03-14)
+
+### API
+- **Remove Plan entity**: Plans removed entirely; task ordering moved to `position` column on `task_goal` join table
+- **Goal task reorder endpoint**: `POST /{project_id}/goals/{goal_id}/tasks/reorder` for drag-and-drop ordering within goals
+- **Token time series**: `tokens_per_day` added to ProjectMetrics endpoint
+- **Merge failure → human_review**: Tasks now transition to `human_review` on merge failure, creating a review queue item
+
+### Orchestra
+- **Plan references removed**: Agent prompts and decompose mode no longer reference plans
+- **Merge failure review**: Merge failures create observations and transition tasks to human_review for visibility
+
+### Web Dashboard
+- **Token usage chart**: Token usage over time chart on dashboard, fetched from metrics API
+- **Fullscreen chat**: Toggle chat panel to full-screen mode
+- **Collapsible chat panel**: Chat panel can be collapsed to header only
+- **Logarithmic chart scale**: Token usage chart y-axis uses logarithmic scale
+- **Plans removed**: Plans page, sidebar entry, and all plan references removed from UI
+- **Fix git push error**: Goals UI no longer shows `[object Object]` on git push errors
+- **Fix goal reorder**: Drag-and-drop snapping fixed
+
+### TUI
+- **Plans removed**: Plans view and all plan references removed
+
+### CI/CD
+- **Automated release**: `release.sh` generates commit messages and changelog via `claude -p`
+- **Image retagging**: Release workflow retags images instead of rebuilding
+- **Changelog in dev**: Release merges main back into dev so changelog is present in both branches
+
+---
 
 ## v20260314-1320
 
