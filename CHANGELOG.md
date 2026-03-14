@@ -1,3 +1,8 @@
+## v20260314-1902 (2026-03-14)
+- Resolved merge conflicts in web app from concurrent feature branches
+- Automated release workflow with changelog generation and git tagging
+- Releases now automatically push tags to both Forgejo and GitHub mirror
+
 # Changelog
 
 ## v20260314-1320
