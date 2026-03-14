@@ -1,9 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TAG="v$(date -u +%Y%m%d-%H%M)"
+
 git checkout main
 git merge --squash dev
-git add .
-git commit -m "Release"
-#git tag "v$(date -u +%Y%m%d-%H%M)"
 
-# git push origin main --tags
-# git push github main --tags
+# Generate changelog entry and commit message from the squashed diff
+COMMIT_MSG=$(git diff --cached --stat | claude -p \
+  "You are writing a release commit message and changelog entry.
+   Above is the diff stat for a squash merge from dev to main.
+   Here are the individual commits being merged:
+
+   $(git log main..dev --oneline)
+
+   1. Output a COMMIT MESSAGE (first line: 'Release $TAG', then blank line, then bullet points summarizing the changes — group by area: API, Orchestra, Web, TUI, etc.)
+   2. Output '---CHANGELOG---' on its own line
+   3. Output a CHANGELOG entry in this format:
+      ## $TAG ($(date -u +%Y-%m-%d))
+      - bullet points of notable changes (user-facing, not internal refactors)
+
+   Output ONLY the commit message and changelog, nothing else." 2>/dev/null)
+
+# Split output into commit message and changelog
+COMMIT_BODY=$(echo "$COMMIT_MSG" | sed '/^---CHANGELOG---$/,$d')
+CHANGELOG_ENTRY=$(echo "$COMMIT_MSG" | sed '1,/^---CHANGELOG---$/d')
+
+# Prepend changelog entry
+if [ -f CHANGELOG.md ]; then
+  { echo "$CHANGELOG_ENTRY"; echo ""; cat CHANGELOG.md; } > CHANGELOG.md.tmp
+  mv CHANGELOG.md.tmp CHANGELOG.md
+else
+  echo "# Changelog" > CHANGELOG.md
+  echo "" >> CHANGELOG.md
+  echo "$CHANGELOG_ENTRY" >> CHANGELOG.md
+fi
+
+git add .
+git commit -m "$COMMIT_BODY"
+git tag "$TAG"
+
+git push origin main --tags
+git push github main --tags
 git checkout dev
