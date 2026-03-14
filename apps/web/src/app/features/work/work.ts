@@ -1051,6 +1051,20 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
             </div>
             <p class="text-sm text-text-secondary mb-4">{{ t('goals.planDialogDesc') }}</p>
 
+            @if (planSuccessCriteria().length > 0) {
+              <div class="mb-4 bg-ctp-green/5 border border-ctp-green/20 rounded-lg p-3">
+                <h3 class="text-xs font-semibold text-ctp-green uppercase tracking-wider mb-2">{{ t('goals.planGeneratedCriteria') }}</h3>
+                <ul class="space-y-1">
+                  @for (criterion of planSuccessCriteria(); track $index) {
+                    <li class="flex items-start gap-1.5 text-xs text-text-primary">
+                      <span class="text-ctp-green mt-0.5 shrink-0">&#10003;</span>
+                      <span>{{ criterion }}</span>
+                    </li>
+                  }
+                </ul>
+              </div>
+            }
+
             @if (plannedTasks().length === 0) {
               <p class="text-sm text-text-secondary py-8 text-center">{{ t('goals.planEmpty') }}</p>
             } @else {
@@ -1219,6 +1233,7 @@ export class WorkPage {
   // Plan tasks
   planLoading = signal(false);
   plannedTasks = signal<PlannedTask[]>([]);
+  planSuccessCriteria = signal<string[]>([]);
   showPlanDialog = signal(false);
   planCreating = signal(false);
   planExpandedTasks = signal<Set<number>>(new Set());
@@ -2231,8 +2246,9 @@ export class WorkPage {
     if (!sel) return;
     this.planLoading.set(true);
     this.api.planTasks(sel.id).subscribe({
-      next: (tasks) => {
-        this.plannedTasks.set(tasks);
+      next: (response) => {
+        this.plannedTasks.set(response.tasks);
+        this.planSuccessCriteria.set(response.success_criteria ?? []);
         this.planExpandedTasks.set(new Set());
         this.showPlanDialog.set(true);
         this.planLoading.set(false);
@@ -2249,6 +2265,7 @@ export class WorkPage {
   closePlanDialog(): void {
     this.showPlanDialog.set(false);
     this.plannedTasks.set([]);
+    this.planSuccessCriteria.set([]);
     this.planCreating.set(false);
     this.planExpandedTasks.set(new Set());
   }
@@ -2317,6 +2334,8 @@ export class WorkPage {
             this.loadLinkedTasks(sel.id);
             this.loadAllProgress([sel]);
             this.loadStatsAndChildren(sel.id);
+            // Reload work items to pick up AI-generated success criteria
+            this.loadGoals();
           }
         },
         error: () => {
@@ -2330,6 +2349,7 @@ export class WorkPage {
               this.loadLinkedTasks(sel.id);
               this.loadAllProgress([sel]);
               this.loadStatsAndChildren(sel.id);
+              this.loadGoals();
             }
           }
         },

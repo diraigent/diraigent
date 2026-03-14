@@ -11,6 +11,16 @@ pub struct PlannedTask {
     pub acceptance_criteria: Vec<String>,
 }
 
+/// Result of AI planning: tasks plus optional success criteria for the work item.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanResult {
+    pub tasks: Vec<PlannedTask>,
+    /// Generated success criteria for the work item (only present when
+    /// the work item had no criteria and the AI generated them).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub success_criteria: Option<Vec<String>>,
+}
+
 /// Tool input schema used with Claude's tool_use for structured output.
 #[derive(Debug, Serialize)]
 struct ToolInput {
@@ -54,16 +64,31 @@ enum ContentBlock {
 #[derive(Debug, Deserialize)]
 struct ToolUseInput {
     tasks: Vec<PlannedTask>,
+    #[serde(default)]
+    success_criteria: Option<Vec<String>>,
+}
+
+/// Check whether success criteria are effectively empty.
+fn criteria_are_empty(criteria: &serde_json::Value) -> bool {
+    match criteria {
+        serde_json::Value::Null => true,
+        serde_json::Value::Array(items) => items.is_empty(),
+        serde_json::Value::String(s) => s.trim().is_empty(),
+        _ => false,
+    }
 }
 
 /// Call the Anthropic Claude API to generate a task plan from a work item.
+/// When the work item has no success criteria, the AI also generates them.
 pub async fn generate_task_plan(
     api_key: &str,
     title: &str,
     description: &str,
     success_criteria: &serde_json::Value,
     project_name: &str,
-) -> Result<Vec<PlannedTask>, AppError> {
+) -> Result<PlanResult, AppError> {
+    let needs_criteria = criteria_are_empty(success_criteria);
+
     let criteria_text = match success_criteria {
         serde_json::Value::Array(items) => items
             .iter()
@@ -72,6 +97,14 @@ pub async fn generate_task_plan(
             .join("\n"),
         serde_json::Value::String(s) => s.clone(),
         _ => success_criteria.to_string(),
+    };
+
+    let criteria_instruction = if needs_criteria {
+        "\n\nThe work item has NO success criteria defined. You MUST also generate 3-7 clear, \
+         verifiable success criteria for the overall work item in the `success_criteria` field. \
+         These should describe what \"done\" looks like for the entire work item, not individual tasks."
+    } else {
+        ""
     };
 
     let prompt = format!(
@@ -91,7 +124,7 @@ Decompose the following work item into 3-8 concrete, implementable tasks. Each t
 - kind must be one of: feature, bug, refactor, test, docs
 - spec should be a detailed technical description of what to implement
 - acceptance_criteria should be verifiable conditions (not vague)
-- Do NOT create meta-tasks like "review" or "deploy" — only implementation work"#,
+- Do NOT create meta-tasks like "review" or "deploy" — only implementation work{criteria_instruction}"#,
         project_name = project_name,
         title = title,
         description = if description.is_empty() {
@@ -104,45 +137,64 @@ Decompose the following work item into 3-8 concrete, implementable tasks. Each t
         } else {
             criteria_text
         },
+        criteria_instruction = criteria_instruction,
     );
+
+    let mut schema_properties = serde_json::json!({
+        "tasks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Short, descriptive task title"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": ["feature", "bug", "refactor", "test", "docs"],
+                        "description": "Type of task"
+                    },
+                    "spec": {
+                        "type": "string",
+                        "description": "Detailed technical specification of what to implement"
+                    },
+                    "acceptance_criteria": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "List of verifiable conditions that must be met"
+                    }
+                },
+                "required": ["title", "kind", "spec", "acceptance_criteria"]
+            },
+            "minItems": 3,
+            "maxItems": 8
+        }
+    });
+
+    let mut required = vec!["tasks"];
+
+    if needs_criteria {
+        schema_properties.as_object_mut().unwrap().insert(
+            "success_criteria".to_string(),
+            serde_json::json!({
+                "type": "array",
+                "items": { "type": "string" },
+                "minItems": 3,
+                "maxItems": 7,
+                "description": "3-7 clear, verifiable success criteria for the overall work item"
+            }),
+        );
+        required.push("success_criteria");
+    }
 
     let tool = ToolInput {
         name: "create_task_plan".to_string(),
         description: "Create a plan of implementable tasks from a work item".to_string(),
         input_schema: serde_json::json!({
             "type": "object",
-            "properties": {
-                "tasks": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "title": {
-                                "type": "string",
-                                "description": "Short, descriptive task title"
-                            },
-                            "kind": {
-                                "type": "string",
-                                "enum": ["feature", "bug", "refactor", "test", "docs"],
-                                "description": "Type of task"
-                            },
-                            "spec": {
-                                "type": "string",
-                                "description": "Detailed technical specification of what to implement"
-                            },
-                            "acceptance_criteria": {
-                                "type": "array",
-                                "items": { "type": "string" },
-                                "description": "List of verifiable conditions that must be met"
-                            }
-                        },
-                        "required": ["title", "kind", "spec", "acceptance_criteria"]
-                    },
-                    "minItems": 3,
-                    "maxItems": 8
-                }
-            },
-            "required": ["tasks"]
+            "properties": schema_properties,
+            "required": required
         }),
     };
 
@@ -188,7 +240,14 @@ Decompose the following work item into 3-8 concrete, implementable tasks. Each t
     // Extract the tool_use content block
     for block in api_response.content {
         if let ContentBlock::ToolUse { input } = block {
-            return Ok(input.tasks);
+            return Ok(PlanResult {
+                tasks: input.tasks,
+                success_criteria: if needs_criteria {
+                    input.success_criteria
+                } else {
+                    None
+                },
+            });
         }
     }
 

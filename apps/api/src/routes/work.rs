@@ -211,7 +211,7 @@ async fn plan_work(
     // Get project name for context
     let project = state.db.get_project_by_id(project_id).await?;
 
-    let tasks = crate::ai::generate_task_plan(
+    let result = crate::ai::generate_task_plan(
         api_key,
         &work.title,
         work.description.as_deref().unwrap_or(""),
@@ -220,7 +220,38 @@ async fn plan_work(
     )
     .await?;
 
-    Ok(Json(PlanWorkResponse { tasks }))
+    // If AI generated success criteria for a work item that had none, save them
+    if let Some(ref criteria) = result.success_criteria
+        && !criteria.is_empty()
+    {
+        let criteria_json = serde_json::Value::Array(
+            criteria
+                .iter()
+                .map(|s| serde_json::Value::String(s.clone()))
+                .collect(),
+        );
+        let update = UpdateWork {
+            title: None,
+            description: None,
+            status: None,
+            work_type: None,
+            priority: None,
+            parent_work_id: None,
+            auto_status: None,
+            intent_type: None,
+            success_criteria: Some(criteria_json),
+            metadata: None,
+            sort_order: None,
+        };
+        if let Err(e) = state.db.update_work(work_id, &update).await {
+            tracing::warn!(work_id = %work_id, error = %e, "Failed to save AI-generated success criteria");
+        }
+    }
+
+    Ok(Json(PlanWorkResponse {
+        tasks: result.tasks,
+        success_criteria: result.success_criteria,
+    }))
 }
 
 async fn link_task(
