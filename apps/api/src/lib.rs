@@ -6,6 +6,7 @@ pub mod crypto;
 pub mod csrf;
 pub mod db;
 pub mod error;
+pub mod event_triggers;
 pub mod metrics;
 pub mod models;
 pub mod package_cache;
