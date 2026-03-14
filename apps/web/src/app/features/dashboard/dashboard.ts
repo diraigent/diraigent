@@ -37,7 +37,7 @@ const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('w
         <p class="text-error">{{ t('common.error') }}</p>
       } @else {
         <!-- Stats row -->
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-4">
           <div class="bg-surface border border-border rounded-lg p-4">
             <div class="text-3xl font-bold text-ctp-peach">{{ '$' + totalCostUsd().toFixed(2) }}</div>
             <div class="text-sm text-text-secondary mt-1">{{ t('dashboard.stats.totalCost') }}</div>
@@ -62,6 +62,25 @@ const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('w
           <div class="bg-surface border border-border rounded-lg p-4">
             <div class="text-3xl font-bold text-ctp-red">{{ stats().cancelledToday }}</div>
             <div class="text-sm text-text-secondary mt-1">{{ t('dashboard.stats.cancelledToday') }}</div>
+          </div>
+        </div>
+
+        <!-- Token usage row -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+          <div class="bg-surface border border-border rounded-lg p-4">
+            <div class="text-3xl font-bold text-ctp-lavender">{{ formatTokens(tokenStats().today.total) }}</div>
+            <div class="text-sm text-text-secondary mt-1">{{ t('dashboard.stats.tokensToday') }}</div>
+            <div class="text-xs text-text-muted mt-1">{{ formatTokens(tokenStats().today.input) }} in / {{ formatTokens(tokenStats().today.output) }} out</div>
+          </div>
+          <div class="bg-surface border border-border rounded-lg p-4">
+            <div class="text-3xl font-bold text-ctp-lavender">{{ formatTokens(tokenStats().week.total) }}</div>
+            <div class="text-sm text-text-secondary mt-1">{{ t('dashboard.stats.tokensWeek') }}</div>
+            <div class="text-xs text-text-muted mt-1">{{ formatTokens(tokenStats().week.input) }} in / {{ formatTokens(tokenStats().week.output) }} out</div>
+          </div>
+          <div class="bg-surface border border-border rounded-lg p-4">
+            <div class="text-3xl font-bold text-ctp-lavender">{{ formatTokens(tokenStats().total.total) }}</div>
+            <div class="text-sm text-text-secondary mt-1">{{ t('dashboard.stats.tokensTotal') }}</div>
+            <div class="text-xs text-text-muted mt-1">{{ formatTokens(tokenStats().total.input) }} in / {{ formatTokens(tokenStats().total.output) }} out</div>
           </div>
         </div>
 
@@ -185,6 +204,38 @@ export class DashboardPage {
       .reduce((sum, t) => sum + (t.cost_usd ?? 0), 0),
   );
 
+  tokenStats = computed(() => {
+    const allTasks = this.allProjectTasks().flatMap(pt => pt.tasks);
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const weekStart = new Date(todayStart);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+
+    const sumTokens = (tasks: SpTask[]) => {
+      const input = tasks.reduce((s, t) => s + (t.input_tokens ?? 0), 0);
+      const output = tasks.reduce((s, t) => s + (t.output_tokens ?? 0), 0);
+      return { input, output, total: input + output };
+    };
+
+    const todayTasks = allTasks.filter(t => {
+      if (isInProgress(t.state) && t.claimed_at && new Date(t.claimed_at) >= todayStart) return true;
+      if (t.state === 'done' && t.completed_at && new Date(t.completed_at) >= todayStart) return true;
+      return false;
+    });
+
+    const weekTasks = allTasks.filter(t => {
+      if (isInProgress(t.state)) return true;
+      if (t.state === 'done' && t.completed_at && new Date(t.completed_at) >= weekStart) return true;
+      return false;
+    });
+
+    return {
+      today: sumTokens(todayTasks),
+      week: sumTokens(weekTasks),
+      total: sumTokens(allTasks),
+    };
+  });
+
   openTasks = computed(() => {
     const rows: OpenTaskRow[] = [];
     for (const { project, tasks } of this.allProjectTasks()) {
@@ -222,6 +273,12 @@ export class DashboardPage {
 
   projectInProgress(pt: ProjectTasks): number {
     return pt.tasks.filter(t => isInProgress(t.state)).length;
+  }
+
+  formatTokens(n: number): string {
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+    if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+    return n.toString();
   }
 
   protected readonly stateColor = taskStateColor;
