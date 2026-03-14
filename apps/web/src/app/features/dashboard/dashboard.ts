@@ -91,7 +91,7 @@ const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('w
             @if (allProjectTasks().length > 1) {
               <div class="text-xs text-text-muted mb-1">{{ pt.project.name }}</div>
             }
-            <app-token-usage-chart [projectId]="pt.project.id" [tasks]="pt.tasks" />
+            <app-token-usage-chart [projectId]="pt.project.id" />
           </div>
         }
 

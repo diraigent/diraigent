@@ -1,4 +1,5 @@
-import { Component, input, signal, computed } from '@angular/core';
+import { Component, inject, input, signal, computed, effect, DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { BaseChartDirective } from 'ng2-charts';
 import { ChartConfiguration, ChartData } from 'chart.js';
 import {
@@ -12,15 +13,9 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import { SpTask } from '../../core/services/tasks-api.service';
+import { DiraigentApiService, TokenDayCount } from '../../core/services/diraigent-api.service';
 
 Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Filler, Tooltip, Legend);
-
-interface DayTokens {
-  day: string;
-  input_tokens: number;
-  output_tokens: number;
-}
 
 type TimeRange = 7 | 30 | 90;
 
@@ -67,66 +62,22 @@ type TimeRange = 7 | 30 | 90;
   `,
 })
 export class TokenUsageChartComponent {
+  private api = inject(DiraigentApiService);
+  private destroyRef = inject(DestroyRef);
+
   /** Project ID for this chart */
   projectId = input.required<string>();
-
-  /** All tasks for this project (passed from dashboard) */
-  tasks = input<SpTask[]>([]);
 
   readonly timeRanges: TimeRange[] = [7, 30, 90];
   selectedRange = signal<TimeRange>(30);
   loading = signal(false);
 
-  private tokensPerDay = computed<DayTokens[]>(() => {
-    const tasks = this.tasks();
-    const range = this.selectedRange();
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - range);
-    cutoff.setHours(0, 0, 0, 0);
-
-    // Group tasks by day using completed_at (for done tasks) or claimed_at (for in-progress)
-    const dayMap = new Map<string, { input: number; output: number }>();
-
-    for (const task of tasks) {
-      const dateStr = task.completed_at ?? task.claimed_at ?? task.created_at;
-      if (!dateStr) continue;
-
-      const date = new Date(dateStr);
-      if (date < cutoff) continue;
-
-      const tokens = (task.input_tokens ?? 0) + (task.output_tokens ?? 0);
-      if (tokens === 0) continue;
-
-      const dayKey = date.toISOString().slice(0, 10); // YYYY-MM-DD
-      const existing = dayMap.get(dayKey) ?? { input: 0, output: 0 };
-      existing.input += task.input_tokens ?? 0;
-      existing.output += task.output_tokens ?? 0;
-      dayMap.set(dayKey, existing);
-    }
-
-    // Fill in missing days with zeroes for a continuous line
-    const result: DayTokens[] = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const current = new Date(cutoff);
-
-    while (current <= today) {
-      const dayKey = current.toISOString().slice(0, 10);
-      const data = dayMap.get(dayKey) ?? { input: 0, output: 0 };
-      result.push({
-        day: dayKey,
-        input_tokens: data.input,
-        output_tokens: data.output,
-      });
-      current.setDate(current.getDate() + 1);
-    }
-
-    return result;
-  });
+  /** Raw tokens_per_day from the metrics API */
+  private tokensPerDay = signal<TokenDayCount[]>([]);
 
   isEmpty = computed(() => {
     const data = this.tokensPerDay();
-    return data.every(d => d.input_tokens === 0 && d.output_tokens === 0);
+    return data.length === 0 || data.every(d => d.input_tokens === 0 && d.output_tokens === 0);
   });
 
   chartData = computed<ChartData<'line'>>(() => {
@@ -230,8 +181,33 @@ export class TokenUsageChartComponent {
     },
   };
 
+  constructor() {
+    // Fetch data on init and whenever selectedRange changes
+    effect(() => {
+      const projectId = this.projectId();
+      const days = this.selectedRange();
+      this.fetchMetrics(projectId, days);
+    });
+  }
+
   setRange(range: TimeRange): void {
     this.selectedRange.set(range);
+  }
+
+  private fetchMetrics(projectId: string, days: number): void {
+    this.loading.set(true);
+    this.api.getProjectMetrics(projectId, days)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (metrics) => {
+          this.tokensPerDay.set(metrics.tokens_per_day ?? []);
+          this.loading.set(false);
+        },
+        error: () => {
+          this.tokensPerDay.set([]);
+          this.loading.set(false);
+        },
+      });
   }
 
   private formatLabel(day: string): string {

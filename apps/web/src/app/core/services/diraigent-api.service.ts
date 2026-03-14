@@ -144,6 +144,7 @@ export interface ProjectMetrics {
   playbook_completion: { playbook_id: string; playbook_title: string; total_tasks: number; completed_tasks: number; completion_rate: number }[];
   cost_summary: CostSummary;
   task_costs: TaskCostRow[];
+  tokens_per_day: TokenDayCount[];
 }
 
 export interface ClaudeMdResponse {
