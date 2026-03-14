@@ -4,6 +4,7 @@ mod changed_files;
 mod chat;
 mod context;
 mod decisions;
+mod event_rules;
 mod events;
 mod files;
 mod git;
@@ -80,6 +81,7 @@ pub fn router() -> Router<AppState> {
         .merge(packages::routes())
         .merge(plans::routes())
         .merge(playbooks::routes())
+        .merge(event_rules::routes())
         .merge(events::routes())
         .merge(integrations::routes())
         .merge(roles::routes())
