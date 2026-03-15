@@ -1306,7 +1306,11 @@ export class WorkPage {
   });
 
   activeGoals = computed(() => this.filteredGoals().filter(g => g.status === 'active'));
-  achievedGoals = computed(() => this.filteredGoals().filter(g => g.status === 'achieved'));
+  achievedGoals = computed(() =>
+    this.filteredGoals()
+      .filter(g => g.status === 'achieved')
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
+  );
   archivedGoals = computed(() => this.filteredGoals().filter(g => g.status === 'paused' || g.status === 'abandoned'));
 
   // --- Computed: unlinked task sections ---
