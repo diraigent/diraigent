@@ -1,0 +1,11 @@
+[package]
+name = "diraigent-analyzer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+regex = "1"
+ignore = "0.4"
