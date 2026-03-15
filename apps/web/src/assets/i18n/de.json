@@ -278,10 +278,10 @@
       "sprint": "Sprint",
       "initiative": "Initiative"
     },
-    "todos": "Aufgaben",
-    "todoPlaceholder": "Aufgabe hinzufügen...",
+    "todos": "Checkliste",
+    "todoPlaceholder": "Eintrag hinzufügen...",
     "addTodo": "Hinzufügen",
-    "todosEmpty": "Noch keine Aufgaben. Oben eine hinzufügen.",
+    "todosEmpty": "Noch keine Einträge. Oben einen hinzufügen.",
     "clearDone": "Erledigte löschen",
     "planTasksBtn": "Aufgaben planen",
     "planLoading": "Aufgabenplan wird erstellt...",
