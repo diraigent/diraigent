@@ -52,8 +52,9 @@ COMMIT_MSG=$(git diff --cached --stat | claude -p \
    2. Output '---CHANGELOG---' on its own line
    3. Output a CHANGELOG entry in this format:
       ## $CHANGELOG_TAG ($(date -u +%Y-%m-%d))
-      - bullet points of notable changes grouped by area (### API, ### Orchestra, ### Web Dashboard, ### TUI, ### CI/CD)
-      - each bullet should be **bold title**: description
+      - group changes by type: ### Added, ### Changed, ### Fixed, ### Removed (omit empty sections)
+      - each bullet should start with a bold component prefix: **API**, **Orchestra**, **Web**, **TUI**, or **CI/CD**
+      - example: '- **Web**: Token usage chart on dashboard fetched from metrics API'
 
    Output ONLY the commit message and changelog, nothing else." 2>/dev/null)
 
