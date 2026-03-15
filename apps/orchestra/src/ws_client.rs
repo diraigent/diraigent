@@ -573,6 +573,9 @@ Respond with a JSON object matching the required schema."#
                         .as_str()
                         .unwrap_or("Unknown error")
                         .to_string();
+                } else if let Some(structured) = event.get("structured_output") {
+                    // --json-schema produces structured_output in the result event
+                    accumulated_text = structured.to_string();
                 } else if accumulated_text.is_empty() {
                     accumulated_text = event["result"].as_str().unwrap_or("").to_string();
                 }
