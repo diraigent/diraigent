@@ -147,6 +147,12 @@ pub trait DiraigentDb: Send + Sync {
     ) -> Result<Option<(Uuid, Uuid)>, AppError>;
     async fn get_agent_by_id(&self, id: Uuid) -> Result<Agent, AppError>;
     async fn list_agents(&self, p: &Pagination) -> Result<Vec<Agent>, AppError>;
+    async fn list_tenant_agents(
+        &self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+        p: &Pagination,
+    ) -> Result<Vec<Agent>, AppError>;
     async fn update_agent(&self, id: Uuid, req: &UpdateAgent) -> Result<Agent, AppError>;
     async fn agent_heartbeat(&self, id: Uuid, status: Option<&str>) -> Result<Agent, AppError>;
     async fn list_agent_tasks(&self, agent_id: Uuid, p: &Pagination)

@@ -212,6 +212,14 @@ impl DiraigentDb for PostgresDb {
     async fn list_agents(&self, p: &Pagination) -> Result<Vec<Agent>, AppError> {
         repository::list_agents(&self.0, p).await
     }
+    async fn list_tenant_agents(
+        &self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+        p: &Pagination,
+    ) -> Result<Vec<Agent>, AppError> {
+        repository::list_tenant_agents(&self.0, tenant_id, user_id, p).await
+    }
     async fn update_agent(&self, id: Uuid, req: &UpdateAgent) -> Result<Agent, AppError> {
         repository::update_agent(&self.0, id, req).await
     }

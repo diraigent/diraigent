@@ -103,6 +103,33 @@ pub async fn list_agents(pool: &PgPool, p: &Pagination) -> Result<Vec<Agent>, Ap
     Ok(agents)
 }
 
+/// List agents visible within a tenant: agents that are members of the tenant
+/// OR owned by the given user.
+pub async fn list_tenant_agents(
+    pool: &PgPool,
+    tenant_id: Uuid,
+    user_id: Uuid,
+    p: &Pagination,
+) -> Result<Vec<Agent>, AppError> {
+    let limit = p.limit.unwrap_or(50).min(100);
+    let offset = p.offset.unwrap_or(0);
+
+    let agents = sqlx::query_as::<_, Agent>(
+        "SELECT DISTINCT a.* FROM diraigent.agent a
+         LEFT JOIN diraigent.membership m ON m.agent_id = a.id AND m.tenant_id = $1
+         WHERE m.id IS NOT NULL OR a.owner_id = $2
+         ORDER BY a.name ASC LIMIT $3 OFFSET $4",
+    )
+    .bind(tenant_id)
+    .bind(user_id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(agents)
+}
+
 pub async fn update_agent(pool: &PgPool, id: Uuid, req: &UpdateAgent) -> Result<Agent, AppError> {
     let existing = get_agent_by_id(pool, id).await?;
     let name = req.name.as_deref().unwrap_or(&existing.name);

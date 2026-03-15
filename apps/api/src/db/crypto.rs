@@ -488,6 +488,14 @@ impl DiraigentDb for CryptoDb {
     async fn list_agents(&self, p: &Pagination) -> Result<Vec<Agent>, AppError> {
         delegate!(self, list_agents, p)
     }
+    async fn list_tenant_agents(
+        &self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+        p: &Pagination,
+    ) -> Result<Vec<Agent>, AppError> {
+        delegate!(self, list_tenant_agents, tenant_id, user_id, p)
+    }
     async fn update_agent(&self, id: Uuid, req: &UpdateAgent) -> Result<Agent, AppError> {
         delegate!(self, update_agent, id, req)
     }

@@ -8,6 +8,7 @@ use crate::AppState;
 use crate::auth::AuthUser;
 use crate::error::AppError;
 use crate::models::*;
+use crate::tenant::TenantContext;
 use crate::validation;
 
 pub fn routes() -> Router<AppState> {
@@ -30,19 +31,34 @@ async fn register_agent(
 
 async fn list_agents(
     State(state): State<AppState>,
-    AuthUser(_): AuthUser,
+    AuthUser(user_id): AuthUser,
+    tenant: TenantContext,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<Vec<Agent>>, AppError> {
-    let agents = state.db.list_agents(&pagination).await?;
+    let agents = state
+        .db
+        .list_tenant_agents(tenant.tenant_id, user_id, &pagination)
+        .await?;
     Ok(Json(agents))
 }
 
 async fn get_agent(
     State(state): State<AppState>,
-    AuthUser(_): AuthUser,
+    AuthUser(user_id): AuthUser,
+    tenant: TenantContext,
     Path(agent_id): Path<Uuid>,
 ) -> Result<Json<Agent>, AppError> {
     let agent = state.db.get_agent_by_id(agent_id).await?;
+    // Allow access if user owns the agent or the agent is a member of their tenant
+    let is_owner = agent.owner_id == Some(user_id);
+    if !is_owner {
+        let tenant_agents = state.db.list_tenant_agent_ids(tenant.tenant_id).await?;
+        if !tenant_agents.contains(&agent_id) {
+            return Err(AppError::Forbidden(
+                "Agent is not visible in your tenant".into(),
+            ));
+        }
+    }
     Ok(Json(agent))
 }
 
@@ -102,10 +118,25 @@ async fn heartbeat(
 
 async fn list_agent_tasks(
     State(state): State<AppState>,
-    AuthUser(_): AuthUser,
+    AuthUser(user_id): AuthUser,
+    tenant: TenantContext,
     Path(agent_id): Path<Uuid>,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<Vec<Task>>, AppError> {
+    // Verify the agent is visible to the caller (owner or same tenant)
+    let is_owner = state
+        .db
+        .verify_agent_owner(agent_id, user_id)
+        .await
+        .unwrap_or(false);
+    if !is_owner {
+        let tenant_agents = state.db.list_tenant_agent_ids(tenant.tenant_id).await?;
+        if !tenant_agents.contains(&agent_id) {
+            return Err(AppError::Forbidden(
+                "Agent is not visible in your tenant".into(),
+            ));
+        }
+    }
     let tasks = state.db.list_agent_tasks(agent_id, &pagination).await?;
     Ok(Json(tasks))
 }
