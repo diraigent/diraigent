@@ -344,6 +344,12 @@ fn merge_template_with_step(
     if let Some(ref v) = template.vars {
         merged.insert("vars".to_string(), v.clone());
     }
+    if let Some(ref v) = template.provider {
+        merged.insert("provider".to_string(), serde_json::json!(v));
+    }
+    if let Some(ref v) = template.base_url {
+        merged.insert("base_url".to_string(), serde_json::json!(v));
+    }
 
     // Overlay inline step properties (inline wins)
     if let Some(obj) = inline_step.as_object() {
