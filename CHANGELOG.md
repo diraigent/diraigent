@@ -1,6 +1,17 @@
 # Changelog
 
 
+## v20260315-1615-developer (2026-03-15)
+
+### Added
+- **Web**: "Create & Execute" button on work item creation form — creates the work item and immediately spawns a task in one step
+
+### Changed
+- **Orchestra**: Plan request now uses `--json-schema` with a strict schema instead of `--max-tokens` with free-form prompt instructions for task decomposition output
+
+---
+
+
 ## v20260315-1556-developer (2026-03-15)
 
 ### Changed
