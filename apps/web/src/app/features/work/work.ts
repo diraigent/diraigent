@@ -3,8 +3,8 @@ import { NgTemplateOutlet, DatePipe, SlicePipe, isPlatformBrowser } from '@angul
 import { FormsModule } from '@angular/forms';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Subscription, forkJoin, of, from, timer, switchMap, EMPTY } from 'rxjs';
-import { catchError, concatMap, toArray, mergeMap } from 'rxjs/operators';
+import { Subscription, forkJoin, of, timer, switchMap } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import {
   CdkDragDrop,
   CdkDrag,
@@ -2352,6 +2352,13 @@ export class WorkPage {
   removePlannedTask(index: number): void {
     const tasks = [...this.plannedTasks()];
     tasks.splice(index, 1);
+    // Update depends_on indices: shift references down and remove stale ones
+    for (const task of tasks) {
+      if (!task.depends_on) continue;
+      task.depends_on = task.depends_on
+        .filter(dep => dep !== index) // remove refs to the deleted task
+        .map(dep => (dep > index ? dep - 1 : dep)); // shift indices above the removed one
+    }
     this.plannedTasks.set(tasks);
     // Clean up expanded state
     const expanded = new Set<number>();
@@ -2384,88 +2391,34 @@ export class WorkPage {
   }
 
   confirmPlan(): void {
-    const workId = this.planWorkId();
-    if (!workId) return;
+    const sel = this.selected();
+    if (!sel) return;
     const tasks = this.plannedTasks();
     if (tasks.length === 0) return;
 
     this.planCreating.set(true);
 
-    // Step 1: Create tasks sequentially to collect IDs in order
-    const createdIds: string[] = [];
-    from(tasks.map((task, idx) => ({ task, idx }))).pipe(
-      concatMap(({ task }) => {
-        const req: CreateTaskRequest = {
-          title: task.title,
-          kind: task.kind,
-          work_id: workId,
-          context: {
-            spec: task.spec,
-            acceptance_criteria: task.acceptance_criteria,
-          },
-        };
-        return this.tasksApi.create(req).pipe(
-          catchError(() => of(null)),
-        );
-      }),
-      toArray(),
-    ).subscribe(results => {
-      let failed = 0;
-      for (const result of results) {
-        if (result) {
-          createdIds.push(result.id);
-        } else {
-          createdIds.push(''); // placeholder for failed task
-          failed++;
-        }
-      }
-
-      if (failed === tasks.length) {
+    // Use the batch apply-plan endpoint which creates all tasks and
+    // dependencies atomically in a single DB transaction. This prevents
+    // race conditions where the orchestra picks up dependent tasks
+    // before their dependency edges are registered.
+    this.api.applyPlan(sel.id, tasks).subscribe({
+      next: () => {
+        this.finishPlanCreation(sel);
+      },
+      error: () => {
         this.planCreating.set(false);
         alert(this.planErrorMessage);
-        return;
-      }
-
-      // Step 2: Wire dependencies
-      const depCalls: { taskId: string; dependsOn: string }[] = [];
-      for (let i = 0; i < tasks.length; i++) {
-        const deps = tasks[i].depends_on;
-        if (!deps || !createdIds[i]) continue;
-        for (const depIdx of deps) {
-          if (depIdx >= 0 && depIdx < createdIds.length && createdIds[depIdx]) {
-            depCalls.push({ taskId: createdIds[i], dependsOn: createdIds[depIdx] });
-          }
-        }
-      }
-
-      if (depCalls.length === 0) {
-        this.finishPlanCreation(workId);
-        return;
-      }
-
-      from(depCalls).pipe(
-        mergeMap(({ taskId, dependsOn }) =>
-          this.tasksApi.addDependency(taskId, dependsOn).pipe(catchError(() => EMPTY)),
-          4, // concurrency limit
-        ),
-        toArray(),
-      ).subscribe(() => {
-        this.finishPlanCreation(workId);
-      });
+      },
     });
   }
 
-  private finishPlanCreation(workId: string): void {
+  private finishPlanCreation(sel: SpWork): void {
     this.planCreating.set(false);
     this.closePlanDialog();
-    this.loadLinkedTasks(workId);
-    // Reload the work item that owns the plan
-    const items = this.items();
-    const work = items.find(w => w.id === workId);
-    if (work) {
-      this.loadAllProgress([work]);
-    }
-    this.loadStatsAndChildren(workId);
+    this.loadLinkedTasks(sel.id);
+    this.loadAllProgress([sel]);
+    this.loadStatsAndChildren(sel.id);
     this.loadGoals();
   }
 
