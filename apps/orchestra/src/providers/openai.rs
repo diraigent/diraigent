@@ -135,6 +135,12 @@ impl StepProvider for OpenAIProvider {
                         content: format!("Authentication error: {error_body}"),
                         exit_code: 1,
                         artifacts: HashMap::from([("error_type".into(), "auth_error".into())]),
+                        cost_usd: 0.0,
+                        input_tokens: 0,
+                        output_tokens: 0,
+                        num_turns: 0,
+                        stop_reason: "error".into(),
+                        is_error: true,
                     })
                 }
                 429 => {
@@ -143,6 +149,12 @@ impl StepProvider for OpenAIProvider {
                         content: format!("Rate limit exceeded: {error_body}"),
                         exit_code: 2,
                         artifacts: HashMap::from([("error_type".into(), "rate_limit".into())]),
+                        cost_usd: 0.0,
+                        input_tokens: 0,
+                        output_tokens: 0,
+                        num_turns: 0,
+                        stop_reason: "error".into(),
+                        is_error: true,
                     })
                 }
                 404 => {
@@ -151,6 +163,12 @@ impl StepProvider for OpenAIProvider {
                         content: format!("Model not found: {model} — {error_body}"),
                         exit_code: 3,
                         artifacts: HashMap::from([("error_type".into(), "model_not_found".into())]),
+                        cost_usd: 0.0,
+                        input_tokens: 0,
+                        output_tokens: 0,
+                        num_turns: 0,
+                        stop_reason: "error".into(),
+                        is_error: true,
                     })
                 }
                 code => {
@@ -166,6 +184,12 @@ impl StepProvider for OpenAIProvider {
                             "error_type".into(),
                             "unexpected_error".into(),
                         )]),
+                        cost_usd: 0.0,
+                        input_tokens: 0,
+                        output_tokens: 0,
+                        num_turns: 0,
+                        stop_reason: "error".into(),
+                        is_error: true,
                     })
                 }
             };
@@ -241,6 +265,12 @@ impl StepProvider for OpenAIProvider {
             content,
             exit_code: 0,
             artifacts: Default::default(),
+            cost_usd: 0.0,
+            input_tokens: 0,
+            output_tokens: 0,
+            num_turns: 0,
+            stop_reason: "end_turn".into(),
+            is_error: false,
         })
     }
 }
@@ -259,8 +289,14 @@ mod tests {
             description: "You are a test assistant.".into(),
             model: Some("gpt-4o-test".into()),
             allowed_tools: None,
+            allowed_tools_list: vec![],
             budget: None,
             env: HashMap::new(),
+            system_prompt: None,
+            mcp_servers: None,
+            agents: None,
+            agent: None,
+            settings: None,
         }
     }
 
@@ -270,6 +306,8 @@ mod tests {
             project_id: "proj-456".into(),
             project_context: r#"{"spec":"do stuff"}"#.into(),
             previous_step_output: None,
+            working_dir: None,
+            log_file: None,
         }
     }
 

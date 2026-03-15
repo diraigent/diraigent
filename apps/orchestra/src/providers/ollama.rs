@@ -225,6 +225,12 @@ impl StepProvider for OllamaProvider {
             content: accumulated,
             exit_code: 0,
             artifacts: HashMap::new(),
+            cost_usd: 0.0,
+            input_tokens: 0,
+            output_tokens: 0,
+            num_turns: 0,
+            stop_reason: "end_turn".into(),
+            is_error: false,
         })
     }
 }
@@ -250,8 +256,14 @@ mod tests {
             description: "Write some code".into(),
             model: None,
             allowed_tools: None,
+            allowed_tools_list: vec![],
             budget: None,
             env: HashMap::new(),
+            system_prompt: None,
+            mcp_servers: None,
+            agents: None,
+            agent: None,
+            settings: None,
         }
     }
 
@@ -262,6 +274,8 @@ mod tests {
             project_id: "test-project-id".into(),
             project_context: r#"{"task": "do something"}"#.into(),
             previous_step_output: None,
+            working_dir: None,
+            log_file: None,
         }
     }
 
@@ -503,8 +517,14 @@ mod tests {
             description: "test".into(),
             model: Some("step-model".to_string()),
             allowed_tools: None,
+            allowed_tools_list: vec![],
             budget: None,
             env: HashMap::new(),
+            system_prompt: None,
+            mcp_servers: None,
+            agents: None,
+            agent: None,
+            settings: None,
         };
         assert_eq!(OllamaProvider::model(&config, &step), "step-model");
     }
