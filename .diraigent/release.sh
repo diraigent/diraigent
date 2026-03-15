@@ -85,12 +85,16 @@ git commit -m "$COMMIT_BODY"
 
 if $RELEASE; then
   git tag "$TAG"
-
-  # Push to all configured remotes
-  for remote in $(git remote); do
-    git push "$remote" "$TARGET" --tags || true
-  done
 fi
+
+# Push to all configured remotes (with tags only for releases)
+for remote in $(git remote); do
+  if $RELEASE; then
+    git push "$remote" "$TARGET" --tags || true
+  else
+    git push "$remote" "$TARGET" || true
+  fi
+done
 
 # Merge target back into source so changelog is present in both branches
 git checkout "$SOURCE"
