@@ -59,6 +59,16 @@ impl ProjectsApi {
         self.agent_id.as_deref().unwrap_or("")
     }
 
+    /// Return the base API URL (e.g. `https://api.diraigent.com/v1`).
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    /// Return the API token, if set.
+    pub fn api_token(&self) -> &str {
+        self.api_token.as_deref().unwrap_or("")
+    }
+
     /// Apply standard headers (Content-Type, X-Agent-Id, Authorization) to a request builder.
     fn build_request(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         let mut req = req.header("Content-Type", "application/json");
