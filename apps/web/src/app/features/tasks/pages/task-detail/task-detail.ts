@@ -3,7 +3,7 @@ import { TranslocoModule } from '@jsverse/transloco';
 import { FormsModule } from '@angular/forms';
 import { DatePipe, SlicePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
-import { SpTask, SpTaskUpdate, SpTaskComment, SpTaskDependencies, ChangedFileSummary, UpdateTaskRequest } from '../../../../core/services/tasks-api.service';
+import { SpTask, SpTaskUpdate, SpTaskComment, SpTaskDependencies, ChangedFileSummary, UpdateTaskRequest, RelatedItems, RelatedItem, TaskScoreComponents } from '../../../../core/services/tasks-api.service';
 import { SpPlaybook } from '../../../../core/services/playbooks-api.service';
 import { TaskBranchStatus } from '../../../../core/services/git-api.service';
 import { SpVerification, VerificationStatus, VerificationKind } from '../../../../core/services/verifications-api.service';
@@ -453,6 +453,69 @@ const VERIFICATION_KIND_COLORS: Record<VerificationKind, string> = {
         </div>
       }
 
+      <!-- Score breakdown -->
+      @if (scoreComponents(); as sc) {
+        <div class="mb-4">
+          <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">{{ t('tasks.scoreBreakdown') }}</h3>
+          <div class="bg-bg rounded-lg p-3 border border-border">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-sm font-semibold text-accent">{{ sc.total.toFixed(1) }}</span>
+              <span class="text-xs text-text-muted">{{ t('tasks.score') }}</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div class="flex items-center justify-between text-xs">
+                <span class="text-text-muted">{{ t('tasks.ageScore') }}</span>
+                <span class="text-text-primary font-mono">{{ sc.age_score.toFixed(1) }}</span>
+              </div>
+              <div class="flex items-center justify-between text-xs">
+                <span class="text-text-muted">{{ t('tasks.urgentScore') }}</span>
+                <span class="text-text-primary font-mono" [class.text-ctp-red]="sc.urgent_score > 0">{{ sc.urgent_score.toFixed(1) }}</span>
+              </div>
+              <div class="flex items-center justify-between text-xs">
+                <span class="text-text-muted">{{ t('tasks.dependencyScore') }}</span>
+                <span class="text-text-primary font-mono">{{ sc.dependency_score.toFixed(1) }}</span>
+              </div>
+              <div class="flex items-center justify-between text-xs">
+                <span class="text-text-muted">{{ t('tasks.workScore') }}</span>
+                <span class="text-text-primary font-mono">{{ sc.work_score.toFixed(1) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- Related items -->
+      @if (relatedItems(); as ri) {
+        @if (ri.knowledge.length > 0 || ri.decisions.length > 0 || ri.observations.length > 0) {
+          <div class="mb-4">
+            <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">{{ t('tasks.relatedItems') }}</h3>
+            <div class="space-y-1">
+              @for (item of ri.knowledge; track item.id) {
+                <div class="flex items-center gap-2 bg-bg rounded px-3 py-1.5 border border-border">
+                  <span class="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-ctp-blue/20 text-ctp-blue shrink-0">knowledge</span>
+                  <span class="text-xs text-text-primary truncate flex-1">{{ item.title }}</span>
+                  <span class="text-[10px] text-text-muted font-mono shrink-0">{{ (item.relevance_score * 100).toFixed(0) }}%</span>
+                </div>
+              }
+              @for (item of ri.decisions; track item.id) {
+                <div class="flex items-center gap-2 bg-bg rounded px-3 py-1.5 border border-border">
+                  <span class="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-ctp-mauve/20 text-ctp-mauve shrink-0">decision</span>
+                  <span class="text-xs text-text-primary truncate flex-1">{{ item.title }}</span>
+                  <span class="text-[10px] text-text-muted font-mono shrink-0">{{ (item.relevance_score * 100).toFixed(0) }}%</span>
+                </div>
+              }
+              @for (item of ri.observations; track item.id) {
+                <div class="flex items-center gap-2 bg-bg rounded px-3 py-1.5 border border-border">
+                  <span class="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-ctp-peach/20 text-ctp-peach shrink-0">observation</span>
+                  <span class="text-xs text-text-primary truncate flex-1">{{ item.title }}</span>
+                  <span class="text-[10px] text-text-muted font-mono shrink-0">{{ (item.relevance_score * 100).toFixed(0) }}%</span>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      }
+
       <!-- Changed files with inline diff -->
       <div class="mb-4">
         <app-changed-files
@@ -543,6 +606,8 @@ export class TaskDetailComponent {
   kinds = input<string[]>(DEFAULT_TASK_KINDS);
   parentTask = input<SpTask | null>(null);
   subtasks = input<SpTask[]>([]);
+  relatedItems = input<RelatedItems | null>(null);
+  scoreComponents = input<TaskScoreComponents | null>(null);
   closed = output<void>();
   transitionClick = output<string>();
   claimClick = output<void>();

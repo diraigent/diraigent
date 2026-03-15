@@ -7,8 +7,8 @@
 use anyhow::Result;
 use serde_json::Value;
 
-use crate::api::ProjectsApi;
 use crate::crypto::Dek;
+use crate::project::api::ProjectsApi;
 
 /// Fetch the full agent context for a project.
 ///

@@ -1,3 +1,7 @@
+pub mod handler;
+pub mod provisioner;
+pub mod strategy;
+
 use crate::task_id::TaskId;
 use anyhow::{Context, Result, bail};
 use std::collections::HashMap;
@@ -1226,9 +1230,9 @@ impl WorktreeManager {
         let tag = self.generate_release_tag()?;
 
         // Check for .diraigent/ script-based release
-        let config = crate::diraigent_config::load_config(git_root)?;
+        let config = crate::project::diraigent_config::load_config(git_root)?;
         let script_path =
-            crate::diraigent_config::prepare_hook_script(git_root, "release", &config.release)?;
+            crate::project::diraigent_config::prepare_hook_script(git_root, "release", &config.release)?;
 
         if let Some(script) = script_path {
             return self.run_release_script(&script, source, target, &tag, &config.release);
@@ -1245,7 +1249,7 @@ impl WorktreeManager {
         source: &str,
         target: &str,
         tag: &str,
-        hook_config: &crate::diraigent_config::HookConfig,
+        hook_config: &crate::project::diraigent_config::HookConfig,
     ) -> Result<String> {
         let git_root = self.git_root.as_deref().unwrap();
 

@@ -21,6 +21,8 @@ export interface SpPlaybookStep {
   settings?: Record<string, unknown>;
   env?: Record<string, string>;
   git_action?: 'none' | 'merge' | 'push';
+  provider?: string;
+  base_url?: string;
 }
 
 export interface SpPlaybook {

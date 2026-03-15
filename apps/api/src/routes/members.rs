@@ -50,9 +50,13 @@ async fn list_members(
 async fn get_membership(
     State(state): State<AppState>,
     AuthUser(_): AuthUser,
+    tenant: TenantContext,
     Path(membership_id): Path<Uuid>,
 ) -> Result<Json<Membership>, AppError> {
     let m = state.db.get_membership(membership_id).await?;
+    if m.tenant_id != tenant.tenant_id {
+        return Err(AppError::NotFound("Membership not found".into()));
+    }
     Ok(Json(m))
 }
 

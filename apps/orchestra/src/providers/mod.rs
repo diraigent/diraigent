@@ -1,10 +1,17 @@
 //! Provider abstraction for step execution.
 //!
 //! This module defines the [`StepProvider`] trait and a [`ProviderFactory`] for
-//! creating provider instances by name.  Three providers are registered out of
-//! the box: `anthropic`, `openai`, and `ollama`.
+//! creating provider instances by name.  Five providers are registered:
+//!
+//! - `claude-code` — Claude Code CLI subprocess (agentic, PTY, tools)
+//! - `anthropic` — Anthropic Messages API (direct, non-streaming)
+//! - `openai` — OpenAI-compatible chat completions API (SSE streaming)
+//! - `copilot` — GitHub Copilot / GitHub Models inference API (OpenAI-compatible, SSE streaming)
+//! - `ollama` — local Ollama chat API (NDJSON streaming)
 
 mod anthropic;
+mod claude_code;
+mod copilot;
 mod ollama;
 mod openai;
 
@@ -33,7 +40,7 @@ pub struct ResolvedStep {
     pub budget: Option<f64>,
     /// Extra environment variables for the step.
     pub env: HashMap<String, String>,
-    /// System prompt (static CLAUDE.md-based prompt, used by Anthropic provider).
+    /// System prompt (static CLAUDE.md-based prompt, used by Claude Code provider).
     pub system_prompt: Option<String>,
     /// MCP server configurations (JSON object with `"mcpServers"` key).
     pub mcp_servers: Option<Value>,
@@ -56,10 +63,14 @@ pub struct TaskContext {
     pub project_context: String,
     /// Output from the previous step, if any.
     pub previous_step_output: Option<String>,
-    /// Working directory (git worktree path). Required by Anthropic provider.
+    /// Working directory (git worktree path). Required by Claude Code provider.
     pub working_dir: Option<PathBuf>,
-    /// Log file path for PTY recording. Required by Anthropic provider.
+    /// Log file path for PTY recording. Required by Claude Code provider.
     pub log_file: Option<PathBuf>,
+    /// Direct user prompt. When set, providers use this as the user message
+    /// content instead of building a JSON envelope from the other fields.
+    /// Used by plan_handler and chat summarization.
+    pub user_prompt: Option<String>,
 }
 
 /// Credentials and endpoint configuration for a provider.
@@ -101,7 +112,7 @@ pub struct StepOutput {
 /// Trait for executing a playbook step via a specific LLM provider.
 ///
 /// Implementors handle the details of calling the provider's API or spawning
-/// a subprocess (as in the Anthropic/Claude Code case).
+/// a subprocess (as in the Claude Code case).
 #[async_trait]
 pub trait StepProvider: Send + Sync {
     /// Execute the given step in the context of the given task.
@@ -126,13 +137,15 @@ pub struct ProviderFactory;
 impl ProviderFactory {
     /// Create a boxed [`StepProvider`] for the given provider name.
     ///
-    /// Known providers: `"anthropic"`, `"openai"`, `"ollama"`.
+    /// Known providers: `"claude-code"`, `"anthropic"`, `"openai"`, `"copilot"`, `"ollama"`.
     ///
     /// Returns [`UnknownProviderError`] for any unrecognised name.
     pub fn create(provider_name: &str) -> Result<Box<dyn StepProvider>, UnknownProviderError> {
         match provider_name {
+            "claude-code" => Ok(Box::new(claude_code::ClaudeCodeProvider)),
             "anthropic" => Ok(Box::new(anthropic::AnthropicProvider)),
             "openai" => Ok(Box::new(openai::OpenAIProvider)),
+            "copilot" => Ok(Box::new(copilot::CopilotProvider)),
             "ollama" => Ok(Box::new(ollama::OllamaProvider)),
             other => Err(UnknownProviderError(other.to_string())),
         }
@@ -146,6 +159,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn factory_creates_claude_code() {
+        let provider = ProviderFactory::create("claude-code");
+        assert!(provider.is_ok(), "claude-code provider should be created");
+    }
+
+    #[test]
     fn factory_creates_anthropic() {
         let provider = ProviderFactory::create("anthropic");
         assert!(provider.is_ok(), "anthropic provider should be created");
@@ -155,6 +174,12 @@ mod tests {
     fn factory_creates_openai() {
         let provider = ProviderFactory::create("openai");
         assert!(provider.is_ok(), "openai provider should be created");
+    }
+
+    #[test]
+    fn factory_creates_copilot() {
+        let provider = ProviderFactory::create("copilot");
+        assert!(provider.is_ok(), "copilot provider should be created");
     }
 
     #[test]
@@ -202,33 +227,56 @@ mod tests {
             previous_step_output: None,
             working_dir: None,
             log_file: None,
+            user_prompt: None,
         }
     }
 
     #[tokio::test]
-    async fn anthropic_provider_requires_working_dir() {
+    async fn claude_code_provider_requires_working_dir() {
+        let provider = ProviderFactory::create("claude-code").unwrap();
+        let config = ProviderConfig {
+            api_key: None,
+            base_url: None,
+            model: None,
+        };
+        let result = provider.execute(&test_step(), &test_task(), &config).await;
+        assert!(result.is_err(), "should require working_dir");
+    }
+
+    #[tokio::test]
+    async fn anthropic_provider_requires_api_key() {
         let provider = ProviderFactory::create("anthropic").unwrap();
         let config = ProviderConfig {
             api_key: None,
             base_url: None,
             model: None,
         };
-        // Without working_dir, the Anthropic provider should return an error.
         let result = provider.execute(&test_step(), &test_task(), &config).await;
-        assert!(result.is_err(), "should require working_dir");
+        assert!(result.is_err(), "missing API key should return error");
     }
 
     #[tokio::test]
-    async fn openai_provider_implements_trait() {
+    async fn openai_provider_requires_api_key() {
         let provider = ProviderFactory::create("openai").unwrap();
         let config = ProviderConfig {
             api_key: None,
             base_url: None,
             model: None,
         };
-        // With no API key configured, the OpenAI provider returns an error.
         let result = provider.execute(&test_step(), &test_task(), &config).await;
         assert!(result.is_err(), "missing API key should return error");
+    }
+
+    #[tokio::test]
+    async fn copilot_provider_requires_token() {
+        let provider = ProviderFactory::create("copilot").unwrap();
+        let config = ProviderConfig {
+            api_key: None,
+            base_url: None,
+            model: None,
+        };
+        let result = provider.execute(&test_step(), &test_task(), &config).await;
+        assert!(result.is_err(), "missing token should return error");
     }
 
     #[tokio::test]
@@ -236,14 +284,10 @@ mod tests {
         let provider = ProviderFactory::create("ollama").unwrap();
         let config = ProviderConfig {
             api_key: None,
-            // Use a port nothing listens on — the real implementation will
-            // return a ConnectionRefused error, which proves the trait is
-            // implemented and executing.
             base_url: Some("http://127.0.0.1:19999".to_string()),
             model: None,
         };
         let result = provider.execute(&test_step(), &test_task(), &config).await;
-        // Real implementation connects to the network — expect a connection error.
         assert!(result.is_err());
     }
 }

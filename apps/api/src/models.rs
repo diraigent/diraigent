@@ -2057,3 +2057,97 @@ pub struct ResolvedProviderConfig {
     /// Which config contributed the api_key: "project", "global", or null.
     pub api_key_source: Option<String>,
 }
+
+// ── Forgejo CI ──
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ForgejoIntegration {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub base_url: String,
+    pub token: Option<String>,
+    pub webhook_secret: Option<String>,
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct CiRun {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub forgejo_run_id: i64,
+    pub workflow_name: String,
+    pub status: String,
+    pub branch: Option<String>,
+    pub commit_sha: Option<String>,
+    pub triggered_by: Option<String>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct CiJob {
+    pub id: Uuid,
+    pub ci_run_id: Uuid,
+    pub name: String,
+    pub status: String,
+    pub runner: Option<String>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct CiStep {
+    pub id: Uuid,
+    pub ci_job_id: Uuid,
+    pub name: String,
+    pub status: String,
+    pub exit_code: Option<i32>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+}
+
+// ── CI REST API DTOs ──
+
+#[derive(Debug, Deserialize)]
+pub struct CiRunFilters {
+    pub branch: Option<String>,
+    pub status: Option<String>,
+    pub workflow_name: Option<String>,
+    pub page: Option<i64>,
+    pub per_page: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CiRunWithJobs {
+    #[serde(flatten)]
+    pub run: CiRun,
+    pub jobs: Vec<CiJob>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CiJobWithSteps {
+    #[serde(flatten)]
+    pub job: CiJob,
+    pub steps: Vec<CiStep>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateForgejoIntegration {
+    pub base_url: String,
+    pub token: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ForgejoIntegrationResponse {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub base_url: String,
+    pub webhook_url: String,
+    pub webhook_secret: String,
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}

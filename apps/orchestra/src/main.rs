@@ -1,34 +1,22 @@
 #![allow(dead_code)]
 
-mod api;
-mod chat;
 mod config;
 mod constants;
-mod context;
 mod crypto;
-mod diraigent_config;
+mod engine;
 mod git;
-mod git_handler;
-mod git_provisioner;
-mod git_strategy;
+mod handlers;
 mod lockfile;
 mod log_monitor;
-mod pipeline;
-mod project_paths;
-mod prompt;
+mod project;
 mod providers;
-mod scheduler;
-mod spawner;
-mod step_profile;
 mod task_id;
 mod util;
-mod worker;
-mod ws_client;
-mod ws_protocol;
+mod ws;
 
 use anyhow::Result;
-use api::ProjectsApi;
 use config::{ActiveTasks, Config};
+use project::api::ProjectsApi;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -166,7 +154,7 @@ async fn main() -> Result<()> {
         let ws_pp = config.projects_path.clone();
         let ws_shutdown = shutdown.clone();
         tokio::spawn(async move {
-            ws_client::run_ws_loop(&api_url, &agent_id, ws_api, ws_pp, ws_shutdown).await;
+            ws::run_ws_loop(&api_url, &agent_id, ws_api, ws_pp, ws_shutdown).await;
         });
     }
 
@@ -182,7 +170,7 @@ async fn main() -> Result<()> {
     }
 
     // Initial poll
-    spawner::poll_ready_tasks(&api, &config, &active, &lock_queue).await;
+    engine::spawner::poll_ready_tasks(&api, &config, &active, &lock_queue).await;
 
     // Main polling loop
     let mut last_poll = std::time::Instant::now();
@@ -194,7 +182,8 @@ async fn main() -> Result<()> {
 
         // Reap finished tasks — returns true if file locks were released.
         let locks_released =
-            scheduler::reap_finished(&api, &config.projects_path, &active, &lock_queue).await;
+            engine::scheduler::reap_finished(&api, &config.projects_path, &active, &lock_queue)
+                .await;
 
         // Heartbeat every 60s
         if last_heartbeat.elapsed().as_secs() >= 60 {
@@ -206,7 +195,7 @@ async fn main() -> Result<()> {
 
         // Poll on interval, or immediately when file locks were released (queue drain).
         if locks_released || last_poll.elapsed().as_secs() >= config.poll_interval {
-            spawner::poll_ready_tasks(&api, &config, &active, &lock_queue).await;
+            engine::spawner::poll_ready_tasks(&api, &config, &active, &lock_queue).await;
             process_ready_work_items(&api).await;
             last_poll = std::time::Instant::now();
         }
@@ -226,7 +215,7 @@ async fn main() -> Result<()> {
     // Wait for active workers to finish (children should exit from SIGTERM)
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
-        scheduler::reap_finished(&api, &config.projects_path, &active, &lock_queue).await;
+        engine::scheduler::reap_finished(&api, &config.projects_path, &active, &lock_queue).await;
         if active.lock().await.is_empty() {
             break;
         }

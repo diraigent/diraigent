@@ -6,7 +6,8 @@ use crate::AppState;
 use crate::auth::AuthUser;
 use crate::db::DiraigentDb;
 use crate::models::{
-    Decision, Integration, Knowledge, Observation, Report, Task, Verification, Webhook, Work,
+    CiRun, Decision, ForgejoIntegration, Integration, Knowledge, Observation, Report, Task,
+    Verification, Webhook, Work,
 };
 
 // ── ProjectScoped trait ──────────────────────────────────────────────────────
@@ -60,6 +61,16 @@ impl ProjectScoped for Integration {
     }
 }
 impl ProjectScoped for Report {
+    fn project_id(&self) -> Uuid {
+        self.project_id
+    }
+}
+impl ProjectScoped for CiRun {
+    fn project_id(&self) -> Uuid {
+        self.project_id
+    }
+}
+impl ProjectScoped for ForgejoIntegration {
     fn project_id(&self) -> Uuid {
         self.project_id
     }

@@ -38,6 +38,9 @@ diraigent-types.workspace = true
 path = "../../libs/common-rust/shared-utils"
 features = ["rest"]
 
+[dependencies.forgejo-client]
+path = "../../libs/common-rust/forgejo-client"
+
 [dev-dependencies]
 tokio-test.workspace = true
 tower = { version = "0.5", features = ["util"] }

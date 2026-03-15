@@ -24,6 +24,8 @@ export interface SpStepTemplate {
   settings: Record<string, unknown> | null;
   env: Record<string, string> | null;
   vars: Record<string, string> | null;
+  provider: string | null;
+  base_url: string | null;
   tags: string[];
   metadata: Record<string, unknown>;
   created_by: string;
@@ -48,6 +50,8 @@ export interface SpCreateStepTemplate {
   settings?: Record<string, unknown>;
   env?: Record<string, string>;
   vars?: Record<string, string>;
+  provider?: string;
+  base_url?: string;
   tags?: string[];
   metadata?: Record<string, unknown>;
 }
@@ -69,6 +73,8 @@ export interface SpUpdateStepTemplate {
   settings?: Record<string, unknown>;
   env?: Record<string, string>;
   vars?: Record<string, string>;
+  provider?: string;
+  base_url?: string;
   tags?: string[];
   metadata?: Record<string, unknown>;
 }

@@ -1,5 +1,57 @@
 # Changelog
 
+
+## v20260315-2151-developer (2026-03-15)
+
+### Added
+- **API**: Forgejo CI data model migration with integration, ci_run, ci_job, ci_step tables
+- **API**: Forgejo webhook endpoint with HMAC-SHA256 validation and integration tests
+- **API**: REST endpoints for CI pipeline data and Forgejo integration registration
+- **API**: CI run ingestion and sync service
+- **API**: Forgejo REST API v1 client library (`forgejo-client`)
+- **API**: Provider configs table with CRUD endpoints, encrypted API key storage, and resolution
+- **API**: Atomic apply-plan endpoint to prevent race conditions in plan task dependencies
+- **API**: TaskScore with age, priority, goal-alignment, and dependency-graph scoring components
+- **API**: `state_entered_at` timestamp on tasks table for staleness tracking
+- **Orchestra**: StepProvider trait, ProviderFactory, and step executor routing by provider config
+- **Orchestra**: OllamaProvider with streaming NDJSON and typed errors
+- **Orchestra**: OpenAI provider with streaming SSE, error mapping, and integration tests
+- **Orchestra**: Claude Code and Copilot provider implementations
+- **Orchestra**: Plan handler for routing work item planning through orchestra via WebSocket
+- **Orchestra**: New `apps/analyzer` tool with API surface mapper and AI-powered module summarizer
+- **Web**: CI pipelines page with table view, filters, and auto-polling
+- **Web**: Pipeline run detail page with job/step drilldown
+- **Web**: Provider Configs UI in Settings with create/edit/delete form
+- **Web**: Plan Tasks button and preview dialog on Work view
+- **Web**: Execute button on work items; Create & Execute on creation form
+- **Web**: Event rules and CI API services
+
+### Changed
+- **Orchestra**: Restructured into `engine/`, `git/`, `handlers/`, `project/`, `ws/` submodules
+- **Orchestra**: Refactored Anthropic provider for cleaner streaming and error handling
+- **Orchestra**: Replaced direct Anthropic API call with `claude -p` subprocess for chat compression
+- **Orchestra**: Split monolithic `ws_client` into modular `ws/` with `git_dispatch`
+- **API**: Encrypt Forgejo integration token and webhook secret via CryptoDb
+- **API**: Authorization checks added to global provider config endpoints
+- **Web**: Combined token usage charts into single multi-project graph
+- **Web**: Sorted completed work items by `updated_at` descending
+- **Web**: Added provider and base_url fields to playbook step schema
+
+### Fixed
+- **API**: Authorization gap in agents, members, and roles routes
+- **Orchestra**: Merge rollback on push failure and provider routing tests
+- **Orchestra**: Monorepo git provisioning using `git_root` instead of `working_dir`
+- **Orchestra**: `plan_work` empty response handling with stderr diagnostics
+- **Web**: Plan tasks URL now includes `projectId` in path
+- **Web**: Clear selected item when opening create form to prevent visual overlap
+- **Web**: Mobile horizontal scrolling across all pages
+- **Web**: Git push error display showing `[object Object]`
+
+### Removed
+- **Orchestra**: Monolithic `ws_client.rs` (replaced by modular `ws/` structure)
+
+---
+
 ## v20260315-1702-developer (2026-03-15)
 
 ### Added

@@ -2,6 +2,7 @@
 members = [
     "libs/common-rust/*",
     "apps/api",
+    "apps/analyzer",
     "apps/tui",
     "apps/orchestra",
 ]

@@ -74,6 +74,16 @@ export const routes: Routes = [
     pathMatch: 'full',
   },
   {
+    path: 'pipelines',
+    canActivate: [AuthGuard],
+    loadComponent: () => import('./features/pipelines/pipelines').then(m => m.PipelinesPage),
+  },
+  {
+    path: 'pipelines/:runId',
+    canActivate: [AuthGuard],
+    loadComponent: () => import('./features/pipelines/run-detail').then(m => m.RunDetailPage),
+  },
+  {
     path: 'integrations',
     canActivate: [AuthGuard],
     loadComponent: () => import('./features/integrations/integrations').then(m => m.IntegrationsPage),

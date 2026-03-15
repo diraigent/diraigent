@@ -8,12 +8,12 @@ use anyhow::Result;
 use serde_json::Value;
 use tracing::{info, warn};
 
-use crate::api::{ProjectsApi, retry_api_call};
 use crate::constants::{
     STATE_BACKLOG, STATE_CANCELLED, STATE_DONE, STATE_HUMAN_REVIEW, STATE_READY,
 };
-use crate::git_strategy::{self, GitAction, GitStrategy};
-use crate::step_profile;
+use crate::engine::step_profile;
+use crate::git::strategy::{self as git_strategy, GitAction, GitStrategy};
+use crate::project::api::{ProjectsApi, retry_api_call};
 use crate::task_id::TaskId;
 
 /// Outcome of checking the post-worker task state.
@@ -344,7 +344,7 @@ async fn resolve_step_template(api: &ProjectsApi, step: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::ProjectsApi;
+    use crate::project::api::ProjectsApi;
     use wiremock::matchers::{body_json, method, path, path_regex};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 

@@ -4,11 +4,11 @@ use std::path::Path;
 use tokio::task::JoinHandle;
 use tracing::{error, info, warn};
 
-use crate::api::ProjectsApi;
 use crate::config::{ActiveTasks, LockQueue};
-use crate::git_strategy::GitAction;
-use crate::pipeline::{self, StepOutcome};
-use crate::project_paths;
+use crate::engine::pipeline::{self, StepOutcome};
+use crate::git::strategy::GitAction;
+use crate::project::api::ProjectsApi;
+use crate::project::paths as project_paths;
 use crate::task_id::TaskId;
 
 /// Collect finished tasks and process them (check pipeline state, merge/cleanup).
@@ -420,8 +420,8 @@ async fn emit_merge_error_event(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::ProjectsApi;
     use crate::config::{ActiveTasks, LockQueue};
+    use crate::project::api::ProjectsApi;
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::Mutex;
@@ -508,7 +508,12 @@ mod tests {
         let poll_active = Arc::clone(&active);
         let poll_result = tokio::time::timeout(
             std::time::Duration::from_millis(50),
-            crate::spawner::poll_ready_tasks(&poll_api, &config, &poll_active, &new_lock_queue()),
+            crate::engine::spawner::poll_ready_tasks(
+                &poll_api,
+                &config,
+                &poll_active,
+                &new_lock_queue(),
+            ),
         )
         .await;
 

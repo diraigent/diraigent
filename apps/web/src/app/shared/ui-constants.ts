@@ -70,6 +70,17 @@ export const INTEGRATION_KIND_COLORS: Record<IntegrationKind, string> = {
   custom: 'bg-ctp-overlay0/20 text-ctp-overlay0',
 };
 
+// ── CI Pipelines ─────────────────────────────────────────────────────────────
+
+export const CI_STATUS_COLORS: Record<string, string> = {
+  success: 'bg-ctp-green/20 text-ctp-green',
+  failure: 'bg-ctp-red/20 text-ctp-red',
+  running: 'bg-ctp-yellow/20 text-ctp-yellow',
+  pending: 'bg-ctp-blue/20 text-ctp-blue',
+  skipped: 'bg-ctp-overlay0/20 text-ctp-overlay0',
+  cancelled: 'bg-ctp-peach/20 text-ctp-peach',
+};
+
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 
 export const TASK_STATE_COLORS: Record<string, string> = {

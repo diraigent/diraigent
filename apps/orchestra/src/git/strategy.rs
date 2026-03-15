@@ -199,7 +199,7 @@ impl GitStrategy {
 /// Returns `Merge { target_branch: None }` as fallback when the task has no
 /// playbook or the playbook fetch fails.
 pub async fn resolve_strategy(
-    api: &crate::api::ProjectsApi,
+    api: &crate::project::api::ProjectsApi,
     task_data: Option<&Value>,
     project_git_mode: &str,
 ) -> GitStrategy {
@@ -246,7 +246,10 @@ pub async fn resolve_strategy(
 ///
 /// Returns `Some("work/<slug>")` if the task is linked to a work item,
 /// `None` otherwise.
-async fn resolve_work_branch(api: &crate::api::ProjectsApi, task: &Value) -> Option<String> {
+async fn resolve_work_branch(
+    api: &crate::project::api::ProjectsApi,
+    task: &Value,
+) -> Option<String> {
     let task_id = task["id"].as_str()?;
     let work_ids = match api.get_task_work_items(task_id).await {
         Ok(ids) if !ids.is_empty() => ids,

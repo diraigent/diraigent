@@ -84,13 +84,17 @@ impl StepProvider for OpenAIProvider {
         let url = format!("{base_url}/v1/chat/completions");
 
         // Build the user message from the task context.
-        let user_content = serde_json::json!({
-            "task_id": task.task_id,
-            "project_id": task.project_id,
-            "project_context": task.project_context,
-            "previous_step_output": task.previous_step_output,
-        })
-        .to_string();
+        let user_content = if let Some(ref prompt) = task.user_prompt {
+            prompt.clone()
+        } else {
+            serde_json::json!({
+                "task_id": task.task_id,
+                "project_id": task.project_id,
+                "project_context": task.project_context,
+                "previous_step_output": task.previous_step_output,
+            })
+            .to_string()
+        };
 
         let body = ChatCompletionRequest {
             model: model.to_string(),
@@ -308,6 +312,7 @@ mod tests {
             previous_step_output: None,
             working_dir: None,
             log_file: None,
+            user_prompt: None,
         }
     }
 

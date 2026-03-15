@@ -147,6 +147,12 @@ pub trait DiraigentDb: Send + Sync {
     ) -> Result<Option<(Uuid, Uuid)>, AppError>;
     async fn get_agent_by_id(&self, id: Uuid) -> Result<Agent, AppError>;
     async fn list_agents(&self, p: &Pagination) -> Result<Vec<Agent>, AppError>;
+    async fn list_tenant_agents(
+        &self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+        p: &Pagination,
+    ) -> Result<Vec<Agent>, AppError>;
     async fn update_agent(&self, id: Uuid, req: &UpdateAgent) -> Result<Agent, AppError>;
     async fn agent_heartbeat(&self, id: Uuid, status: Option<&str>) -> Result<Agent, AppError>;
     async fn list_agent_tasks(&self, agent_id: Uuid, p: &Pagination)
@@ -808,4 +814,78 @@ pub trait DiraigentDb: Send + Sync {
         req: &UpdateProviderConfig,
     ) -> Result<ProviderConfig, AppError>;
     async fn delete_provider_config(&self, id: Uuid) -> Result<(), AppError>;
+
+    // ── Forgejo CI ────────────────────────────────────────────────────────────
+    async fn get_forgejo_integration(&self, id: Uuid) -> Result<ForgejoIntegration, AppError>;
+    async fn get_forgejo_integration_by_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<ForgejoIntegration, AppError>;
+    #[allow(clippy::too_many_arguments)]
+    async fn upsert_ci_run(
+        &self,
+        project_id: Uuid,
+        forgejo_run_id: i64,
+        workflow_name: &str,
+        status: &str,
+        branch: Option<&str>,
+        commit_sha: Option<&str>,
+        triggered_by: Option<&str>,
+        started_at: Option<chrono::DateTime<chrono::Utc>>,
+        finished_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<CiRun, AppError>;
+    async fn get_ci_run_by_forgejo_id(
+        &self,
+        project_id: Uuid,
+        forgejo_run_id: i64,
+    ) -> Result<Option<CiRun>, AppError>;
+    #[allow(clippy::too_many_arguments)]
+    async fn upsert_ci_job_by_name(
+        &self,
+        ci_run_id: Uuid,
+        name: &str,
+        status: &str,
+        runner: Option<&str>,
+        started_at: Option<chrono::DateTime<chrono::Utc>>,
+        finished_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<CiJob, AppError>;
+    async fn delete_steps_for_job(&self, ci_job_id: Uuid) -> Result<(), AppError>;
+    #[allow(clippy::too_many_arguments)]
+    async fn insert_ci_step(
+        &self,
+        ci_job_id: Uuid,
+        name: &str,
+        status: &str,
+        exit_code: Option<i32>,
+        started_at: Option<chrono::DateTime<chrono::Utc>>,
+        finished_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<CiStep, AppError>;
+    #[allow(clippy::too_many_arguments)]
+    async fn list_ci_runs(
+        &self,
+        project_id: Uuid,
+        branch: Option<&str>,
+        status: Option<&str>,
+        workflow_name: Option<&str>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<CiRun>, AppError>;
+    async fn count_ci_runs(
+        &self,
+        project_id: Uuid,
+        branch: Option<&str>,
+        status: Option<&str>,
+        workflow_name: Option<&str>,
+    ) -> Result<i64, AppError>;
+    async fn get_ci_run(&self, id: Uuid) -> Result<CiRun, AppError>;
+    async fn list_ci_jobs_for_run(&self, ci_run_id: Uuid) -> Result<Vec<CiJob>, AppError>;
+    async fn get_ci_job(&self, id: Uuid) -> Result<CiJob, AppError>;
+    async fn list_ci_steps_for_job(&self, ci_job_id: Uuid) -> Result<Vec<CiStep>, AppError>;
+    async fn create_forgejo_integration(
+        &self,
+        project_id: Uuid,
+        base_url: &str,
+        token: Option<&str>,
+        webhook_secret: &str,
+    ) -> Result<ForgejoIntegration, AppError>;
 }

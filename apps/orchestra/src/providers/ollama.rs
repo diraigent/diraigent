@@ -115,7 +115,10 @@ impl StepProvider for OllamaProvider {
                 },
                 ChatMessage {
                     role: "user".to_string(),
-                    content: task.project_context.clone(),
+                    content: task
+                        .user_prompt
+                        .clone()
+                        .unwrap_or_else(|| task.project_context.clone()),
                 },
             ],
             stream: true,
@@ -276,6 +279,7 @@ mod tests {
             previous_step_output: None,
             working_dir: None,
             log_file: None,
+            user_prompt: None,
         }
     }
 

@@ -1,6 +1,6 @@
-use crate::api::ProjectsApi;
 use crate::crypto::Dek;
-use crate::step_profile::StepProfile;
+use crate::engine::step_profile::StepProfile;
+use crate::project::api::ProjectsApi;
 use crate::task_id::TaskId;
 use std::path::Path;
 use tracing::{debug, info};

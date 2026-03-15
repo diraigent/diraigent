@@ -1,12 +1,12 @@
-use crate::api::ProjectsApi;
 use crate::crypto::Dek;
+use crate::engine::prompt;
+use crate::engine::step_profile::StepProfile;
 use crate::git::WorktreeManager;
-use crate::prompt;
+use crate::project::api::ProjectsApi;
 use crate::providers::{
     ProviderConfig as ProviderCfg, ProviderFactory, ResolvedStep,
     TaskContext as ProviderTaskContext,
 };
-use crate::step_profile::StepProfile;
 use crate::task_id::TaskId;
 use anyhow::Result;
 use serde_json::Value;
@@ -63,8 +63,8 @@ pub struct StepConfig {
     /// Extra environment variables injected into the worker's shell.
     /// Useful for MCP servers or tools that require API keys.
     pub env: HashMap<String, String>,
-    /// AI provider for this step (e.g. "anthropic", "openai", "ollama").
-    /// `None` defaults to "anthropic".
+    /// AI provider for this step (e.g. "claude-code", "anthropic", "openai", "copilot", "ollama").
+    /// `None` defaults to "claude-code".
     pub provider: Option<String>,
     /// Override the default API endpoint for the chosen provider.
     pub base_url: Option<String>,
@@ -264,8 +264,9 @@ pub async fn run_worker(
     );
 
     // Route to the correct provider based on step config.
-    // Default to "anthropic" when no provider is specified.
-    let provider_name = step_config.provider.as_deref().unwrap_or("anthropic");
+    // Default to "claude-code" — the agentic CLI provider that supports
+    // worktrees, PTY, tools, and file access needed for task execution.
+    let provider_name = step_config.provider.as_deref().unwrap_or("claude-code");
     let start = std::time::Instant::now();
 
     let (result, cost_usd, input_tokens, output_tokens, api_turns, stop_reason, is_error) =
@@ -312,7 +313,7 @@ pub async fn run_worker(
     let is_retriable = step_config
         .step_json
         .as_ref()
-        .map(crate::step_profile::is_retriable)
+        .map(crate::engine::step_profile::is_retriable)
         .unwrap_or_else(|| {
             matches!(
                 StepProfile::for_step(&step_config.step_name),
@@ -606,6 +607,7 @@ async fn execute_via_provider(
         previous_step_output: None,
         working_dir: Some(worktree_path.to_path_buf()),
         log_file: Some(log_file.to_path_buf()),
+        user_prompt: None,
     };
 
     // 6. Execute via provider — errors become blockers, not panics
@@ -652,7 +654,7 @@ async fn execute_via_provider(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::ProjectsApi;
+    use crate::project::api::ProjectsApi;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -731,17 +733,17 @@ mod tests {
     // ── Provider routing decision tests ──────────────────────
 
     #[test]
-    fn default_provider_is_anthropic() {
+    fn default_provider_is_claude_code() {
         let step_config = StepConfig::for_step("implement", None, None, None);
-        let provider_name = step_config.provider.as_deref().unwrap_or("anthropic");
-        assert_eq!(provider_name, "anthropic");
+        let provider_name = step_config.provider.as_deref().unwrap_or("claude-code");
+        assert_eq!(provider_name, "claude-code");
     }
 
     #[test]
     fn explicit_anthropic_provider_is_recognised() {
         let step_json = serde_json::json!({"name": "implement", "provider": "anthropic"});
         let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
-        let provider_name = step_config.provider.as_deref().unwrap_or("anthropic");
+        let provider_name = step_config.provider.as_deref().unwrap_or("claude-code");
         assert_eq!(provider_name, "anthropic");
     }
 
@@ -870,14 +872,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn routing_anthropic_via_factory_executes_via_provider() {
+    async fn routing_claude_code_via_factory_executes_via_provider() {
         let server = MockServer::start().await;
 
-        // Mock resolve endpoint returning Anthropic config
+        // Mock resolve endpoint returning Claude Code config
         Mock::given(method("GET"))
-            .and(path("/proj-1/providers/resolve/anthropic"))
+            .and(path("/proj-1/providers/resolve/claude-code"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "provider": "anthropic",
+                "provider": "claude-code",
                 "api_key": "sk-ant-test",
                 "base_url": null,
                 "default_model": "claude-sonnet-4-6",
@@ -890,13 +892,13 @@ mod tests {
         let api = ProjectsApi::new(&server.uri(), "test-agent");
         let step_config = StepConfig::for_step("implement", None, None, None);
 
-        // The real Anthropic provider spawns `claude` CLI — in test env this will
+        // The Claude Code provider spawns `claude` CLI — in test env this will
         // fail because the CLI isn't available, but the provider routing should
         // still work (creates provider, resolves config, builds context, calls execute).
         let (_tmp, worktree, log_file) = test_paths();
         let (result, _, _, _, _, _, is_error) = execute_via_provider(
             &api,
-            "anthropic",
+            "claude-code",
             "proj-1",
             "task-1",
             &step_config,
@@ -909,7 +911,7 @@ mod tests {
 
         // In CI/test the `script`/`claude` binary isn't available, so we expect
         // either success (if somehow available) or an error from the subprocess.
-        // The important thing is that routing reached the Anthropic provider.
+        // The important thing is that routing reached the Claude Code provider.
         assert!(result.is_ok() || result.is_err());
         let _ = is_error; // may or may not be error depending on env
     }
@@ -1105,15 +1107,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn all_three_providers_route_correctly() {
-        // End-to-end routing test covering all three providers
+    async fn all_api_providers_route_correctly() {
+        // End-to-end routing test covering all API-based providers
+        // (claude-code is excluded — it requires the CLI binary)
         let server = MockServer::start().await;
 
-        // Mock resolve endpoint for all three providers (base_url points to mock server)
+        // Mock resolve endpoints for all providers
         let server_url = server.uri();
         for (provider, model) in [
+            ("claude-code", "claude-sonnet-4-6"),
             ("anthropic", "claude-sonnet-4-6"),
             ("openai", "gpt-4o"),
+            ("copilot", "openai/gpt-4.1"),
             ("ollama", "llama3"),
         ] {
             Mock::given(method("GET"))
@@ -1133,10 +1138,32 @@ mod tests {
         mock_openai_completions(&server).await;
         mock_ollama_chat(&server).await;
 
+        // Mock Anthropic Messages API
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "content": [{"type": "text", "text": "test response"}],
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 10, "output_tokens": 5}
+            })))
+            .mount(&server)
+            .await;
+
+        // Mock Copilot / GitHub Models (OpenAI-compatible at /chat/completions)
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(openai_sse_body())
+                    .insert_header("content-type", "text/event-stream"),
+            )
+            .mount(&server)
+            .await;
+
         let api = ProjectsApi::new(&server.uri(), "test-agent");
 
-        // Test non-Anthropic providers (Anthropic requires CLI binary)
-        for provider_name in ["openai", "ollama"] {
+        // Test all API-based providers (claude-code requires CLI binary)
+        for provider_name in ["anthropic", "openai", "copilot", "ollama"] {
             let step_json = serde_json::json!({
                 "name": "implement",
                 "provider": provider_name

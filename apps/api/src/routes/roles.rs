@@ -46,9 +46,13 @@ async fn list_roles(
 async fn get_role(
     State(state): State<AppState>,
     AuthUser(_): AuthUser,
+    tenant: TenantContext,
     Path(role_id): Path<Uuid>,
 ) -> Result<Json<Role>, AppError> {
     let role = state.db.get_role(role_id).await?;
+    if role.tenant_id != tenant.tenant_id {
+        return Err(AppError::NotFound("Role not found".into()));
+    }
     Ok(Json(role))
 }
 

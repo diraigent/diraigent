@@ -2,7 +2,7 @@ import { Component, input, output, signal, computed, HostListener, effect } from
 import { DatePipe, SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TranslocoModule } from '@jsverse/transloco';
-import { SpTask, SpTaskUpdate, SpTaskComment, SpTaskDependencies, ChangedFileSummary, UpdateTaskRequest } from '../../../../core/services/tasks-api.service';
+import { SpTask, SpTaskUpdate, SpTaskComment, SpTaskDependencies, ChangedFileSummary, UpdateTaskRequest, RelatedItems, TaskScoreComponents } from '../../../../core/services/tasks-api.service';
 import { BranchInfo, TaskBranchStatus } from '../../../../core/services/git-api.service';
 import { SpVerification } from '../../../../core/services/verifications-api.service';
 import { SpPlaybook } from '../../../../core/services/playbooks-api.service';
@@ -341,6 +341,8 @@ type SortDir = 'asc' | 'desc';
                   [kinds]="detailKinds()"
                   [parentTask]="detailParentTask()"
                   [subtasks]="detailSubtasks()"
+                  [relatedItems]="detailRelatedItems()"
+                  [scoreComponents]="detailScoreComponents()"
                   (closed)="onDetailClosed(task)"
                   (transitionClick)="detailTransition.emit($event)"
                   (claimClick)="detailClaim.emit()"
@@ -427,6 +429,8 @@ export class TaskListComponent {
   detailKinds = input<string[]>([]);
   detailParentTask = input<SpTask | null>(null);
   detailSubtasks = input<SpTask[]>([]);
+  detailRelatedItems = input<RelatedItems | null>(null);
+  detailScoreComponents = input<TaskScoreComponents | null>(null);
   taskSelect = output<SpTask>();
   stateChange = output<{ task: SpTask; target: string }>();
   searchChange = output<string>();
