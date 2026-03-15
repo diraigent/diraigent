@@ -292,7 +292,8 @@ pub async fn build_user_prompt(
         .as_ref()
         .and_then(|t| t["claimed_at"].as_str())
         .unwrap_or("");
-    let review_feedback = extract_review_feedback(&task_updates, &verifications, claimed_at);
+    let review_feedback =
+        extract_review_feedback(&task_updates, &verifications, &task_comments, claimed_at);
 
     let task_title = task_json
         .as_ref()
@@ -821,7 +822,7 @@ Instead, analyze the spec and break it into smaller, well-scoped subtasks.
     fallback
 }
 
-/// Extract review feedback from task updates and verifications.
+/// Extract review feedback from task updates, verifications, and human comments.
 ///
 /// Returns a formatted string of review issues when the task has been through
 /// a review cycle, or an empty string for first-time implementation.
@@ -830,13 +831,17 @@ Instead, analyze the spec and break it into smaller, well-scoped subtasks.
 /// - A "blocker" update exists (reviewer flagged issues)
 /// - An "artifact" update contains "REVIEW:" (reviewer findings)
 /// - A verification has status "fail" (failed checks)
+/// - Human comments exist that are newer than the latest agent update
+///   (e.g. posted during human_review)
 ///
-/// `claimed_at` restricts the scan to updates from the current pipeline cycle.
-/// Updates older than `claimed_at` are ignored to prevent stale REVIEW: artifacts
-/// from previous cycles (before the task was reopened) from triggering false REWORK.
+/// `claimed_at` restricts the scan of agent updates/verifications to the current
+/// pipeline cycle. Human comments are NOT filtered by `claimed_at` because they
+/// are posted BEFORE the agent re-claims the task; instead they are filtered by
+/// comparing against the latest agent update timestamp.
 fn extract_review_feedback(
     task_updates: &[serde_json::Value],
     verifications: &[serde_json::Value],
+    task_comments: &[serde_json::Value],
     claimed_at: &str,
 ) -> String {
     let mut feedback_items = Vec::new();
@@ -862,7 +867,7 @@ fn extract_review_feedback(
             && u["content"].as_str().is_some_and(|c| c.contains("REVIEW:"))
     });
 
-    // 1. Collect review feedback from updates
+    // 1. Collect review feedback from agent updates
     for u in &current_cycle_updates {
         let kind = u["kind"].as_str().unwrap_or("");
         let content = u["content"].as_str().unwrap_or("");
@@ -901,6 +906,30 @@ fn extract_review_feedback(
             } else {
                 feedback_items.push(format!("**Failed check**: {title} -- {detail}"));
             }
+        }
+    }
+
+    // 3. Human review comments: include comments posted AFTER the latest agent
+    // update. This captures human feedback from the human_review phase without
+    // including initial task discussion comments.
+    //
+    // We don't filter by claimed_at because human comments are posted before the
+    // agent re-claims the task (during human_review → ready transition).
+    let latest_agent_update = task_updates
+        .iter()
+        .filter_map(|u| u["created_at"].as_str())
+        .max()
+        .unwrap_or("");
+
+    if !latest_agent_update.is_empty() {
+        for c in task_comments {
+            let comment_time = c["created_at"].as_str().unwrap_or("");
+            let content = c["content"].as_str().unwrap_or("");
+            if content.is_empty() || comment_time <= latest_agent_update {
+                continue;
+            }
+            let author = c["author_name"].as_str().unwrap_or("human");
+            feedback_items.push(format!("**Human review** ({author}): {content}"));
         }
     }
 
@@ -1024,7 +1053,7 @@ mod tests {
     fn implement_blocker_without_review_artifact_does_not_trigger_rework() {
         // Implement agent posted a blocker (test failure), but no REVIEW: artifact
         let updates = vec![make_update("blocker", "test failed: 2 assertions")];
-        let feedback = extract_review_feedback(&updates, &[], "");
+        let feedback = extract_review_feedback(&updates, &[], &[], "");
         assert!(
             feedback.is_empty(),
             "implement-step blockers without a REVIEW: artifact should NOT trigger rework, got: {feedback}"
@@ -1038,7 +1067,7 @@ mod tests {
             make_update("artifact", "REVIEW: Missing error handling in foo.rs"),
             make_update("blocker", "Fix error handling before re-submitting"),
         ];
-        let feedback = extract_review_feedback(&updates, &[], "");
+        let feedback = extract_review_feedback(&updates, &[], &[], "");
         assert!(
             feedback.contains("Blocker"),
             "blockers should be included when REVIEW: artifact exists"
@@ -1056,7 +1085,7 @@ mod tests {
             "artifact",
             "REVIEW: Code looks good but minor style issue",
         )];
-        let feedback = extract_review_feedback(&updates, &[], "");
+        let feedback = extract_review_feedback(&updates, &[], &[], "");
         assert!(
             !feedback.is_empty(),
             "REVIEW: artifact alone should trigger rework"
@@ -1066,7 +1095,7 @@ mod tests {
     #[test]
     fn no_updates_means_no_rework() {
         let updates: Vec<serde_json::Value> = vec![];
-        let feedback = extract_review_feedback(&updates, &[], "");
+        let feedback = extract_review_feedback(&updates, &[], &[], "");
         assert!(feedback.is_empty(), "no updates should mean no rework");
     }
 
@@ -1086,7 +1115,7 @@ mod tests {
             ),
         ];
         // claimed_at = T2 (after cycle 1 completed, before cycle 2 blocker)
-        let feedback = extract_review_feedback(&updates, &[], "2026-01-02T12:00:00Z");
+        let feedback = extract_review_feedback(&updates, &[], &[], "2026-01-02T12:00:00Z");
         assert!(
             feedback.is_empty(),
             "stale REVIEW: artifact from previous cycle should NOT trigger rework, got: {feedback}"
@@ -1111,7 +1140,7 @@ mod tests {
             make_update_at("blocker", "Fix the bug", "2026-01-02T15:05:00Z"),
         ];
         // claimed_at is after cycle 1 but before cycle 2 updates
-        let feedback = extract_review_feedback(&updates, &[], "2026-01-02T12:00:00Z");
+        let feedback = extract_review_feedback(&updates, &[], &[], "2026-01-02T12:00:00Z");
         assert!(
             feedback.contains("Blocker"),
             "current-cycle blocker with REVIEW: artifact should trigger rework"
@@ -1125,7 +1154,7 @@ mod tests {
     #[test]
     fn progress_updates_do_not_trigger_rework() {
         let updates = vec![make_update("progress", "implemented the feature")];
-        let feedback = extract_review_feedback(&updates, &[], "");
+        let feedback = extract_review_feedback(&updates, &[], &[], "");
         assert!(
             feedback.is_empty(),
             "progress updates should not trigger rework"
@@ -1144,7 +1173,8 @@ mod tests {
             "created_at": "2026-01-01T08:00:00Z"
         })];
         // claimed_at is AFTER the stale verification
-        let feedback = extract_review_feedback(&updates, &verifications, "2026-01-02T12:00:00Z");
+        let feedback =
+            extract_review_feedback(&updates, &verifications, &[], "2026-01-02T12:00:00Z");
         assert!(
             feedback.is_empty(),
             "stale failed verification from previous cycle should NOT trigger rework, got: {feedback}"
@@ -1173,7 +1203,8 @@ mod tests {
             }),
         ];
         // claimed_at filters out the old verification but keeps the current one
-        let feedback = extract_review_feedback(&updates, &verifications, "2026-01-02T12:00:00Z");
+        let feedback =
+            extract_review_feedback(&updates, &verifications, &[], "2026-01-02T12:00:00Z");
         assert!(
             feedback.contains("Current CI failure"),
             "current-cycle failed verification should trigger rework, got: {feedback}"
@@ -1197,7 +1228,7 @@ mod tests {
         })];
 
         // Empty claimed_at should include all verifications (backwards compatible)
-        let feedback = extract_review_feedback(&updates, &verifications, "");
+        let feedback = extract_review_feedback(&updates, &verifications, &[], "");
 
         assert!(
             feedback.contains("Old failure"),
@@ -1216,7 +1247,7 @@ mod tests {
             "detail": "3 tests failed in module foo",
             "created_at": "2026-01-01T10:00:00Z"
         })];
-        let feedback = extract_review_feedback(&updates, &verifications, "");
+        let feedback = extract_review_feedback(&updates, &verifications, &[], "");
         assert!(
             feedback.contains("**Failed check**: CI check -- 3 tests failed in module foo"),
             "failed verification with detail should format as 'title -- detail', got: {feedback}"
@@ -1234,10 +1265,122 @@ mod tests {
             "detail": "all green",
             "created_at": "2026-01-01T10:00:00Z"
         })];
-        let feedback = extract_review_feedback(&updates, &verifications, "");
+        let feedback = extract_review_feedback(&updates, &verifications, &[], "");
         assert!(
             feedback.is_empty(),
             "passed verifications should not trigger rework, got: {feedback}"
+        );
+    }
+
+    // ── human review comment tests ──────────────────────────
+
+    fn make_comment(content: &str, created_at: &str) -> serde_json::Value {
+        serde_json::json!({
+            "content": content,
+            "author_name": "human",
+            "created_at": created_at
+        })
+    }
+
+    #[test]
+    fn human_comment_after_agent_work_triggers_rework() {
+        // Agent posted progress at T1, human posted review comment at T2
+        let updates = vec![make_update_at(
+            "progress",
+            "implemented feature",
+            "2026-01-01T10:00:00Z",
+        )];
+        let comments = vec![make_comment(
+            "The button should be blue not red",
+            "2026-01-01T12:00:00Z",
+        )];
+        let feedback = extract_review_feedback(&updates, &[], &comments, "");
+        assert!(
+            feedback.contains("Human review"),
+            "human comment after agent work should trigger rework, got: {feedback}"
+        );
+        assert!(
+            feedback.contains("The button should be blue not red"),
+            "human comment content should be included, got: {feedback}"
+        );
+    }
+
+    #[test]
+    fn human_comment_before_agent_work_does_not_trigger_rework() {
+        // Human posted discussion comment at T1, agent posted progress at T2
+        let updates = vec![make_update_at(
+            "progress",
+            "implemented feature",
+            "2026-01-01T12:00:00Z",
+        )];
+        let comments = vec![make_comment(
+            "Initial instructions for the task",
+            "2026-01-01T08:00:00Z",
+        )];
+        let feedback = extract_review_feedback(&updates, &[], &comments, "");
+        assert!(
+            feedback.is_empty(),
+            "human comment before agent work should NOT trigger rework, got: {feedback}"
+        );
+    }
+
+    #[test]
+    fn human_comment_without_any_agent_updates_does_not_trigger_rework() {
+        // No agent updates exist — task hasn't been worked on yet
+        let updates: Vec<serde_json::Value> = vec![];
+        let comments = vec![make_comment(
+            "Initial task discussion",
+            "2026-01-01T10:00:00Z",
+        )];
+        let feedback = extract_review_feedback(&updates, &[], &comments, "");
+        assert!(
+            feedback.is_empty(),
+            "human comment with no prior agent work should NOT trigger rework, got: {feedback}"
+        );
+    }
+
+    #[test]
+    fn human_comment_combined_with_agent_review_feedback() {
+        // Agent review step rejected + human also posted comment during human_review
+        let updates = vec![
+            make_update_at(
+                "artifact",
+                "REVIEW: Missing error handling in foo.rs",
+                "2026-01-01T10:00:00Z",
+            ),
+            make_update_at("blocker", "Fix error handling", "2026-01-01T10:05:00Z"),
+        ];
+        let comments = vec![make_comment(
+            "Also please fix the color scheme",
+            "2026-01-01T12:00:00Z",
+        )];
+        let feedback = extract_review_feedback(&updates, &[], &comments, "");
+        assert!(
+            feedback.contains("Blocker"),
+            "agent blocker should be in feedback"
+        );
+        assert!(
+            feedback.contains("REVIEW:"),
+            "agent review artifact should be in feedback"
+        );
+        assert!(
+            feedback.contains("Also please fix the color scheme"),
+            "human review comment should also be in feedback"
+        );
+    }
+
+    #[test]
+    fn human_comment_includes_author_name() {
+        let updates = vec![make_update_at("progress", "done", "2026-01-01T10:00:00Z")];
+        let comments = vec![serde_json::json!({
+            "content": "Fix the spacing",
+            "author_name": "Roman",
+            "created_at": "2026-01-01T12:00:00Z"
+        })];
+        let feedback = extract_review_feedback(&updates, &[], &comments, "");
+        assert!(
+            feedback.contains("(Roman)"),
+            "feedback should include the author name, got: {feedback}"
         );
     }
 
