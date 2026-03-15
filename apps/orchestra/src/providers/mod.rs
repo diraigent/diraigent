@@ -196,8 +196,9 @@ mod tests {
             base_url: None,
             model: None,
         };
+        // With no API key configured, the OpenAI provider returns an error.
         let result = provider.execute(&step, &task, &config).await;
-        assert!(result.is_ok());
+        assert!(result.is_err(), "missing API key should return error");
     }
 
     #[tokio::test]
