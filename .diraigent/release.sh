@@ -20,6 +20,14 @@ done
 SOURCE="${DIRAIGENT_BRANCH:-dev}"
 TARGET="${DIRAIGENT_TARGET_BRANCH:-main}"
 TAG="${DIRAIGENT_VERSION:-v$(date -u +%Y%m%d-%H%M)}"
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# For changelog headers, non-release builds get a -developer suffix
+if $RELEASE; then
+  CHANGELOG_TAG="$TAG"
+else
+  CHANGELOG_TAG="${TAG}-developer"
+fi
 
 git checkout "$TARGET"
 git merge --squash "$SOURCE"
@@ -43,8 +51,9 @@ COMMIT_MSG=$(git diff --cached --stat | claude -p \
    1. Output a COMMIT MESSAGE (first line: '$MSG_FIRST_LINE', then blank line, then bullet points summarizing the changes — group by area: API, Orchestra, Web, TUI, CI/CD, etc.)
    2. Output '---CHANGELOG---' on its own line
    3. Output a CHANGELOG entry in this format:
-      ## $TAG ($(date -u +%Y-%m-%d))
-      - bullet points of notable changes (user-facing, not internal refactors)
+      ## $CHANGELOG_TAG ($(date -u +%Y-%m-%d))
+      - bullet points of notable changes grouped by area (### API, ### Orchestra, ### Web Dashboard, ### TUI, ### CI/CD)
+      - each bullet should be **bold title**: description
 
    Output ONLY the commit message and changelog, nothing else." 2>/dev/null)
 
@@ -52,17 +61,18 @@ COMMIT_MSG=$(git diff --cached --stat | claude -p \
 COMMIT_BODY=$(echo "$COMMIT_MSG" | sed '/^---CHANGELOG---$/,$d')
 CHANGELOG_ENTRY=$(echo "$COMMIT_MSG" | sed '1,/^---CHANGELOG---$/d')
 
-# Insert changelog entry after the "# Changelog" header
-if [ -f CHANGELOG.md ] && grep -q '^# Changelog' CHANGELOG.md; then
-  sed '/^# Changelog$/r /dev/stdin' CHANGELOG.md <<EOF > CHANGELOG.md.tmp
+# Insert changelog entry after the "# Changelog" header (in repo root)
+CHANGELOG="$REPO_ROOT/CHANGELOG.md"
+if [ -f "$CHANGELOG" ] && grep -q '^# Changelog' "$CHANGELOG"; then
+  sed '/^# Changelog$/r /dev/stdin' "$CHANGELOG" <<EOF > "$CHANGELOG.tmp"
 
 $CHANGELOG_ENTRY
 
 ---
 EOF
-  mv CHANGELOG.md.tmp CHANGELOG.md
+  mv "$CHANGELOG.tmp" "$CHANGELOG"
 else
-  cat > CHANGELOG.md <<EOF
+  cat > "$CHANGELOG" <<EOF
 # Changelog
 
 $CHANGELOG_ENTRY
