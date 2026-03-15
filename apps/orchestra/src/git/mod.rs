@@ -1231,8 +1231,11 @@ impl WorktreeManager {
 
         // Check for .diraigent/ script-based release
         let config = crate::project::diraigent_config::load_config(git_root)?;
-        let script_path =
-            crate::project::diraigent_config::prepare_hook_script(git_root, "release", &config.release)?;
+        let script_path = crate::project::diraigent_config::prepare_hook_script(
+            git_root,
+            "release",
+            &config.release,
+        )?;
 
         if let Some(script) = script_path {
             return self.run_release_script(&script, source, target, &tag, &config.release);

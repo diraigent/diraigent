@@ -73,6 +73,7 @@ pub async fn build_user_prompt(
     // now they overlap and complete in ~one round-trip (~30ms).
     let include_work = context_level.include_work;
     let include_related = context_level.include_knowledge;
+    let include_autodocs = context_level.include_knowledge;
     let (
         project_res,
         task_res,
@@ -83,6 +84,7 @@ pub async fn build_user_prompt(
         verifications_res,
         task_work_ids,
         related_items_res,
+        autodocs_res,
     ) = tokio::join!(
         api.get_project(project_id),
         api.get_task(task_id),
@@ -101,6 +103,15 @@ pub async fn build_user_prompt(
         async {
             if include_related {
                 Some(api.get_related_items(task_id).await)
+            } else {
+                None
+            }
+        },
+        async {
+            if include_autodocs {
+                api.list_knowledge(project_id, Some("source:codegen"), Some(100))
+                    .await
+                    .ok()
             } else {
                 None
             }
@@ -285,6 +296,11 @@ pub async fn build_user_prompt(
         s
     };
 
+    // Build generated context from auto-docs (source:codegen knowledge entries).
+    // Matches knowledge entries to task files by module prefix and injects relevant
+    // module summaries so agents start with architectural understanding.
+    let generated_context = build_generated_context(&inline_files, autodocs_res.as_deref());
+
     // Detect rework: extract review feedback from updates and verifications.
     // Only consider updates from the current pipeline cycle (after claimed_at)
     // to avoid stale REVIEW: artifacts from previous cycles triggering false REWORK.
@@ -371,7 +387,7 @@ pub async fn build_user_prompt(
 
 ## Active Work
 {work_section}
-{related_context}## Task Discussion (comments & feedback from humans — follow these instructions)
+{related_context}{generated_context}## Task Discussion (comments & feedback from humans — follow these instructions)
 {task_spec_inline}{discussion}
 {workflow}
 
@@ -570,6 +586,94 @@ fn build_related_context_section(related: &serde_json::Value) -> String {
             ));
         }
         section.push('\n');
+    }
+
+    section
+}
+
+/// Build a generated context section from auto-docs (knowledge entries tagged `source:codegen`).
+///
+/// Matches entries to the task's `context.files` by module prefix: a knowledge entry
+/// titled "Module: apps/api" matches any file starting with `apps/api/`. Generic
+/// entries (e.g. "Codebase Dependency Graph") are included when at least one module-specific
+/// entry matches. The output is capped at ~4000 tokens (~16000 chars) to avoid
+/// bloating the prompt. Returns an empty string if no entries match or none exist.
+fn build_generated_context(task_files: &[&str], autodocs: Option<&[serde_json::Value]>) -> String {
+    let entries = match autodocs {
+        Some(e) if !e.is_empty() => e,
+        _ => return String::new(),
+    };
+
+    if task_files.is_empty() {
+        return String::new();
+    }
+
+    const MAX_CHARS: usize = 16000; // ~4000 tokens at ~4 chars/token
+
+    let mut matched = Vec::new();
+    let mut generic = Vec::new();
+
+    for entry in entries {
+        let title = entry["title"].as_str().unwrap_or("");
+        let content = entry["content"].as_str().unwrap_or("");
+        if title.is_empty() || content.is_empty() {
+            continue;
+        }
+
+        // Module entries: title starts with "Module: <prefix>"
+        if let Some(module_prefix) = title.strip_prefix("Module: ") {
+            // Check if any task file belongs to this module
+            let matches = task_files.iter().any(|f| f.starts_with(module_prefix));
+            if matches {
+                matched.push((title, content));
+            }
+        } else {
+            // Generic entries (e.g. "Codebase Dependency Graph", "API Surface Map")
+            generic.push((title, content));
+        }
+    }
+
+    // Only include generic entries if at least one module-specific entry matched
+    if matched.is_empty() {
+        return String::new();
+    }
+
+    let mut section = String::from(
+        "## Generated Context (auto-docs for files in scope)\n\n\
+         The following auto-generated documentation is relevant to the files this task modifies.\n\n",
+    );
+    let mut total_chars = section.len();
+
+    // Add module-specific entries first (most relevant)
+    for (title, content) in &matched {
+        let block = format!("### {title}\n{content}\n\n");
+        if total_chars + block.len() > MAX_CHARS {
+            // Truncate content to fit within budget
+            let remaining = MAX_CHARS.saturating_sub(total_chars);
+            if remaining > 100 {
+                let header = format!("### {title}\n");
+                let content_budget = remaining.saturating_sub(header.len() + 20);
+                // Truncate at a line boundary to avoid partial lines
+                let truncated: String = content.chars().take(content_budget).collect();
+                let last_newline = truncated.rfind('\n').unwrap_or(truncated.len());
+                section.push_str(&header);
+                section.push_str(&truncated[..last_newline]);
+                section.push_str("\n... (truncated)\n\n");
+            }
+            break;
+        }
+        section.push_str(&block);
+        total_chars += block.len();
+    }
+
+    // Add generic entries if there's room
+    for (title, content) in &generic {
+        let block = format!("### {title}\n{content}\n\n");
+        if total_chars + block.len() > MAX_CHARS {
+            break;
+        }
+        section.push_str(&block);
+        total_chars += block.len();
     }
 
     section
