@@ -948,6 +948,19 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                 <button (click)="closeForm()" class="px-4 py-2 text-sm text-text-secondary hover:text-text-primary">
                   {{ t('goals.cancel') }}
                 </button>
+                @if (!editing()) {
+                  <button (click)="submitFormAndExecute()"
+                    [disabled]="createAndExecuteLoading()"
+                    class="px-4 py-2 bg-ctp-peach text-bg rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
+                    @if (createAndExecuteLoading()) {
+                      <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                      </svg>
+                    }
+                    {{ t('goals.createAndExecute') }}
+                  </button>
+                }
                 <button (click)="submitForm()" class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90">
                   {{ editing() ? t('goals.save') : t('goals.create') }}
                 </button>
@@ -1284,6 +1297,7 @@ export class WorkPage {
   taskDetailResolving = signal(false);
   goalPlaybooks = signal<SpPlaybook[]>([]);
   executeLoading = signal(false);
+  createAndExecuteLoading = signal(false);
   editingTask = signal<SpTask | null>(null);
 
   // Git status
@@ -1828,6 +1842,47 @@ export class WorkPage {
         },
       });
     }
+  }
+
+  submitFormAndExecute(): void {
+    const data: SpWorkCreate = {
+      title: this.formTitle,
+      description: this.formDescription,
+      success_criteria: this.formCriteria,
+      work_type: this.formWorkType,
+      priority: this.formPriority,
+      auto_status: this.formAutoStatus,
+    };
+    this.createAndExecuteLoading.set(true);
+    this.api.create(data).pipe(
+      switchMap((created: SpWork) => {
+        const context: Record<string, unknown> = {};
+        if (created.description) {
+          context['spec'] = created.description;
+        }
+        if (created.success_criteria) {
+          context['acceptance_criteria'] = created.success_criteria
+            .split('\n')
+            .map((l) => l.trim())
+            .filter((l) => l.length > 0);
+        }
+        const req: CreateTaskRequest = {
+          title: created.title,
+          work_id: created.id,
+          context,
+        };
+        return this.tasksApi.create(req);
+      }),
+    ).subscribe({
+      next: () => {
+        this.createAndExecuteLoading.set(false);
+        this.closeForm();
+        this.loadGoals();
+      },
+      error: () => {
+        this.createAndExecuteLoading.set(false);
+      },
+    });
   }
 
   confirmDelete(goal: SpWork): void {
