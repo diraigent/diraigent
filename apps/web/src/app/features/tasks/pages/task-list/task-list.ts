@@ -167,7 +167,7 @@ type SortDir = 'asc' | 'desc';
       <!-- Accordion task list -->
       <div class="space-y-1">
         @for (task of sortedTasks(); track task.id) {
-          <div class="bg-surface rounded-lg border border-border overflow-hidden transition-colors"
+          <div class="bg-surface rounded-lg border border-border transition-colors"
                [class.ring-1]="selectedId() === task.id"
                [class.ring-accent]="selectedId() === task.id"
                [class.bg-accent/5]="selectedIds().has(task.id) && selectedId() !== task.id"
