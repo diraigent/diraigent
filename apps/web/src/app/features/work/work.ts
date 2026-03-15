@@ -3,8 +3,8 @@ import { NgTemplateOutlet, DatePipe, SlicePipe, isPlatformBrowser } from '@angul
 import { FormsModule } from '@angular/forms';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Subscription, forkJoin, of, from, timer, switchMap, EMPTY } from 'rxjs';
-import { catchError, concatMap, toArray, mergeMap } from 'rxjs/operators';
+import { Subscription, forkJoin, of, timer, switchMap } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import {
   CdkDragDrop,
   CdkDrag,
@@ -626,7 +626,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
       @if (loading() && unlinkedTasksLoading()) {
         <p class="text-text-secondary text-sm">{{ t('common.loading') }}</p>
       } @else {
-        <!-- Section: Active Goals -->
+        <!-- Section: Active Work -->
         @if (activeGoals().length > 0) {
           <div class="mb-6">
             <h2 class="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-2 flex items-center gap-2">
@@ -1267,6 +1267,7 @@ export class WorkPage {
   showPlanDialog = signal(false);
   planCreating = signal(false);
   planExpandedTasks = signal<Set<number>>(new Set());
+  planWorkId = signal<string | null>(null);
 
   // Task detail data (shared between linked and unlinked task expansion)
   selectedLinkedTask = signal<SpTask | null>(null);
@@ -1305,7 +1306,11 @@ export class WorkPage {
   });
 
   activeGoals = computed(() => this.filteredGoals().filter(g => g.status === 'active'));
-  achievedGoals = computed(() => this.filteredGoals().filter(g => g.status === 'achieved'));
+  achievedGoals = computed(() =>
+    this.filteredGoals()
+      .filter(g => g.status === 'achieved')
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
+  );
   archivedGoals = computed(() => this.filteredGoals().filter(g => g.status === 'paused' || g.status === 'abandoned'));
 
   // --- Computed: unlinked task sections ---
@@ -2309,6 +2314,7 @@ export class WorkPage {
   planTasksForGoal(): void {
     const sel = this.selected();
     if (!sel) return;
+    this.planWorkId.set(sel.id);
     this.planLoading.set(true);
     this.planStatusMessage.set('');
     this.api.planTasksStream(sel.id).subscribe({
@@ -2340,11 +2346,19 @@ export class WorkPage {
     this.planSuccessCriteria.set([]);
     this.planCreating.set(false);
     this.planExpandedTasks.set(new Set());
+    this.planWorkId.set(null);
   }
 
   removePlannedTask(index: number): void {
     const tasks = [...this.plannedTasks()];
     tasks.splice(index, 1);
+    // Update depends_on indices: shift references down and remove stale ones
+    for (const task of tasks) {
+      if (!task.depends_on) continue;
+      task.depends_on = task.depends_on
+        .filter(dep => dep !== index) // remove refs to the deleted task
+        .map(dep => (dep > index ? dep - 1 : dep)); // shift indices above the removed one
+    }
     this.plannedTasks.set(tasks);
     // Clean up expanded state
     const expanded = new Set<number>();
@@ -2384,67 +2398,18 @@ export class WorkPage {
 
     this.planCreating.set(true);
 
-    // Step 1: Create tasks sequentially to collect IDs in order
-    const createdIds: string[] = [];
-    from(tasks.map((task, idx) => ({ task, idx }))).pipe(
-      concatMap(({ task }) => {
-        const req: CreateTaskRequest = {
-          title: task.title,
-          kind: task.kind,
-          work_id: sel.id,
-          context: {
-            spec: task.spec,
-            acceptance_criteria: task.acceptance_criteria,
-          },
-        };
-        return this.tasksApi.create(req).pipe(
-          catchError(() => of(null)),
-        );
-      }),
-      toArray(),
-    ).subscribe(results => {
-      let failed = 0;
-      for (const result of results) {
-        if (result) {
-          createdIds.push(result.id);
-        } else {
-          createdIds.push(''); // placeholder for failed task
-          failed++;
-        }
-      }
-
-      if (failed === tasks.length) {
+    // Use the batch apply-plan endpoint which creates all tasks and
+    // dependencies atomically in a single DB transaction. This prevents
+    // race conditions where the orchestra picks up dependent tasks
+    // before their dependency edges are registered.
+    this.api.applyPlan(sel.id, tasks).subscribe({
+      next: () => {
+        this.finishPlanCreation(sel);
+      },
+      error: () => {
         this.planCreating.set(false);
         alert(this.planErrorMessage);
-        return;
-      }
-
-      // Step 2: Wire dependencies
-      const depCalls: { taskId: string; dependsOn: string }[] = [];
-      for (let i = 0; i < tasks.length; i++) {
-        const deps = tasks[i].depends_on;
-        if (!deps || !createdIds[i]) continue;
-        for (const depIdx of deps) {
-          if (depIdx >= 0 && depIdx < createdIds.length && createdIds[depIdx]) {
-            depCalls.push({ taskId: createdIds[i], dependsOn: createdIds[depIdx] });
-          }
-        }
-      }
-
-      if (depCalls.length === 0) {
-        this.finishPlanCreation(sel);
-        return;
-      }
-
-      from(depCalls).pipe(
-        mergeMap(({ taskId, dependsOn }) =>
-          this.tasksApi.addDependency(taskId, dependsOn).pipe(catchError(() => EMPTY)),
-          4, // concurrency limit
-        ),
-        toArray(),
-      ).subscribe(() => {
-        this.finishPlanCreation(sel);
-      });
+      },
     });
   }
 

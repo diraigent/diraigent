@@ -1,5 +1,30 @@
 # Changelog
 
+## v20260315-1437-developer (2026-03-15)
+
+### Added
+- **API**: Provider configs table with CRUD endpoints and encrypted API key storage
+- **API**: Provider and base_url fields on playbook step schema
+- **API**: Atomic apply-plan endpoint to prevent race conditions in plan task dependencies
+- **Orchestra**: StepProvider trait with shared types and ProviderFactory
+- **Orchestra**: Anthropic provider implementation
+- **Orchestra**: OpenAI provider with streaming SSE, error mapping, and integration tests
+- **Orchestra**: Ollama provider with streaming NDJSON, typed errors, and tests
+- **Orchestra**: Step executor routing — dispatch to provider based on step config
+- **Web**: Execute button on work items that creates a task from work item fields
+- **Web**: Combined multi-project token usage chart on dashboard
+
+### Changed
+- **API**: Observation promotion now creates work item + task instead of just task
+- **Web**: Completed work items sorted by updated_at descending (most recent first)
+- **Web**: Renamed 'Active Goals' to 'Active Work' in UI labels
+- **Web**: Human review → agent rework loop closed in review UI
+
+### Fixed
+- **Web**: Plan tasks being linked to wrong work item when selection changes during planning
+
+---
+
 ## v20260315-1236 (2026-03-15)
 
 ### Added

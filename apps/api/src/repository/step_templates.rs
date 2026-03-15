@@ -21,8 +21,8 @@ pub async fn create_step_template(
         "INSERT INTO diraigent.step_template
          (tenant_id, name, description, model, budget, allowed_tools, context_level,
           on_complete, retriable, max_cycles, timeout_minutes, mcp_servers, agents,
-          agent, settings, env, vars, tags, metadata, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+          agent, settings, env, vars, provider, base_url, tags, metadata, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
          RETURNING *",
     )
     .bind(tenant_id)
@@ -42,6 +42,8 @@ pub async fn create_step_template(
     .bind(&req.settings)
     .bind(&req.env)
     .bind(&req.vars)
+    .bind(&req.provider)
+    .bind(&req.base_url)
     .bind(&tags)
     .bind(&metadata)
     .bind(created_by)
@@ -129,6 +131,8 @@ pub async fn update_step_template(
     let settings = req.settings.as_ref().or(existing.settings.as_ref());
     let env = req.env.as_ref().or(existing.env.as_ref());
     let vars = req.vars.as_ref().or(existing.vars.as_ref());
+    let provider = req.provider.as_deref().or(existing.provider.as_deref());
+    let base_url = req.base_url.as_deref().or(existing.base_url.as_deref());
     let tags = req.tags.as_ref().unwrap_or(&existing.tags);
     let metadata = req.metadata.as_ref().unwrap_or(&existing.metadata);
 
@@ -137,7 +141,8 @@ pub async fn update_step_template(
          SET name = $2, description = $3, model = $4, budget = $5, allowed_tools = $6,
              context_level = $7, on_complete = $8, retriable = $9, max_cycles = $10,
              timeout_minutes = $11, mcp_servers = $12, agents = $13, agent = $14,
-             settings = $15, env = $16, vars = $17, tags = $18, metadata = $19
+             settings = $15, env = $16, vars = $17, provider = $18, base_url = $19,
+             tags = $20, metadata = $21
          WHERE id = $1 RETURNING *",
     )
     .bind(id)
@@ -157,6 +162,8 @@ pub async fn update_step_template(
     .bind(settings)
     .bind(env)
     .bind(vars)
+    .bind(provider)
+    .bind(base_url)
     .bind(tags)
     .bind(metadata)
     .fetch_one(pool)
@@ -219,6 +226,8 @@ pub async fn fork_step_template(
     let settings = req.settings.as_ref().or(source.settings.as_ref());
     let env = req.env.as_ref().or(source.env.as_ref());
     let vars = req.vars.as_ref().or(source.vars.as_ref());
+    let provider = req.provider.as_deref().or(source.provider.as_deref());
+    let base_url = req.base_url.as_deref().or(source.base_url.as_deref());
     let tags = req.tags.as_ref().unwrap_or(&source.tags);
     let metadata = req.metadata.as_ref().unwrap_or(&source.metadata);
 
@@ -226,8 +235,8 @@ pub async fn fork_step_template(
         "INSERT INTO diraigent.step_template
          (tenant_id, name, description, model, budget, allowed_tools, context_level,
           on_complete, retriable, max_cycles, timeout_minutes, mcp_servers, agents,
-          agent, settings, env, vars, tags, metadata, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+          agent, settings, env, vars, provider, base_url, tags, metadata, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
          RETURNING *",
     )
     .bind(tenant_id)
@@ -247,6 +256,8 @@ pub async fn fork_step_template(
     .bind(settings)
     .bind(env)
     .bind(vars)
+    .bind(provider)
+    .bind(base_url)
     .bind(tags)
     .bind(metadata)
     .bind(created_by)

@@ -711,6 +711,20 @@ pub struct PlannedTask {
     pub depends_on: Option<Vec<usize>>,
 }
 
+/// Request body for the batch apply-plan endpoint.
+/// Creates all tasks and their dependencies atomically in a single transaction.
+#[derive(Debug, Deserialize)]
+pub struct ApplyPlanRequest {
+    pub tasks: Vec<PlannedTask>,
+}
+
+/// Response from the batch apply-plan endpoint.
+#[derive(Debug, Serialize)]
+pub struct ApplyPlanResponse {
+    pub tasks: Vec<Task>,
+    pub dependencies: Vec<TaskDependency>,
+}
+
 /// Response wrapper for the AI planning endpoint (used by non-SSE callers).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanWorkResponse {
@@ -1840,6 +1854,10 @@ pub struct StepTemplate {
     pub settings: Option<serde_json::Value>,
     pub env: Option<serde_json::Value>,
     pub vars: Option<serde_json::Value>,
+    /// AI provider for this step (e.g. "anthropic", "openai", "ollama"). NULL defaults to "anthropic".
+    pub provider: Option<String>,
+    /// Override the default API endpoint for the chosen provider.
+    pub base_url: Option<String>,
     pub tags: Vec<String>,
     pub metadata: serde_json::Value,
     pub created_by: Uuid,
@@ -1865,6 +1883,8 @@ pub struct CreateStepTemplate {
     pub settings: Option<serde_json::Value>,
     pub env: Option<serde_json::Value>,
     pub vars: Option<serde_json::Value>,
+    pub provider: Option<String>,
+    pub base_url: Option<String>,
     pub tags: Option<Vec<String>>,
     pub metadata: Option<serde_json::Value>,
 }
@@ -1887,6 +1907,8 @@ pub struct UpdateStepTemplate {
     pub settings: Option<serde_json::Value>,
     pub env: Option<serde_json::Value>,
     pub vars: Option<serde_json::Value>,
+    pub provider: Option<String>,
+    pub base_url: Option<String>,
     pub tags: Option<Vec<String>>,
     pub metadata: Option<serde_json::Value>,
 }
@@ -1985,4 +2007,53 @@ pub struct StaleTaskInfo {
     pub agent_last_seen_at: Option<DateTime<Utc>>,
     pub claimed_at: Option<DateTime<Utc>>,
     pub auto_release: bool,
+}
+
+// ── Provider Config Models ──
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ProviderConfig {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub project_id: Option<Uuid>,
+    pub provider: String,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+    pub default_model: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateProviderConfig {
+    pub provider: String,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+    pub default_model: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateProviderConfig {
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+    pub default_model: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct ProviderConfigFilters {
+    pub provider: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+/// Merged provider config produced by the resolution function.
+/// Project-level overrides global, with api_key falling back to global if absent.
+#[derive(Debug, Clone, Serialize)]
+pub struct ResolvedProviderConfig {
+    pub provider: String,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+    pub default_model: Option<String>,
+    /// Which config contributed the api_key: "project", "global", or null.
+    pub api_key_source: Option<String>,
 }

@@ -18,6 +18,7 @@ mod observations;
 mod packages;
 mod playbooks;
 mod projects;
+mod provider_configs;
 mod reports;
 mod roles;
 mod search;
@@ -100,6 +101,7 @@ pub fn router() -> Router<AppState> {
         .merge(tenants::routes())
         .merge(settings::routes())
         .merge(step_templates::routes())
+        .merge(provider_configs::routes())
         .merge(reports::routes())
         .merge(task_logs::routes())
         .merge(ws::routes())

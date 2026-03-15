@@ -233,6 +233,20 @@ export class WorkApiService extends BaseCrudApiService<SpWork, SpWorkCreate, SpW
     if (!this.projectId) return EMPTY as Observable<SpWork[]>;
     return this.http.post<SpWork[]>(`${this.baseUrl}/${this.projectId}/work/reorder`, { work_ids: workIds });
   }
+
+  /**
+   * Atomically create tasks from a plan and wire their dependencies.
+   * All tasks and dependency edges are created in a single DB transaction,
+   * preventing race conditions where the orchestra picks up dependent
+   * tasks before their blockers are registered.
+   */
+  applyPlan(workId: string, tasks: PlannedTask[]): Observable<ApplyPlanResponse> {
+    if (!this.projectId) return EMPTY as Observable<ApplyPlanResponse>;
+    return this.http.post<ApplyPlanResponse>(
+      `${this.baseUrl}/${this.projectId}/work/${workId}/apply-plan`,
+      { tasks },
+    );
+  }
 }
 
 export interface PlannedTask {
@@ -241,6 +255,11 @@ export interface PlannedTask {
   spec: string;
   acceptance_criteria: string[];
   depends_on?: number[];
+}
+
+export interface ApplyPlanResponse {
+  tasks: SpTask[];
+  dependencies: { task_id: string; depends_on: string }[];
 }
 
 export interface PlanWorkResponse {

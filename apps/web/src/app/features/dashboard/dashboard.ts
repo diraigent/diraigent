@@ -7,7 +7,7 @@ import { catchError } from 'rxjs/operators';
 import { TasksApiService, SpTask } from '../../core/services/tasks-api.service';
 import { DiraigentApiService, DgProject } from '../../core/services/diraigent-api.service';
 import { taskStateColor, taskTransitions } from '../../shared/ui-constants';
-import { TokenUsageChartComponent } from './token-usage-chart';
+import { TokenUsageChartComponent, ChartProject } from './token-usage-chart';
 
 interface ProjectTasks {
   project: DgProject;
@@ -85,13 +85,10 @@ const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('w
           </div>
         </div>
 
-        <!-- Token usage chart -->
-        @for (pt of allProjectTasks(); track pt.project.id) {
+        <!-- Token usage chart (all projects combined) -->
+        @if (chartProjects().length > 0) {
           <div class="mb-4">
-            @if (allProjectTasks().length > 1) {
-              <div class="text-xs text-text-muted mb-1">{{ pt.project.name }}</div>
-            }
-            <app-token-usage-chart [projectId]="pt.project.id" />
+            <app-token-usage-chart [projects]="chartProjects()" />
           </div>
         }
 
@@ -213,6 +210,10 @@ export class DashboardPage {
     this.allProjectTasks()
       .flatMap(pt => pt.tasks)
       .reduce((sum, t) => sum + (t.cost_usd ?? 0), 0),
+  );
+
+  chartProjects = computed<ChartProject[]>(() =>
+    this.allProjectTasks().map(pt => ({ id: pt.project.id, name: pt.project.name })),
   );
 
   tokenStats = computed(() => {

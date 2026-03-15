@@ -301,7 +301,7 @@
     "planGeneratedCriteria": "Generated Success Criteria"
   },
   "work": {
-    "activeGoals": "Active Goals",
+    "activeGoals": "Active Work",
     "activeTasks": "Active Tasks",
     "backlog": "Backlog",
     "completed": "Completed",
@@ -370,7 +370,7 @@
     "cancel": "Cancel",
     "acknowledge": "Acknowledge",
     "dismiss": "Dismiss",
-    "promote": "Promote to Task",
+    "promote": "Promote to Work",
     "dismissConfirmTitle": "Dismiss Observation",
     "dismissConfirmMessage": "Are you sure you want to dismiss this observation? This action marks it as not actionable.",
     "cleanup": "Cleanup",

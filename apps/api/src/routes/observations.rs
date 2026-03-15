@@ -124,6 +124,7 @@ async fn dismiss(
 #[derive(Serialize)]
 struct PromoteResponse {
     observation: Observation,
+    work: Work,
     task: Task,
 }
 
@@ -143,7 +144,7 @@ async fn promote(
     )
     .await?;
 
-    let (observation, task) = state.db.promote_observation(id, &req, user_id).await?;
+    let (observation, work, task) = state.db.promote_observation(id, &req, user_id).await?;
 
     state.fire_event(
         observation.project_id,
@@ -152,10 +153,14 @@ async fn promote(
         observation.id,
         agent_id,
         Some(user_id),
-        serde_json::json!({"observation_id": observation.id, "title": observation.title, "task_id": task.id}),
+        serde_json::json!({"observation_id": observation.id, "title": observation.title, "work_id": work.id, "task_id": task.id}),
     );
 
-    Ok(Json(PromoteResponse { observation, task }))
+    Ok(Json(PromoteResponse {
+        observation,
+        work,
+        task,
+    }))
 }
 
 async fn delete_observation(

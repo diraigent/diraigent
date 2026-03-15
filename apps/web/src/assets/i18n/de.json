@@ -300,7 +300,7 @@
     "planGeneratedCriteria": "Generierte Erfolgskriterien"
   },
   "work": {
-    "activeGoals": "Aktive Arbeitselemente",
+    "activeGoals": "Aktive Arbeit",
     "activeTasks": "Aktive Aufgaben",
     "backlog": "Backlog",
     "completed": "Abgeschlossen",
@@ -369,7 +369,7 @@
     "cancel": "Abbrechen",
     "acknowledge": "Bestätigen",
     "dismiss": "Verwerfen",
-    "promote": "Zur Aufgabe machen",
+    "promote": "Zur Arbeit machen",
     "dismissConfirmTitle": "Beobachtung verwerfen",
     "dismissConfirmMessage": "Sind Sie sicher, dass Sie diese Beobachtung verwerfen möchten? Sie wird als nicht umsetzbar markiert.",
     "cleanup": "Aufräumen",

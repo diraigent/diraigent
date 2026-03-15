@@ -697,3 +697,29 @@ pub fn validate_update_package(req: &UpdatePackage) -> Result<(), AppError> {
     }
     Ok(())
 }
+
+// ── Provider Config ──
+
+pub fn validate_create_provider_config(req: &CreateProviderConfig) -> Result<(), AppError> {
+    if req.provider.is_empty() {
+        return Err(AppError::Validation(
+            "Provider name must be non-empty".into(),
+        ));
+    }
+    if req.provider.len() > 100 {
+        return Err(AppError::Validation(
+            "Provider name must be at most 100 characters".into(),
+        ));
+    }
+    if let Some(ref url) = req.base_url {
+        validate_url(url, "Provider base_url")?;
+    }
+    Ok(())
+}
+
+pub fn validate_update_provider_config(req: &UpdateProviderConfig) -> Result<(), AppError> {
+    if let Some(ref url) = req.base_url {
+        validate_url(url, "Provider base_url")?;
+    }
+    Ok(())
+}
