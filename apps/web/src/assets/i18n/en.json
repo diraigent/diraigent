@@ -19,7 +19,8 @@
     "reports": "Reports",
     "reference": "Reference",
     "stepTemplates": "Step Templates",
-    "work": "Work"
+    "work": "Work",
+    "pipelines": "Pipelines"
   },
   "review": {
     "awaitingReview": "Awaiting Review",
@@ -774,5 +775,23 @@
     "descriptionPlaceholder": "Step description...",
     "agentPlaceholder": "Agent name (optional)",
     "tagsPlaceholder": "Comma-separated tags"
+  },
+  "pipelines": {
+    "title": "CI Pipelines",
+    "workflow": "Workflow",
+    "branch": "Branch",
+    "commit": "Commit",
+    "status": "Status",
+    "triggeredBy": "Triggered By",
+    "started": "Started",
+    "allBranches": "All branches",
+    "refresh": "Refresh",
+    "autoPolling": "Auto-refreshing every 30s (runs in progress)",
+    "emptyTitle": "No CI runs yet",
+    "emptyDescription": "Pipeline runs will appear here once CI is configured and running.",
+    "showing": "Showing",
+    "of": "of",
+    "prev": "Previous",
+    "next": "Next"
   }
 }

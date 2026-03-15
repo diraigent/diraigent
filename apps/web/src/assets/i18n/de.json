@@ -18,7 +18,8 @@
     "reports": "Berichte",
     "reference": "Referenz",
     "stepTemplates": "Schrittvorlagen",
-    "work": "Arbeit"
+    "work": "Arbeit",
+    "pipelines": "Pipelines"
   },
   "review": {
     "awaitingReview": "Wartet auf Review",
@@ -766,5 +767,23 @@
     "descriptionPlaceholder": "Schrittbeschreibung...",
     "agentPlaceholder": "Agent-Name (optional)",
     "tagsPlaceholder": "Kommagetrennte Tags"
+  },
+  "pipelines": {
+    "title": "CI Pipelines",
+    "workflow": "Workflow",
+    "branch": "Branch",
+    "commit": "Commit",
+    "status": "Status",
+    "triggeredBy": "Ausgelöst von",
+    "started": "Gestartet",
+    "allBranches": "Alle Branches",
+    "refresh": "Aktualisieren",
+    "autoPolling": "Automatische Aktualisierung alle 30s (laufende Pipelines)",
+    "emptyTitle": "Noch keine CI-Läufe",
+    "emptyDescription": "Pipeline-Läufe werden hier angezeigt, sobald CI konfiguriert und aktiv ist.",
+    "showing": "Zeige",
+    "of": "von",
+    "prev": "Zurück",
+    "next": "Weiter"
   }
 }
