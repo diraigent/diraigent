@@ -243,7 +243,7 @@
     "unlink": "Unlink",
     "linkedTasks": "Linked Tasks",
     "linkTasksBtn": "Link Tasks",
-    "createTaskBtn": "Create Task",
+    "createTaskBtn": "Add Task",
     "startAllBtn": "Start All",
     "noLinkedTasks": "No tasks linked to this work item",
     "pickTasks": "Pick Tasks to Link",
