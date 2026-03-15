@@ -15,6 +15,7 @@ pub mod repository;
 pub mod routes;
 pub mod services;
 pub mod stale_detector;
+pub mod task_score;
 pub mod tenant;
 pub mod validation;
 pub mod webhooks;
