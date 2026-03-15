@@ -154,6 +154,10 @@ Respond with a JSON object matching the required schema."#
     let mut total_lines: usize = 0;
     let mut parsed_events: usize = 0;
     let mut skipped_lines: Vec<String> = Vec::new();
+    let mut event_type_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    let mut last_event_preview = String::new();
+    let mut saw_result = false;
 
     while let Ok(Some(line)) = lines.next_line().await {
         if line.trim().is_empty() {
@@ -172,15 +176,23 @@ Respond with a JSON object matching the required schema."#
         };
 
         parsed_events += 1;
-        let event_type = event["type"].as_str().unwrap_or("");
+        let event_type = event["type"].as_str().unwrap_or("<missing>");
+        *event_type_counts.entry(event_type.to_string()).or_default() += 1;
+
+        // Keep a preview of the last event for diagnostics
+        last_event_preview = event.to_string().chars().take(500).collect();
 
         match event_type {
             "stream_event" => {
                 let inner = &event["event"];
-                if inner["type"].as_str() == Some("content_block_delta")
-                    && let Some(text) = inner["delta"]["text"].as_str()
-                {
-                    accumulated_text.push_str(text);
+                let inner_type = inner["type"].as_str().unwrap_or("");
+                if inner_type == "content_block_delta" {
+                    // Try delta.text (standard) and delta.partial_json (json mode)
+                    if let Some(text) = inner["delta"]["text"].as_str() {
+                        accumulated_text.push_str(text);
+                    } else if let Some(json) = inner["delta"]["partial_json"].as_str() {
+                        accumulated_text.push_str(json);
+                    }
                 }
             }
             "assistant" => {
@@ -204,6 +216,7 @@ Respond with a JSON object matching the required schema."#
                 }
             }
             "result" => {
+                saw_result = true;
                 is_error = event["is_error"].as_bool().unwrap_or(false);
                 if is_error {
                     accumulated_text = event["result"]
@@ -211,8 +224,14 @@ Respond with a JSON object matching the required schema."#
                         .unwrap_or("Unknown error")
                         .to_string();
                 } else if let Some(structured) = event.get("structured_output") {
-                    // --json-schema produces structured_output in the result event
-                    accumulated_text = structured.to_string();
+                    if !structured.is_null() {
+                        // --json-schema produces structured_output in the result event
+                        accumulated_text = structured.to_string();
+                    } else {
+                        debug!("plan request: result event has null structured_output");
+                        // Fall through to try .result
+                        accumulated_text = event["result"].as_str().unwrap_or("").to_string();
+                    }
                 } else if accumulated_text.is_empty() {
                     accumulated_text = event["result"].as_str().unwrap_or("").to_string();
                 }
@@ -239,10 +258,23 @@ Respond with a JSON object matching the required schema."#
 
     // Check for empty response before attempting JSON parse
     if accumulated_text.trim().is_empty() {
+        // Build event type summary, e.g. "stream_event=150, result=1, assistant=2"
+        let type_summary: String = {
+            let mut pairs: Vec<_> = event_type_counts.iter().collect();
+            pairs.sort_by_key(|(_, count)| std::cmp::Reverse(**count));
+            pairs
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
         let mut msg = format!(
-            "Claude CLI returned empty response (stdout lines: {total_lines}, parsed events: {parsed_events}, skipped: {})",
+            "Claude CLI returned empty response (lines: {total_lines}, events: {parsed_events}, skipped: {}, saw_result: {saw_result}, types: [{type_summary}])",
             skipped_lines.len()
         );
+        if !last_event_preview.is_empty() {
+            msg.push_str(&format!(" last_event: {last_event_preview}"));
+        }
         if let Ok(status) = &exit_status
             && !status.success()
         {
@@ -251,7 +283,6 @@ Respond with a JSON object matching the required schema."#
         }
         let stderr_trimmed = stderr_text.trim();
         if !stderr_trimmed.is_empty() {
-            // Include up to 500 chars of stderr for diagnostics
             let truncated: String = stderr_trimmed.chars().take(500).collect();
             msg.push_str(&format!(" stderr: {truncated}"));
         }
