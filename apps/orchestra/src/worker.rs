@@ -885,6 +885,70 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    // ── Helpers for mocking provider API endpoints ──────────
+
+    /// Build a minimal OpenAI SSE streaming response body.
+    fn openai_sse_body() -> String {
+        let chunk = serde_json::json!({
+            "id": "chatcmpl-0",
+            "object": "chat.completion.chunk",
+            "choices": [{
+                "index": 0,
+                "delta": { "content": "ok" },
+                "finish_reason": serde_json::Value::Null
+            }]
+        });
+        let done_chunk = serde_json::json!({
+            "id": "chatcmpl-done",
+            "object": "chat.completion.chunk",
+            "choices": [{
+                "index": 0,
+                "delta": {},
+                "finish_reason": "stop"
+            }]
+        });
+        format!("data: {chunk}\n\ndata: {done_chunk}\n\ndata: [DONE]\n\n")
+    }
+
+    /// Build a minimal Ollama NDJSON streaming response body.
+    fn ollama_ndjson_body() -> String {
+        let chunk1 = serde_json::json!({
+            "message": { "role": "assistant", "content": "ok" },
+            "done": false
+        });
+        let chunk2 = serde_json::json!({
+            "message": { "role": "assistant", "content": "" },
+            "done": true
+        });
+        format!("{}\n{}", chunk1, chunk2)
+    }
+
+    /// Mount a mock for OpenAI chat completions endpoint.
+    async fn mock_openai_completions(server: &MockServer) {
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(openai_sse_body())
+                    .insert_header("content-type", "text/event-stream"),
+            )
+            .mount(server)
+            .await;
+    }
+
+    /// Mount a mock for Ollama chat endpoint.
+    async fn mock_ollama_chat(server: &MockServer) {
+        Mock::given(method("POST"))
+            .and(path("/api/chat"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(ollama_ndjson_body())
+                    .insert_header("content-type", "application/x-ndjson"),
+            )
+            .mount(server)
+            .await;
+    }
+
     // ── Provider routing decision tests ──────────────────────
 
     #[test]
@@ -936,19 +1000,23 @@ mod tests {
     async fn routing_openai_executes_via_provider() {
         let server = MockServer::start().await;
 
-        // Mock resolve endpoint returning OpenAI config
+        // Mock resolve endpoint returning OpenAI config (base_url points to mock server)
+        let server_url = server.uri();
         Mock::given(method("GET"))
             .and(path("/proj-1/providers/resolve/openai"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "provider": "openai",
                 "api_key": "sk-test-key",
-                "base_url": "https://api.openai.com",
+                "base_url": server_url,
                 "default_model": "gpt-4o",
                 "api_key_source": "global"
             })))
             .expect(1)
             .mount(&server)
             .await;
+
+        // Mock the actual OpenAI chat completions endpoint
+        mock_openai_completions(&server).await;
 
         let api = ProjectsApi::new(&server.uri(), "test-agent");
         let step_json = serde_json::json!({"name": "implement", "provider": "openai"});
@@ -978,19 +1046,23 @@ mod tests {
     async fn routing_ollama_executes_via_provider() {
         let server = MockServer::start().await;
 
-        // Mock resolve endpoint returning Ollama config
+        // Mock resolve endpoint returning Ollama config (base_url points to mock server)
+        let server_url = server.uri();
         Mock::given(method("GET"))
             .and(path("/proj-1/providers/resolve/ollama"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "provider": "ollama",
                 "api_key": null,
-                "base_url": "http://localhost:11434",
+                "base_url": server_url,
                 "default_model": "llama3",
                 "api_key_source": null
             })))
             .expect(1)
             .mount(&server)
             .await;
+
+        // Mock the actual Ollama chat endpoint
+        mock_ollama_chat(&server).await;
 
         let api = ProjectsApi::new(&server.uri(), "test-agent");
         let step_json = serde_json::json!({"name": "implement", "provider": "ollama"});
@@ -1089,7 +1161,7 @@ mod tests {
     async fn step_level_base_url_overrides_provider_config() {
         let server = MockServer::start().await;
 
-        // Provider config has default base_url
+        // Provider config has default base_url (different from step override)
         Mock::given(method("GET"))
             .and(path("/proj-1/providers/resolve/openai"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -1103,19 +1175,23 @@ mod tests {
             .mount(&server)
             .await;
 
+        // Mock the actual OpenAI endpoint on the mock server (step base_url will point here)
+        mock_openai_completions(&server).await;
+
         let api = ProjectsApi::new(&server.uri(), "test-agent");
 
-        // Step config overrides base_url
+        // Step config overrides base_url to point at the mock server
+        let step_base_url = server.uri();
         let step_json = serde_json::json!({
             "name": "implement",
             "provider": "openai",
-            "base_url": "https://my-proxy.example.com"
+            "base_url": step_base_url
         });
         let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
 
         assert_eq!(
             step_config.base_url.as_deref(),
-            Some("https://my-proxy.example.com"),
+            Some(step_base_url.as_str()),
             "step-level base_url should be set"
         );
 
@@ -1138,19 +1214,23 @@ mod tests {
     async fn step_level_model_overrides_provider_config_default_model() {
         let server = MockServer::start().await;
 
-        // Provider config has default_model = "gpt-4o"
+        // Provider config has default_model = "gpt-4o", base_url points to mock server
+        let server_url = server.uri();
         Mock::given(method("GET"))
             .and(path("/proj-1/providers/resolve/openai"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "provider": "openai",
                 "api_key": "sk-test",
-                "base_url": null,
+                "base_url": server_url,
                 "default_model": "gpt-4o",
                 "api_key_source": "global"
             })))
             .expect(1)
             .mount(&server)
             .await;
+
+        // Mock the actual OpenAI endpoint
+        mock_openai_completions(&server).await;
 
         let api = ProjectsApi::new(&server.uri(), "test-agent");
 
@@ -1183,29 +1263,35 @@ mod tests {
 
         // Resolve endpoint returns 404 (no config stored)
         Mock::given(method("GET"))
-            .and(path("/proj-1/providers/resolve/openai"))
+            .and(path("/proj-1/providers/resolve/ollama"))
             .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
-                "error": "No provider config found for provider 'openai'"
+                "error": "No provider config found for provider 'ollama'"
             })))
             .expect(1)
             .mount(&server)
             .await;
 
+        // Mock the actual Ollama chat endpoint (step base_url will point here)
+        mock_ollama_chat(&server).await;
+
         let api = ProjectsApi::new(&server.uri(), "test-agent");
 
-        // Step config provides base_url and model as fallbacks
+        // Step config provides base_url and model as fallbacks.
+        // Using ollama because it doesn't require an API key, so the fallback
+        // path (no stored config → no api_key) can still succeed.
+        let server_url = server.uri();
         let step_json = serde_json::json!({
             "name": "implement",
-            "provider": "openai",
-            "base_url": "https://fallback.example.com",
-            "model": "gpt-4"
+            "provider": "ollama",
+            "base_url": server_url,
+            "model": "llama3"
         });
         let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
 
-        // Should still succeed (provider stub doesn't need credentials)
+        // Should succeed — Ollama doesn't need credentials, step-level overrides provide base_url
         let (result, _, _, _, _, _, is_error) = execute_via_provider(
             &api,
-            "openai",
+            "ollama",
             "proj-1",
             "task-1",
             &step_config,
@@ -1223,7 +1309,8 @@ mod tests {
         // End-to-end routing test covering all three providers
         let server = MockServer::start().await;
 
-        // Mock resolve endpoint for all three providers
+        // Mock resolve endpoint for all three providers (base_url points to mock server)
+        let server_url = server.uri();
         for (provider, model) in [
             ("anthropic", "claude-sonnet-4-6"),
             ("openai", "gpt-4o"),
@@ -1234,13 +1321,17 @@ mod tests {
                 .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                     "provider": provider,
                     "api_key": "test-key",
-                    "base_url": null,
+                    "base_url": server_url,
                     "default_model": model,
                     "api_key_source": "global"
                 })))
                 .mount(&server)
                 .await;
         }
+
+        // Mock the actual provider API endpoints
+        mock_openai_completions(&server).await;
+        mock_ollama_chat(&server).await;
 
         let api = ProjectsApi::new(&server.uri(), "test-agent");
 
