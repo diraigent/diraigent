@@ -334,6 +334,83 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   </div>
                 </div>
               }
+              <!-- Children -->
+              @if (childrenMap().get(goal.id); as children) {
+                @if (children.length > 0) {
+                  <div class="mb-4">
+                    <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">{{ t('goals.children') }} ({{ children.length }})</h3>
+                    <div class="space-y-1">
+                      @for (child of children; track child.id) {
+                        <button (click)="selectItem(child)" class="w-full text-left text-xs p-2 rounded bg-surface-hover hover:bg-accent/10 flex items-center justify-between"
+                          [class.border-l-4]="child.status === 'active' || child.status === 'paused'"
+                          [class.border-l-ctp-green]="child.status === 'active'"
+                          [class.border-l-ctp-yellow]="child.status === 'paused'"
+                          [class.opacity-60]="child.status === 'achieved'">
+                          <span class="text-text-primary">{{ child.title }}</span>
+                          <span class="px-1.5 py-0.5 rounded-full text-xs {{ statusColor(child.status) }}">{{ t('goals.status.' + child.status) }}</span>
+                        </button>
+                      }
+                    </div>
+                  </div>
+                }
+              }
+
+              <!-- Todos -->
+              <div class="mb-4">
+                <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1">{{ t('goals.todos') }}</h3>
+                <div class="flex gap-2 mb-2">
+                  <input type="text" [(ngModel)]="newTodoText" [placeholder]="t('goals.todoPlaceholder')"
+                    class="flex-1 bg-surface text-text-primary text-xs rounded px-2 py-1.5 border border-border
+                           focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary"
+                    (keydown.enter)="addTodo()" />
+                  <button (click)="addTodo()" [disabled]="!newTodoText.trim()"
+                    class="px-3 py-1.5 bg-accent text-bg rounded text-xs font-medium hover:opacity-90 disabled:opacity-30">
+                    {{ t('goals.addTodo') }}
+                  </button>
+                </div>
+                @if (goalTodos().length > 0) {
+                  <div class="space-y-1">
+                    @for (todo of goalTodos(); track todo.id) {
+                      <div class="flex items-center gap-2 group">
+                        <input type="checkbox" [checked]="todo.done" (change)="toggleTodo(todo.id)"
+                          class="rounded border-border text-accent focus:ring-accent shrink-0" />
+                        <span class="text-sm text-text-primary flex-1" [class.line-through]="todo.done" [class.opacity-50]="todo.done">{{ todo.text }}</span>
+                        <button (click)="removeTodo(todo.id)"
+                          class="p-0.5 text-text-secondary hover:text-ctp-red opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    }
+                  </div>
+                  @if (hasDoneTodos()) {
+                    <button (click)="clearDoneTodos()" class="mt-1 text-xs text-text-secondary hover:text-accent">
+                      {{ t('goals.clearDone') }}
+                    </button>
+                  }
+                } @else {
+                  <p class="text-xs text-text-muted">{{ t('goals.todosEmpty') }}</p>
+                }
+              </div>
+
+              <!-- Description -->
+              <div class="mb-4">
+                <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1">{{ t('goals.fieldDescription') }}</h3>
+                <textarea [(ngModel)]="formDescription" (blur)="saveInlineField()" rows="12"
+                  class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                         focus:outline-none focus:ring-1 focus:ring-accent resize-y"
+                  [placeholder]="t('goals.fieldDescription')"></textarea>
+              </div>
+
+              <!-- Success criteria -->
+              <div class="mb-4">
+                <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1">{{ t('goals.fieldCriteria') }}</h3>
+                <textarea [(ngModel)]="formCriteria" (blur)="saveInlineField()" rows="3"
+                  class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                         focus:outline-none focus:ring-1 focus:ring-accent resize-y"
+                  [placeholder]="t('goals.fieldCriteria')"></textarea>
+              </div>
 
               <!-- Stats (clickable to filter linked tasks) -->
               @if (statsMap().get(goal.id); as stats) {
@@ -417,84 +494,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   </div>
                 </div>
               }
-
-              <!-- Children -->
-              @if (childrenMap().get(goal.id); as children) {
-                @if (children.length > 0) {
-                  <div class="mb-4">
-                    <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">{{ t('goals.children') }} ({{ children.length }})</h3>
-                    <div class="space-y-1">
-                      @for (child of children; track child.id) {
-                        <button (click)="selectItem(child)" class="w-full text-left text-xs p-2 rounded bg-surface-hover hover:bg-accent/10 flex items-center justify-between"
-                          [class.border-l-4]="child.status === 'active' || child.status === 'paused'"
-                          [class.border-l-ctp-green]="child.status === 'active'"
-                          [class.border-l-ctp-yellow]="child.status === 'paused'"
-                          [class.opacity-60]="child.status === 'achieved'">
-                          <span class="text-text-primary">{{ child.title }}</span>
-                          <span class="px-1.5 py-0.5 rounded-full text-xs {{ statusColor(child.status) }}">{{ t('goals.status.' + child.status) }}</span>
-                        </button>
-                      }
-                    </div>
-                  </div>
-                }
-              }
-
-              <!-- Todos -->
-              <div class="mb-4">
-                <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1">{{ t('goals.todos') }}</h3>
-                <div class="flex gap-2 mb-2">
-                  <input type="text" [(ngModel)]="newTodoText" [placeholder]="t('goals.todoPlaceholder')"
-                    class="flex-1 bg-surface text-text-primary text-xs rounded px-2 py-1.5 border border-border
-                           focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary"
-                    (keydown.enter)="addTodo()" />
-                  <button (click)="addTodo()" [disabled]="!newTodoText.trim()"
-                    class="px-3 py-1.5 bg-accent text-bg rounded text-xs font-medium hover:opacity-90 disabled:opacity-30">
-                    {{ t('goals.addTodo') }}
-                  </button>
-                </div>
-                @if (goalTodos().length > 0) {
-                  <div class="space-y-1">
-                    @for (todo of goalTodos(); track todo.id) {
-                      <div class="flex items-center gap-2 group">
-                        <input type="checkbox" [checked]="todo.done" (change)="toggleTodo(todo.id)"
-                          class="rounded border-border text-accent focus:ring-accent shrink-0" />
-                        <span class="text-sm text-text-primary flex-1" [class.line-through]="todo.done" [class.opacity-50]="todo.done">{{ todo.text }}</span>
-                        <button (click)="removeTodo(todo.id)"
-                          class="p-0.5 text-text-secondary hover:text-ctp-red opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                            <path d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                    }
-                  </div>
-                  @if (hasDoneTodos()) {
-                    <button (click)="clearDoneTodos()" class="mt-1 text-xs text-text-secondary hover:text-accent">
-                      {{ t('goals.clearDone') }}
-                    </button>
-                  }
-                } @else {
-                  <p class="text-xs text-text-muted">{{ t('goals.todosEmpty') }}</p>
-                }
-              </div>
-
-              <!-- Description -->
-              <div class="mb-4">
-                <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1">{{ t('goals.fieldDescription') }}</h3>
-                <textarea [(ngModel)]="formDescription" (blur)="saveInlineField()" rows="12"
-                  class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                         focus:outline-none focus:ring-1 focus:ring-accent resize-y"
-                  [placeholder]="t('goals.fieldDescription')"></textarea>
-              </div>
-
-              <!-- Success criteria -->
-              <div class="mb-4">
-                <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1">{{ t('goals.fieldCriteria') }}</h3>
-                <textarea [(ngModel)]="formCriteria" (blur)="saveInlineField()" rows="3"
-                  class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                         focus:outline-none focus:ring-1 focus:ring-accent resize-y"
-                  [placeholder]="t('goals.fieldCriteria')"></textarea>
-              </div>
 
               <!-- Linked Tasks -->
               <div class="pt-3 border-t border-border mb-3">
@@ -1716,6 +1715,8 @@ export class WorkPage {
   }
 
   openCreate(): void {
+    this.saveInlineField();
+    this.selected.set(null);
     this.editing.set(null);
     this.formTitle = '';
     this.formDescription = '';

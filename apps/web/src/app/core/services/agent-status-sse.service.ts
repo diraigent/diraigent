@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { OAuthService } from 'angular-oauth2-oidc';
 import { Subject, Observable, firstValueFrom } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { AuthService } from './auth.service';
 
 export interface AgentStatusSseEvent {
   agent_id: string;
@@ -26,17 +27,21 @@ export interface AgentStatusSseEvent {
 export class AgentStatusSseService implements OnDestroy {
   private oauth = inject(OAuthService);
   private http = inject(HttpClient);
+  private auth = inject(AuthService);
 
   private readonly events$ = new Subject<AgentStatusSseEvent>();
   private es: EventSource | null = null;
   private retryMs = 2_000;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
-
   /** Observable stream of agent status-change events. */
   readonly events: Observable<AgentStatusSseEvent> = this.events$.asObservable();
 
   constructor() {
-    this.connect();
+    this.auth.authInitialized$.subscribe(initialized => {
+      if (initialized) {
+        this.connect();
+      }
+    });
   }
 
   ngOnDestroy(): void {
@@ -45,6 +50,10 @@ export class AgentStatusSseService implements OnDestroy {
 
   private async connect(): Promise<void> {
     const base = environment.apiServer;
+
+    if (this.auth.isAuthDisabled()) {
+      return;
+    }
 
     let ticket: string | null = null;
     try {

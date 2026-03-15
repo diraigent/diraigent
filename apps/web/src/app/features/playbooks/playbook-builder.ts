@@ -335,7 +335,7 @@ import { ProjectContext } from '../../core/services/project-context.service';
                 </div>
                 <div>
                   <label [attr.for]="'pb-step-oncomplete-' + i" class="text-xs text-text-muted mb-0.5 block">On complete</label>
-                  <select [id]="'pb-step-oncomplete-' + i" [ngModel]="step.on_complete ?? ''" (ngModelChange)="updateField(i, 'on_complete', $event || undefined)"
+                  <select [id]="'pb-step-oncomplete-' + i" [ngModel]="step.on_complete" (ngModelChange)="updateField(i, 'on_complete', $event || undefined)"
                     class="w-full bg-bg text-text-primary text-xs rounded px-2.5 py-1.5 border border-border
                            focus:outline-none focus:ring-1 focus:ring-accent">
                     <option value="">Default (next)</option>

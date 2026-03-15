@@ -1,23 +1,45 @@
 # Diraigent
 
-**The conductor for your software orchestra.**
+**Your codebase deserves a system, not a suggestion.**
 
-A self-hosted software factory — define what you want built, agents handle the rest. Structured, auditable pipelines with full control over every step.
+A self-hosted software factory — define goals, agents decompose and execute them through enforced pipelines, with humans in the loop where it matters.
 
 ## Why Diraigent?
 
-Most AI coding tools are either unstructured ("just let the AI go") or black-box SaaS you can't inspect. Diraigent gives you:
+Most AI coding tools fall into one of three traps:
 
-- **Control** — runs on your infra, your repos, your rules
-- **Structure** — playbooks define repeatable multi-step workflows with a validated state machine
-- **Auditability** — full trail of what every agent did, why, and what it produced
+- **Black-box SaaS** — cloud agents you can't inspect, audit, or self-host. Your code leaves your network.
+- **Single-agent copilots** — great for autocomplete, but they don't orchestrate work, manage releases, or enforce quality gates.
+- **Unstructured swarms** — agents without enforced workflows, no state machines, no audit trail.
+
+Diraigent is none of these. It's a structured, self-hosted platform where:
+
+- **Playbook pipelines enforce every step** — multi-step workflows with a validated state machine. Agents can't skip steps, improvise, or bypass quality gates.
+- **Goals decompose into parallel tasks** — describe what you want at any level, Diraigent breaks it into concrete tasks and dispatches agents in parallel.
+- **Humans decide what matters** — merge conflicts, ambiguous requirements, and quality gate failures surface in a review queue. Agents handle the routine; you handle the judgment calls.
+- **Your project gets smarter over time** — knowledge entries, architectural decisions, and observations accumulate as agents work. The next task starts with everything the last one learned.
+- **Different agents, different permissions** — define roles with scoped authority. One agent writes code, another reviews, another handles releases.
+- **Releases are a first-class concept** — built-in release workflows with configurable merge strategies, branch management, and release tagging.
+
+## How Diraigent Compares
+
+| Capability | IDE Copilots | SaaS Agents | Open-Source Agents | Agent Orchestrators | **Diraigent** |
+|---|---|---|---|---|---|
+| Multi-agent parallel execution | — | ✓ | — | ✓ | **✓** |
+| Enforced pipeline state machine | — | — | — | — | **✓** |
+| Goal-to-task decomposition | — | ~ | — | — | **✓** |
+| Persistent project knowledge | — | — | — | — | **✓** |
+| Human-in-the-loop review queue | — | — | — | — | **✓** |
+| Role-based agent authority | — | — | — | — | **✓** |
+| Release management | — | ~ | — | — | **✓** |
+| Self-hosted / data sovereignty | — | — | ✓ | ✓ | **✓** |
+| Full audit trail | — | — | ~ | ~ | **✓** |
+
+*Categories represent tool archetypes, not specific products.*
 
 ## Quickstart
 
-Prerequisites: 
-
-- Docker and Docker Compose.
-- Claude Code
+Prerequisites: Docker, Docker Compose, and [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
 ```bash
 curl -LO https://github.com/diraigent/diraigent/blob/main/startup/docker-compose.yml
@@ -32,11 +54,21 @@ Images are published on Docker Hub: [`diraigent/api`](https://hub.docker.com/r/d
 
 ### First steps after startup
 
-1. **Create a project** — via the dashboard or `POST /v1/projects`. Point it at a git repo with a main branch.
-2. **Clone a playbook** — pick one of the seeded defaults and clone it into your project
-3. **Create a task** — attach your playbook, fill in `spec` and `acceptance_criteria`
-4. **Register an agent** — `POST /v1/agents`, then copy the returned UUID into `.env` as `AGENT_ID`
-5. **Start the orchestra** — `docker compose --profile agent up -d` — it claims the task and begins working
+1. **Create a project** — point it at a git repo with a main branch
+2. **Chat with the assistant** — verify Claude answers
+3. **Clone a playbook** — pick one of the seeded defaults and clone it into your project
+4. **Create a task** — attach the playbook, fill in spec and acceptance criteria
+5. The orchestra picks it up and starts working
+
+### Git credentials
+
+The orchestra pushes branches and merges results back to your remote. For this to work, git must be able to authenticate inside the container. Common options:
+
+- **HTTPS + PAT** — mount a `.netrc` file with `machine github.com login <user> password <token>`
+- **SSH** — mount your SSH key and use an `ssh://` remote URL
+- **Git credential helper** — configure `GIT_ASKPASS` or a store-based helper
+
+Without credentials, agents can still work locally but push/merge to the remote will fail.
 
 ## Architecture
 
@@ -45,7 +77,7 @@ Images are published on Docker Hub: [`diraigent/api`](https://hub.docker.com/r/d
 │  Web (4200) │────▶│  API (8082) │◀────│  Orchestra  │
 │  Angular 21 │     │  Rust/Axum  │     │  Rust + CC  │
 └─────────────┘     └──────┬──────┘     └─────────────┘
-                           │                    
+                           │
                     ┌──────┴──────┐
                     │  PostgreSQL │
                     │    (5433)   │
@@ -99,16 +131,6 @@ The platform also tracks structured knowledge (architecture docs, conventions, p
 | `AGENT_ID` | Orchestra | Agent UUID (register via `POST /agents`) |
 | `GIT_REPO_URL` | Orchestra | Git repo URL cloned into the worker volume |
 | `MAX_WORKERS` | No | Concurrent Claude Code workers (default: `3`) |
-
-### Git credentials
-
-The orchestra pushes branches and merges results back to your remote. For this to work, git must be able to authenticate inside the container. Common options:
-
-- **HTTPS + PAT** — mount a `.netrc` file with `machine github.com login <user> password <token>`
-- **SSH** — mount your SSH key and use an `ssh://` remote URL
-- **Git credential helper** — configure `GIT_ASKPASS` or a store-based helper
-
-Without credentials, agents can still work locally but push/merge to the remote will fail.
 
 ## API Reference
 

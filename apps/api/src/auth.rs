@@ -92,14 +92,26 @@ pub async fn fetch_jwks(jwks_url: &str) -> anyhow::Result<JwksCache> {
 
 pub fn spawn_jwks_refresh(jwks: Arc<RwLock<JwksCache>>, jwks_url: String) {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
         loop {
-            interval.tick().await;
+            // Use a shorter interval when cache is empty (startup failure / key rotation)
+            let has_keys = !jwks.read().await.keys.is_empty();
+            let wait = if has_keys {
+                std::time::Duration::from_secs(3600)
+            } else {
+                tracing::info!("JWKS cache is empty, retrying in 30s");
+                std::time::Duration::from_secs(30)
+            };
+            tokio::time::sleep(wait).await;
+
             match fetch_jwks(&jwks_url).await {
                 Ok(new_cache) => {
                     let count = new_cache.keys.len();
+                    if count == 0 {
+                        tracing::warn!("JWKS endpoint returned 0 keys");
+                    } else {
+                        tracing::info!(keys = count, "JWKS refreshed");
+                    }
                     *jwks.write().await = new_cache;
-                    tracing::debug!(keys = count, "JWKS refreshed");
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, "Failed to refresh JWKS");
