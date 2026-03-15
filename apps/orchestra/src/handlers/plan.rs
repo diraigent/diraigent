@@ -1,8 +1,10 @@
 use crate::project::api::ProjectsApi;
-use crate::providers::{ProviderConfig, ProviderFactory, ResolvedStep, TaskContext};
 use crate::ws::WsSender;
 use crate::ws::protocol::WsMessage;
-use std::collections::HashMap;
+use std::path::PathBuf;
+use std::process::Stdio;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::Command;
 use tracing::{error, info, warn};
 
 /// Parameters for a plan request.
@@ -15,13 +17,15 @@ pub struct PlanRequestParams {
     pub project_name: String,
     pub project_id: String,
     pub api: ProjectsApi,
+    pub projects_path: PathBuf,
 }
 
-/// Handle a plan.request by calling an AI provider to decompose a work item
-/// into concrete tasks.
+/// Handle a plan.request by spawning the Claude Code CLI to decompose a work
+/// item into concrete tasks.
 ///
-/// Uses the provider abstraction instead of spawning the Claude CLI directly,
-/// making plan requests model-agnostic.
+/// Spawns `claude -p` directly (like the chat handler) with read-only tools so
+/// the planner can inspect the codebase before producing a plan.  The CLI runs
+/// in the project's working directory resolved from the API.
 pub async fn handle_plan_request(params: PlanRequestParams) {
     let PlanRequestParams {
         sender,
@@ -32,6 +36,7 @@ pub async fn handle_plan_request(params: PlanRequestParams) {
         project_name,
         project_id,
         api,
+        projects_path,
     } = params;
 
     let send_error = |sender: WsSender, request_id: String, msg: String| async move {
@@ -45,6 +50,18 @@ pub async fn handle_plan_request(params: PlanRequestParams) {
             error!("failed to send plan error via WS: {e}");
         }
     };
+
+    // Resolve the project's working directory from the API.
+    let working_dir = crate::project::paths::resolve_working_dir(&api, &project_id, &projects_path)
+        .await
+        .unwrap_or_else(|e| {
+            warn!(
+                project_id = %project_id,
+                error = %e,
+                "failed to resolve project working dir, falling back to projects_path"
+            );
+            projects_path.clone()
+        });
 
     // Build planning prompt
     let criteria_text = match &success_criteria {
@@ -68,10 +85,15 @@ pub async fn handle_plan_request(params: PlanRequestParams) {
         criteria_text
     };
 
-    let prompt = format!(
-        r#"You are a technical project planner for the project "{project_name}".
+    let system_prompt = format!(
+        "You are a technical project planner for the project \"{project_name}\". \
+         You can read files in the codebase to understand the project structure before planning. \
+         Your final output MUST be a JSON object matching this schema (no markdown fences, no preamble):\n\
+         {{\"tasks\": [{{\"title\": \"...\", \"kind\": \"feature|bug|refactor|test|docs\", \"spec\": \"...\", \"acceptance_criteria\": [\"...\"], \"depends_on\": [0]}}]}}"
+    );
 
-Decompose the following work item into 3-8 concrete, implementable tasks. Each task should be small enough for a single developer to complete in one session.
+    let prompt = format!(
+        r#"Decompose the following work item into 3-8 concrete, implementable tasks. Each task should be small enough for a single developer to complete in one session.
 
 ## Work Item
 **Title**: {title}
@@ -93,104 +115,123 @@ Respond with ONLY a JSON object matching this schema (no markdown fences, no pre
 {{"tasks": [{{"title": "...", "kind": "feature|bug|refactor|test|docs", "spec": "...", "acceptance_criteria": ["..."], "depends_on": [0]}}]}}"#
     );
 
-    // Resolve provider — try "anthropic" first, fall back to any configured provider
-    let provider_name = "anthropic";
-    let provider = match ProviderFactory::create(provider_name) {
-        Ok(p) => p,
+    info!("plan request: spawning claude-code CLI");
+
+    // Spawn Claude Code CLI directly (like the chat handler)
+    let mut child = match Command::new("claude")
+        .args([
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--no-session-persistence",
+            "--model",
+            "claude-sonnet-4-6-20250514",
+            "--system-prompt",
+            &system_prompt,
+            "--tools",
+            "Bash(read:*),Read,Glob,Grep,WebFetch,WebSearch",
+            "--permission-mode",
+            "bypassPermissions",
+        ])
+        .current_dir(&working_dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
         Err(e) => {
             send_error(
                 sender,
                 request_id,
-                format!("Failed to create provider: {e}"),
+                format!("Failed to spawn claude CLI: {e}"),
             )
             .await;
             return;
         }
     };
 
-    // Resolve credentials from API
-    let provider_cfg = match api
-        .resolve_provider_config(&project_id, provider_name)
-        .await
-    {
-        Ok(cfg) => ProviderConfig {
-            api_key: cfg["api_key"].as_str().map(String::from),
-            base_url: cfg["base_url"].as_str().map(String::from),
-            model: cfg["default_model"].as_str().map(String::from),
-        },
-        Err(e) => {
-            warn!("plan request: no provider config for '{provider_name}': {e}");
-            ProviderConfig {
-                api_key: None,
-                base_url: None,
-                model: None,
-            }
+    // Write user prompt to stdin
+    if let Some(mut stdin) = child.stdin.take() {
+        if let Err(e) = stdin.write_all(prompt.as_bytes()).await {
+            send_error(
+                sender,
+                request_id,
+                format!("Failed to write to claude stdin: {e}"),
+            )
+            .await;
+            return;
         }
-    };
+        drop(stdin); // Close stdin to signal EOF
+    }
 
-    let step = ResolvedStep {
-        name: "plan".into(),
-        description: "You are a technical project planner. Respond with valid JSON only.".into(),
-        model: Some(
-            provider_cfg
-                .model
-                .clone()
-                .unwrap_or_else(|| "claude-sonnet-4-6-20250514".into()),
-        ),
-        allowed_tools: None,
-        allowed_tools_list: vec![],
-        budget: None,
-        env: HashMap::new(),
-        system_prompt: None,
-        mcp_servers: None,
-        agents: None,
-        agent: None,
-        settings: None,
-    };
-
-    let task_ctx = TaskContext {
-        task_id: format!("plan-{}", &request_id),
-        project_id: project_id.to_string(),
-        project_context: String::new(),
-        previous_step_output: None,
-        working_dir: None,
-        log_file: None,
-        user_prompt: Some(prompt),
-    };
-
-    info!("plan request: calling provider '{provider_name}'");
-
-    let output = match provider.execute(&step, &task_ctx, &provider_cfg).await {
-        Ok(output) => output,
-        Err(e) => {
-            send_error(sender, request_id, format!("Provider error: {e}")).await;
+    // Read streaming JSON from stdout and collect the result
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            send_error(sender, request_id, "Failed to capture claude stdout".into()).await;
             return;
         }
     };
 
-    if output.is_error {
-        send_error(sender, request_id, output.content).await;
+    let reader = BufReader::new(stdout);
+    let mut lines = reader.lines();
+    let mut result_text = String::new();
+    let mut input_tokens: u64 = 0;
+    let mut output_tokens: u64 = 0;
+    let mut is_error = false;
+
+    while let Ok(Some(line)) = lines.next_line().await {
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let event: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let event_type = event["type"].as_str().unwrap_or("");
+
+        if event_type == "result" {
+            is_error = event["is_error"].as_bool().unwrap_or(false);
+            result_text = event["result"].as_str().unwrap_or("").to_string();
+
+            // Extract token usage
+            let usage = &event["usage"];
+            input_tokens = usage["input_tokens"].as_u64().unwrap_or(0)
+                + usage["cache_creation_input_tokens"].as_u64().unwrap_or(0)
+                + usage["cache_read_input_tokens"].as_u64().unwrap_or(0);
+            output_tokens = usage["output_tokens"].as_u64().unwrap_or(0);
+        }
+    }
+
+    // Wait for process to finish
+    let _ = child.wait().await;
+
+    if is_error {
+        send_error(sender, request_id, result_text).await;
         return;
     }
 
-    if output.content.trim().is_empty() {
+    if result_text.trim().is_empty() {
         send_error(
             sender,
             request_id,
-            "Provider returned empty response".into(),
+            "Claude Code returned empty response".into(),
         )
         .await;
         return;
     }
 
     info!(
-        input_tokens = output.input_tokens,
-        output_tokens = output.output_tokens,
-        "plan request: provider completed"
+        input_tokens,
+        output_tokens, "plan request: claude-code completed"
     );
 
     // Parse JSON response (may have preamble or markdown fences)
-    let text = output.content.trim();
+    let text = result_text.trim();
     let json_text = extract_json_object(text);
 
     let parsed: serde_json::Value = match serde_json::from_str(json_text) {
