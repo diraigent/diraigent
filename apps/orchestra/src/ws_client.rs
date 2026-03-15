@@ -216,22 +216,25 @@ async fn connect_and_run(
                     }
                     WsMessage::PlanRequest {
                         request_id,
-                        project_id: _project_id,
+                        project_id,
                         title,
                         description,
                         success_criteria,
                         project_name,
                     } => {
                         let sender = tx.clone();
+                        let api_clone = api.clone();
                         tokio::spawn(async move {
-                            plan_handler::handle_plan_request(
+                            plan_handler::handle_plan_request(plan_handler::PlanRequestParams {
                                 sender,
-                                &request_id,
-                                &title,
-                                &description,
-                                &success_criteria,
-                                &project_name,
-                            )
+                                request_id,
+                                title,
+                                description,
+                                success_criteria,
+                                project_name,
+                                project_id: project_id.to_string(),
+                                api: api_clone,
+                            })
                             .await;
                         });
                     }

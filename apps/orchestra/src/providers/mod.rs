@@ -67,6 +67,10 @@ pub struct TaskContext {
     pub working_dir: Option<PathBuf>,
     /// Log file path for PTY recording. Required by Claude Code provider.
     pub log_file: Option<PathBuf>,
+    /// Direct user prompt. When set, providers use this as the user message
+    /// content instead of building a JSON envelope from the other fields.
+    /// Used by plan_handler and chat summarization.
+    pub user_prompt: Option<String>,
 }
 
 /// Credentials and endpoint configuration for a provider.
@@ -223,6 +227,7 @@ mod tests {
             previous_step_output: None,
             working_dir: None,
             log_file: None,
+            user_prompt: None,
         }
     }
 

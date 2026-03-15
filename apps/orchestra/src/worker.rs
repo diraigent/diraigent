@@ -607,6 +607,7 @@ async fn execute_via_provider(
         previous_step_output: None,
         working_dir: Some(worktree_path.to_path_buf()),
         log_file: Some(log_file.to_path_buf()),
+        user_prompt: None,
     };
 
     // 6. Execute via provider — errors become blockers, not panics

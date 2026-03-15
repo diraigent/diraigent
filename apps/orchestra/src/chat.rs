@@ -1,6 +1,8 @@
 use crate::api::ProjectsApi;
+use crate::providers::{ProviderConfig, ProviderFactory, ResolvedStep, TaskContext};
 use crate::ws_protocol::{ChatSseEvent, DoneMessage, WsMessage};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -58,7 +60,7 @@ pub async fn handle_chat_request_ws(
         });
 
     // Compress messages if they exceed the token budget
-    let messages = compress_messages(messages).await;
+    let messages = compress_messages(messages, api, project_id).await;
 
     // Build user prompt from (possibly compressed) conversation history
     let user_prompt = build_user_prompt(&messages);
@@ -327,7 +329,11 @@ fn max_message_tokens() -> usize {
 /// Returns the original messages if they fit. Otherwise keeps the most recent
 /// messages that fit within the budget and either summarizes or truncates the
 /// older ones depending on whether the Claude CLI is available.
-async fn compress_messages(messages: Vec<Message>) -> Vec<Message> {
+async fn compress_messages(
+    messages: Vec<Message>,
+    api: &ProjectsApi,
+    project_id: &str,
+) -> Vec<Message> {
     let budget = max_message_tokens();
     let total_tokens: usize = messages.iter().map(|m| estimate_tokens(&m.content)).sum();
 
@@ -365,8 +371,8 @@ async fn compress_messages(messages: Vec<Message>) -> Vec<Message> {
         return recent.to_vec();
     }
 
-    // Try summarization via claude CLI, fall back to truncation note.
-    let summary = match summarize_via_cli(older).await {
+    // Try summarization via provider, fall back to truncation note.
+    let summary = match summarize_via_provider(older, api, project_id).await {
         Some(s) => s,
         None => build_truncation_summary(older),
     };
@@ -394,11 +400,14 @@ async fn compress_messages(messages: Vec<Message>) -> Vec<Message> {
     compressed
 }
 
-/// Summarize older messages via `claude -p` subprocess (Haiku model).
+/// Summarize older messages via the Anthropic provider (Haiku model).
 ///
-/// This routes through the normal Claude CLI infrastructure rather than making
-/// direct Anthropic API calls, keeping all AI usage tracked and consistent.
-async fn summarize_via_cli(messages: &[Message]) -> Option<String> {
+/// Uses the provider abstraction to keep summarization model-agnostic.
+async fn summarize_via_provider(
+    messages: &[Message],
+    api: &ProjectsApi,
+    project_id: &str,
+) -> Option<String> {
     let conversation_text = messages
         .iter()
         .map(|m| {
@@ -415,7 +424,6 @@ async fn summarize_via_cli(messages: &[Message]) -> Option<String> {
     // Limit the text we send for summarization to avoid huge requests.
     let max_summary_input = 60_000usize; // chars, ~15K tokens
     let truncated = if conversation_text.len() > max_summary_input {
-        // Find a safe UTF-8 boundary to avoid panicking on multi-byte chars.
         let start = conversation_text.len() - max_summary_input;
         let safe_start = conversation_text.ceil_char_boundary(start);
         &conversation_text[safe_start..]
@@ -430,66 +438,79 @@ async fn summarize_via_cli(messages: &[Message]) -> Option<String> {
          conversation. Use bullet points.\n\n{truncated}"
     );
 
-    let mut child = match Command::new("claude")
-        .args([
-            "-p",
-            "--output-format",
-            "text",
-            "--no-session-persistence",
-            "--model",
-            "claude-haiku-4-5-20251001",
-            "--max-turns",
-            "1",
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-    {
-        Ok(child) => child,
+    let provider_name = "anthropic";
+    let provider = match ProviderFactory::create(provider_name) {
+        Ok(p) => p,
         Err(e) => {
-            warn!("failed to spawn claude CLI for summarization: {e}");
+            warn!("failed to create provider for summarization: {e}");
             return None;
         }
     };
 
-    // Write prompt and close stdin to signal EOF
-    {
-        let mut stdin = child.stdin.take()?;
-        if let Err(e) = stdin.write_all(prompt.as_bytes()).await {
-            warn!("failed to write summarization prompt to claude stdin: {e}");
-            return None;
-        }
-        // stdin dropped here, signaling EOF
-    }
-
-    let output = match child.wait_with_output().await {
-        Ok(output) => output,
+    let provider_cfg = match api.resolve_provider_config(project_id, provider_name).await {
+        Ok(cfg) => ProviderConfig {
+            api_key: cfg["api_key"].as_str().map(String::from),
+            base_url: cfg["base_url"].as_str().map(String::from),
+            model: cfg["default_model"].as_str().map(String::from),
+        },
         Err(e) => {
-            warn!("failed to wait for claude summarization process: {e}");
+            warn!("no provider config for summarization: {e}");
             return None;
         }
     };
 
-    if !output.status.success() {
-        warn!(
-            status = ?output.status,
-            "claude summarization CLI returned non-zero exit -- falling back to truncation"
-        );
-        return None;
+    let step = ResolvedStep {
+        name: "summarize".into(),
+        description: "You are a concise summarizer. Respond with bullet points only.".into(),
+        model: Some("claude-haiku-4-5-20251001".into()),
+        allowed_tools: None,
+        allowed_tools_list: vec![],
+        budget: None,
+        env: HashMap::new(),
+        system_prompt: None,
+        mcp_servers: None,
+        agents: None,
+        agent: None,
+        settings: None,
+    };
+
+    let task_ctx = TaskContext {
+        task_id: "summarize".into(),
+        project_id: project_id.to_string(),
+        project_context: String::new(),
+        previous_step_output: None,
+        working_dir: None,
+        log_file: None,
+        user_prompt: Some(prompt),
+    };
+
+    match provider.execute(&step, &task_ctx, &provider_cfg).await {
+        Ok(output) if !output.is_error && !output.content.trim().is_empty() => {
+            let text = output.content.trim().to_string();
+            debug!(
+                summary_len = text.len(),
+                input_tokens = output.input_tokens,
+                output_tokens = output.output_tokens,
+                "summarized older messages via provider"
+            );
+            Some(text)
+        }
+        Ok(output) if output.is_error => {
+            warn!(
+                error = %output.content,
+                "summarization provider returned error"
+            );
+            None
+        }
+        Ok(_) => {
+            warn!("summarization provider returned empty response");
+            None
+        }
+        Err(e) => {
+            warn!("summarization provider failed: {e}");
+            None
+        }
     }
-
-    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    if text.is_empty() {
-        return None;
-    }
-
-    debug!(
-        summary_len = text.len(),
-        "summarized older messages via CLI"
-    );
-    Some(text)
 }
 
 /// Build a simple extractive summary when API summarization is not available.
