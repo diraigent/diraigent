@@ -711,6 +711,20 @@ pub struct PlannedTask {
     pub depends_on: Option<Vec<usize>>,
 }
 
+/// Request body for the batch apply-plan endpoint.
+/// Creates all tasks and their dependencies atomically in a single transaction.
+#[derive(Debug, Deserialize)]
+pub struct ApplyPlanRequest {
+    pub tasks: Vec<PlannedTask>,
+}
+
+/// Response from the batch apply-plan endpoint.
+#[derive(Debug, Serialize)]
+pub struct ApplyPlanResponse {
+    pub tasks: Vec<Task>,
+    pub dependencies: Vec<TaskDependency>,
+}
+
 /// Response wrapper for the AI planning endpoint (used by non-SSE callers).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanWorkResponse {
