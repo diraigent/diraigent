@@ -13,6 +13,7 @@ pub mod package_cache;
 pub mod rate_limit;
 pub mod repository;
 pub mod routes;
+pub mod scoring;
 pub mod services;
 pub mod stale_detector;
 pub mod task_score;
