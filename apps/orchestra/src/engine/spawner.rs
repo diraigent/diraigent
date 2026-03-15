@@ -452,6 +452,7 @@ mod tests {
             worker_model: None,
             dek: None,
             max_implement_cycles,
+            indexer_interval: 120,
         }
     }
 

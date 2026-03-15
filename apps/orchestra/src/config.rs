@@ -30,6 +30,9 @@ pub struct Config {
     pub dek: Option<crypto::Dek>,
     /// Maximum number of failed implement cycles before a task is auto-cancelled.
     pub max_implement_cycles: u32,
+    /// Interval in seconds between indexer runs (0 = disabled).
+    /// Defaults to 120 (2 minutes).  Set via INDEXER_INTERVAL env var.
+    pub indexer_interval: u64,
 }
 
 pub type ActiveTasks = Arc<Mutex<HashMap<String, JoinHandle<()>>>>;
@@ -93,6 +96,11 @@ impl Config {
             .unwrap_or_else(|_| "3".into())
             .parse()
             .unwrap_or(3);
+
+        let indexer_interval: u64 = std::env::var("INDEXER_INTERVAL")
+            .unwrap_or_else(|_| "120".into())
+            .parse()
+            .unwrap_or(120);
 
         // Resolve DEK for client-side encryption/decryption.
         let dek = if let Ok(dek_b64) = std::env::var("DIRAIGENT_DEK") {
@@ -160,6 +168,7 @@ impl Config {
             worker_model,
             dek,
             max_implement_cycles,
+            indexer_interval,
         })
     }
 }
