@@ -245,6 +245,7 @@
     "linkTasksBtn": "Link Tasks",
     "createTaskBtn": "Add Task",
     "executeBtn": "Execute",
+    "createAndExecute": "Create & Execute",
     "startAllBtn": "Start All",
     "noLinkedTasks": "No tasks linked to this work item",
     "pickTasks": "Pick Tasks to Link",
