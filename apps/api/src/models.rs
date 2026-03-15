@@ -2108,3 +2108,46 @@ pub struct CiStep {
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
 }
+
+// ── CI REST API DTOs ──
+
+#[derive(Debug, Deserialize)]
+pub struct CiRunFilters {
+    pub branch: Option<String>,
+    pub status: Option<String>,
+    pub workflow_name: Option<String>,
+    pub page: Option<i64>,
+    pub per_page: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CiRunWithJobs {
+    #[serde(flatten)]
+    pub run: CiRun,
+    pub jobs: Vec<CiJob>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CiJobWithSteps {
+    #[serde(flatten)]
+    pub job: CiJob,
+    pub steps: Vec<CiStep>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateForgejoIntegration {
+    pub base_url: String,
+    pub token: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ForgejoIntegrationResponse {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub base_url: String,
+    pub webhook_url: String,
+    pub webhook_secret: String,
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}

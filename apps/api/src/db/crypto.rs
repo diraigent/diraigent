@@ -2032,4 +2032,68 @@ impl DiraigentDb for CryptoDb {
             finished_at
         )
     }
+    async fn list_ci_runs(
+        &self,
+        project_id: Uuid,
+        branch: Option<&str>,
+        status: Option<&str>,
+        workflow_name: Option<&str>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<CiRun>, AppError> {
+        delegate!(
+            self,
+            list_ci_runs,
+            project_id,
+            branch,
+            status,
+            workflow_name,
+            limit,
+            offset
+        )
+    }
+    async fn count_ci_runs(
+        &self,
+        project_id: Uuid,
+        branch: Option<&str>,
+        status: Option<&str>,
+        workflow_name: Option<&str>,
+    ) -> Result<i64, AppError> {
+        delegate!(
+            self,
+            count_ci_runs,
+            project_id,
+            branch,
+            status,
+            workflow_name
+        )
+    }
+    async fn get_ci_run(&self, id: Uuid) -> Result<CiRun, AppError> {
+        delegate!(self, get_ci_run, id)
+    }
+    async fn list_ci_jobs_for_run(&self, ci_run_id: Uuid) -> Result<Vec<CiJob>, AppError> {
+        delegate!(self, list_ci_jobs_for_run, ci_run_id)
+    }
+    async fn get_ci_job(&self, id: Uuid) -> Result<CiJob, AppError> {
+        delegate!(self, get_ci_job, id)
+    }
+    async fn list_ci_steps_for_job(&self, ci_job_id: Uuid) -> Result<Vec<CiStep>, AppError> {
+        delegate!(self, list_ci_steps_for_job, ci_job_id)
+    }
+    async fn create_forgejo_integration(
+        &self,
+        project_id: Uuid,
+        base_url: &str,
+        token: Option<&str>,
+        webhook_secret: &str,
+    ) -> Result<ForgejoIntegration, AppError> {
+        delegate!(
+            self,
+            create_forgejo_integration,
+            project_id,
+            base_url,
+            token,
+            webhook_secret
+        )
+    }
 }

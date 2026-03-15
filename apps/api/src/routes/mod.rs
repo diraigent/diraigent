@@ -2,6 +2,7 @@ mod agents;
 mod audit;
 mod changed_files;
 mod chat;
+mod ci;
 mod context;
 mod decisions;
 mod event_rules;
@@ -106,5 +107,6 @@ pub fn router() -> Router<AppState> {
         .merge(reports::routes())
         .merge(task_logs::routes())
         .merge(forgejo_webhooks::routes())
+        .merge(ci::routes())
         .merge(ws::routes())
 }
