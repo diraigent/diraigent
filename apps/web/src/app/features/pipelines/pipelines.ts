@@ -1,5 +1,6 @@
 import { Component, inject, signal, effect, OnDestroy, DestroyRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subscription, timer } from 'rxjs';
@@ -111,7 +112,7 @@ import { CI_STATUS_COLORS } from '../../shared/ui-constants';
             </thead>
             <tbody>
               @for (run of runs(); track run.id) {
-                <tr class="border-b border-border/50 hover:bg-surface/50 transition-colors">
+                <tr (click)="navigateToRun(run.id)" class="border-b border-border/50 hover:bg-surface/50 transition-colors cursor-pointer">
                   <td class="py-3 pr-4">
                     <span class="font-medium text-text-primary">{{ run.workflow_name }}</span>
                   </td>
@@ -203,6 +204,7 @@ export class PipelinesPage implements OnDestroy {
   private ciApi = inject(CiApiService);
   private ctx = inject(ProjectContext);
   private destroyRef = inject(DestroyRef);
+  private router = inject(Router);
 
   // State
   runs = signal<CiRun[]>([]);
@@ -307,6 +309,10 @@ export class PipelinesPage implements OnDestroy {
           this.stopPolling();
         },
       });
+  }
+
+  navigateToRun(runId: string): void {
+    this.router.navigate(['/pipelines', runId]);
   }
 
   relativeTime(iso: string): string {

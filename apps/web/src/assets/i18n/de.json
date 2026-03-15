@@ -784,6 +784,17 @@
     "showing": "Zeige",
     "of": "von",
     "prev": "Zurück",
-    "next": "Weiter"
+    "next": "Weiter",
+    "detail": {
+      "loading": "Laden...",
+      "errorTitle": "Lauf konnte nicht geladen werden",
+      "backToList": "Zurück zu Pipelines",
+      "duration": "Dauer",
+      "jobs": "Jobs",
+      "noJobs": "Keine Jobs für diesen Lauf gefunden.",
+      "noSteps": "Keine Schritte für diesen Job aufgezeichnet.",
+      "exitCode": "Exit",
+      "autoPolling": "Automatische Aktualisierung alle 15s (Lauf aktiv)"
+    }
   }
 }
