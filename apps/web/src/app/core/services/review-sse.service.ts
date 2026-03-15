@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { OAuthService } from 'angular-oauth2-oidc';
 import { Subject, Observable, firstValueFrom } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { AuthService } from './auth.service';
 
 export interface ReviewSseEvent {
   /** `"entered"` when a task transitions to human_review; `"left"` when it leaves. */
@@ -29,17 +30,22 @@ export interface ReviewSseEvent {
 export class ReviewSseService implements OnDestroy {
   private oauth = inject(OAuthService);
   private http = inject(HttpClient);
+  private auth = inject(AuthService);
 
   private readonly events$ = new Subject<ReviewSseEvent>();
   private es: EventSource | null = null;
   private retryMs = 2_000;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
-
   /** Observable stream of review state-change events. */
   readonly events: Observable<ReviewSseEvent> = this.events$.asObservable();
 
   constructor() {
-    this.connect();
+    // Wait for auth to be initialized before connecting
+    this.auth.authInitialized$.subscribe(initialized => {
+      if (initialized) {
+        this.connect();
+      }
+    });
   }
 
   ngOnDestroy(): void {
@@ -48,6 +54,11 @@ export class ReviewSseService implements OnDestroy {
 
   private async connect(): Promise<void> {
     const base = environment.apiServer;
+
+    // Skip SSE when auth is disabled (dev/mock mode)
+    if (this.auth.isAuthDisabled()) {
+      return;
+    }
 
     // Obtain a short-lived ticket before opening the EventSource.
     // If we can't get a ticket (e.g. not authenticated) skip the connection.
@@ -65,7 +76,7 @@ export class ReviewSseService implements OnDestroy {
         ticket = resp.ticket;
       }
     } catch {
-      // Could not obtain a ticket — schedule retry.
+      // Could not obtain a ticket — schedule retry with backoff.
       this.scheduleReconnect();
       return;
     }
