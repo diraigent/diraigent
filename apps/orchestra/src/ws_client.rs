@@ -460,6 +460,8 @@ Respond with ONLY a valid JSON object in this exact format, no markdown fences o
             "sonnet",
             "--max-turns",
             "1",
+            "--max-tokens",
+            "16000",
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
