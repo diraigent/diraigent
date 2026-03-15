@@ -1,5 +1,17 @@
 # Changelog
 
+## v20260315-1029-developer (2026-03-15)
+
+### Orchestra
+- **Git provisioning fix**: Use `git_root` instead of `working_dir` in ws_client monorepo git provisioning
+- **Plan request verbosity**: Add missing `--verbose` flag to plan request CLI invocation
+
+### Web Dashboard
+- **Field label rename**: Rename "P" to "Priority" and "Todos" to "Checklist" in work item detail view
+- **i18n updates**: Update English and German translations for renamed fields
+
+---
+
 ## v20260314-2330 (2026-03-14)
 
 ### API
