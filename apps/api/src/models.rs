@@ -420,6 +420,8 @@ pub struct Task {
     pub output_tokens: i64,
     /// Accumulated LLM cost in USD across all completed steps.
     pub cost_usd: f64,
+    /// Timestamp when the task entered its current state — used for staleness scoring.
+    pub state_entered_at: DateTime<Utc>,
 }
 
 /// Task with an attached composite score, returned by the ready-tasks endpoint.

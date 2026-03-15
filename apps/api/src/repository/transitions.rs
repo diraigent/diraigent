@@ -105,7 +105,8 @@ pub async fn transition_task(
                         let task = sqlx::query_as::<_, Task>(
                             "UPDATE diraigent.task
                                  SET state = 'ready', playbook_step = $2,
-                                     assigned_agent_id = NULL, claimed_at = NULL
+                                     assigned_agent_id = NULL, claimed_at = NULL,
+                                     state_entered_at = now()
                                  WHERE id = $1 RETURNING *",
                         )
                         .bind(task_id)
@@ -133,7 +134,7 @@ pub async fn transition_task(
         (true, Some(step)) => {
             sqlx::query_as::<_, Task>(
                 "UPDATE diraigent.task
-                 SET state = $2, assigned_agent_id = NULL, claimed_at = NULL, completed_at = $3, playbook_step = $4
+                 SET state = $2, assigned_agent_id = NULL, claimed_at = NULL, completed_at = $3, playbook_step = $4, state_entered_at = now()
                  WHERE id = $1 RETURNING *",
             )
             .bind(task_id)
@@ -146,7 +147,7 @@ pub async fn transition_task(
         (true, None) => {
             sqlx::query_as::<_, Task>(
                 "UPDATE diraigent.task
-                 SET state = $2, assigned_agent_id = NULL, claimed_at = NULL, completed_at = $3
+                 SET state = $2, assigned_agent_id = NULL, claimed_at = NULL, completed_at = $3, state_entered_at = now()
                  WHERE id = $1 RETURNING *",
             )
             .bind(task_id)
@@ -157,7 +158,7 @@ pub async fn transition_task(
         }
         (false, Some(step)) => {
             sqlx::query_as::<_, Task>(
-                "UPDATE diraigent.task SET state = $2, completed_at = $3, playbook_step = $4
+                "UPDATE diraigent.task SET state = $2, completed_at = $3, playbook_step = $4, state_entered_at = now()
                  WHERE id = $1 RETURNING *",
             )
             .bind(task_id)
@@ -169,7 +170,7 @@ pub async fn transition_task(
         }
         (false, None) => {
             sqlx::query_as::<_, Task>(
-                "UPDATE diraigent.task SET state = $2, completed_at = $3
+                "UPDATE diraigent.task SET state = $2, completed_at = $3, state_entered_at = now()
                  WHERE id = $1 RETURNING *",
             )
             .bind(task_id)
@@ -216,7 +217,7 @@ pub async fn claim_task(pool: &PgPool, task_id: Uuid, agent_id: Uuid) -> Result<
     // Atomic: only claim if state hasn't changed
     let task = sqlx::query_as::<_, Task>(
         "UPDATE diraigent.task
-         SET state = $3, assigned_agent_id = $2, claimed_at = now()
+         SET state = $3, assigned_agent_id = $2, claimed_at = now(), state_entered_at = now()
          WHERE id = $1 AND state = $4
          RETURNING *",
     )
@@ -271,7 +272,7 @@ pub async fn release_task(pool: &PgPool, task_id: Uuid) -> Result<Task, AppError
 
     let task = sqlx::query_as::<_, Task>(
         "UPDATE diraigent.task
-         SET state = 'ready', assigned_agent_id = NULL, claimed_at = NULL
+         SET state = 'ready', assigned_agent_id = NULL, claimed_at = NULL, state_entered_at = now()
          WHERE id = $1 RETURNING *",
     )
     .bind(task_id)
