@@ -220,10 +220,14 @@ mod tests {
         };
         let config = ProviderConfig {
             api_key: None,
-            base_url: None,
+            // Use a port nothing listens on — the real implementation will
+            // return a ConnectionRefused error, which proves the trait is
+            // implemented and executing.
+            base_url: Some("http://127.0.0.1:19999".to_string()),
             model: None,
         };
         let result = provider.execute(&step, &task, &config).await;
-        assert!(result.is_ok());
+        // Real implementation connects to the network — expect a connection error.
+        assert!(result.is_err());
     }
 }
