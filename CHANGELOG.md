@@ -1,6 +1,24 @@
 # Changelog
 
 
+## v20260316-developer (2026-03-16)
+
+### Added
+- **Analyzer**: sync subcommand that persists analyzer outputs (module summaries, API surface maps) to the knowledge store
+- **Analyzer**: API surface mapper subcommand for extracting public endpoint definitions
+- **Orchestra**: indexer module with scheduled cron-based re-indexing of codebase knowledge
+- **Orchestra**: inject codegen auto-docs from knowledge store into agent task context
+- **CI/CD**: post-commit git hook (`scripts/post-commit-index.sh`) to trigger re-indexing after pushes
+
+### Changed
+- **Orchestra**: plan handler now invokes claude-code CLI instead of calling the Anthropic API directly
+
+### Fixed
+- **Web**: state change dropdown on task cards no longer clipped by overflow-hidden container
+
+---
+
+
 ## v20260315-2151-developer (2026-03-15)
 
 ### Added
