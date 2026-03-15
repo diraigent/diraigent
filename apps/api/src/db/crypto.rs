@@ -14,6 +14,8 @@
 //!   webhook.secret            → "webhook.secret"
 //!   changed_file.diff         → "changed_file.diff"
 //!   provider_config.api_key   → "provider_config.api_key"
+//!   forgejo_integration.token → "forgejo_integration.token"
+//!   forgejo_integration.webhook_secret → "forgejo_integration.webhook_secret"
 
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -115,6 +117,19 @@ impl CryptoDb {
     fn decrypt_provider_config(dek: &Dek, pc: &mut ProviderConfig) -> Result<(), CryptoError> {
         if let Some(ref key) = pc.api_key {
             pc.api_key = Some(dek.decrypt_str(key, "provider_config.api_key")?);
+        }
+        Ok(())
+    }
+
+    fn decrypt_forgejo_integration(
+        dek: &Dek,
+        fi: &mut ForgejoIntegration,
+    ) -> Result<(), CryptoError> {
+        if let Some(ref t) = fi.token {
+            fi.token = Some(dek.decrypt_str(t, "forgejo_integration.token")?);
+        }
+        if let Some(ref s) = fi.webhook_secret {
+            fi.webhook_secret = Some(dek.decrypt_str(s, "forgejo_integration.webhook_secret")?);
         }
         Ok(())
     }
@@ -1946,15 +1961,26 @@ impl DiraigentDb for CryptoDb {
         delegate!(self, delete_provider_config, id)
     }
 
-    // Forgejo CI — no encryption needed for these fields
+    // Forgejo CI — encrypt token + webhook_secret
     async fn get_forgejo_integration(&self, id: Uuid) -> Result<ForgejoIntegration, AppError> {
-        delegate!(self, get_forgejo_integration, id)
+        let mut fi = self.inner.get_forgejo_integration(id).await?;
+        if let Some(dek) = self.dek_for_project(fi.project_id).await? {
+            Self::decrypt_forgejo_integration(&dek, &mut fi)?;
+        }
+        Ok(fi)
     }
     async fn get_forgejo_integration_by_project(
         &self,
         project_id: Uuid,
     ) -> Result<ForgejoIntegration, AppError> {
-        delegate!(self, get_forgejo_integration_by_project, project_id)
+        let mut fi = self
+            .inner
+            .get_forgejo_integration_by_project(project_id)
+            .await?;
+        if let Some(dek) = self.dek_for_project(fi.project_id).await? {
+            Self::decrypt_forgejo_integration(&dek, &mut fi)?;
+        }
+        Ok(fi)
     }
     async fn upsert_ci_run(
         &self,
@@ -2031,5 +2057,84 @@ impl DiraigentDb for CryptoDb {
             started_at,
             finished_at
         )
+    }
+    async fn list_ci_runs(
+        &self,
+        project_id: Uuid,
+        branch: Option<&str>,
+        status: Option<&str>,
+        workflow_name: Option<&str>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<CiRun>, AppError> {
+        delegate!(
+            self,
+            list_ci_runs,
+            project_id,
+            branch,
+            status,
+            workflow_name,
+            limit,
+            offset
+        )
+    }
+    async fn count_ci_runs(
+        &self,
+        project_id: Uuid,
+        branch: Option<&str>,
+        status: Option<&str>,
+        workflow_name: Option<&str>,
+    ) -> Result<i64, AppError> {
+        delegate!(
+            self,
+            count_ci_runs,
+            project_id,
+            branch,
+            status,
+            workflow_name
+        )
+    }
+    async fn get_ci_run(&self, id: Uuid) -> Result<CiRun, AppError> {
+        delegate!(self, get_ci_run, id)
+    }
+    async fn list_ci_jobs_for_run(&self, ci_run_id: Uuid) -> Result<Vec<CiJob>, AppError> {
+        delegate!(self, list_ci_jobs_for_run, ci_run_id)
+    }
+    async fn get_ci_job(&self, id: Uuid) -> Result<CiJob, AppError> {
+        delegate!(self, get_ci_job, id)
+    }
+    async fn list_ci_steps_for_job(&self, ci_job_id: Uuid) -> Result<Vec<CiStep>, AppError> {
+        delegate!(self, list_ci_steps_for_job, ci_job_id)
+    }
+    async fn create_forgejo_integration(
+        &self,
+        project_id: Uuid,
+        base_url: &str,
+        token: Option<&str>,
+        webhook_secret: &str,
+    ) -> Result<ForgejoIntegration, AppError> {
+        let dek = self.dek_for_project(project_id).await?;
+        if let Some(ref dek) = dek {
+            let encrypted_token = token
+                .map(|t| dek.encrypt_str(t, "forgejo_integration.token"))
+                .transpose()?;
+            let encrypted_secret =
+                dek.encrypt_str(webhook_secret, "forgejo_integration.webhook_secret")?;
+            let mut fi = self
+                .inner
+                .create_forgejo_integration(
+                    project_id,
+                    base_url,
+                    encrypted_token.as_deref(),
+                    &encrypted_secret,
+                )
+                .await?;
+            Self::decrypt_forgejo_integration(dek, &mut fi)?;
+            Ok(fi)
+        } else {
+            self.inner
+                .create_forgejo_integration(project_id, base_url, token, webhook_secret)
+                .await
+        }
     }
 }

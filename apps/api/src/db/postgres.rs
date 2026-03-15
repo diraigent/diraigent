@@ -1522,4 +1522,55 @@ impl DiraigentDb for PostgresDb {
         )
         .await
     }
+    async fn list_ci_runs(
+        &self,
+        project_id: Uuid,
+        branch: Option<&str>,
+        status: Option<&str>,
+        workflow_name: Option<&str>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<CiRun>, AppError> {
+        repository::list_ci_runs(
+            &self.0,
+            project_id,
+            branch,
+            status,
+            workflow_name,
+            limit,
+            offset,
+        )
+        .await
+    }
+    async fn count_ci_runs(
+        &self,
+        project_id: Uuid,
+        branch: Option<&str>,
+        status: Option<&str>,
+        workflow_name: Option<&str>,
+    ) -> Result<i64, AppError> {
+        repository::count_ci_runs(&self.0, project_id, branch, status, workflow_name).await
+    }
+    async fn get_ci_run(&self, id: Uuid) -> Result<CiRun, AppError> {
+        repository::get_ci_run(&self.0, id).await
+    }
+    async fn list_ci_jobs_for_run(&self, ci_run_id: Uuid) -> Result<Vec<CiJob>, AppError> {
+        repository::list_ci_jobs_for_run(&self.0, ci_run_id).await
+    }
+    async fn get_ci_job(&self, id: Uuid) -> Result<CiJob, AppError> {
+        repository::get_ci_job(&self.0, id).await
+    }
+    async fn list_ci_steps_for_job(&self, ci_job_id: Uuid) -> Result<Vec<CiStep>, AppError> {
+        repository::list_ci_steps_for_job(&self.0, ci_job_id).await
+    }
+    async fn create_forgejo_integration(
+        &self,
+        project_id: Uuid,
+        base_url: &str,
+        token: Option<&str>,
+        webhook_secret: &str,
+    ) -> Result<ForgejoIntegration, AppError> {
+        repository::create_forgejo_integration(&self.0, project_id, base_url, token, webhook_secret)
+            .await
+    }
 }
