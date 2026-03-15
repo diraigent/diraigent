@@ -196,9 +196,9 @@ Respond with a JSON object matching the required schema."#
                 }
             }
             "assistant" => {
-                if accumulated_text.is_empty()
-                    && let Some(content) = event["message"]["content"].as_array()
-                {
+                // Extract text from this assistant message; keep the latest
+                // non-empty text (the final assistant turn has the answer).
+                if let Some(content) = event["message"]["content"].as_array() {
                     let full_text: String = content
                         .iter()
                         .filter_map(|block| {
@@ -217,22 +217,44 @@ Respond with a JSON object matching the required schema."#
             }
             "result" => {
                 saw_result = true;
+                // Log the key fields of the result event for diagnostics
+                let has_structured = event.get("structured_output").is_some();
+                let structured_is_null = event
+                    .get("structured_output")
+                    .map(|v| v.is_null())
+                    .unwrap_or(true);
+                let result_preview: String = event
+                    .get("result")
+                    .map(|v| v.to_string().chars().take(300).collect())
+                    .unwrap_or_default();
+                let structured_preview: String = event
+                    .get("structured_output")
+                    .map(|v| v.to_string().chars().take(300).collect())
+                    .unwrap_or_default();
+                let result_keys: Vec<String> = event
+                    .as_object()
+                    .map(|o| o.keys().cloned().collect())
+                    .unwrap_or_default();
+                info!(
+                    has_structured,
+                    structured_is_null,
+                    result_preview = %result_preview,
+                    structured_preview = %structured_preview,
+                    result_keys = ?result_keys,
+                    "plan request: result event received"
+                );
+
                 is_error = event["is_error"].as_bool().unwrap_or(false);
                 if is_error {
                     accumulated_text = event["result"]
                         .as_str()
                         .unwrap_or("Unknown error")
                         .to_string();
-                } else if let Some(structured) = event.get("structured_output") {
-                    if !structured.is_null() {
-                        // --json-schema produces structured_output in the result event
-                        accumulated_text = structured.to_string();
-                    } else {
-                        debug!("plan request: result event has null structured_output");
-                        // Fall through to try .result
-                        accumulated_text = event["result"].as_str().unwrap_or("").to_string();
-                    }
-                } else if accumulated_text.is_empty() {
+                } else if has_structured && !structured_is_null {
+                    // --json-schema produces structured_output in the result event
+                    accumulated_text = event["structured_output"].to_string();
+                } else {
+                    // Try .result (may be text or null)
                     accumulated_text = event["result"].as_str().unwrap_or("").to_string();
                 }
                 break;
