@@ -1,6 +1,6 @@
-use crate::api::ProjectsApi;
+use crate::project::api::ProjectsApi;
 use crate::providers::{ProviderConfig, ProviderFactory, ResolvedStep, TaskContext};
-use crate::ws_protocol::{ChatSseEvent, DoneMessage, WsMessage};
+use crate::ws::protocol::{ChatSseEvent, DoneMessage, WsMessage};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -48,7 +48,7 @@ pub async fn handle_chat_request_ws(
     };
 
     // Resolve the project's working directory from the API.
-    let working_dir = crate::project_paths::resolve_working_dir(api, project_id, projects_path)
+    let working_dir = crate::project::paths::resolve_working_dir(api, project_id, projects_path)
         .await
         .unwrap_or_else(|e| {
             warn!(

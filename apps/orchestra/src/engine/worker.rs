@@ -1,12 +1,12 @@
-use crate::api::ProjectsApi;
 use crate::crypto::Dek;
+use crate::engine::prompt;
+use crate::engine::step_profile::StepProfile;
 use crate::git::WorktreeManager;
-use crate::prompt;
+use crate::project::api::ProjectsApi;
 use crate::providers::{
     ProviderConfig as ProviderCfg, ProviderFactory, ResolvedStep,
     TaskContext as ProviderTaskContext,
 };
-use crate::step_profile::StepProfile;
 use crate::task_id::TaskId;
 use anyhow::Result;
 use serde_json::Value;
@@ -313,7 +313,7 @@ pub async fn run_worker(
     let is_retriable = step_config
         .step_json
         .as_ref()
-        .map(crate::step_profile::is_retriable)
+        .map(crate::engine::step_profile::is_retriable)
         .unwrap_or_else(|| {
             matches!(
                 StepProfile::for_step(&step_config.step_name),
@@ -654,7 +654,7 @@ async fn execute_via_provider(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::ProjectsApi;
+    use crate::project::api::ProjectsApi;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 

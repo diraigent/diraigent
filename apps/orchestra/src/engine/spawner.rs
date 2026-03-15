@@ -2,18 +2,18 @@
 
 use tracing::{error, info, warn};
 
-use crate::api::ProjectsApi;
 use crate::config::{ActiveTasks, Config, LockQueue, LockQueueEntry};
 use crate::git::WorktreeManager;
+use crate::project::api::ProjectsApi;
 
 /// How long a task stays in the lock queue before being retried regardless.
 const LOCK_QUEUE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
-use crate::git_strategy;
-use crate::pipeline;
-use crate::project_paths;
-use crate::step_profile;
+use crate::engine::pipeline;
+use crate::engine::step_profile;
+use crate::engine::worker;
+use crate::git::strategy as git_strategy;
+use crate::project::paths as project_paths;
 use crate::task_id::TaskId;
-use crate::worker;
 
 pub async fn poll_ready_tasks(
     api: &ProjectsApi,
@@ -289,7 +289,7 @@ pub async fn spawn_worker(
             let repo_url = project["repo_url"].as_str().unwrap_or("");
             let default_branch = project["default_branch"].as_str().unwrap_or("main");
             let slug = project["slug"].as_str().unwrap_or(project_id);
-            crate::git_provisioner::provision_repo(root, repo_url, default_branch, slug);
+            crate::git::provisioner::provision_repo(root, repo_url, default_branch, slug);
         } else {
             warn!("spawn {tid}: could not fetch project record for git provisioning");
         }
@@ -309,12 +309,12 @@ pub async fn spawn_worker(
             let base = git_strategy
                 .base_branch(&default_branch)
                 .unwrap_or(&default_branch);
-            let wm = if git_mode == "none" || git_strategy == crate::git_strategy::GitStrategy::NoGit {
+            let wm = if git_mode == "none" || git_strategy == crate::git::strategy::GitStrategy::NoGit {
                 WorktreeManager::disabled(&working_dir)
             } else if let Some(ref root) = git_root {
                 let m = WorktreeManager::with_branch(root, base);
                 // For feature_branch, ensure the work branch exists before creating worktrees
-                if let crate::git_strategy::GitStrategy::FeatureBranch { work_branch } =
+                if let crate::git::strategy::GitStrategy::FeatureBranch { work_branch } =
                     &git_strategy
                     && let Err(e) = m.ensure_branch(work_branch)
                 {
@@ -396,8 +396,8 @@ pub async fn spawn_worker(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::ProjectsApi;
     use crate::config::{ActiveTasks, Config, LockQueue};
+    use crate::project::api::ProjectsApi;
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::Mutex;

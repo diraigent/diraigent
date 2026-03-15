@@ -1,8 +1,9 @@
-use crate::api::ProjectsApi;
-use crate::chat;
-use crate::plan_handler;
-use crate::ws_git_dispatch;
-use crate::ws_protocol::WsMessage;
+pub mod git_dispatch;
+pub mod protocol;
+
+use self::protocol::WsMessage;
+use crate::handlers::{chat, plan};
+use crate::project::api::ProjectsApi;
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use std::path::{Path, PathBuf};
@@ -225,7 +226,7 @@ async fn connect_and_run(
                         let sender = tx.clone();
                         let api_clone = api.clone();
                         tokio::spawn(async move {
-                            plan_handler::handle_plan_request(plan_handler::PlanRequestParams {
+                            plan::handle_plan_request(plan::PlanRequestParams {
                                 sender,
                                 request_id,
                                 title,
@@ -249,7 +250,7 @@ async fn connect_and_run(
                         path,
                         git_ref,
                     } => {
-                        ws_git_dispatch::handle_git_request(ws_git_dispatch::GitRequestParams {
+                        git_dispatch::handle_git_request(git_dispatch::GitRequestParams {
                             sender: tx.clone(),
                             request_id,
                             project_id,

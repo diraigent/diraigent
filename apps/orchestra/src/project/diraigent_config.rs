@@ -74,9 +74,9 @@ impl ScriptEnv {
 /// Registry of built-in release templates.
 pub fn release_template(name: &str) -> Option<&'static str> {
     match name {
-        "squash-merge" => Some(include_str!("templates/release_squash_merge.sh")),
-        "merge-commit" => Some(include_str!("templates/release_merge_commit.sh")),
-        "tag-only" => Some(include_str!("templates/release_tag_only.sh")),
+        "squash-merge" => Some(include_str!("../templates/release_squash_merge.sh")),
+        "merge-commit" => Some(include_str!("../templates/release_merge_commit.sh")),
+        "tag-only" => Some(include_str!("../templates/release_tag_only.sh")),
         _ => None,
     }
 }

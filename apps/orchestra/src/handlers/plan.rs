@@ -1,7 +1,7 @@
-use crate::api::ProjectsApi;
+use crate::project::api::ProjectsApi;
 use crate::providers::{ProviderConfig, ProviderFactory, ResolvedStep, TaskContext};
-use crate::ws_client::WsSender;
-use crate::ws_protocol::WsMessage;
+use crate::ws::WsSender;
+use crate::ws::protocol::WsMessage;
 use std::collections::HashMap;
 use tracing::{error, info, warn};
 
@@ -109,7 +109,10 @@ Respond with ONLY a JSON object matching this schema (no markdown fences, no pre
     };
 
     // Resolve credentials from API
-    let provider_cfg = match api.resolve_provider_config(&project_id, provider_name).await {
+    let provider_cfg = match api
+        .resolve_provider_config(&project_id, provider_name)
+        .await
+    {
         Ok(cfg) => ProviderConfig {
             api_key: cfg["api_key"].as_str().map(String::from),
             base_url: cfg["base_url"].as_str().map(String::from),

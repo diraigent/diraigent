@@ -7,8 +7,8 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
-use crate::api::ProjectsApi;
-use crate::git_provisioner;
+use crate::git::provisioner as git_provisioner;
+use crate::project::api::ProjectsApi;
 
 /// Resolved filesystem paths for a project.
 pub struct ProjectPaths {

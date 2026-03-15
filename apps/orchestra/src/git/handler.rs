@@ -1,5 +1,5 @@
-use crate::api::ProjectsApi;
 use crate::git::WorktreeManager;
+use crate::project::api::ProjectsApi;
 use base64::Engine as _;
 use serde::Serialize;
 use std::process::Command;

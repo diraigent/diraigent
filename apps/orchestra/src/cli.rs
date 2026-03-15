@@ -1,21 +1,22 @@
 #![allow(dead_code)]
 
-mod api;
+mod config;
 mod constants;
-mod context;
 mod crypto;
-mod diraigent_config;
+mod engine;
 mod git;
-mod prompt;
+mod handlers;
+mod lockfile;
+mod log_monitor;
+mod project;
 mod providers;
-mod step_profile;
 mod task_id;
 mod util;
-mod worker;
+mod ws;
 
 use anyhow::{Context, Result, bail};
-use api::ProjectsApi;
 use clap::{Parser, Subcommand};
+use project::api::ProjectsApi;
 use std::io::Write;
 use task_id::TaskId;
 

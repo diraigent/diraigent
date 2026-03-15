@@ -1,7 +1,7 @@
-use crate::api::ProjectsApi;
 use crate::git::WorktreeManager;
-use crate::ws_client::WsSender;
-use crate::ws_protocol::WsMessage;
+use crate::project::api::ProjectsApi;
+use crate::ws::WsSender;
+use crate::ws::protocol::WsMessage;
 use std::path::PathBuf;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -45,7 +45,7 @@ pub fn handle_git_request(params: GitRequestParams) {
 
         // Resolve project paths (git_root + working_dir)
         let paths = rt.block_on(async {
-            crate::project_paths::resolve_project_paths(&api, &project_id.to_string(), &pp).await
+            crate::project::paths::resolve_project_paths(&api, &project_id.to_string(), &pp).await
         });
         let (git_mode, git_root, working_dir, auto_push, default_branch) = match paths {
             Ok(p) => (
@@ -90,7 +90,7 @@ pub fn handle_git_request(params: GitRequestParams) {
                 if let Ok(project) = rt.block_on(api.get_project(&project_id.to_string())) {
                     let repo_url = project["repo_url"].as_str().unwrap_or("");
                     let slug = project["slug"].as_str().unwrap_or("");
-                    crate::git_provisioner::provision_repo(root, repo_url, &default_branch, slug);
+                    crate::git::provisioner::provision_repo(root, repo_url, &default_branch, slug);
                 }
             }
 
@@ -98,7 +98,7 @@ pub fn handle_git_request(params: GitRequestParams) {
             m.set_auto_push(auto_push);
             m
         };
-        let response = crate::git_handler::handle_git_request_with_events(
+        let response = crate::git::handler::handle_git_request_with_events(
             &wm,
             &api,
             &project_id.to_string(),
