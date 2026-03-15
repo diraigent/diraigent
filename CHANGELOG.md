@@ -1,5 +1,46 @@
 # Changelog
 
+## v20260315-1236 (2026-03-15)
+
+### Added
+- **API**: Composite task scoring system (TaskScore) with age, priority, dependency-graph, and goal-alignment scoring components
+- **API**: `state_entered_at` timestamp on tasks table for staleness tracking
+- **API**: AI planning endpoint `POST /{project_id}/work/{work_id}/plan`
+- **API**: Integration tests for scoring module
+- **Web**: Execute button on work items to create tasks from work item fields
+- **Web**: Plan Tasks button with preview dialog in Work view
+- **Orchestra**: Score breakdown display in agent-cli `ready` command
+- **Orchestra**: `--verbose` flag for plan request CLI invocation
+
+### Changed
+- **Web**: Renamed Goals to Work across the frontend
+- **TUI**: Renamed Goal to Work in structs, views, API calls, and UI labels
+- **Web**: Moved task statistics section above linked tasks in work item view
+- **Web**: Renamed 'Create Task' to 'Add Task', 'P' to 'Priority', 'Todos' to 'Checklist'
+- **Orchestra**: Route work item planning through orchestra via WebSocket instead of direct Anthropic API
+- **Orchestra**: Replace direct Anthropic API call with `claude -p` subprocess for chat history compression
+- **API**: Integrate composite scoring into ready-tasks query
+- **API**: Return 502 Bad Gateway for Anthropic API errors per spec
+- **CI/CD**: Updated release script
+
+### Fixed
+- **Orchestra**: ws_client monorepo git provisioning uses `git_root` instead of `working_dir`
+- **Orchestra**: Handle empty Claude CLI output in `plan_work` with stderr diagnostics
+- **Web**: Mobile horizontal scrolling across all pages
+- **Web**: `goals.type.undefined` field name alignment with API rename
+- **Web**: Git push error display showing `[object Object]`
+- **Web**: Clear selected item when opening create form to prevent visual overlap
+- **API**: Transition task to `human_review` on merge failure
+
+### Removed
+- **Web**: Nested scrolling from task detail view
+- **Web**: Lightweight expanded preview from task list
+- **Web**: Standalone 'new task' button from /work page
+- **Web**: `target_date` from work entity
+- **Web**: 'Link tasks' button from work detail view
+
+---
+
 ## v20260315-1029-developer (2026-03-15)
 
 ### Fixed
