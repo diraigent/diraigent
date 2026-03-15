@@ -6,6 +6,7 @@ mod crypto;
 mod engine;
 mod git;
 mod handlers;
+mod indexer;
 mod lockfile;
 mod log_monitor;
 mod project;
@@ -175,6 +176,12 @@ async fn main() -> Result<()> {
     // Main polling loop
     let mut last_poll = std::time::Instant::now();
     let mut last_heartbeat = std::time::Instant::now();
+    let mut last_index = std::time::Instant::now()
+        .checked_sub(std::time::Duration::from_secs(config.indexer_interval))
+        .unwrap_or_else(std::time::Instant::now);
+    if config.indexer_interval > 0 {
+        info!("indexer enabled (interval={}s)", config.indexer_interval);
+    }
     loop {
         if shutdown.load(Ordering::SeqCst) {
             break;
@@ -198,6 +205,13 @@ async fn main() -> Result<()> {
             engine::spawner::poll_ready_tasks(&api, &config, &active, &lock_queue).await;
             process_ready_work_items(&api).await;
             last_poll = std::time::Instant::now();
+        }
+
+        // Run indexer on its own interval (0 = disabled).
+        if config.indexer_interval > 0 && last_index.elapsed().as_secs() >= config.indexer_interval
+        {
+            indexer::tick(&api, &config.projects_path).await;
+            last_index = std::time::Instant::now();
         }
 
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;

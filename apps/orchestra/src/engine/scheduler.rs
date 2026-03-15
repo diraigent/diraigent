@@ -486,6 +486,7 @@ mod tests {
             worker_model: None,
             dek: None,
             max_implement_cycles: 3,
+            indexer_interval: 120,
         };
         let pp = config.projects_path.clone();
         let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
