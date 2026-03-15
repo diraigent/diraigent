@@ -1,10 +1,10 @@
 import { Component, ChangeDetectorRef, inject, signal, computed, effect, DestroyRef, PLATFORM_ID, ViewEncapsulation } from '@angular/core';
-import { NgTemplateOutlet, DatePipe, isPlatformBrowser } from '@angular/common';
+import { NgTemplateOutlet, DatePipe, SlicePipe, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Subscription, forkJoin, of, timer, switchMap } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { Subscription, forkJoin, of, from, timer, switchMap, EMPTY } from 'rxjs';
+import { catchError, concatMap, toArray, mergeMap } from 'rxjs/operators';
 import {
   CdkDragDrop,
   CdkDrag,
@@ -73,7 +73,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
 @Component({
   selector: 'app-work',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, DatePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent, CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList],
+  imports: [TranslocoModule, FormsModule, DatePipe, SlicePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent, CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList],
   encapsulation: ViewEncapsulation.None,
   styles: [`
     .cdk-drag-animating {
@@ -508,7 +508,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                         </svg>
-                        {{ t('goals.planLoading') }}
+                        {{ planStatusMessage() || t('goals.planLoading') }}
                       } @else {
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                           <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
@@ -1119,6 +1119,20 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                             class="w-full mt-1 bg-bg text-text-primary text-xs rounded px-2 py-1.5 border border-border
                                    focus:outline-none focus:ring-1 focus:ring-accent resize-y"></textarea>
                         </div>
+                        @if (task.depends_on && task.depends_on.length > 0) {
+                          <div>
+                            <span class="text-xs font-semibold text-text-secondary uppercase tracking-wider block">{{ t('goals.planDependsOn') }}</span>
+                            <div class="mt-1 flex flex-wrap gap-1">
+                              @for (depIdx of task.depends_on; track depIdx) {
+                                @if (plannedTasks()[depIdx]) {
+                                  <span class="px-1.5 py-0.5 bg-ctp-overlay0/20 text-text-secondary text-xs rounded">
+                                    {{ depIdx + 1 }}. {{ plannedTasks()[depIdx].title | slice:0:40 }}
+                                  </span>
+                                }
+                              }
+                            </div>
+                          </div>
+                        }
                         @if (task.acceptance_criteria && task.acceptance_criteria.length > 0) {
                           <div>
                             <span class="text-xs font-semibold text-text-secondary uppercase tracking-wider block">{{ t('goals.planTaskCriteria') }}</span>
@@ -1247,6 +1261,7 @@ export class WorkPage {
 
   // Plan tasks
   planLoading = signal(false);
+  planStatusMessage = signal('');
   plannedTasks = signal<PlannedTask[]>([]);
   planSuccessCriteria = signal<string[]>([]);
   showPlanDialog = signal(false);
@@ -2295,16 +2310,23 @@ export class WorkPage {
     const sel = this.selected();
     if (!sel) return;
     this.planLoading.set(true);
-    this.api.planTasks(sel.id).subscribe({
-      next: (response) => {
-        this.plannedTasks.set(response.tasks);
-        this.planSuccessCriteria.set(response.success_criteria ?? []);
-        this.planExpandedTasks.set(new Set());
-        this.showPlanDialog.set(true);
-        this.planLoading.set(false);
+    this.planStatusMessage.set('');
+    this.api.planTasksStream(sel.id).subscribe({
+      next: (event) => {
+        if (event.type === 'status') {
+          this.planStatusMessage.set(event.message);
+        } else if (event.type === 'done') {
+          this.plannedTasks.set(event.tasks);
+          this.planSuccessCriteria.set(event.success_criteria ?? []);
+          this.planExpandedTasks.set(new Set());
+          this.showPlanDialog.set(true);
+          this.planLoading.set(false);
+          this.planStatusMessage.set('');
+        }
       },
       error: () => {
         this.planLoading.set(false);
+        this.planStatusMessage.set('');
         alert(this.planErrorMessage);
       },
     });
@@ -2361,50 +2383,78 @@ export class WorkPage {
     if (tasks.length === 0) return;
 
     this.planCreating.set(true);
-    let completed = 0;
-    let failed = 0;
-    const total = tasks.length;
 
-    for (const task of tasks) {
-      const req: CreateTaskRequest = {
-        title: task.title,
-        kind: task.kind,
-        work_id: sel.id,
-        context: {
-          spec: task.spec,
-          acceptance_criteria: task.acceptance_criteria,
-        },
-      };
-      this.tasksApi.create(req).subscribe({
-        next: () => {
-          completed++;
-          if (completed + failed === total) {
-            this.planCreating.set(false);
-            this.closePlanDialog();
-            this.loadLinkedTasks(sel.id);
-            this.loadAllProgress([sel]);
-            this.loadStatsAndChildren(sel.id);
-            // Reload work items to pick up AI-generated success criteria
-            this.loadGoals();
-          }
-        },
-        error: () => {
+    // Step 1: Create tasks sequentially to collect IDs in order
+    const createdIds: string[] = [];
+    from(tasks.map((task, idx) => ({ task, idx }))).pipe(
+      concatMap(({ task }) => {
+        const req: CreateTaskRequest = {
+          title: task.title,
+          kind: task.kind,
+          work_id: sel.id,
+          context: {
+            spec: task.spec,
+            acceptance_criteria: task.acceptance_criteria,
+          },
+        };
+        return this.tasksApi.create(req).pipe(
+          catchError(() => of(null)),
+        );
+      }),
+      toArray(),
+    ).subscribe(results => {
+      let failed = 0;
+      for (const result of results) {
+        if (result) {
+          createdIds.push(result.id);
+        } else {
+          createdIds.push(''); // placeholder for failed task
           failed++;
-          if (completed + failed === total) {
-            this.planCreating.set(false);
-            if (failed === total) {
-              alert(this.planErrorMessage);
-            } else {
-              this.closePlanDialog();
-              this.loadLinkedTasks(sel.id);
-              this.loadAllProgress([sel]);
-              this.loadStatsAndChildren(sel.id);
-              this.loadGoals();
-            }
+        }
+      }
+
+      if (failed === tasks.length) {
+        this.planCreating.set(false);
+        alert(this.planErrorMessage);
+        return;
+      }
+
+      // Step 2: Wire dependencies
+      const depCalls: { taskId: string; dependsOn: string }[] = [];
+      for (let i = 0; i < tasks.length; i++) {
+        const deps = tasks[i].depends_on;
+        if (!deps || !createdIds[i]) continue;
+        for (const depIdx of deps) {
+          if (depIdx >= 0 && depIdx < createdIds.length && createdIds[depIdx]) {
+            depCalls.push({ taskId: createdIds[i], dependsOn: createdIds[depIdx] });
           }
-        },
+        }
+      }
+
+      if (depCalls.length === 0) {
+        this.finishPlanCreation(sel);
+        return;
+      }
+
+      from(depCalls).pipe(
+        mergeMap(({ taskId, dependsOn }) =>
+          this.tasksApi.addDependency(taskId, dependsOn).pipe(catchError(() => EMPTY)),
+          4, // concurrency limit
+        ),
+        toArray(),
+      ).subscribe(() => {
+        this.finishPlanCreation(sel);
       });
-    }
+    });
+  }
+
+  private finishPlanCreation(sel: SpWork): void {
+    this.planCreating.set(false);
+    this.closePlanDialog();
+    this.loadLinkedTasks(sel.id);
+    this.loadAllProgress([sel]);
+    this.loadStatsAndChildren(sel.id);
+    this.loadGoals();
   }
 
   // --- Marked tasks ---

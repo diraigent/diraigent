@@ -1,4 +1,5 @@
 use crate::chat::ChatSseEvent;
+use crate::models::PlanSseEvent;
 use crate::ws_protocol::WsMessage;
 use dashmap::DashMap;
 use tokio::sync::{mpsc, oneshot};
@@ -11,20 +12,13 @@ pub struct GitResponsePayload {
     pub data: serde_json::Value,
 }
 
-/// Payload returned for completed plan requests.
-pub struct PlanResponsePayload {
-    pub success: bool,
-    pub error: Option<String>,
-    pub tasks: serde_json::Value,
-}
-
 pub struct WsRegistry {
     /// Connected orchestras: agent_id -> WS sender
     connections: DashMap<Uuid, mpsc::UnboundedSender<WsMessage>>,
     /// Pending git requests: request_id -> oneshot sender
     pending_git: DashMap<String, oneshot::Sender<GitResponsePayload>>,
-    /// Pending plan requests: request_id -> oneshot sender
-    pending_plan: DashMap<String, oneshot::Sender<PlanResponsePayload>>,
+    /// Active plan sessions: request_id -> mpsc sender for SSE events
+    active_plans: DashMap<String, mpsc::Sender<PlanSseEvent>>,
     /// Active chat sessions: session_id -> mpsc sender for SSE events
     active_chats: DashMap<String, mpsc::Sender<ChatSseEvent>>,
 }
@@ -40,7 +34,7 @@ impl WsRegistry {
         Self {
             connections: DashMap::new(),
             pending_git: DashMap::new(),
-            pending_plan: DashMap::new(),
+            active_plans: DashMap::new(),
             active_chats: DashMap::new(),
         }
     }
@@ -92,22 +86,38 @@ impl WsRegistry {
         }
     }
 
-    /// Register a pending plan request. Returns a receiver for the response.
-    pub fn register_plan_request(
-        &self,
-        request_id: String,
-    ) -> oneshot::Receiver<PlanResponsePayload> {
-        let (tx, rx) = oneshot::channel();
-        self.pending_plan.insert(request_id, tx);
-        rx
+    // ── Plan sessions (SSE-based) ──
+
+    /// Register an active plan session. Returns a receiver for SSE events.
+    pub fn register_plan_session(&self, request_id: String, tx: mpsc::Sender<PlanSseEvent>) {
+        self.active_plans.insert(request_id, tx);
     }
 
-    /// Complete a pending plan request with a response.
-    pub fn complete_plan_request(&self, request_id: &str, response: PlanResponsePayload) {
-        if let Some((_, tx)) = self.pending_plan.remove(request_id) {
-            let _ = tx.send(response);
+    /// Route a plan event to the correct session.
+    pub async fn route_plan_event(&self, request_id: &str, event: PlanSseEvent) {
+        let is_terminal = matches!(
+            &event,
+            PlanSseEvent::Done { .. } | PlanSseEvent::Error { .. }
+        );
+        if let Some(tx) = self.active_plans.get(request_id) {
+            let _ = tx.send(event).await;
+        }
+        if is_terminal {
+            self.active_plans.remove(request_id);
         }
     }
+
+    /// Check if a plan session is still active.
+    pub fn is_plan_active(&self, request_id: &str) -> bool {
+        self.active_plans.contains_key(request_id)
+    }
+
+    /// Remove a plan session (e.g. on timeout).
+    pub fn remove_plan_session(&self, request_id: &str) {
+        self.active_plans.remove(request_id);
+    }
+
+    // ── Chat sessions ──
 
     /// Register an active chat session.
     pub fn register_chat_session(&self, session_id: String, tx: mpsc::Sender<ChatSseEvent>) {

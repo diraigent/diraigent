@@ -1,7 +1,13 @@
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
+use futures::StreamExt;
+use futures::stream::Stream;
+use std::time::Duration;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 
 use crate::AppState;
@@ -192,7 +198,7 @@ async fn plan_work(
     AuthUser(user_id): AuthUser,
     OptionalAgentId(agent_id): OptionalAgentId,
     Path((project_id, work_id)): Path<(Uuid, Uuid)>,
-) -> Result<Json<PlanWorkResponse>, AppError> {
+) -> Result<Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>>, AppError> {
     require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
 
     // Verify the work item belongs to this project
@@ -218,9 +224,20 @@ async fn plan_work(
             AppError::ServiceUnavailable("No orchestra agent connected for planning".into())
         })?;
 
-    // Register pending request and send via WS
     let request_id = Uuid::now_v7().to_string();
-    let rx = state.ws_registry.register_plan_request(request_id.clone());
+    let (tx, rx) = mpsc::channel::<PlanSseEvent>(8);
+
+    // Register plan session for SSE streaming
+    state
+        .ws_registry
+        .register_plan_session(request_id.clone(), tx.clone());
+
+    // Send initial status event
+    let _ = tx
+        .send(PlanSseEvent::Status {
+            message: "Planning tasks...".into(),
+        })
+        .await;
 
     let ws_msg = crate::ws_protocol::WsMessage::PlanRequest {
         request_id: request_id.clone(),
@@ -232,32 +249,45 @@ async fn plan_work(
     };
 
     if !state.ws_registry.send_to_agent(connected_agent, ws_msg) {
-        return Err(AppError::BadGateway(
-            "Failed to send plan request to orchestra".into(),
-        ));
+        let _ = tx
+            .send(PlanSseEvent::Error {
+                message: "Failed to send plan request to orchestra".into(),
+            })
+            .await;
+        state.ws_registry.remove_plan_session(&request_id);
+    } else {
+        // Spawn timeout watcher (300s)
+        let req_id = request_id.clone();
+        let registry = state.ws_registry.clone();
+        let tx_timeout = tx.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(300)).await;
+            if registry.is_plan_active(&req_id) {
+                let _ = tx_timeout
+                    .send(PlanSseEvent::Error {
+                        message: "Plan request timed out".into(),
+                    })
+                    .await;
+                registry.remove_plan_session(&req_id);
+            }
+        });
     }
 
-    // Wait for response with timeout (120s)
-    let response = tokio::time::timeout(std::time::Duration::from_secs(120), rx)
-        .await
-        .map_err(|_| AppError::BadGateway("Plan request timed out".into()))?
-        .map_err(|_| AppError::BadGateway("Orchestra disconnected during planning".into()))?;
+    let stream = ReceiverStream::new(rx).map(|event| {
+        let data = serde_json::to_string(&event).unwrap_or_default();
+        let event_type = match &event {
+            PlanSseEvent::Status { .. } => "status",
+            PlanSseEvent::Done { .. } => "done",
+            PlanSseEvent::Error { .. } => "error",
+        };
+        Ok(Event::default().event(event_type).data(data))
+    });
 
-    if !response.success {
-        return Err(AppError::BadGateway(
-            response.error.unwrap_or_else(|| "Planning failed".into()),
-        ));
-    }
-
-    let tasks: Vec<PlannedTask> = serde_json::from_value(response.tasks)
-        .map_err(|e| AppError::Internal(format!("Failed to parse plan response: {e}")))?;
-
-    // TODO: success_criteria not yet returned by orchestra plan.response
-    // Once added, parse and save them here
-    Ok(Json(PlanWorkResponse {
-        tasks,
-        success_criteria: None,
-    }))
+    Ok(Sse::new(stream).keep_alive(
+        KeepAlive::new()
+            .interval(Duration::from_secs(15))
+            .text("keep-alive"),
+    ))
 }
 
 async fn link_task(

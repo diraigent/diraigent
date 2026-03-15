@@ -705,9 +705,13 @@ pub struct PlannedTask {
     pub kind: String,
     pub spec: String,
     pub acceptance_criteria: Vec<String>,
+    /// Zero-based indices into the tasks array indicating which earlier tasks
+    /// must complete before this one can start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depends_on: Option<Vec<usize>>,
 }
 
-/// Response wrapper for the AI planning endpoint.
+/// Response wrapper for the AI planning endpoint (used by non-SSE callers).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanWorkResponse {
     pub tasks: Vec<PlannedTask>,
@@ -715,6 +719,22 @@ pub struct PlanWorkResponse {
     /// the work item had no criteria and the AI generated them).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub success_criteria: Option<Vec<String>>,
+}
+
+/// Server-sent events for the streaming plan endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum PlanSseEvent {
+    #[serde(rename = "status")]
+    Status { message: String },
+    #[serde(rename = "done")]
+    Done {
+        tasks: Vec<PlannedTask>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        success_criteria: Option<Vec<String>>,
+    },
+    #[serde(rename = "error")]
+    Error { message: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]

@@ -296,6 +296,7 @@
     "planRemoveTask": "Aus Plan entfernen",
     "planTaskSpec": "Spezifikation",
     "planTaskCriteria": "Akzeptanzkriterien",
+    "planDependsOn": "Abhängig von",
     "planGeneratedCriteria": "Generierte Erfolgskriterien"
   },
   "work": {

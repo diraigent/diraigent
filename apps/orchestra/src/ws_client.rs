@@ -440,10 +440,12 @@ Decompose the following work item into 3-8 concrete, implementable tasks. Each t
 - kind must be one of: feature, bug, refactor, test, docs
 - spec should be a detailed technical description of what to implement
 - acceptance_criteria should be verifiable conditions (not vague)
+- depends_on is an array of zero-based indices referencing earlier tasks in this list that must complete first
+- The first task must always have depends_on: [] (empty array)
 - Do NOT create meta-tasks like "review" or "deploy" — only implementation work
 
 Respond with ONLY a valid JSON object in this exact format, no markdown fences or extra text:
-{{"tasks": [{{"title": "...", "kind": "...", "spec": "...", "acceptance_criteria": ["..."]}}, ...]}}"#
+{{"tasks": [{{"title": "...", "kind": "...", "spec": "...", "acceptance_criteria": ["..."], "depends_on": []}}, ...]}}"#
     );
 
     // Spawn claude -p
