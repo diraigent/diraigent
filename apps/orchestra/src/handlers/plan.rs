@@ -93,8 +93,18 @@ Respond with ONLY a JSON object matching this schema (no markdown fences, no pre
 {{"tasks": [{{"title": "...", "kind": "feature|bug|refactor|test|docs", "spec": "...", "acceptance_criteria": ["..."], "depends_on": [0]}}]}}"#
     );
 
-    // Resolve provider — try "anthropic" first, fall back to any configured provider
-    let provider_name = "anthropic";
+    // Resolve provider from project metadata (default: "claude-code")
+    let provider_name = match api.get_project(&project_id).await {
+        Ok(project) => project["metadata"]["plan_provider"]
+            .as_str()
+            .unwrap_or("claude-code")
+            .to_string(),
+        Err(e) => {
+            warn!("plan request: failed to fetch project metadata: {e}, using default provider");
+            "claude-code".to_string()
+        }
+    };
+    let provider_name = provider_name.as_str();
     let provider = match ProviderFactory::create(provider_name) {
         Ok(p) => p,
         Err(e) => {

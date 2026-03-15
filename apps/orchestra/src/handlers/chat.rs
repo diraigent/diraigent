@@ -47,6 +47,18 @@ pub async fn handle_chat_request_ws(
         }
     };
 
+    // Resolve chat provider from project metadata (default: "claude-code")
+    let chat_provider = match api.get_project(project_id).await {
+        Ok(project) => project["metadata"]["chat_provider"]
+            .as_str()
+            .unwrap_or("claude-code")
+            .to_string(),
+        Err(e) => {
+            warn!("chat: failed to fetch project metadata: {e}, using default provider");
+            "claude-code".to_string()
+        }
+    };
+
     // Resolve the project's working directory from the API.
     let working_dir = crate::project::paths::resolve_working_dir(api, project_id, projects_path)
         .await
@@ -64,6 +76,22 @@ pub async fn handle_chat_request_ws(
 
     // Build user prompt from (possibly compressed) conversation history
     let user_prompt = build_user_prompt(&messages);
+
+    // If chat_provider is not "claude-code", use the provider abstraction
+    if chat_provider != "claude-code" {
+        handle_chat_via_provider(
+            sender,
+            &session_id,
+            project_id,
+            &user_prompt,
+            system_prompt,
+            model,
+            &chat_provider,
+            api,
+        )
+        .await;
+        return;
+    }
 
     // Spawn Claude Code CLI
     let mut child = match Command::new("claude")
@@ -509,6 +537,145 @@ async fn summarize_via_provider(
         Err(e) => {
             warn!("summarization provider failed: {e}");
             None
+        }
+    }
+}
+
+/// Handle a chat request via a non-claude-code provider (anthropic, openai, ollama, etc.).
+///
+/// Uses the provider abstraction for a single-shot completion, then streams
+/// the result back as chat events.
+#[allow(clippy::too_many_arguments)]
+async fn handle_chat_via_provider(
+    sender: mpsc::UnboundedSender<WsMessage>,
+    session_id: &str,
+    project_id: &str,
+    user_prompt: &str,
+    system_prompt: &str,
+    model: &str,
+    provider_name: &str,
+    api: &ProjectsApi,
+) {
+    let session_id = session_id.to_string();
+
+    let send_event = |sender: mpsc::UnboundedSender<WsMessage>,
+                      session_id: String,
+                      event: ChatSseEvent| async move {
+        let ws_msg = WsMessage::ChatEvent { session_id, event };
+        if let Err(e) = sender.send(ws_msg) {
+            error!("failed to send chat event via WS: {e}");
+        }
+    };
+
+    let provider = match ProviderFactory::create(provider_name) {
+        Ok(p) => p,
+        Err(e) => {
+            send_event(
+                sender,
+                session_id,
+                ChatSseEvent::Error {
+                    message: format!("Failed to create provider '{provider_name}': {e}"),
+                },
+            )
+            .await;
+            return;
+        }
+    };
+
+    let provider_cfg = match api.resolve_provider_config(project_id, provider_name).await {
+        Ok(cfg) => ProviderConfig {
+            api_key: cfg["api_key"].as_str().map(String::from),
+            base_url: cfg["base_url"].as_str().map(String::from),
+            model: cfg["default_model"].as_str().map(String::from),
+        },
+        Err(e) => {
+            warn!("chat: no provider config for '{provider_name}': {e}");
+            ProviderConfig {
+                api_key: None,
+                base_url: None,
+                model: None,
+            }
+        }
+    };
+
+    let step = ResolvedStep {
+        name: "chat".into(),
+        description: system_prompt.to_string(),
+        model: Some(
+            provider_cfg
+                .model
+                .clone()
+                .unwrap_or_else(|| model.to_string()),
+        ),
+        allowed_tools: None,
+        allowed_tools_list: vec![],
+        budget: None,
+        env: HashMap::new(),
+        system_prompt: Some(system_prompt.to_string()),
+        mcp_servers: None,
+        agents: None,
+        agent: None,
+        settings: None,
+    };
+
+    let task_ctx = TaskContext {
+        task_id: format!("chat-{session_id}"),
+        project_id: project_id.to_string(),
+        project_context: String::new(),
+        previous_step_output: None,
+        working_dir: None,
+        log_file: None,
+        user_prompt: Some(user_prompt.to_string()),
+    };
+
+    info!("chat: calling provider '{provider_name}'");
+
+    match provider.execute(&step, &task_ctx, &provider_cfg).await {
+        Ok(output) if !output.is_error => {
+            let content = output.content.trim().to_string();
+            // Send the full text as a single text event, then done
+            if !content.is_empty() {
+                send_event(
+                    sender.clone(),
+                    session_id.clone(),
+                    ChatSseEvent::Text {
+                        content: content.clone(),
+                    },
+                )
+                .await;
+            }
+            send_event(
+                sender,
+                session_id.clone(),
+                ChatSseEvent::Done {
+                    message: DoneMessage {
+                        role: "assistant".into(),
+                        content,
+                    },
+                },
+            )
+            .await;
+            info!("chat session {session_id} completed via provider '{provider_name}'");
+        }
+        Ok(output) => {
+            send_event(
+                sender,
+                session_id,
+                ChatSseEvent::Error {
+                    message: output.content,
+                },
+            )
+            .await;
+        }
+        Err(e) => {
+            send_event(
+                sender,
+                session_id,
+                ChatSseEvent::Error {
+                    message: format!("Provider error: {e}"),
+                },
+            )
+            .await;
         }
     }
 }

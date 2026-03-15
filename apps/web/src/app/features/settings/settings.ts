@@ -274,6 +274,32 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' 
                   <span class="block text-xs text-text-secondary mt-1">{{ t('settings.observationRetentionDaysHint') }}</span>
                 </label>
 
+                <!-- Plan Provider -->
+                <div class="block">
+                  <label for="sett-plan-provider" class="block text-sm font-medium text-text-secondary mb-1">{{ t('settings.planProvider') }}</label>
+                  <select id="sett-plan-provider" [(ngModel)]="formPlanProvider"
+                    class="w-full bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                           focus:outline-none focus:ring-1 focus:ring-accent">
+                    @for (opt of providerOptions; track opt) {
+                      <option [value]="opt">{{ opt }}</option>
+                    }
+                  </select>
+                  <span class="block text-xs text-text-secondary mt-1">{{ t('settings.planProviderHint') }}</span>
+                </div>
+
+                <!-- Chat Provider -->
+                <div class="block">
+                  <label for="sett-chat-provider" class="block text-sm font-medium text-text-secondary mb-1">{{ t('settings.chatProvider') }}</label>
+                  <select id="sett-chat-provider" [(ngModel)]="formChatProvider"
+                    class="w-full bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                           focus:outline-none focus:ring-1 focus:ring-accent">
+                    @for (opt of providerOptions; track opt) {
+                      <option [value]="opt">{{ opt }}</option>
+                    }
+                  </select>
+                  <span class="block text-xs text-text-secondary mt-1">{{ t('settings.chatProviderHint') }}</span>
+                </div>
+
                 <!-- Save button -->
                 <div class="flex items-center gap-3 pt-2">
                   <button (click)="saveProject()"
@@ -1162,6 +1188,9 @@ export class SettingsPage implements OnInit, OnDestroy {
   formUploadLogs = false;
   formDoneRetentionDays = 1;
   formObservationRetentionDays = 30;
+  formPlanProvider = 'claude-code';
+  formChatProvider = 'claude-code';
+  readonly providerOptions = ['claude-code', 'anthropic', 'openai', 'copilot', 'ollama'];
   savingProject = signal(false);
   projectSaved = signal(false);
 
@@ -1295,6 +1324,8 @@ export class SettingsPage implements OnInit, OnDestroy {
         this.formUploadLogs = (p.metadata?.['upload_logs'] as boolean) ?? false;
         this.formDoneRetentionDays = (p.metadata?.['done_retention_days'] as number) ?? 1;
         this.formObservationRetentionDays = (p.metadata?.['observation_retention_days'] as number) ?? 30;
+        this.formPlanProvider = (p.metadata?.['plan_provider'] as string) ?? 'claude-code';
+        this.formChatProvider = (p.metadata?.['chat_provider'] as string) ?? 'claude-code';
         this.loading.set(false);
       },
       error: () => this.loading.set(false),
@@ -1349,7 +1380,7 @@ export class SettingsPage implements OnInit, OnDestroy {
       git_mode: this.formGitMode,
       git_root: this.formGitRoot || null,
       project_root: this.formProjectRoot || null,
-      metadata: { ...(this.project()?.metadata || {}), auto_push: this.formAutoPush, upload_logs: this.formUploadLogs, done_retention_days: this.formDoneRetentionDays, observation_retention_days: this.formObservationRetentionDays },
+      metadata: { ...(this.project()?.metadata || {}), auto_push: this.formAutoPush, upload_logs: this.formUploadLogs, done_retention_days: this.formDoneRetentionDays, observation_retention_days: this.formObservationRetentionDays, plan_provider: this.formPlanProvider, chat_provider: this.formChatProvider },
     };
 
     this.api.updateProject(pid, update).subscribe({
