@@ -1,6 +1,7 @@
 mod api_surface;
 mod scan;
 mod summarize;
+mod sync;
 
 use std::path::PathBuf;
 
@@ -53,6 +54,45 @@ enum Commands {
         /// Pretty-print JSON output
         #[arg(long)]
         pretty: bool,
+    },
+
+    /// Sync analyzer outputs to the Diraigent knowledge store
+    Sync {
+        /// Path to the scan manifest JSON (from `scan`)
+        #[arg(short, long)]
+        manifest: PathBuf,
+
+        /// Path to the summary manifest JSON (from `summarize`); optional
+        #[arg(short = 's', long)]
+        summaries: Option<PathBuf>,
+
+        /// Path to the API surface JSON (from `api-surface`)
+        #[arg(short = 'a', long)]
+        api_surface: PathBuf,
+
+        /// Diraigent project ID
+        #[arg(long, env = "PROJECT_ID")]
+        project_id: String,
+
+        /// Diraigent API URL
+        #[arg(long, env = "DIRAIGENT_API_URL")]
+        api_url: String,
+
+        /// Diraigent API token (agent key or JWT)
+        #[arg(long, env = "DIRAIGENT_API_TOKEN")]
+        api_token: String,
+
+        /// Agent ID for the X-Agent-Id header
+        #[arg(long, env = "AGENT_ID")]
+        agent_id: Option<String>,
+
+        /// Cache file path for tracking synced hashes
+        #[arg(short, long, default_value = ".analyzer-sync-cache.json")]
+        cache: PathBuf,
+
+        /// Dry run — compute what would change without calling the API
+        #[arg(long)]
+        dry_run: bool,
     },
 
     /// Generate AI-powered summaries for each module in the manifest
@@ -112,6 +152,42 @@ fn main() {
             output,
             pretty,
         } => scan::run(root, output, pretty),
+        Commands::Sync {
+            manifest,
+            summaries,
+            api_surface,
+            project_id,
+            api_url,
+            api_token,
+            agent_id,
+            cache,
+            dry_run,
+        } => {
+            tracing_subscriber::fmt()
+                .with_env_filter(
+                    tracing_subscriber::EnvFilter::try_from_default_env()
+                        .unwrap_or_else(|_| "info".into()),
+                )
+                .with_target(false)
+                .init();
+
+            let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+            let config = sync::SyncConfig {
+                manifest_path: manifest,
+                summaries_path: summaries,
+                api_surface_path: api_surface,
+                cache_path: cache,
+                api_url,
+                api_token,
+                project_id,
+                agent_id,
+                dry_run,
+            };
+            if let Err(e) = rt.block_on(sync::run(config)) {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
         Commands::ApiSurface {
             root,
             output,
