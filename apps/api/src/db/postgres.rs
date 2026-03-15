@@ -1472,4 +1472,54 @@ impl DiraigentDb for PostgresDb {
         )
         .await
     }
+    async fn get_ci_run_by_forgejo_id(
+        &self,
+        project_id: Uuid,
+        forgejo_run_id: i64,
+    ) -> Result<Option<CiRun>, AppError> {
+        repository::get_ci_run_by_forgejo_id(&self.0, project_id, forgejo_run_id).await
+    }
+    async fn upsert_ci_job_by_name(
+        &self,
+        ci_run_id: Uuid,
+        name: &str,
+        status: &str,
+        runner: Option<&str>,
+        started_at: Option<chrono::DateTime<chrono::Utc>>,
+        finished_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<CiJob, AppError> {
+        repository::upsert_ci_job_by_name(
+            &self.0,
+            ci_run_id,
+            name,
+            status,
+            runner,
+            started_at,
+            finished_at,
+        )
+        .await
+    }
+    async fn delete_steps_for_job(&self, ci_job_id: Uuid) -> Result<(), AppError> {
+        repository::delete_steps_for_job(&self.0, ci_job_id).await
+    }
+    async fn insert_ci_step(
+        &self,
+        ci_job_id: Uuid,
+        name: &str,
+        status: &str,
+        exit_code: Option<i32>,
+        started_at: Option<chrono::DateTime<chrono::Utc>>,
+        finished_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<CiStep, AppError> {
+        repository::insert_ci_step(
+            &self.0,
+            ci_job_id,
+            name,
+            status,
+            exit_code,
+            started_at,
+            finished_at,
+        )
+        .await
+    }
 }

@@ -2097,3 +2097,14 @@ pub struct CiJob {
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct CiStep {
+    pub id: Uuid,
+    pub ci_job_id: Uuid,
+    pub name: String,
+    pub status: String,
+    pub exit_code: Option<i32>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+}

@@ -1982,4 +1982,54 @@ impl DiraigentDb for CryptoDb {
             finished_at
         )
     }
+    async fn get_ci_run_by_forgejo_id(
+        &self,
+        project_id: Uuid,
+        forgejo_run_id: i64,
+    ) -> Result<Option<CiRun>, AppError> {
+        delegate!(self, get_ci_run_by_forgejo_id, project_id, forgejo_run_id)
+    }
+    async fn upsert_ci_job_by_name(
+        &self,
+        ci_run_id: Uuid,
+        name: &str,
+        status: &str,
+        runner: Option<&str>,
+        started_at: Option<chrono::DateTime<chrono::Utc>>,
+        finished_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<CiJob, AppError> {
+        delegate!(
+            self,
+            upsert_ci_job_by_name,
+            ci_run_id,
+            name,
+            status,
+            runner,
+            started_at,
+            finished_at
+        )
+    }
+    async fn delete_steps_for_job(&self, ci_job_id: Uuid) -> Result<(), AppError> {
+        delegate!(self, delete_steps_for_job, ci_job_id)
+    }
+    async fn insert_ci_step(
+        &self,
+        ci_job_id: Uuid,
+        name: &str,
+        status: &str,
+        exit_code: Option<i32>,
+        started_at: Option<chrono::DateTime<chrono::Utc>>,
+        finished_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<CiStep, AppError> {
+        delegate!(
+            self,
+            insert_ci_step,
+            ci_job_id,
+            name,
+            status,
+            exit_code,
+            started_at,
+            finished_at
+        )
+    }
 }

@@ -816,6 +816,7 @@ dependencies = [
  "chrono",
  "dashmap",
  "diraigent-types",
+ "forgejo-client",
  "futures",
  "hex",
  "hkdf",
