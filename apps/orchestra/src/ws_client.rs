@@ -255,66 +255,71 @@ async fn connect_and_run(
                         tokio::task::spawn_blocking(move || {
                             let rt = tokio::runtime::Handle::current();
 
-                            // Resolve project working dir to create a WorktreeManager
-                            let working_dir = rt.block_on(async {
-                                crate::project_paths::resolve_working_dir(
+                            // Resolve project paths (git_root + working_dir)
+                            let paths = rt.block_on(async {
+                                crate::project_paths::resolve_project_paths(
                                     &api_clone,
                                     &project_id.to_string(),
                                     &pp,
                                 )
                                 .await
-                                .unwrap_or_else(|e| {
-                                    warn!(
-                                        project_id = %project_id,
-                                        error = %e,
-                                        "failed to resolve git working dir, falling back to projects_path"
-                                    );
-                                    pp.clone()
-                                })
                             });
-
-                            // Fetch project record for default_branch and provisioning
-                            let project_data = rt
-                                .block_on(api_clone.get_project(&project_id.to_string()))
-                                .ok();
-                            let default_branch = project_data
-                                .as_ref()
-                                .and_then(|p| p["default_branch"].as_str())
-                                .unwrap_or("main");
-                            let git_mode = project_data
-                                .as_ref()
-                                .and_then(|p| p["git_mode"].as_str())
-                                .unwrap_or("standalone");
+                            let (git_mode, git_root, working_dir, auto_push, default_branch) =
+                                match paths {
+                                    Ok(p) => (
+                                        p.git_mode,
+                                        p.git_root,
+                                        p.working_dir,
+                                        p.auto_push,
+                                        p.default_branch,
+                                    ),
+                                    Err(e) => {
+                                        warn!(
+                                            project_id = %project_id,
+                                            error = %e,
+                                            "failed to resolve project paths, falling back to projects_path"
+                                        );
+                                        (
+                                            "standalone".to_string(),
+                                            Some(pp.clone()),
+                                            pp.clone(),
+                                            false,
+                                            "main".to_string(),
+                                        )
+                                    }
+                                };
 
                             // For git_mode=none, skip all git operations
                             let wm = if git_mode == "none" {
                                 WorktreeManager::disabled(&working_dir)
                             } else {
+                                // Use git_root for provisioning and WorktreeManager;
+                                // working_dir may be a monorepo subdirectory.
+                                let root = git_root.as_deref().unwrap_or(&working_dir);
+
                                 // Auto-provision repo if it doesn't exist yet
-                                if !working_dir.join(".git").exists() {
+                                if !root.join(".git").exists() {
                                     info!(
                                         project_id = %project_id,
-                                        working_dir = %working_dir.display(),
+                                        git_root = %root.display(),
                                         "git request: repo not found, provisioning..."
                                     );
-                                    if let Some(ref project) = project_data {
+                                    // Fetch project record for repo_url/slug
+                                    if let Ok(project) =
+                                        rt.block_on(api_clone.get_project(&project_id.to_string()))
+                                    {
                                         let repo_url = project["repo_url"].as_str().unwrap_or("");
                                         let slug = project["slug"].as_str().unwrap_or("");
                                         crate::git_provisioner::provision_repo(
-                                            &working_dir,
+                                            root,
                                             repo_url,
-                                            default_branch,
+                                            &default_branch,
                                             slug,
                                         );
                                     }
                                 }
 
-                                let auto_push = project_data
-                                    .as_ref()
-                                    .and_then(|p| p["metadata"]["auto_push"].as_bool())
-                                    .unwrap_or(false);
-
-                                let m = WorktreeManager::with_branch(&working_dir, default_branch);
+                                let m = WorktreeManager::with_branch(root, &default_branch);
                                 m.set_auto_push(auto_push);
                                 m
                             };
