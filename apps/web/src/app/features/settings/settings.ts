@@ -11,9 +11,11 @@ import { AgentsApiService, SpAgent, SpAgentRegistered, SpAgentTask } from '../..
 import { TasksApiService } from '../../core/services/tasks-api.service';
 import { taskStateColor, taskTransitions, INTEGRATION_KIND_COLORS } from '../../shared/ui-constants';
 import { IntegrationsApiService, Integration, IntegrationKind } from '../../core/services/integrations-api.service';
+import { ProviderConfigsApiService, ProviderConfig, CreateProviderConfig } from '../../core/services/provider-configs-api.service';
+import { EventRulesApiService, EventObservationRule, CreateEventObservationRule } from '../../core/services/event-rules-api.service';
 import { CreateAgentModalComponent } from '../agents/create-agent-modal';
 
-type SettingsTab = 'general' | 'agents' | 'team' | 'integrations';
+type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' | 'eventRules';
 
 @Component({
   selector: 'app-settings',
@@ -71,6 +73,26 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations';
               [class.hover:text-text-secondary]="activeTab() !== 'integrations'">
               {{ t('nav.integrations') }}
             </button>
+            <button
+              (click)="activeTab.set('providers')"
+              class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"
+              [class.bg-bg]="activeTab() === 'providers'"
+              [class.text-text-primary]="activeTab() === 'providers'"
+              [class.shadow-sm]="activeTab() === 'providers'"
+              [class.text-text-muted]="activeTab() !== 'providers'"
+              [class.hover:text-text-secondary]="activeTab() !== 'providers'">
+              {{ t('settings.providers') }}
+            </button>
+            <button
+              (click)="activeTab.set('eventRules')"
+              class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"
+              [class.bg-bg]="activeTab() === 'eventRules'"
+              [class.text-text-primary]="activeTab() === 'eventRules'"
+              [class.shadow-sm]="activeTab() === 'eventRules'"
+              [class.text-text-muted]="activeTab() !== 'eventRules'"
+              [class.hover:text-text-secondary]="activeTab() !== 'eventRules'">
+              {{ t('settings.eventRules') }}
+            </button>
           </div>
 
           @if (activeTab() === 'agents') {
@@ -87,6 +109,16 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations';
             <button (click)="navigateToNewIntegration()"
               class="px-4 py-2 text-sm font-medium bg-accent text-bg rounded-lg hover:opacity-90 transition-opacity">
               {{ t('integrations.create') }}
+            </button>
+          } @else if (activeTab() === 'providers') {
+            <button (click)="showProviderForm.set(true)"
+              class="px-4 py-2 text-sm font-medium bg-accent text-bg rounded-lg hover:opacity-90 transition-opacity">
+              {{ t('settings.addProvider') }}
+            </button>
+          } @else if (activeTab() === 'eventRules') {
+            <button (click)="showEventRuleForm.set(true)"
+              class="px-4 py-2 text-sm font-medium bg-accent text-bg rounded-lg hover:opacity-90 transition-opacity">
+              {{ t('settings.addEventRule') }}
             </button>
           }
         </div>
@@ -592,6 +624,250 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations';
           }
         }
 
+        <!-- ── PROVIDERS TAB ── -->
+        @if (activeTab() === 'providers') {
+          @if (providersLoading()) {
+            <p class="text-text-secondary text-sm">{{ t('common.loading') }}</p>
+          } @else {
+            <!-- Provider form -->
+            @if (showProviderForm()) {
+              <div class="max-w-2xl bg-surface border border-border rounded-lg p-6 mb-6">
+                <h3 class="text-sm font-semibold text-text-primary mb-4">
+                  {{ editingProviderId() ? t('settings.editProvider') : t('settings.addProvider') }}
+                </h3>
+                <div class="space-y-3">
+                  <div>
+                    <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.providerName') }}</label>
+                    <select [ngModel]="providerForm().provider" (ngModelChange)="updateProviderForm('provider', $event)"
+                      class="w-full bg-bg text-text-primary text-sm rounded px-3 py-2 border border-border focus:outline-none focus:ring-1 focus:ring-accent">
+                      <option value="anthropic">Anthropic</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="ollama">Ollama</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.providerApiKey') }}</label>
+                    <input type="password" [ngModel]="providerForm().api_key ?? ''" (ngModelChange)="updateProviderForm('api_key', $event)"
+                      placeholder="sk-..."
+                      class="w-full bg-bg text-text-primary text-sm rounded px-3 py-2 border border-border focus:outline-none focus:ring-1 focus:ring-accent" />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.providerBaseUrl') }}</label>
+                    <input type="text" [ngModel]="providerForm().base_url ?? ''" (ngModelChange)="updateProviderForm('base_url', $event)"
+                      placeholder="https://api.openai.com"
+                      class="w-full bg-bg text-text-primary text-sm rounded px-3 py-2 border border-border focus:outline-none focus:ring-1 focus:ring-accent" />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.providerDefaultModel') }}</label>
+                    <input type="text" [ngModel]="providerForm().default_model ?? ''" (ngModelChange)="updateProviderForm('default_model', $event)"
+                      placeholder="gpt-4o"
+                      class="w-full bg-bg text-text-primary text-sm rounded px-3 py-2 border border-border focus:outline-none focus:ring-1 focus:ring-accent" />
+                  </div>
+                  <div class="flex items-center gap-2 pt-2">
+                    <button (click)="saveProviderConfig()" [disabled]="savingProvider()"
+                      class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-40">
+                      {{ savingProvider() ? t('common.saving') : t('common.save') }}
+                    </button>
+                    <button (click)="cancelProviderForm()" class="px-4 py-2 text-sm text-text-secondary hover:text-text-primary">
+                      {{ t('common.cancel') }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            }
+
+            <!-- Provider list -->
+            @if (providerConfigs().length === 0 && !showProviderForm()) {
+              <div class="text-center py-12">
+                <p class="text-text-secondary mb-4">{{ t('settings.noProviders') }}</p>
+                <button (click)="showProviderForm.set(true)"
+                  class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90">
+                  {{ t('settings.addProvider') }}
+                </button>
+              </div>
+            } @else {
+              <div class="grid gap-3 max-w-2xl">
+                @for (config of providerConfigs(); track config.id) {
+                  <div class="bg-surface border border-border rounded-lg p-4">
+                    <div class="flex items-center justify-between">
+                      <div>
+                        <span class="font-medium text-text-primary capitalize">{{ config.provider }}</span>
+                        @if (config.default_model) {
+                          <span class="text-xs text-text-muted ml-2">{{ config.default_model }}</span>
+                        }
+                        @if (config.base_url) {
+                          <p class="text-xs text-text-secondary mt-0.5">{{ config.base_url }}</p>
+                        }
+                        <p class="text-[10px] text-text-muted mt-0.5">
+                          {{ config.api_key ? 'API key configured' : 'No API key' }}
+                          · {{ config.project_id ? 'Project-scoped' : 'Global' }}
+                        </p>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <button (click)="editProviderConfig(config)" class="text-xs text-accent hover:underline">
+                          {{ t('common.edit') }}
+                        </button>
+                        <button (click)="deleteProviderConfig(config.id)" class="text-xs text-ctp-red hover:underline">
+                          {{ t('integrations.delete') }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+          }
+        }
+
+        <!-- ── EVENT RULES TAB ── -->
+        @if (activeTab() === 'eventRules') {
+          @if (eventRulesLoading()) {
+            <p class="text-text-secondary text-sm">{{ t('common.loading') }}</p>
+          } @else {
+            <!-- Event rule form -->
+            @if (showEventRuleForm()) {
+              <div class="max-w-2xl bg-surface border border-border rounded-lg p-6 mb-6">
+                <h3 class="text-sm font-semibold text-text-primary mb-4">
+                  {{ editingEventRuleId() ? t('settings.editEventRule') : t('settings.addEventRule') }}
+                </h3>
+                <div class="space-y-3">
+                  <div>
+                    <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleName') }}</label>
+                    <input type="text" [ngModel]="eventRuleForm().name" (ngModelChange)="updateEventRuleForm('name', $event)"
+                      placeholder="e.g. High-severity alert"
+                      class="w-full bg-bg text-text-primary text-sm rounded px-3 py-2 border border-border focus:outline-none focus:ring-1 focus:ring-accent" />
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleEventKind') }}</label>
+                      <input type="text" [ngModel]="eventRuleForm().event_kind ?? ''" (ngModelChange)="updateEventRuleForm('event_kind', $event)"
+                        placeholder="e.g. task.completed"
+                        class="w-full bg-bg text-text-primary text-xs rounded px-2.5 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent" />
+                    </div>
+                    <div>
+                      <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleEventSource') }}</label>
+                      <input type="text" [ngModel]="eventRuleForm().event_source ?? ''" (ngModelChange)="updateEventRuleForm('event_source', $event)"
+                        placeholder="e.g. orchestra"
+                        class="w-full bg-bg text-text-primary text-xs rounded px-2.5 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent" />
+                    </div>
+                    <div>
+                      <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleSeverityGte') }}</label>
+                      <select [ngModel]="eventRuleForm().severity_gte ?? ''" (ngModelChange)="updateEventRuleForm('severity_gte', $event)"
+                        class="w-full bg-bg text-text-primary text-xs rounded px-2.5 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent">
+                        <option value="">Any</option>
+                        <option value="info">Info+</option>
+                        <option value="low">Low+</option>
+                        <option value="medium">Medium+</option>
+                        <option value="high">High+</option>
+                        <option value="critical">Critical</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleObsKind') }}</label>
+                      <select [ngModel]="eventRuleForm().observation_kind ?? ''" (ngModelChange)="updateEventRuleForm('observation_kind', $event)"
+                        class="w-full bg-bg text-text-primary text-xs rounded px-2.5 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent">
+                        <option value="">Default</option>
+                        <option value="insight">Insight</option>
+                        <option value="risk">Risk</option>
+                        <option value="opportunity">Opportunity</option>
+                        <option value="smell">Smell</option>
+                        <option value="inconsistency">Inconsistency</option>
+                        <option value="improvement">Improvement</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleObsSeverity') }}</label>
+                      <select [ngModel]="eventRuleForm().observation_severity ?? ''" (ngModelChange)="updateEventRuleForm('observation_severity', $event)"
+                        class="w-full bg-bg text-text-primary text-xs rounded px-2.5 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent">
+                        <option value="">Default</option>
+                        <option value="info">Info</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleTitleTemplate') }}</label>
+                    <input type="text" [ngModel]="eventRuleForm().title_template" (ngModelChange)="updateEventRuleForm('title_template', $event)"
+                      placeholder="e.g. Task completed for {task_id}"
+                      class="w-full bg-bg text-text-primary text-sm rounded px-3 py-2 border border-border focus:outline-none focus:ring-1 focus:ring-accent" />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleDescTemplate') }}</label>
+                    <textarea [ngModel]="eventRuleForm().description_template ?? ''" (ngModelChange)="updateEventRuleForm('description_template', $event)"
+                      rows="3" placeholder="Optional description template..."
+                      class="w-full bg-bg text-text-primary text-xs rounded px-2.5 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent resize-y"></textarea>
+                  </div>
+                  <div class="flex items-center gap-2 pt-2">
+                    <button (click)="saveEventRule()" [disabled]="savingEventRule() || !eventRuleForm().name.trim() || !eventRuleForm().title_template.trim()"
+                      class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-40">
+                      {{ savingEventRule() ? t('common.saving') : t('common.save') }}
+                    </button>
+                    <button (click)="cancelEventRuleForm()" class="px-4 py-2 text-sm text-text-secondary hover:text-text-primary">
+                      {{ t('common.cancel') }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            }
+
+            <!-- Event rules list -->
+            @if (eventRules().length === 0 && !showEventRuleForm()) {
+              <div class="text-center py-12">
+                <p class="text-text-secondary mb-4">{{ t('settings.noEventRules') }}</p>
+                <button (click)="showEventRuleForm.set(true)"
+                  class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90">
+                  {{ t('settings.addEventRule') }}
+                </button>
+              </div>
+            } @else {
+              <div class="grid gap-3 max-w-2xl">
+                @for (rule of eventRules(); track rule.id) {
+                  <div class="bg-surface border border-border rounded-lg p-4">
+                    <div class="flex items-center justify-between">
+                      <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                          <span class="font-medium text-text-primary">{{ rule.name }}</span>
+                          <span class="text-xs px-1.5 py-0.5 rounded-full"
+                                [class]="rule.enabled ? 'bg-ctp-green/20 text-ctp-green' : 'bg-ctp-overlay0/20 text-ctp-overlay0'">
+                            {{ rule.enabled ? 'Active' : 'Disabled' }}
+                          </span>
+                        </div>
+                        <p class="text-xs text-text-secondary mt-0.5 truncate">{{ rule.title_template }}</p>
+                        <div class="flex items-center gap-2 mt-1 flex-wrap">
+                          @if (rule.event_kind) {
+                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-bg-subtle text-text-muted">{{ rule.event_kind }}</span>
+                          }
+                          @if (rule.severity_gte) {
+                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-bg-subtle text-text-muted">{{ rule.severity_gte }}+</span>
+                          }
+                          <span class="text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent">{{ rule.observation_kind }}/{{ rule.observation_severity }}</span>
+                        </div>
+                      </div>
+                      <div class="flex items-center gap-2 shrink-0 ml-3">
+                        <button (click)="toggleEventRule(rule.id)"
+                          class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors"
+                          [class]="rule.enabled ? 'bg-accent' : 'bg-ctp-overlay0'">
+                          <span class="inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform"
+                                [class]="rule.enabled ? 'translate-x-4.5' : 'translate-x-0.5'"></span>
+                        </button>
+                        <button (click)="editEventRule(rule)" class="text-xs text-accent hover:underline">
+                          {{ t('common.edit') }}
+                        </button>
+                        <button (click)="deleteEventRule(rule.id)" class="text-xs text-ctp-red hover:underline">
+                          {{ t('integrations.delete') }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+          }
+        }
+
         <!-- ── TEAM TAB ── -->
         @if (activeTab() === 'team') {
           @if (teamLoading()) {
@@ -928,6 +1204,24 @@ export class SettingsPage implements OnInit, OnDestroy {
   integrationsLoading = signal(false);
   integrationsError = signal(false);
 
+  // Provider configs tab state
+  private providerConfigsApi = inject(ProviderConfigsApiService);
+  providerConfigs = signal<ProviderConfig[]>([]);
+  providersLoading = signal(false);
+  showProviderForm = signal(false);
+  providerForm = signal<CreateProviderConfig>({ provider: 'anthropic' });
+  savingProvider = signal(false);
+  editingProviderId = signal<string | null>(null);
+
+  // Event rules tab state
+  private eventRulesApi = inject(EventRulesApiService);
+  eventRules = signal<EventObservationRule[]>([]);
+  eventRulesLoading = signal(false);
+  showEventRuleForm = signal(false);
+  eventRuleForm = signal<CreateEventObservationRule>({ name: '', title_template: '' });
+  savingEventRule = signal(false);
+  editingEventRuleId = signal<string | null>(null);
+
   private savedTimer: ReturnType<typeof setTimeout> | null = null;
   private claudeSavedTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -939,6 +1233,8 @@ export class SettingsPage implements OnInit, OnDestroy {
       this.loadPackages();
       this.loadSettings();
       this.loadIntegrations(pid);
+      this.loadProviderConfigs();
+      this.loadEventRules();
     } else {
       this.loading.set(false);
       this.project.set(null);
@@ -1392,5 +1688,137 @@ export class SettingsPage implements OnInit, OnDestroy {
 
   formatDate(iso: string): string {
     return new Date(iso).toLocaleDateString();
+  }
+
+  // ── Provider Configs ──
+
+  loadProviderConfigs(): void {
+    this.providersLoading.set(true);
+    this.providerConfigsApi.listProject().subscribe({
+      next: (configs) => {
+        this.providerConfigs.set(configs);
+        this.providersLoading.set(false);
+      },
+      error: () => this.providersLoading.set(false),
+    });
+  }
+
+  saveProviderConfig(): void {
+    this.savingProvider.set(true);
+    const form = this.providerForm();
+    const editId = this.editingProviderId();
+
+    const obs = editId
+      ? this.providerConfigsApi.update(editId, form)
+      : this.providerConfigsApi.createProject(form);
+
+    obs.subscribe({
+      next: () => {
+        this.savingProvider.set(false);
+        this.showProviderForm.set(false);
+        this.editingProviderId.set(null);
+        this.providerForm.set({ provider: 'anthropic' });
+        this.loadProviderConfigs();
+      },
+      error: () => this.savingProvider.set(false),
+    });
+  }
+
+  editProviderConfig(config: ProviderConfig): void {
+    this.editingProviderId.set(config.id);
+    this.providerForm.set({
+      provider: config.provider,
+      api_key: config.api_key ?? undefined,
+      base_url: config.base_url ?? undefined,
+      default_model: config.default_model ?? undefined,
+    });
+    this.showProviderForm.set(true);
+  }
+
+  cancelProviderForm(): void {
+    this.showProviderForm.set(false);
+    this.editingProviderId.set(null);
+    this.providerForm.set({ provider: 'anthropic' });
+  }
+
+  deleteProviderConfig(id: string): void {
+    this.providerConfigsApi.delete(id).subscribe({
+      next: () => this.loadProviderConfigs(),
+    });
+  }
+
+  updateProviderForm(field: string, value: string): void {
+    this.providerForm.update(f => ({ ...f, [field]: value || undefined }));
+  }
+
+  // ── Event Rules ──
+
+  loadEventRules(): void {
+    this.eventRulesLoading.set(true);
+    this.eventRulesApi.list().subscribe({
+      next: (rules) => {
+        this.eventRules.set(rules);
+        this.eventRulesLoading.set(false);
+      },
+      error: () => this.eventRulesLoading.set(false),
+    });
+  }
+
+  saveEventRule(): void {
+    this.savingEventRule.set(true);
+    const form = this.eventRuleForm();
+    const editId = this.editingEventRuleId();
+
+    const obs = editId
+      ? this.eventRulesApi.update(editId, form)
+      : this.eventRulesApi.create(form);
+
+    obs.subscribe({
+      next: () => {
+        this.savingEventRule.set(false);
+        this.showEventRuleForm.set(false);
+        this.editingEventRuleId.set(null);
+        this.eventRuleForm.set({ name: '', title_template: '' });
+        this.loadEventRules();
+      },
+      error: () => this.savingEventRule.set(false),
+    });
+  }
+
+  editEventRule(rule: EventObservationRule): void {
+    this.editingEventRuleId.set(rule.id);
+    this.eventRuleForm.set({
+      name: rule.name,
+      title_template: rule.title_template,
+      event_kind: rule.event_kind ?? undefined,
+      event_source: rule.event_source ?? undefined,
+      severity_gte: rule.severity_gte ?? undefined,
+      observation_kind: rule.observation_kind ?? undefined,
+      observation_severity: rule.observation_severity ?? undefined,
+      description_template: rule.description_template ?? undefined,
+    });
+    this.showEventRuleForm.set(true);
+  }
+
+  cancelEventRuleForm(): void {
+    this.showEventRuleForm.set(false);
+    this.editingEventRuleId.set(null);
+    this.eventRuleForm.set({ name: '', title_template: '' });
+  }
+
+  deleteEventRule(id: string): void {
+    this.eventRulesApi.delete(id).subscribe({
+      next: () => this.loadEventRules(),
+    });
+  }
+
+  toggleEventRule(id: string): void {
+    this.eventRulesApi.toggle(id).subscribe({
+      next: () => this.loadEventRules(),
+    });
+  }
+
+  updateEventRuleForm(field: string, value: string): void {
+    this.eventRuleForm.update(f => ({ ...f, [field]: value || undefined }));
   }
 }

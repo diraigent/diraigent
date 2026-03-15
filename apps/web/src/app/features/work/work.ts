@@ -34,6 +34,7 @@ import {
   ChangedFileSummary,
   CreateTaskRequest,
   UpdateTaskRequest,
+  RelatedItems,
 } from '../../core/services/tasks-api.service';
 import { TaskFormComponent } from '../tasks/components/task-form/task-form';
 import { TaskListComponent } from '../tasks/pages/task-list/task-list';
@@ -294,6 +295,13 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                     <button (click)="transitionStatus(goal, s)"
                       class="px-3 py-1 text-xs rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors">
                       {{ t('goals.transitionTo') }} {{ t('goals.status.' + s) }}
+                    </button>
+                  }
+                  @if (goal.status !== 'active') {
+                    <button (click)="activateWork(goal)"
+                      [disabled]="activatingWork()"
+                      class="px-3 py-1 text-xs rounded-lg bg-ctp-green/15 text-ctp-green hover:bg-ctp-green/25 transition-colors disabled:opacity-50">
+                      {{ activatingWork() ? t('common.loading') : t('goals.activate') }}
                     </button>
                   }
                 </div>
@@ -695,6 +703,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               [detailPushing]="taskDetailPushing()"
               [detailReverting]="taskDetailReverting()"
               [detailResolving]="taskDetailResolving()"
+              [detailRelatedItems]="taskDetailRelatedItems()"
               [detailLoading]="taskDetailLoading()"
               (taskSelect)="selectUnlinkedTask($event)"
               (stateChange)="onUnlinkedTaskStateChange($event.task, $event.target)"
@@ -1254,6 +1263,9 @@ export class WorkPage {
   unlinkedTasks = signal<SpTask[]>([]);
   unlinkedTasksLoading = signal(false);
 
+  // Activate
+  activatingWork = signal(false);
+
   // Section collapse state
   collapsedSections = signal<Set<string>>(new Set(['completed', 'archived']));
 
@@ -1291,6 +1303,7 @@ export class WorkPage {
   taskDetailVerifications = signal<SpVerification[]>([]);
   taskDetailChangedFiles = signal<ChangedFileSummary[]>([]);
   taskDetailGitStatus = signal<TaskBranchStatus | null>(null);
+  taskDetailRelatedItems = signal<RelatedItems | null>(null);
   taskDetailLoading = signal(false);
   taskDetailPushing = signal(false);
   taskDetailReverting = signal(false);
@@ -1474,7 +1487,7 @@ export class WorkPage {
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe({
-        next: ({ updates, comments, dependencies, changedFiles, verifications }) => {
+        next: ({ updates, comments, dependencies, changedFiles, verifications, related }) => {
           const sel = this.selectedLinkedTask() ?? this.selectedUnlinkedTask();
           if (sel?.id === taskId) {
             this.taskDetailUpdates.set(updates);
@@ -1482,6 +1495,7 @@ export class WorkPage {
             this.taskDetailDependencies.set(dependencies);
             this.taskDetailChangedFiles.set(changedFiles);
             this.taskDetailVerifications.set(verifications.data);
+            this.taskDetailRelatedItems.set(related);
           }
         },
       });
@@ -1500,6 +1514,9 @@ export class WorkPage {
       changedFiles: this.tasksApi.listChangedFiles(taskId).pipe(catchError(() => of([] as ChangedFileSummary[]))),
       verifications: this.verificationsApi.list({ task_id: taskId, limit: 20 }).pipe(
         catchError(() => of({ data: [] as SpVerification[], total: 0, limit: 20, offset: 0, has_more: false })),
+      ),
+      related: this.tasksApi.listRelated(taskId).pipe(
+        catchError(() => of({ knowledge: [], decisions: [], observations: [] } as RelatedItems)),
       ),
     });
   }
@@ -1765,6 +1782,17 @@ export class WorkPage {
     });
   }
 
+  activateWork(goal: SpWork): void {
+    this.activatingWork.set(true);
+    this.api.activate(goal.id).subscribe({
+      next: () => {
+        this.activatingWork.set(false);
+        this.loadGoals();
+      },
+      error: () => this.activatingWork.set(false),
+    });
+  }
+
   openCreate(): void {
     this.saveInlineField();
     this.selected.set(null);
@@ -1984,12 +2012,13 @@ export class WorkPage {
   private loadTaskDetail(taskId: string): void {
     this.taskDetailLoading.set(true);
     this.fetchTaskDetail(taskId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: ({ updates, comments, dependencies, changedFiles, verifications }) => {
+      next: ({ updates, comments, dependencies, changedFiles, verifications, related }) => {
         this.taskDetailUpdates.set(updates);
         this.taskDetailComments.set(comments);
         this.taskDetailDependencies.set(dependencies);
         this.taskDetailChangedFiles.set(changedFiles);
         this.taskDetailVerifications.set(verifications.data);
+        this.taskDetailRelatedItems.set(related);
         this.taskDetailLoading.set(false);
       },
       error: () => this.taskDetailLoading.set(false),

@@ -289,4 +289,46 @@ export class TasksApiService extends BaseCrudApiService<SpTask, CreateTaskReques
   listChildren(taskId: string): Observable<SpTask[]> {
     return this.http.get<SpTask[]>(`${this.baseUrl}/tasks/${taskId}/children`);
   }
+
+  // Related items
+
+  listRelated(taskId: string): Observable<RelatedItems> {
+    return this.http.get<RelatedItems>(`${this.baseUrl}/tasks/${taskId}/related`);
+  }
+
+  // Scored ready tasks
+
+  listReady(projectId?: string): Observable<ScoredTask[]> {
+    const pid = projectId ?? this.projectId;
+    if (!pid) return EMPTY;
+    return this.http.get<ScoredTask[]>(`${this.baseUrl}/${pid}/tasks/ready`);
+  }
+}
+
+export interface RelatedItem {
+  entity_type: string;
+  id: string;
+  title: string;
+  snippet?: string;
+  relevance_score: number;
+  reason: string;
+}
+
+export interface RelatedItems {
+  knowledge: RelatedItem[];
+  decisions: RelatedItem[];
+  observations: RelatedItem[];
+}
+
+export interface TaskScoreComponents {
+  total: number;
+  age_score: number;
+  urgent_score: number;
+  dependency_score: number;
+  work_score: number;
+}
+
+export interface ScoredTask extends SpTask {
+  score: number;
+  score_components?: TaskScoreComponents;
 }

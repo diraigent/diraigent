@@ -362,6 +362,24 @@ import { ProjectContext } from '../../core/services/project-context.service';
                   </select>
                 </div>
                 <div>
+                  <label [attr.for]="'pb-step-provider-' + i" class="text-xs text-text-muted mb-0.5 block">Provider</label>
+                  <select [id]="'pb-step-provider-' + i" [ngModel]="step.provider ?? ''" (ngModelChange)="updateField(i, 'provider', $event || undefined)"
+                    class="w-full bg-bg text-text-primary text-xs rounded px-2.5 py-1.5 border border-border
+                           focus:outline-none focus:ring-1 focus:ring-accent">
+                    <option value="">Default (anthropic)</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="ollama">Ollama</option>
+                  </select>
+                </div>
+                <div>
+                  <label [attr.for]="'pb-step-baseurl-' + i" class="text-xs text-text-muted mb-0.5 block">Base URL</label>
+                  <input [id]="'pb-step-baseurl-' + i" type="text" [ngModel]="step.base_url ?? ''" (ngModelChange)="updateField(i, 'base_url', $event || undefined)"
+                    placeholder="default"
+                    class="w-full bg-bg text-text-primary text-xs rounded px-2.5 py-1.5 border border-border
+                           focus:outline-none focus:ring-1 focus:ring-accent" />
+                </div>
+                <div>
                   <label [attr.for]="'pb-step-agent-' + i" class="text-xs text-text-muted mb-0.5 block">Agent name</label>
                   <input [id]="'pb-step-agent-' + i" type="text" [ngModel]="step.agent ?? ''" (ngModelChange)="updateField(i, 'agent', $event || undefined)"
                     placeholder="default"
@@ -684,6 +702,8 @@ this.steps.set([
       agent: tpl.agent ?? undefined,
       settings: tpl.settings ?? undefined,
       env: tpl.env ?? undefined,
+      provider: tpl.provider ?? undefined,
+      base_url: tpl.base_url ?? undefined,
     };
     this.steps.set([...current, step]);
     this.showTemplatePicker.set(false);
@@ -719,6 +739,8 @@ this.steps.set([
       agent: step.agent,
       settings: step.settings,
       env: step.env,
+      provider: step.provider,
+      base_url: step.base_url,
     };
     this.templateApi.create(data).subscribe({
       next: (created) => {

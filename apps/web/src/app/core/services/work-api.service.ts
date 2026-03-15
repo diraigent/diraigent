@@ -229,6 +229,11 @@ export class WorkApiService extends BaseCrudApiService<SpWork, SpWorkCreate, SpW
     });
   }
 
+  activate(workId: string): Observable<SpWork> {
+    if (!this.projectId) return EMPTY as Observable<SpWork>;
+    return this.http.post<SpWork>(`${this.baseUrl}/${this.projectId}/work/${workId}/activate`, {});
+  }
+
   reorder(workIds: string[]): Observable<SpWork[]> {
     if (!this.projectId) return EMPTY as Observable<SpWork[]>;
     return this.http.post<SpWork[]>(`${this.baseUrl}/${this.projectId}/work/reorder`, { work_ids: workIds });

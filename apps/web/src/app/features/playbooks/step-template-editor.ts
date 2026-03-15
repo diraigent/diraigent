@@ -15,6 +15,8 @@ export interface StepTemplateFormData {
   max_cycles: number | null;
   timeout_minutes: number | null;
   agent: string;
+  provider: string;
+  base_url: string;
   tags: string;
   envEntries: { key: string; value: string }[];
   varsEntries: { key: string; value: string }[];
@@ -160,6 +162,33 @@ export interface StepTemplateFormData {
             class="rounded border-border text-accent focus:ring-accent" />
           {{ t('stepTemplates.fieldRetriable') }}
         </label>
+      </div>
+
+      <!-- Provider + Base URL -->
+      <div class="grid grid-cols-2 gap-4 mb-4">
+        <div>
+          <label for="ste-provider" class="block text-sm font-medium text-text-secondary mb-1">Provider</label>
+          <select
+            id="ste-provider"
+            [(ngModel)]="form.provider"
+            class="w-full bg-bg text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                   focus:outline-none focus:ring-1 focus:ring-accent">
+            <option value="">Default (anthropic)</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="openai">OpenAI</option>
+            <option value="ollama">Ollama</option>
+          </select>
+        </div>
+        <div>
+          <label for="ste-base-url" class="block text-sm font-medium text-text-secondary mb-1">Base URL</label>
+          <input
+            id="ste-base-url"
+            type="text"
+            [(ngModel)]="form.base_url"
+            placeholder="default"
+            class="w-full bg-bg text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                   focus:outline-none focus:ring-1 focus:ring-accent" />
+        </div>
       </div>
 
       <!-- Agent -->
@@ -331,6 +360,8 @@ export class StepTemplateEditorComponent {
       max_cycles: null,
       timeout_minutes: null,
       agent: '',
+      provider: '',
+      base_url: '',
       tags: '',
       envEntries: [],
       varsEntries: [],
@@ -358,6 +389,8 @@ export class StepTemplateEditorComponent {
       max_cycles: item.max_cycles,
       timeout_minutes: item.timeout_minutes,
       agent: item.agent ?? '',
+      provider: item.provider ?? '',
+      base_url: item.base_url ?? '',
       tags: item.tags.join(', '),
       envEntries: this.objectToEntries(item.env),
       varsEntries: this.objectToEntries(item.vars),
