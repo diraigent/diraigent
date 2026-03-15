@@ -243,7 +243,8 @@
     "unlink": "Unlink",
     "linkedTasks": "Linked Tasks",
     "linkTasksBtn": "Link Tasks",
-    "createTaskBtn": "Create Task",
+    "createTaskBtn": "Add Task",
+    "executeBtn": "Execute",
     "startAllBtn": "Start All",
     "noLinkedTasks": "No tasks linked to this work item",
     "pickTasks": "Pick Tasks to Link",
@@ -296,6 +297,7 @@
     "planRemoveTask": "Remove from plan",
     "planTaskSpec": "Specification",
     "planTaskCriteria": "Acceptance Criteria",
+    "planDependsOn": "Depends On",
     "planGeneratedCriteria": "Generated Success Criteria"
   },
   "work": {

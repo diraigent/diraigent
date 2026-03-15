@@ -237,7 +237,8 @@
     "progress": "Fortschritt",
     "tasks": "Aufgaben",
     "linkTask": "Aufgabe verknüpfen",
-    "createTaskBtn": "Aufgabe erstellen",
+    "createTaskBtn": "Aufgabe hinzufügen",
+    "executeBtn": "Ausführen",
     "startAllBtn": "Alle starten",
     "taskIdPlaceholder": "Aufgaben-ID",
     "link": "Verknüpfen",
@@ -295,6 +296,7 @@
     "planRemoveTask": "Aus Plan entfernen",
     "planTaskSpec": "Spezifikation",
     "planTaskCriteria": "Akzeptanzkriterien",
+    "planDependsOn": "Abhängig von",
     "planGeneratedCriteria": "Generierte Erfolgskriterien"
   },
   "work": {

@@ -1,7 +1,8 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpParams } from '@angular/common/http';
 import { EMPTY, Observable } from 'rxjs';
 import { BaseCrudApiService } from './base-crud-api.service';
+import { AuthService } from './auth.service';
 import { SpTask } from './tasks-api.service';
 
 export type WorkStatus = 'active' | 'achieved' | 'paused' | 'abandoned';
@@ -89,6 +90,7 @@ export interface SpWorkUpdate {
 @Injectable({ providedIn: 'root' })
 export class WorkApiService extends BaseCrudApiService<SpWork, SpWorkCreate, SpWorkUpdate> {
   protected readonly resource = 'work';
+  private auth = inject(AuthService);
 
   list(status?: WorkStatus, workType?: WorkType, topLevel?: boolean): Observable<SpWork[]> {
     const params: Record<string, string> = {};
@@ -137,9 +139,94 @@ export class WorkApiService extends BaseCrudApiService<SpWork, SpWorkCreate, SpW
     return this.http.post<SpWorkComment>(`${this.baseUrl}/work/${workId}/comments`, { content });
   }
 
-  planTasks(workId: string): Observable<PlanWorkResponse> {
-    if (!this.projectId) return EMPTY as Observable<PlanWorkResponse>;
-    return this.http.post<PlanWorkResponse>(`${this.baseUrl}/${this.projectId}/work/${workId}/plan`, {});
+  /**
+   * Stream plan tasks via SSE. Returns an Observable that emits:
+   * - PlanSseStatus events (for progress display)
+   * - PlanSseDone event (final result with tasks)
+   * - PlanSseError event (on failure)
+   *
+   * The Observable completes after the done/error event.
+   */
+  planTasksStream(workId: string): Observable<PlanSseEvent> {
+    if (!this.projectId) return EMPTY as Observable<PlanSseEvent>;
+    const url = `${this.baseUrl}/${this.projectId}/work/${workId}/plan`;
+
+    return new Observable<PlanSseEvent>(subscriber => {
+      const abortController = new AbortController();
+
+      const run = async () => {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        const token = this.auth.getAccessToken();
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: '{}',
+          signal: abortController.signal,
+        });
+
+        if (!resp.ok) {
+          const body = await resp.text();
+          throw new Error(`HTTP ${resp.status}: ${body}`);
+        }
+
+        const reader = resp.body?.getReader();
+        if (!reader) throw new Error('No response body');
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        const processEvent = (part: string) => {
+          const lines = part.split('\n');
+          const eventLine = lines.find(l => l.startsWith('event: '));
+          const dataLines = lines.filter(l => l.startsWith('data: '));
+          if (dataLines.length === 0) return;
+
+          const eventType = eventLine?.slice(7) ?? '';
+          const rawData = dataLines.map(l => l.slice(6)).join('\n');
+
+          let data: Record<string, unknown>;
+          try { data = JSON.parse(rawData); } catch { return; }
+
+          switch (eventType) {
+            case 'status':
+              subscriber.next({ type: 'status', message: data['message'] as string });
+              break;
+            case 'done':
+              subscriber.next({
+                type: 'done',
+                tasks: data['tasks'] as PlannedTask[],
+                success_criteria: data['success_criteria'] as string[] | undefined,
+              });
+              subscriber.complete();
+              break;
+            case 'error':
+              subscriber.error(new Error(data['message'] as string));
+              break;
+          }
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split('\n\n');
+          buffer = parts.pop() ?? '';
+          for (const part of parts) {
+            if (part.trim()) processEvent(part);
+          }
+        }
+        if (buffer.trim()) processEvent(buffer);
+      };
+
+      run().catch(err => {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        subscriber.error(err);
+      });
+
+      return () => abortController.abort();
+    });
   }
 
   reorder(workIds: string[]): Observable<SpWork[]> {
@@ -153,9 +240,15 @@ export interface PlannedTask {
   kind: string;
   spec: string;
   acceptance_criteria: string[];
+  depends_on?: number[];
 }
 
 export interface PlanWorkResponse {
   tasks: PlannedTask[];
   success_criteria?: string[];
 }
+
+export type PlanSseEvent =
+  | { type: 'status'; message: string }
+  | { type: 'done'; tasks: PlannedTask[]; success_criteria?: string[] }
+  | { type: 'error'; message: string };

@@ -52,8 +52,8 @@ pub async fn create_task(
     };
 
     let task = sqlx::query_as::<_, Task>(
-        "INSERT INTO diraigent.task (project_id, title, kind, state, urgent, context, required_capabilities, playbook_id, playbook_step, decision_id, created_by, file_scope, parent_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        "INSERT INTO diraigent.task (project_id, title, kind, state, urgent, context, required_capabilities, playbook_id, playbook_step, decision_id, created_by, file_scope, parent_id, state_entered_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())
          RETURNING *",
     )
     .bind(project_id)
@@ -583,7 +583,8 @@ pub async fn delegate_task(
         "UPDATE diraigent.task
          SET assigned_agent_id = $2, assigned_role_id = $3, delegated_by = $4, delegated_at = now(),
              state = CASE WHEN state IN ('ready', 'backlog') THEN $5 ELSE state END,
-             claimed_at = CASE WHEN state IN ('ready', 'backlog') THEN now() ELSE claimed_at END
+             claimed_at = CASE WHEN state IN ('ready', 'backlog') THEN now() ELSE claimed_at END,
+             state_entered_at = CASE WHEN state IN ('ready', 'backlog') THEN now() ELSE state_entered_at END
          WHERE id = $1 RETURNING *",
     )
     .bind(task_id)

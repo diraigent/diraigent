@@ -430,7 +430,7 @@ async fn main() -> Result<()> {
             if json {
                 println!("{}", serde_json::to_string_pretty(&tasks)?);
             } else {
-                print_task_table(&tasks, &["number", "id", "urgent", "title"]);
+                print_ready_tasks(&tasks);
             }
         }
         Commands::Task { task_id } => {
@@ -548,6 +548,81 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Print ready-tasks with optional score breakdown.
+/// Falls back to priority-only display when scores are absent in the API response.
+fn print_ready_tasks(tasks: &[serde_json::Value]) {
+    let has_scores = tasks
+        .iter()
+        .any(|t| t.get("score").and_then(|s| s.as_f64()).is_some());
+
+    if !has_scores {
+        // Fallback: no scores available — show priority-only display
+        print_task_table(tasks, &["number", "id", "urgent", "title"]);
+        return;
+    }
+
+    // Header with score column
+    println!(
+        "{:<10}{:<14}{:<4}{:<10}TITLE",
+        "NUMBER", "ID", "\u{26a1}", "SCORE"
+    );
+    println!(
+        "{:<10}{:<14}{:<4}{:<10}--------------------",
+        "--------", "------------", "--", "--------"
+    );
+
+    for task in tasks {
+        let number = task["number"]
+            .as_i64()
+            .map(|n| n.to_string())
+            .unwrap_or_default();
+        let id = task["id"]
+            .as_str()
+            .map(|s| TaskId::new(s).to_string())
+            .unwrap_or_default();
+        let urgent = if task["urgent"].as_bool().unwrap_or(false) {
+            "\u{26a1}"
+        } else {
+            ""
+        };
+        let score = task
+            .get("score")
+            .and_then(|s| s.as_f64())
+            .map(|s| format!("{:.1}", s))
+            .unwrap_or_else(|| "-".to_string());
+        let title = task["title"].as_str().unwrap_or("");
+
+        println!(
+            "{:<10}{:<14}{:<4}{:<10}{}",
+            number, id, urgent, score, title
+        );
+
+        // Print score breakdown if components are available
+        if let Some(components) = task.get("score_components").and_then(|c| c.as_object()) {
+            let total = task.get("score").and_then(|s| s.as_f64()).unwrap_or(0.0);
+            // Render known component keys in a stable order, then append any extras
+            let known_keys = ["age", "priority", "deps", "goal"];
+            let mut parts: Vec<String> = Vec::new();
+            for key in &known_keys {
+                if let Some(val) = components.get(*key).and_then(|v| v.as_f64()) {
+                    parts.push(format!("{}: {:.1}", key, val));
+                }
+            }
+            // Append any extra components not in the known list
+            for (key, val) in components {
+                if !known_keys.contains(&key.as_str())
+                    && let Some(v) = val.as_f64()
+                {
+                    parts.push(format!("{}: {:.1}", key, v));
+                }
+            }
+            if !parts.is_empty() {
+                println!("{:<10}score: {:.1} ({})", "", total, parts.join(", "));
+            }
+        }
+    }
 }
 
 fn print_task_table(tasks: &[serde_json::Value], columns: &[&str]) {

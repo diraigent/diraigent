@@ -440,10 +440,12 @@ Decompose the following work item into 3-8 concrete, implementable tasks. Each t
 - kind must be one of: feature, bug, refactor, test, docs
 - spec should be a detailed technical description of what to implement
 - acceptance_criteria should be verifiable conditions (not vague)
+- depends_on is an array of zero-based indices referencing earlier tasks in this list that must complete first
+- The first task must always have depends_on: [] (empty array)
 - Do NOT create meta-tasks like "review" or "deploy" — only implementation work
 
 Respond with ONLY a valid JSON object in this exact format, no markdown fences or extra text:
-{{"tasks": [{{"title": "...", "kind": "...", "spec": "...", "acceptance_criteria": ["..."]}}, ...]}}"#
+{{"tasks": [{{"title": "...", "kind": "...", "spec": "...", "acceptance_criteria": ["..."], "depends_on": []}}, ...]}}"#
     );
 
     // Spawn claude -p
@@ -609,21 +611,13 @@ Respond with ONLY a valid JSON object in this exact format, no markdown fences o
     }
 
     // Parse the JSON response from Claude's text output.
-    // Strip markdown fences if present.
+    // Claude sometimes emits preamble text before the JSON or wraps it in
+    // markdown fences.  We try progressively more aggressive extraction:
+    //   1. Direct parse (already valid JSON)
+    //   2. Strip ```json ... ``` fences
+    //   3. Find the first '{' / last '}' and extract the substring
     let text = accumulated_text.trim();
-    let json_text = if text.starts_with("```") {
-        // Strip ```json ... ``` wrapper
-        let without_prefix = text
-            .strip_prefix("```json")
-            .or_else(|| text.strip_prefix("```"))
-            .unwrap_or(text);
-        without_prefix
-            .strip_suffix("```")
-            .unwrap_or(without_prefix)
-            .trim()
-    } else {
-        text
-    };
+    let json_text = extract_json_object(text);
 
     let parsed: serde_json::Value = match serde_json::from_str(json_text) {
         Ok(v) => v,
@@ -672,4 +666,37 @@ Respond with ONLY a valid JSON object in this exact format, no markdown fences o
     }
 
     info!("plan request completed");
+}
+
+/// Extract a JSON object from text that may contain preamble or markdown fences.
+fn extract_json_object(text: &str) -> &str {
+    // 1. Already valid JSON — fast path
+    if text.starts_with('{') || text.starts_with('[') {
+        return text;
+    }
+
+    // 2. Strip markdown fences: ```json ... ``` or ``` ... ```
+    if let Some(fence_start) = text.find("```") {
+        let after_fence = &text[fence_start + 3..];
+        // Skip optional language tag on the same line
+        let content_start = after_fence.find('\n').map(|i| i + 1).unwrap_or(0);
+        let inner = &after_fence[content_start..];
+        if let Some(end) = inner.find("```") {
+            let candidate = inner[..end].trim();
+            if candidate.starts_with('{') || candidate.starts_with('[') {
+                return candidate;
+            }
+        }
+    }
+
+    // 3. Find the outermost { ... } substring
+    if let Some(start) = text.find('{')
+        && let Some(end) = text.rfind('}')
+        && end > start
+    {
+        return &text[start..=end];
+    }
+
+    // 4. Fallback — return as-is and let the caller's parse error handle it
+    text
 }
