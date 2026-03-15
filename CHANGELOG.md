@@ -1,5 +1,20 @@
 # Changelog
 
+
+## v20260315-1556-developer (2026-03-15)
+
+### Changed
+- **Orchestra**: Improved git merge rollback handling on push failure
+- **Orchestra**: Enhanced worker provider routing with proper API endpoint mocking
+- **Orchestra**: Fixed max tokens configuration
+
+### Fixed
+- **API**: Added missing authorization checks to global provider config endpoints
+- **Orchestra**: Fixed broken provider routing tests to mock actual provider API endpoints
+- **Orchestra**: Fixed git push error handling and rollback logic
+
+---
+
 ## v20260315-1437-developer (2026-03-15)
 
 ### Added
