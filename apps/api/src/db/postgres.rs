@@ -1435,4 +1435,91 @@ impl DiraigentDb for PostgresDb {
     async fn delete_provider_config(&self, id: Uuid) -> Result<(), AppError> {
         repository::delete_provider_config(&self.0, id).await
     }
+
+    // Forgejo CI
+    async fn get_forgejo_integration(&self, id: Uuid) -> Result<ForgejoIntegration, AppError> {
+        repository::get_forgejo_integration(&self.0, id).await
+    }
+    async fn get_forgejo_integration_by_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<ForgejoIntegration, AppError> {
+        repository::get_forgejo_integration_by_project(&self.0, project_id).await
+    }
+    async fn upsert_ci_run(
+        &self,
+        project_id: Uuid,
+        forgejo_run_id: i64,
+        workflow_name: &str,
+        status: &str,
+        branch: Option<&str>,
+        commit_sha: Option<&str>,
+        triggered_by: Option<&str>,
+        started_at: Option<chrono::DateTime<chrono::Utc>>,
+        finished_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<CiRun, AppError> {
+        repository::upsert_ci_run(
+            &self.0,
+            project_id,
+            forgejo_run_id,
+            workflow_name,
+            status,
+            branch,
+            commit_sha,
+            triggered_by,
+            started_at,
+            finished_at,
+        )
+        .await
+    }
+    async fn get_ci_run_by_forgejo_id(
+        &self,
+        project_id: Uuid,
+        forgejo_run_id: i64,
+    ) -> Result<Option<CiRun>, AppError> {
+        repository::get_ci_run_by_forgejo_id(&self.0, project_id, forgejo_run_id).await
+    }
+    async fn upsert_ci_job_by_name(
+        &self,
+        ci_run_id: Uuid,
+        name: &str,
+        status: &str,
+        runner: Option<&str>,
+        started_at: Option<chrono::DateTime<chrono::Utc>>,
+        finished_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<CiJob, AppError> {
+        repository::upsert_ci_job_by_name(
+            &self.0,
+            ci_run_id,
+            name,
+            status,
+            runner,
+            started_at,
+            finished_at,
+        )
+        .await
+    }
+    async fn delete_steps_for_job(&self, ci_job_id: Uuid) -> Result<(), AppError> {
+        repository::delete_steps_for_job(&self.0, ci_job_id).await
+    }
+    async fn insert_ci_step(
+        &self,
+        ci_job_id: Uuid,
+        name: &str,
+        status: &str,
+        exit_code: Option<i32>,
+        started_at: Option<chrono::DateTime<chrono::Utc>>,
+        finished_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<CiStep, AppError> {
+        repository::insert_ci_step(
+            &self.0,
+            ci_job_id,
+            name,
+            status,
+            exit_code,
+            started_at,
+            finished_at,
+        )
+        .await
+    }
 }
