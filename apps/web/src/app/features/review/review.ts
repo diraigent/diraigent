@@ -429,10 +429,15 @@ export class ReviewPage implements OnDestroy {
     this.reworkTarget.set(null);
     this.actioning.set(item.task.id);
     const comment = this.reworkComment.trim();
-    const transition$ = this.tasksApi.transition(item.task.id, 'ready');
+    this.reworkComment = '';
+    // Post the comment BEFORE transitioning to ready, so the agent sees
+    // the feedback when it picks up the task. Previously the order was
+    // reversed, creating a race where the orchestra could claim the task
+    // before the comment was persisted.
     if (comment) {
-      transition$.pipe(
-        switchMap(() => this.tasksApi.createComment(item.task.id, { content: comment }).pipe(catchError(() => of(null)))),
+      this.tasksApi.createComment(item.task.id, { content: comment }).pipe(
+        catchError(() => of(null)),
+        switchMap(() => this.tasksApi.transition(item.task.id, 'ready')),
       ).subscribe({
         next: () => {
           this.actioning.set(null);
@@ -442,7 +447,7 @@ export class ReviewPage implements OnDestroy {
         error: () => this.actioning.set(null),
       });
     } else {
-      transition$.subscribe({
+      this.tasksApi.transition(item.task.id, 'ready').subscribe({
         next: () => {
           this.actioning.set(null);
           this.reviewItems.update(items => items.filter(i => i.task.id !== item.task.id));
@@ -451,7 +456,6 @@ export class ReviewPage implements OnDestroy {
         error: () => this.actioning.set(null),
       });
     }
-    this.reworkComment = '';
   }
 
   reopen(item: ReviewTask): void {
