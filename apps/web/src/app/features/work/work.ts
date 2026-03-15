@@ -516,6 +516,22 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                         {{ t('goals.planTasksBtn') }}
                       }
                     </button>
+                    <button (click)="executeWorkItem()"
+                      [disabled]="executeLoading()"
+                      class="px-3 py-1.5 text-xs bg-ctp-peach text-bg rounded hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
+                      @if (executeLoading()) {
+                        <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                      } @else {
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      }
+                      {{ t('goals.executeBtn') }}
+                    </button>
                     <button (click)="openCreateTaskForGoal()" class="px-3 py-1.5 text-xs bg-ctp-green text-bg rounded hover:opacity-90">
                       {{ t('goals.createTaskBtn') }}
                     </button>
@@ -1251,6 +1267,7 @@ export class WorkPage {
   taskDetailReverting = signal(false);
   taskDetailResolving = signal(false);
   goalPlaybooks = signal<SpPlaybook[]>([]);
+  executeLoading = signal(false);
   editingTask = signal<SpTask | null>(null);
 
   // Git status
@@ -2166,6 +2183,38 @@ export class WorkPage {
         this.loadLinkedTasks(sel.id);
         this.loadAllProgress([sel]);
         this.loadStatsAndChildren(sel.id);
+      },
+    });
+  }
+
+  executeWorkItem(): void {
+    const sel = this.selected();
+    if (!sel) return;
+    this.executeLoading.set(true);
+    const context: Record<string, unknown> = {};
+    if (sel.description) {
+      context['spec'] = sel.description;
+    }
+    if (sel.success_criteria) {
+      context['acceptance_criteria'] = sel.success_criteria
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+    }
+    const req: CreateTaskRequest = {
+      title: sel.title,
+      work_id: sel.id,
+      context,
+    };
+    this.tasksApi.create(req).subscribe({
+      next: () => {
+        this.executeLoading.set(false);
+        this.loadLinkedTasks(sel.id);
+        this.loadAllProgress([sel]);
+        this.loadStatsAndChildren(sel.id);
+      },
+      error: () => {
+        this.executeLoading.set(false);
       },
     });
   }
