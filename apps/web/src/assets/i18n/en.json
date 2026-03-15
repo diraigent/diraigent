@@ -279,10 +279,10 @@
       "sprint": "Sprint",
       "initiative": "Initiative"
     },
-    "todos": "Todos",
-    "todoPlaceholder": "Add a todo item...",
+    "todos": "Checklist",
+    "todoPlaceholder": "Add a checklist item...",
     "addTodo": "Add",
-    "todosEmpty": "No todos yet. Add one above.",
+    "todosEmpty": "No items yet. Add one above.",
     "clearDone": "Clear done",
     "planTasksBtn": "Plan Tasks",
     "planLoading": "Generating task plan...",
