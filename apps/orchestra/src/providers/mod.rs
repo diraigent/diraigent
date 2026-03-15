@@ -9,8 +9,10 @@ mod ollama;
 mod openai;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use async_trait::async_trait;
+use serde_json::Value;
 
 // ── Shared types ────────────────────────────────────────────────────────────
 
@@ -25,10 +27,22 @@ pub struct ResolvedStep {
     pub model: Option<String>,
     /// Tool preset: "full", "readonly", "merge".
     pub allowed_tools: Option<String>,
+    /// Resolved list of allowed tool names (e.g. `["Bash(*)", "Read", ...]`).
+    pub allowed_tools_list: Vec<String>,
     /// Maximum budget in USD for this step.
     pub budget: Option<f64>,
     /// Extra environment variables for the step.
     pub env: HashMap<String, String>,
+    /// System prompt (static CLAUDE.md-based prompt, used by Anthropic provider).
+    pub system_prompt: Option<String>,
+    /// MCP server configurations (JSON object with `"mcpServers"` key).
+    pub mcp_servers: Option<Value>,
+    /// Custom sub-agent definitions (JSON object, key=name, value={description, prompt}).
+    pub agents: Option<Value>,
+    /// Name of a configured agent to activate.
+    pub agent: Option<String>,
+    /// Additional Claude settings (skills, keybindings, etc.) as JSON.
+    pub settings: Option<Value>,
 }
 
 /// Context about the task being executed.
@@ -42,6 +56,10 @@ pub struct TaskContext {
     pub project_context: String,
     /// Output from the previous step, if any.
     pub previous_step_output: Option<String>,
+    /// Working directory (git worktree path). Required by Anthropic provider.
+    pub working_dir: Option<PathBuf>,
+    /// Log file path for PTY recording. Required by Anthropic provider.
+    pub log_file: Option<PathBuf>,
 }
 
 /// Credentials and endpoint configuration for a provider.
@@ -64,6 +82,18 @@ pub struct StepOutput {
     pub exit_code: i32,
     /// Optional key-value artifacts produced during execution.
     pub artifacts: HashMap<String, String>,
+    /// Total cost in USD for the step execution.
+    pub cost_usd: f64,
+    /// Number of input tokens consumed.
+    pub input_tokens: u64,
+    /// Number of output tokens produced.
+    pub output_tokens: u64,
+    /// Number of API turns (conversation round-trips).
+    pub num_turns: u64,
+    /// Reason the provider stopped (e.g. "end_turn", "max_tokens").
+    pub stop_reason: String,
+    /// Whether the provider flagged this execution as an error.
+    pub is_error: bool,
 }
 
 // ── Trait ────────────────────────────────────────────────────────────────────
@@ -147,77 +177,63 @@ mod tests {
         assert!(result.is_err(), "empty provider name should return error");
     }
 
-    #[tokio::test]
-    async fn anthropic_provider_implements_trait() {
-        let provider = ProviderFactory::create("anthropic").unwrap();
-        let step = ResolvedStep {
+    fn test_step() -> ResolvedStep {
+        ResolvedStep {
             name: "test".into(),
             description: "test step".into(),
             model: None,
             allowed_tools: None,
+            allowed_tools_list: vec![],
             budget: None,
             env: HashMap::new(),
-        };
-        let task = TaskContext {
+            system_prompt: None,
+            mcp_servers: None,
+            agents: None,
+            agent: None,
+            settings: None,
+        }
+    }
+
+    fn test_task() -> TaskContext {
+        TaskContext {
             task_id: "test-task-id".into(),
             project_id: "test-project-id".into(),
             project_context: "{}".into(),
             previous_step_output: None,
-        };
+            working_dir: None,
+            log_file: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn anthropic_provider_requires_working_dir() {
+        let provider = ProviderFactory::create("anthropic").unwrap();
         let config = ProviderConfig {
             api_key: None,
             base_url: None,
             model: None,
         };
-        // The stub implementation returns a placeholder — just verify it doesn't panic.
-        let result = provider.execute(&step, &task, &config).await;
-        assert!(result.is_ok());
+        // Without working_dir, the Anthropic provider should return an error.
+        let result = provider.execute(&test_step(), &test_task(), &config).await;
+        assert!(result.is_err(), "should require working_dir");
     }
 
     #[tokio::test]
     async fn openai_provider_implements_trait() {
         let provider = ProviderFactory::create("openai").unwrap();
-        let step = ResolvedStep {
-            name: "test".into(),
-            description: "test step".into(),
-            model: None,
-            allowed_tools: None,
-            budget: None,
-            env: HashMap::new(),
-        };
-        let task = TaskContext {
-            task_id: "test-task-id".into(),
-            project_id: "test-project-id".into(),
-            project_context: "{}".into(),
-            previous_step_output: None,
-        };
         let config = ProviderConfig {
             api_key: None,
             base_url: None,
             model: None,
         };
         // With no API key configured, the OpenAI provider returns an error.
-        let result = provider.execute(&step, &task, &config).await;
+        let result = provider.execute(&test_step(), &test_task(), &config).await;
         assert!(result.is_err(), "missing API key should return error");
     }
 
     #[tokio::test]
     async fn ollama_provider_implements_trait() {
         let provider = ProviderFactory::create("ollama").unwrap();
-        let step = ResolvedStep {
-            name: "test".into(),
-            description: "test step".into(),
-            model: None,
-            allowed_tools: None,
-            budget: None,
-            env: HashMap::new(),
-        };
-        let task = TaskContext {
-            task_id: "test-task-id".into(),
-            project_id: "test-project-id".into(),
-            project_context: "{}".into(),
-            previous_step_output: None,
-        };
         let config = ProviderConfig {
             api_key: None,
             // Use a port nothing listens on — the real implementation will
@@ -226,7 +242,7 @@ mod tests {
             base_url: Some("http://127.0.0.1:19999".to_string()),
             model: None,
         };
-        let result = provider.execute(&step, &task, &config).await;
+        let result = provider.execute(&test_step(), &test_task(), &config).await;
         // Real implementation connects to the network — expect a connection error.
         assert!(result.is_err());
     }
