@@ -1435,4 +1435,41 @@ impl DiraigentDb for PostgresDb {
     async fn delete_provider_config(&self, id: Uuid) -> Result<(), AppError> {
         repository::delete_provider_config(&self.0, id).await
     }
+
+    // Forgejo CI
+    async fn get_forgejo_integration(&self, id: Uuid) -> Result<ForgejoIntegration, AppError> {
+        repository::get_forgejo_integration(&self.0, id).await
+    }
+    async fn get_forgejo_integration_by_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<ForgejoIntegration, AppError> {
+        repository::get_forgejo_integration_by_project(&self.0, project_id).await
+    }
+    async fn upsert_ci_run(
+        &self,
+        project_id: Uuid,
+        forgejo_run_id: i64,
+        workflow_name: &str,
+        status: &str,
+        branch: Option<&str>,
+        commit_sha: Option<&str>,
+        triggered_by: Option<&str>,
+        started_at: Option<chrono::DateTime<chrono::Utc>>,
+        finished_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<CiRun, AppError> {
+        repository::upsert_ci_run(
+            &self.0,
+            project_id,
+            forgejo_run_id,
+            workflow_name,
+            status,
+            branch,
+            commit_sha,
+            triggered_by,
+            started_at,
+            finished_at,
+        )
+        .await
+    }
 }
