@@ -4,6 +4,8 @@
 
 A self-hosted software factory — define goals, agents decompose and execute them through enforced pipelines, with humans in the loop where it matters.
 
+![Diraigent demo](apps/landing/public/assets/images/demo.gif)
+
 ## Why Diraigent?
 
 Most AI coding tools fall into one of three traps:
