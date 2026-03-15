@@ -149,6 +149,8 @@ Each step in a playbook's `steps` array is a JSON object. All fields except `nam
 | `settings` | object | Additional Claude Code settings (skills, etc.) passed via `--settings`. |
 | `env` | object | Extra environment variables (string→string) exported before running the agent. |
 | `vars` | object | Custom template variables (string→string) for `{{placeholder}}` substitution in `description`. |
+| `provider` | string | AI provider for this step: `"anthropic"` (default), `"openai"`, `"ollama"`. When omitted, defaults to `"anthropic"`. |
+| `base_url` | string | Override the default API endpoint for the chosen provider (e.g. `"https://my-proxy.example.com"`, `"http://localhost:11434"`). |
 
 ### Template Variables
 

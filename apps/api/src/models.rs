@@ -1840,6 +1840,10 @@ pub struct StepTemplate {
     pub settings: Option<serde_json::Value>,
     pub env: Option<serde_json::Value>,
     pub vars: Option<serde_json::Value>,
+    /// AI provider for this step (e.g. "anthropic", "openai", "ollama"). NULL defaults to "anthropic".
+    pub provider: Option<String>,
+    /// Override the default API endpoint for the chosen provider.
+    pub base_url: Option<String>,
     pub tags: Vec<String>,
     pub metadata: serde_json::Value,
     pub created_by: Uuid,
@@ -1865,6 +1869,8 @@ pub struct CreateStepTemplate {
     pub settings: Option<serde_json::Value>,
     pub env: Option<serde_json::Value>,
     pub vars: Option<serde_json::Value>,
+    pub provider: Option<String>,
+    pub base_url: Option<String>,
     pub tags: Option<Vec<String>>,
     pub metadata: Option<serde_json::Value>,
 }
@@ -1887,6 +1893,8 @@ pub struct UpdateStepTemplate {
     pub settings: Option<serde_json::Value>,
     pub env: Option<serde_json::Value>,
     pub vars: Option<serde_json::Value>,
+    pub provider: Option<String>,
+    pub base_url: Option<String>,
     pub tags: Option<Vec<String>>,
     pub metadata: Option<serde_json::Value>,
 }

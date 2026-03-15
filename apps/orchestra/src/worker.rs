@@ -64,6 +64,11 @@ pub struct StepConfig {
     /// Extra environment variables injected into the worker's shell.
     /// Useful for MCP servers or tools that require API keys.
     pub env: HashMap<String, String>,
+    /// AI provider for this step (e.g. "anthropic", "openai", "ollama").
+    /// `None` defaults to "anthropic".
+    pub provider: Option<String>,
+    /// Override the default API endpoint for the chosen provider.
+    pub base_url: Option<String>,
 }
 
 impl StepConfig {
@@ -128,6 +133,12 @@ impl StepConfig {
             })
             .unwrap_or_default();
 
+        // 11. Provider: which AI provider to use (default: anthropic)
+        let provider = step_json.and_then(|s| s["provider"].as_str().map(String::from));
+
+        // 12. Base URL: override the default API endpoint for the provider
+        let base_url = step_json.and_then(|s| s["base_url"].as_str().map(String::from));
+
         StepConfig {
             model,
             budget,
@@ -139,6 +150,8 @@ impl StepConfig {
             agent,
             settings,
             env,
+            provider,
+            base_url,
         }
     }
 }
