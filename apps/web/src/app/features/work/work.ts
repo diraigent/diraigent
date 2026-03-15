@@ -626,7 +626,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
       @if (loading() && unlinkedTasksLoading()) {
         <p class="text-text-secondary text-sm">{{ t('common.loading') }}</p>
       } @else {
-        <!-- Section: Active Goals -->
+        <!-- Section: Active Work -->
         @if (activeGoals().length > 0) {
           <div class="mb-6">
             <h2 class="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-2 flex items-center gap-2">
