@@ -480,6 +480,18 @@ impl ProjectsApi {
         }
     }
 
+    // ── Provider config operations ────────────────────────────
+
+    /// Resolve a provider config by merging project-level and global (tenant-level)
+    /// configs.  The API returns the merged config with `api_key`, `base_url`,
+    /// `default_model`, and `api_key_source` fields.
+    ///
+    /// Returns 404 if no config exists for the provider at either scope.
+    pub async fn resolve_provider_config(&self, project_id: &str, provider: &str) -> Result<Value> {
+        self.get(&format!("/{project_id}/providers/resolve/{provider}"))
+            .await
+    }
+
     // ── Setup operations ─────────────────────────────────────
 
     /// Health check — GET {base_url}/../health/live (health is at server root).

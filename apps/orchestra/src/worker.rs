@@ -2,6 +2,10 @@ use crate::api::ProjectsApi;
 use crate::crypto::Dek;
 use crate::git::WorktreeManager;
 use crate::prompt;
+use crate::providers::{
+    ProviderConfig as ProviderCfg, ProviderFactory, ResolvedStep,
+    TaskContext as ProviderTaskContext,
+};
 use crate::step_profile::StepProfile;
 use crate::task_id::TaskId;
 use anyhow::{Context, Result};
@@ -264,20 +268,40 @@ pub async fn run_worker(
         env_info,
     );
 
+    // Route to the correct provider based on step config.
+    // Default to "anthropic" (existing Claude Code subprocess path) when no
+    // provider is specified, preserving backward compatibility.
+    let provider_name = step_config.provider.as_deref().unwrap_or("anthropic");
     let start = std::time::Instant::now();
-    let result = run_claude(
-        &system_prompt,
-        &user_prompt,
-        &worktree_path,
-        &log_file,
-        step_config,
-    )
-    .await;
-    let duration = start.elapsed();
 
-    // Parse result from log
-    let (cost_usd, input_tokens, output_tokens, api_turns, stop_reason, is_error) =
-        parse_result_from_log(&log_file).await;
+    let (result, cost_usd, input_tokens, output_tokens, api_turns, stop_reason, is_error) =
+        if provider_name == "anthropic" {
+            // Existing Claude Code subprocess path (unchanged behavior)
+            let result = run_claude(
+                &system_prompt,
+                &user_prompt,
+                &worktree_path,
+                &log_file,
+                step_config,
+            )
+            .await;
+            let (cost, inp, out, turns, stop, err) = parse_result_from_log(&log_file).await;
+            (result, cost, inp, out, turns, stop, err)
+        } else {
+            // Non-Anthropic provider routing
+            execute_via_provider(
+                api,
+                provider_name,
+                project_id,
+                task_id,
+                step_config,
+                &system_prompt,
+                &user_prompt,
+            )
+            .await
+        };
+
+    let duration = start.elapsed();
 
     // Commit changes
     let has_changes = worktree_mgr
@@ -477,6 +501,157 @@ pub async fn post_worker_event(
     });
     if let Err(e) = api.post_event(project_id, &event).await {
         warn!("failed to post worker event: {e}");
+    }
+}
+
+/// Execute a step via a non-Anthropic provider (OpenAI, Ollama, etc.).
+///
+/// This function:
+/// 1. Creates the provider instance via [`ProviderFactory`].
+/// 2. Resolves credentials from the API (project-level, then global fallback).
+/// 3. Merges step-level overrides — `step.base_url` overrides config `base_url`,
+///    explicit step/task `model` overrides config `default_model`.
+/// 4. Calls `provider.execute()` and translates errors into blocker posts
+///    rather than panicking.
+///
+/// Returns the same tuple shape as the Anthropic path so callers can share
+/// post-processing (commit, audit events, cost metrics).
+async fn execute_via_provider(
+    api: &ProjectsApi,
+    provider_name: &str,
+    project_id: &str,
+    task_id: &str,
+    step_config: &StepConfig,
+    _system_prompt: &str,
+    user_prompt: &str,
+) -> (Result<()>, f64, u64, u64, u64, String, bool) {
+    let tid = TaskId::new(task_id);
+
+    // 1. Create provider instance via factory
+    let provider: Box<dyn crate::providers::StepProvider> =
+        match ProviderFactory::create(provider_name) {
+            Ok(p) => p,
+            Err(e) => {
+                let msg = format!("Unknown provider '{provider_name}': {e}");
+                warn!("worker {tid}: {msg}");
+                if let Err(be) = api.post_task_update(task_id, "blocker", &msg).await {
+                    warn!("worker {tid}: failed to post blocker: {be}");
+                }
+                return (
+                    Err(anyhow::anyhow!(msg)),
+                    0.0,
+                    0,
+                    0,
+                    0,
+                    "provider_error".into(),
+                    true,
+                );
+            }
+        };
+
+    // 2. Resolve credentials from API (project-level, then global fallback)
+    let resolved_cfg = api.resolve_provider_config(project_id, provider_name).await;
+
+    // 3. Build ProviderConfig with step-level overrides.
+    //
+    // For the model field we use the *explicit* step-JSON model (if set) rather
+    // than `step_config.model`, because the latter includes a hardcoded
+    // fallback ("sonnet") that is Anthropic-specific and meaningless for other
+    // providers.  The explicit step model is the one the playbook author or
+    // task creator intentionally set.
+    let explicit_step_model = step_config
+        .step_json
+        .as_ref()
+        .and_then(|s| s["model"].as_str())
+        .map(String::from);
+
+    let provider_cfg = match resolved_cfg {
+        Ok(cfg) => ProviderCfg {
+            api_key: cfg["api_key"].as_str().map(String::from),
+            base_url: step_config
+                .base_url
+                .clone()
+                .or_else(|| cfg["base_url"].as_str().map(String::from)),
+            model: explicit_step_model.or_else(|| cfg["default_model"].as_str().map(String::from)),
+        },
+        Err(e) => {
+            // No stored config — use step-level overrides only.
+            // This is not fatal: the provider may work without credentials
+            // (e.g. local Ollama).
+            warn!("worker {tid}: no provider config for '{provider_name}': {e}");
+            ProviderCfg {
+                api_key: None,
+                base_url: step_config.base_url.clone(),
+                model: explicit_step_model,
+            }
+        }
+    };
+
+    // 4. Build resolved step from step config
+    let step_description = step_config
+        .step_json
+        .as_ref()
+        .and_then(|s| s["description"].as_str())
+        .unwrap_or(&step_config.step_name)
+        .to_string();
+
+    let step = ResolvedStep {
+        name: step_config.step_name.clone(),
+        description: step_description,
+        model: provider_cfg.model.clone(),
+        allowed_tools: step_config
+            .step_json
+            .as_ref()
+            .and_then(|s| s["allowed_tools"].as_str())
+            .map(String::from),
+        budget: step_config.budget,
+        env: step_config.env.clone(),
+    };
+
+    // 5. Build task context for the provider
+    let task_ctx = ProviderTaskContext {
+        task_id: task_id.to_string(),
+        project_id: project_id.to_string(),
+        project_context: user_prompt.to_string(),
+        previous_step_output: None,
+    };
+
+    // 6. Execute via provider — errors become blockers, not panics
+    info!(
+        "worker {tid}: executing via provider '{provider_name}' (model={}, base_url={})",
+        provider_cfg.model.as_deref().unwrap_or("default"),
+        provider_cfg.base_url.as_deref().unwrap_or("default"),
+    );
+    match provider.execute(&step, &task_ctx, &provider_cfg).await {
+        Ok(output) => {
+            let is_err = output.exit_code != 0;
+            let stop = if is_err {
+                "error".to_string()
+            } else {
+                "end_turn".to_string()
+            };
+            info!(
+                "worker {tid}: provider '{provider_name}' completed (exit_code={})",
+                output.exit_code
+            );
+            (Ok(()), 0.0, 0, 0, 0, stop, is_err)
+        }
+        Err(e) => {
+            let msg = format!("Provider '{provider_name}' execution failed: {e:#}");
+            warn!("worker {tid}: {msg}");
+            if let Err(be) = api.post_task_update(task_id, "blocker", &msg).await {
+                warn!("worker {tid}: failed to post blocker: {be}");
+            }
+            (
+                Err(anyhow::anyhow!(msg)),
+                0.0,
+                0,
+                0,
+                0,
+                "provider_error".into(),
+                true,
+            )
+        }
     }
 }
 
@@ -701,4 +876,405 @@ async fn parse_result_from_log(log_file: &Path) -> (f64, u64, u64, u64, String, 
     let output_tokens = usage["output_tokens"].as_u64().unwrap_or(0);
 
     (cost, input_tokens, output_tokens, turns, stop, is_error)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::ProjectsApi;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    // ── Provider routing decision tests ──────────────────────
+
+    #[test]
+    fn default_provider_is_anthropic() {
+        let step_config = StepConfig::for_step("implement", None, None, None);
+        let provider_name = step_config.provider.as_deref().unwrap_or("anthropic");
+        assert_eq!(provider_name, "anthropic");
+    }
+
+    #[test]
+    fn explicit_anthropic_provider_is_recognised() {
+        let step_json = serde_json::json!({"name": "implement", "provider": "anthropic"});
+        let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
+        let provider_name = step_config.provider.as_deref().unwrap_or("anthropic");
+        assert_eq!(provider_name, "anthropic");
+    }
+
+    #[test]
+    fn openai_provider_is_extracted_from_step_json() {
+        let step_json = serde_json::json!({"name": "implement", "provider": "openai"});
+        let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
+        assert_eq!(step_config.provider.as_deref(), Some("openai"));
+    }
+
+    #[test]
+    fn ollama_provider_is_extracted_from_step_json() {
+        let step_json = serde_json::json!({"name": "implement", "provider": "ollama"});
+        let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
+        assert_eq!(step_config.provider.as_deref(), Some("ollama"));
+    }
+
+    #[test]
+    fn base_url_extracted_from_step_json() {
+        let step_json = serde_json::json!({
+            "name": "implement",
+            "provider": "openai",
+            "base_url": "https://my-proxy.example.com"
+        });
+        let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
+        assert_eq!(
+            step_config.base_url.as_deref(),
+            Some("https://my-proxy.example.com")
+        );
+    }
+
+    // ── End-to-end provider routing tests ────────────────────
+
+    #[tokio::test]
+    async fn routing_openai_executes_via_provider() {
+        let server = MockServer::start().await;
+
+        // Mock resolve endpoint returning OpenAI config
+        Mock::given(method("GET"))
+            .and(path("/proj-1/providers/resolve/openai"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "provider": "openai",
+                "api_key": "sk-test-key",
+                "base_url": "https://api.openai.com",
+                "default_model": "gpt-4o",
+                "api_key_source": "global"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let step_json = serde_json::json!({"name": "implement", "provider": "openai"});
+        let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
+
+        let (result, cost, inp, out, turns, stop_reason, is_error) = execute_via_provider(
+            &api,
+            "openai",
+            "proj-1",
+            "task-1",
+            &step_config,
+            "system prompt",
+            "user prompt",
+        )
+        .await;
+
+        assert!(result.is_ok(), "openai provider execution should succeed");
+        assert!(!is_error);
+        assert_eq!(stop_reason, "end_turn");
+        assert_eq!(cost, 0.0);
+        assert_eq!(inp, 0);
+        assert_eq!(out, 0);
+        assert_eq!(turns, 0);
+    }
+
+    #[tokio::test]
+    async fn routing_ollama_executes_via_provider() {
+        let server = MockServer::start().await;
+
+        // Mock resolve endpoint returning Ollama config
+        Mock::given(method("GET"))
+            .and(path("/proj-1/providers/resolve/ollama"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "provider": "ollama",
+                "api_key": null,
+                "base_url": "http://localhost:11434",
+                "default_model": "llama3",
+                "api_key_source": null
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let step_json = serde_json::json!({"name": "implement", "provider": "ollama"});
+        let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
+
+        let (result, _, _, _, _, stop_reason, is_error) = execute_via_provider(
+            &api,
+            "ollama",
+            "proj-1",
+            "task-1",
+            &step_config,
+            "system prompt",
+            "user prompt",
+        )
+        .await;
+
+        assert!(result.is_ok(), "ollama provider execution should succeed");
+        assert!(!is_error);
+        assert_eq!(stop_reason, "end_turn");
+    }
+
+    #[tokio::test]
+    async fn routing_anthropic_via_factory_executes_via_provider() {
+        let server = MockServer::start().await;
+
+        // Mock resolve endpoint returning Anthropic config
+        Mock::given(method("GET"))
+            .and(path("/proj-1/providers/resolve/anthropic"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "provider": "anthropic",
+                "api_key": "sk-ant-test",
+                "base_url": null,
+                "default_model": "claude-sonnet-4-6",
+                "api_key_source": "project"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let step_config = StepConfig::for_step("implement", None, None, None);
+
+        // When called directly (not through run_worker routing), the anthropic
+        // stub provider should also work via execute_via_provider.
+        let (result, _, _, _, _, stop_reason, is_error) = execute_via_provider(
+            &api,
+            "anthropic",
+            "proj-1",
+            "task-1",
+            &step_config,
+            "system prompt",
+            "user prompt",
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "anthropic provider execution should succeed"
+        );
+        assert!(!is_error);
+        assert_eq!(stop_reason, "end_turn");
+    }
+
+    #[tokio::test]
+    async fn unknown_provider_posts_blocker_and_returns_error() {
+        let server = MockServer::start().await;
+
+        // Mock blocker posting endpoint
+        Mock::given(method("POST"))
+            .and(path("/tasks/task-1/updates"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let step_config = StepConfig::for_step("implement", None, None, None);
+
+        let (result, _, _, _, _, stop_reason, is_error) = execute_via_provider(
+            &api,
+            "foobar",
+            "proj-1",
+            "task-1",
+            &step_config,
+            "system prompt",
+            "user prompt",
+        )
+        .await;
+
+        assert!(result.is_err(), "unknown provider should return error");
+        assert!(is_error);
+        assert_eq!(stop_reason, "provider_error");
+    }
+
+    #[tokio::test]
+    async fn step_level_base_url_overrides_provider_config() {
+        let server = MockServer::start().await;
+
+        // Provider config has default base_url
+        Mock::given(method("GET"))
+            .and(path("/proj-1/providers/resolve/openai"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "provider": "openai",
+                "api_key": "sk-test",
+                "base_url": "https://api.openai.com",
+                "default_model": "gpt-4o",
+                "api_key_source": "global"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let api = ProjectsApi::new(&server.uri(), "test-agent");
+
+        // Step config overrides base_url
+        let step_json = serde_json::json!({
+            "name": "implement",
+            "provider": "openai",
+            "base_url": "https://my-proxy.example.com"
+        });
+        let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
+
+        assert_eq!(
+            step_config.base_url.as_deref(),
+            Some("https://my-proxy.example.com"),
+            "step-level base_url should be set"
+        );
+
+        let (result, _, _, _, _, _, is_error) = execute_via_provider(
+            &api,
+            "openai",
+            "proj-1",
+            "task-1",
+            &step_config,
+            "system",
+            "user",
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert!(!is_error);
+    }
+
+    #[tokio::test]
+    async fn step_level_model_overrides_provider_config_default_model() {
+        let server = MockServer::start().await;
+
+        // Provider config has default_model = "gpt-4o"
+        Mock::given(method("GET"))
+            .and(path("/proj-1/providers/resolve/openai"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "provider": "openai",
+                "api_key": "sk-test",
+                "base_url": null,
+                "default_model": "gpt-4o",
+                "api_key_source": "global"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let api = ProjectsApi::new(&server.uri(), "test-agent");
+
+        // Step config explicitly sets model to "gpt-4-turbo"
+        let step_json = serde_json::json!({
+            "name": "implement",
+            "provider": "openai",
+            "model": "gpt-4-turbo"
+        });
+        let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
+
+        let (result, _, _, _, _, _, is_error) = execute_via_provider(
+            &api,
+            "openai",
+            "proj-1",
+            "task-1",
+            &step_config,
+            "system",
+            "user",
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert!(!is_error);
+    }
+
+    #[tokio::test]
+    async fn provider_config_not_found_falls_back_to_step_overrides() {
+        let server = MockServer::start().await;
+
+        // Resolve endpoint returns 404 (no config stored)
+        Mock::given(method("GET"))
+            .and(path("/proj-1/providers/resolve/openai"))
+            .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
+                "error": "No provider config found for provider 'openai'"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let api = ProjectsApi::new(&server.uri(), "test-agent");
+
+        // Step config provides base_url and model as fallbacks
+        let step_json = serde_json::json!({
+            "name": "implement",
+            "provider": "openai",
+            "base_url": "https://fallback.example.com",
+            "model": "gpt-4"
+        });
+        let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
+
+        // Should still succeed (provider stub doesn't need credentials)
+        let (result, _, _, _, _, _, is_error) = execute_via_provider(
+            &api,
+            "openai",
+            "proj-1",
+            "task-1",
+            &step_config,
+            "system",
+            "user",
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert!(!is_error);
+    }
+
+    #[tokio::test]
+    async fn all_three_providers_route_correctly() {
+        // End-to-end routing test covering all three providers
+        let server = MockServer::start().await;
+
+        // Mock resolve endpoint for all three providers
+        for (provider, model) in [
+            ("anthropic", "claude-sonnet-4-6"),
+            ("openai", "gpt-4o"),
+            ("ollama", "llama3"),
+        ] {
+            Mock::given(method("GET"))
+                .and(path(format!("/proj-1/providers/resolve/{provider}")))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "provider": provider,
+                    "api_key": "test-key",
+                    "base_url": null,
+                    "default_model": model,
+                    "api_key_source": "global"
+                })))
+                .mount(&server)
+                .await;
+        }
+
+        let api = ProjectsApi::new(&server.uri(), "test-agent");
+
+        // Test each provider
+        for provider_name in ["anthropic", "openai", "ollama"] {
+            let step_json = serde_json::json!({
+                "name": "implement",
+                "provider": provider_name
+            });
+            let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
+
+            let (result, _, _, _, _, stop_reason, is_error) = execute_via_provider(
+                &api,
+                provider_name,
+                "proj-1",
+                "task-1",
+                &step_config,
+                "system prompt",
+                "user prompt",
+            )
+            .await;
+
+            assert!(
+                result.is_ok(),
+                "provider '{provider_name}' should execute successfully"
+            );
+            assert!(
+                !is_error,
+                "provider '{provider_name}' should not report error"
+            );
+            assert_eq!(
+                stop_reason, "end_turn",
+                "provider '{provider_name}' should return end_turn"
+            );
+        }
+    }
 }

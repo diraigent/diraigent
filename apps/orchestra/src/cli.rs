@@ -7,6 +7,7 @@ mod crypto;
 mod diraigent_config;
 mod git;
 mod prompt;
+mod providers;
 mod step_profile;
 mod task_id;
 mod util;
