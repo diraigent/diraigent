@@ -63,8 +63,43 @@ export interface CiRunFilters {
   per_page?: number;
 }
 
+export interface ForgejoIntegrationResponse {
+  id: string;
+  project_id: string;
+  base_url: string;
+  webhook_url: string;
+  webhook_secret: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateForgejoIntegration {
+  base_url: string;
+  token?: string;
+}
+
+export interface SyncForgejoResponse {
+  synced: number;
+  errors: number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class CiApiService extends BaseApiService {
+  registerForgejo(projectId: string, req: CreateForgejoIntegration): Observable<ForgejoIntegrationResponse> {
+    return this.http.post<ForgejoIntegrationResponse>(
+      `${this.baseUrl}/${projectId}/integrations/forgejo`,
+      req,
+    );
+  }
+
+  syncForgejo(projectId: string): Observable<SyncForgejoResponse> {
+    return this.http.post<SyncForgejoResponse>(
+      `${this.baseUrl}/${projectId}/forgejo/sync`,
+      {},
+    );
+  }
+
   listRuns(projectId: string, filters?: CiRunFilters): Observable<PaginatedResponse<CiRun>> {
     let params = new HttpParams();
     if (filters?.branch) params = params.set('branch', filters.branch);

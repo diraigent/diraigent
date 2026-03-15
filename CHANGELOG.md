@@ -1,6 +1,18 @@
 # Changelog
 
 
+## v20260315-2323-developer (2026-03-15)
+
+### Added
+- **Web**: Forgejo CI onboarding UI with 3-step setup wizard (connect instance, configure webhook, verify integration)
+- **Web**: CI pipelines page with table view, status filters, and auto-polling
+- **Web**: Pipeline run detail page with job and step drilldown
+- **Web**: CI API service for fetching pipeline data and registering Forgejo integrations
+- **Web**: German and English i18n strings for pipelines and Forgejo setup flows
+
+---
+
+
 ## v20260316-developer (2026-03-16)
 
 ### Added
