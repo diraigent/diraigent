@@ -808,4 +808,24 @@ pub trait DiraigentDb: Send + Sync {
         req: &UpdateProviderConfig,
     ) -> Result<ProviderConfig, AppError>;
     async fn delete_provider_config(&self, id: Uuid) -> Result<(), AppError>;
+
+    // ── Forgejo CI ────────────────────────────────────────────────────────────
+    async fn get_forgejo_integration(&self, id: Uuid) -> Result<ForgejoIntegration, AppError>;
+    async fn get_forgejo_integration_by_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<ForgejoIntegration, AppError>;
+    #[allow(clippy::too_many_arguments)]
+    async fn upsert_ci_run(
+        &self,
+        project_id: Uuid,
+        forgejo_run_id: i64,
+        workflow_name: &str,
+        status: &str,
+        branch: Option<&str>,
+        commit_sha: Option<&str>,
+        triggered_by: Option<&str>,
+        started_at: Option<chrono::DateTime<chrono::Utc>>,
+        finished_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<CiRun, AppError>;
 }

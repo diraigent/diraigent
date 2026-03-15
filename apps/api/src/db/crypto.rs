@@ -1945,4 +1945,41 @@ impl DiraigentDb for CryptoDb {
     async fn delete_provider_config(&self, id: Uuid) -> Result<(), AppError> {
         delegate!(self, delete_provider_config, id)
     }
+
+    // Forgejo CI — no encryption needed for these fields
+    async fn get_forgejo_integration(&self, id: Uuid) -> Result<ForgejoIntegration, AppError> {
+        delegate!(self, get_forgejo_integration, id)
+    }
+    async fn get_forgejo_integration_by_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<ForgejoIntegration, AppError> {
+        delegate!(self, get_forgejo_integration_by_project, project_id)
+    }
+    async fn upsert_ci_run(
+        &self,
+        project_id: Uuid,
+        forgejo_run_id: i64,
+        workflow_name: &str,
+        status: &str,
+        branch: Option<&str>,
+        commit_sha: Option<&str>,
+        triggered_by: Option<&str>,
+        started_at: Option<chrono::DateTime<chrono::Utc>>,
+        finished_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<CiRun, AppError> {
+        delegate!(
+            self,
+            upsert_ci_run,
+            project_id,
+            forgejo_run_id,
+            workflow_name,
+            status,
+            branch,
+            commit_sha,
+            triggered_by,
+            started_at,
+            finished_at
+        )
+    }
 }

@@ -8,7 +8,7 @@ CREATE TABLE diraigent.forgejo_integration (
     project_id      uuid NOT NULL REFERENCES diraigent.project(id) ON DELETE CASCADE,
     base_url        text NOT NULL,
     token           text,                -- encrypted at rest via CryptoDb; optional PAT for API access
-    webhook_secret  text,                -- SHA-256 hash of the webhook secret
+    webhook_secret  text,                -- raw webhook secret used as HMAC-SHA256 key
     enabled         boolean DEFAULT true NOT NULL,
     created_at      timestamp with time zone DEFAULT now() NOT NULL,
     updated_at      timestamp with time zone DEFAULT now() NOT NULL,

@@ -7,6 +7,7 @@ mod decisions;
 mod event_rules;
 mod events;
 mod files;
+mod forgejo_webhooks;
 mod git;
 mod integrations;
 mod knowledge;
@@ -104,5 +105,6 @@ pub fn router() -> Router<AppState> {
         .merge(provider_configs::routes())
         .merge(reports::routes())
         .merge(task_logs::routes())
+        .merge(forgejo_webhooks::routes())
         .merge(ws::routes())
 }
