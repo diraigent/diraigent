@@ -6,7 +6,9 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::AuthUser;
-use crate::authz::{OptionalAgentId, require_authority, require_membership};
+use crate::authz::{
+    OptionalAgentId, require_authority, require_membership, require_tenant_manage_authority,
+};
 use crate::error::AppError;
 use crate::models::*;
 use crate::tenant::TenantContext;
@@ -81,11 +83,13 @@ async fn list_project_configs(
 
 async fn create_global_config(
     State(state): State<AppState>,
-    AuthUser(_user_id): AuthUser,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
     tenant: TenantContext,
     Json(req): Json<CreateProviderConfig>,
 ) -> Result<(StatusCode, Json<ProviderConfig>), AppError> {
     validation::validate_create_provider_config(&req)?;
+    require_tenant_manage_authority(state.db.as_ref(), agent_id, user_id, tenant.tenant_id).await?;
     let pc = state
         .db
         .create_provider_config(tenant.tenant_id, None, &req)
@@ -96,6 +100,7 @@ async fn create_global_config(
 async fn list_global_configs(
     State(state): State<AppState>,
     AuthUser(_user_id): AuthUser,
+    OptionalAgentId(_agent_id): OptionalAgentId,
     tenant: TenantContext,
     Query(filters): Query<ProviderConfigFilters>,
 ) -> Result<Json<PaginatedResponse<ProviderConfig>>, AppError> {
@@ -152,6 +157,9 @@ async fn update_config(
     }
     if let Some(project_id) = existing.project_id {
         require_authority(state.db.as_ref(), agent_id, user_id, project_id, "manage").await?;
+    } else {
+        require_tenant_manage_authority(state.db.as_ref(), agent_id, user_id, tenant.tenant_id)
+            .await?;
     }
     let pc = state.db.update_provider_config(id, &req).await?;
     Ok(Json(pc))
@@ -172,6 +180,9 @@ async fn delete_config(
     }
     if let Some(project_id) = existing.project_id {
         require_authority(state.db.as_ref(), agent_id, user_id, project_id, "manage").await?;
+    } else {
+        require_tenant_manage_authority(state.db.as_ref(), agent_id, user_id, tenant.tenant_id)
+            .await?;
     }
     state.db.delete_provider_config(id).await?;
     Ok(StatusCode::NO_CONTENT)
