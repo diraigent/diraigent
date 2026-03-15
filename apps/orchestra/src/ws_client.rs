@@ -444,9 +444,10 @@ Decompose the following work item into 3-8 concrete, implementable tasks. Each t
 - The first task must always have depends_on: [] (empty array)
 - Do NOT create meta-tasks like "review" or "deploy" — only implementation work
 
-Respond with ONLY a valid JSON object in this exact format, no markdown fences or extra text:
-{{"tasks": [{{"title": "...", "kind": "...", "spec": "...", "acceptance_criteria": ["..."], "depends_on": []}}, ...]}}"#
+Respond with a JSON object matching the required schema."#
     );
+
+    let json_schema = r#"{"type":"object","properties":{"tasks":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"kind":{"type":"string","enum":["feature","bug","refactor","test","docs"]},"spec":{"type":"string"},"acceptance_criteria":{"type":"array","items":{"type":"string"}},"depends_on":{"type":"array","items":{"type":"integer"}}},"required":["title","kind","spec","acceptance_criteria","depends_on"]}}},"required":["tasks"]}"#;
 
     // Spawn claude -p
     let mut child = match Command::new("claude")
@@ -460,8 +461,8 @@ Respond with ONLY a valid JSON object in this exact format, no markdown fences o
             "sonnet",
             "--max-turns",
             "1",
-            "--max-tokens",
-            "16000",
+            "--json-schema",
+            json_schema,
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
