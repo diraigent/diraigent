@@ -1,5 +1,54 @@
 # Changelog
 
+## v20260315-1702-developer (2026-03-15)
+
+### Added
+- **Orchestra**: Step executor routing — dispatch to provider based on step config
+- **Orchestra**: OllamaProvider with streaming NDJSON, typed errors, and tests
+- **Orchestra**: OpenAI provider with streaming SSE, error mapping, and integration tests
+- **Orchestra**: Modularized Anthropic provider with full streaming and error handling
+- **API**: Provider configs table with CRUD endpoints, encrypted API key storage, and resolution function
+- **API**: Authorization checks on global provider config endpoints
+- **API**: Provider and base_url fields on playbook step schema
+- **API**: Atomic apply-plan endpoint to prevent race conditions in plan task dependencies
+- **API**: State_entered_at timestamp on tasks table for staleness tracking
+- **API**: AI planning endpoint routed through orchestra via WebSocket
+- **Web**: Plan Tasks button and preview dialog in Work view
+- **Web**: Create & Execute button on work item creation form
+- **Web**: Execute button on work items that creates a task from work item fields
+- **Web**: Combined token usage charts into single multi-project graph
+- **Web**: Dependency-graph and goal-alignment scoring components in TaskScore
+- **Web**: Composite scoring integrated into ready-tasks query
+- **TUI**: Score breakdown display in agent-cli ready command
+- **CI/CD**: Version info section in Account Settings
+- **CI/CD**: Playwright demo recording spec and mocks
+
+### Changed
+- **Orchestra**: Refactored worker to use provider-based routing, simplifying execution logic
+- **Web**: Renamed Goals to Work across Angular frontend
+- **API**: Renamed Goals to Work in DB migration and API backend
+- **TUI**: Renamed Goal to Work in structs, views, API calls, and UI labels
+- **Web**: Sort completed work items by updated_at descending (most recent first)
+- **Orchestra**: Replaced direct Anthropic API call with claude subprocess for chat history compression
+- **Orchestra**: Closed human review → agent rework loop
+
+### Fixed
+- **API**: Merge rollback on push failure and broken provider routing tests
+- **API**: Plan_work empty response handling with stderr diagnostics
+- **Web**: Plan tasks being linked to wrong work item when selection changes during planning
+- **Web**: Mobile horizontal scrolling across all pages
+- **Web**: Git push error display showing [object Object] in work items UI
+- **Web**: Clear selected item when opening create form to prevent visual overlap
+- **Orchestra**: ws_client monorepo git provisioning using git_root instead of working_dir
+
+### Removed
+- **Web**: Standalone 'new task' button from /work page
+- **Web**: Link tasks button from work item detail view
+- **Web**: Nested scrolling from task detail view
+- **Web**: Lightweight expanded preview from task list
+
+---
+
 
 ## v20260315-1615-developer (2026-03-15)
 
