@@ -129,13 +129,13 @@ pub async fn promote_observation(
     id: Uuid,
     req: &PromoteObservation,
     created_by: Uuid,
-) -> Result<(Observation, Task), AppError> {
+) -> Result<(Observation, Work, Task), AppError> {
     let obs = get_observation_by_id(pool, id).await?;
     if obs.status == "acted_on" {
         return Err(AppError::Conflict("Observation already promoted".into()));
     }
 
-    let task_title = req.title.clone().unwrap_or_else(|| obs.title.clone());
+    let title = req.title.clone().unwrap_or_else(|| obs.title.clone());
     let kind = req.kind.clone().unwrap_or_else(|| "chore".to_string());
     let urgent = req.urgent.unwrap_or(false);
 
@@ -150,13 +150,32 @@ pub async fn promote_observation(
     };
     let context = serde_json::Value::Object(Default::default());
     let capabilities: Vec<String> = vec![];
+    let success_criteria = serde_json::json!([]);
+    let metadata = serde_json::json!({});
 
-    // Wrap both writes in a transaction so they succeed or fail atomically.
+    // Wrap all writes in a transaction so they succeed or fail atomically.
     let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
+    // 1. Create a Work item from the observation.
+    let work = sqlx::query_as::<_, Work>(
+        "INSERT INTO diraigent.work (project_id, title, description, work_type, priority, auto_status, success_criteria, metadata, created_by, sort_order)
+         VALUES ($1, $2, $3, 'epic', 0, true, $4, $5, $6,
+                 (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM diraigent.work WHERE project_id = $1))
+         RETURNING *",
+    )
+    .bind(obs.project_id)
+    .bind(&title)
+    .bind(&obs.description)
+    .bind(&success_criteria)
+    .bind(&metadata)
+    .bind(created_by)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    // 2. Create a Task within the work item.
     let task = sqlx::query_as::<_, Task>(
         "INSERT INTO diraigent.task
              (project_id, title, kind, state, urgent, context, required_capabilities,
@@ -165,7 +184,7 @@ pub async fn promote_observation(
          RETURNING *",
     )
     .bind(obs.project_id)
-    .bind(&task_title)
+    .bind(&title)
     .bind(&kind)
     .bind(&initial_state)
     .bind(urgent)
@@ -182,6 +201,17 @@ pub async fn promote_observation(
     .fetch_one(&mut *tx)
     .await?;
 
+    // 3. Link the task to the work item.
+    sqlx::query(
+        "INSERT INTO diraigent.task_work (work_id, task_id, position)
+         VALUES ($1, $2, 0)",
+    )
+    .bind(work.id)
+    .bind(task.id)
+    .execute(&mut *tx)
+    .await?;
+
+    // 4. Update the observation status.
     let updated = sqlx::query_as::<_, Observation>(
         "UPDATE diraigent.observation SET status = 'acted_on', resolved_task_id = $2 WHERE id = $1 RETURNING *",
     )
@@ -194,7 +224,7 @@ pub async fn promote_observation(
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    Ok((updated, task))
+    Ok((updated, work, task))
 }
 
 pub async fn delete_observation(pool: &PgPool, id: Uuid) -> Result<(), AppError> {

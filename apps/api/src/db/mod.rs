@@ -299,7 +299,7 @@ pub trait DiraigentDb: Send + Sync {
         obs_id: Uuid,
         req: &PromoteObservation,
         created_by: Uuid,
-    ) -> Result<(Observation, Task), AppError>;
+    ) -> Result<(Observation, Work, Task), AppError>;
     async fn count_observations(
         &self,
         project_id: Uuid,

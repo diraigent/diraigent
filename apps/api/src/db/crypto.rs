@@ -856,7 +856,7 @@ impl DiraigentDb for CryptoDb {
         obs_id: Uuid,
         req: &PromoteObservation,
         created_by: Uuid,
-    ) -> Result<(Observation, Task), AppError> {
+    ) -> Result<(Observation, Work, Task), AppError> {
         delegate!(self, promote_observation, obs_id, req, created_by)
     }
     async fn count_observations(
