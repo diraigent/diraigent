@@ -14,6 +14,7 @@ mod git_strategy;
 mod lockfile;
 mod log_monitor;
 mod pipeline;
+mod plan_handler;
 mod project_paths;
 mod prompt;
 mod providers;
@@ -24,6 +25,7 @@ mod task_id;
 mod util;
 mod worker;
 mod ws_client;
+mod ws_git_dispatch;
 mod ws_protocol;
 
 use anyhow::Result;
