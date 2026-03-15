@@ -452,6 +452,7 @@ Respond with ONLY a valid JSON object in this exact format, no markdown fences o
             "-p",
             "--output-format",
             "stream-json",
+            "--verbose",
             "--no-session-persistence",
             "--model",
             "sonnet",
