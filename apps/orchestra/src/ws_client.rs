@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 pub type WsSender = mpsc::UnboundedSender<WsMessage>;
 
@@ -524,17 +524,27 @@ Respond with a JSON object matching the required schema."#
     let mut lines = reader.lines();
     let mut accumulated_text = String::new();
     let mut is_error = false;
+    let mut total_lines: usize = 0;
+    let mut parsed_events: usize = 0;
+    let mut skipped_lines: Vec<String> = Vec::new();
 
     while let Ok(Some(line)) = lines.next_line().await {
         if line.trim().is_empty() {
             continue;
         }
+        total_lines += 1;
 
         let event: serde_json::Value = match serde_json::from_str(&line) {
             Ok(v) => v,
-            Err(_) => continue,
+            Err(_) => {
+                // Capture non-JSON lines for diagnostics (truncate to 200 chars)
+                let preview: String = line.chars().take(200).collect();
+                skipped_lines.push(preview);
+                continue;
+            }
         };
 
+        parsed_events += 1;
         let event_type = event["type"].as_str().unwrap_or("");
 
         match event_type {
@@ -581,7 +591,9 @@ Respond with a JSON object matching the required schema."#
                 }
                 break;
             }
-            _ => {}
+            _ => {
+                debug!(event_type, "plan request: unhandled event type");
+            }
         }
     }
 
@@ -600,7 +612,10 @@ Respond with a JSON object matching the required schema."#
 
     // Check for empty response before attempting JSON parse
     if accumulated_text.trim().is_empty() {
-        let mut msg = "Claude CLI returned empty response".to_string();
+        let mut msg = format!(
+            "Claude CLI returned empty response (stdout lines: {total_lines}, parsed events: {parsed_events}, skipped: {})",
+            skipped_lines.len()
+        );
         if let Ok(status) = &exit_status
             && !status.success()
         {
@@ -611,7 +626,12 @@ Respond with a JSON object matching the required schema."#
         if !stderr_trimmed.is_empty() {
             // Include up to 500 chars of stderr for diagnostics
             let truncated: String = stderr_trimmed.chars().take(500).collect();
-            msg.push_str(&format!(": {truncated}"));
+            msg.push_str(&format!(" stderr: {truncated}"));
+        }
+        if !skipped_lines.is_empty() {
+            let skipped_preview = skipped_lines.join(" | ");
+            let truncated: String = skipped_preview.chars().take(500).collect();
+            msg.push_str(&format!(" non-json output: {truncated}"));
         }
         warn!(msg = %msg, "plan request: empty claude response");
         send_error(sender, request_id, msg).await;
