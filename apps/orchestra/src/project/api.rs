@@ -424,6 +424,21 @@ impl ProjectsApi {
         self.post(&format!("/{project_id}/knowledge"), body).await
     }
 
+    /// List knowledge entries for a project, optionally filtered by tag.
+    pub async fn list_knowledge(
+        &self,
+        project_id: &str,
+        tag: Option<&str>,
+        limit: Option<i64>,
+    ) -> Result<Vec<Value>> {
+        let mut path = format!("/{project_id}/knowledge?limit={}", limit.unwrap_or(100));
+        if let Some(t) = tag {
+            path.push_str(&format!("&tag={t}"));
+        }
+        let val = self.get(&path).await?;
+        Ok(as_array(&val))
+    }
+
     pub async fn post_decision(&self, project_id: &str, body: &Value) -> Result<Value> {
         self.post(&format!("/{project_id}/decisions"), body).await
     }
