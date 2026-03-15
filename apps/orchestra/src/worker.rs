@@ -1261,7 +1261,7 @@ mod tests {
     async fn provider_config_not_found_falls_back_to_step_overrides() {
         let server = MockServer::start().await;
 
-        // Resolve endpoint returns 404 (no config stored)
+        // Resolve endpoint returns 404 (no config stored for ollama)
         Mock::given(method("GET"))
             .and(path("/proj-1/providers/resolve/ollama"))
             .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
