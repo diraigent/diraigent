@@ -460,7 +460,7 @@ Respond with a JSON object matching the required schema."#
             "--model",
             "sonnet",
             "--max-turns",
-            "1",
+            "2",
             "--json-schema",
             json_schema,
         ])
