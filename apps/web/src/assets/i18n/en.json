@@ -792,6 +792,17 @@
     "showing": "Showing",
     "of": "of",
     "prev": "Previous",
-    "next": "Next"
+    "next": "Next",
+    "detail": {
+      "loading": "Loading...",
+      "errorTitle": "Failed to load run",
+      "backToList": "Back to pipelines",
+      "duration": "Duration",
+      "jobs": "Jobs",
+      "noJobs": "No jobs found for this run.",
+      "noSteps": "No steps recorded for this job.",
+      "exitCode": "exit",
+      "autoPolling": "Auto-refreshing every 15s (run in progress)"
+    }
   }
 }
