@@ -42,18 +42,6 @@ pub async fn handle_plan_request(params: PlanRequestParams) {
         projects_path,
     } = params;
 
-    let send_error = |sender: WsSender, request_id: String, msg: String| async move {
-        let ws_msg = WsMessage::PlanResponse {
-            request_id,
-            success: false,
-            error: Some(msg),
-            tasks: serde_json::Value::Array(vec![]),
-        };
-        if let Err(e) = sender.send(ws_msg) {
-            error!("failed to send plan error via WS: {e}");
-        }
-    };
-
     // Resolve the project's working directory from the API.
     let working_dir = crate::project::paths::resolve_working_dir(&api, &project_id, &projects_path)
         .await
@@ -327,10 +315,7 @@ async fn handle_plan_via_provider(
     };
 
     // Resolve credentials from API
-    let provider_cfg = match api
-        .resolve_provider_config(project_id, provider_name)
-        .await
-    {
+    let provider_cfg = match api.resolve_provider_config(project_id, provider_name).await {
         Ok(cfg) => ProviderConfig {
             api_key: cfg["api_key"].as_str().map(String::from),
             base_url: cfg["base_url"].as_str().map(String::from),
