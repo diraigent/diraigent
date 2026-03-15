@@ -454,7 +454,7 @@ impl DiraigentDb for PostgresDb {
         obs_id: Uuid,
         req: &PromoteObservation,
         created_by: Uuid,
-    ) -> Result<(Observation, Task), AppError> {
+    ) -> Result<(Observation, Work, Task), AppError> {
         repository::promote_observation(&self.0, obs_id, req, created_by).await
     }
     async fn count_observations(

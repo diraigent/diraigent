@@ -59,8 +59,8 @@ export class ObservationsApiService extends BaseCrudApiService<SpObservation, Sp
     return this.http.post<SpObservation>(`${this.baseUrl}/observations/${id}/dismiss`, {});
   }
 
-  promote(id: string): Observable<{ task_id: string }> {
-    return this.http.post<{ task_id: string }>(`${this.baseUrl}/observations/${id}/promote`, {});
+  promote(id: string): Observable<{ observation: SpObservation; work: { id: string }; task: { id: string } }> {
+    return this.http.post<{ observation: SpObservation; work: { id: string }; task: { id: string } }>(`${this.baseUrl}/observations/${id}/promote`, {});
   }
 
   cleanup(): Observable<CleanupObservationsResult> {

@@ -177,7 +177,7 @@ const STATUSES: ObservationStatus[] = ['open', 'acknowledged', 'acted_on', 'dism
                         class="px-3 py-1.5 text-xs font-medium bg-ctp-overlay0/20 text-ctp-overlay0 rounded-lg hover:bg-ctp-overlay0/30">
                         {{ t('observations.dismiss') }}
                       </button>
-                      <button (click)="promoteToTask(item)"
+                      <button (click)="promoteToWork(item)"
                         class="px-3 py-1.5 text-xs font-medium bg-ctp-green/20 text-ctp-green rounded-lg hover:bg-ctp-green/30">
                         {{ t('observations.promote') }}
                       </button>
@@ -448,7 +448,7 @@ export class ObservationsPage {
     });
   }
 
-  promoteToTask(item: SpObservation): void {
+  promoteToWork(item: SpObservation): void {
     this.api.promote(item.id).subscribe({
       next: () => this.loadItems(),
     });
