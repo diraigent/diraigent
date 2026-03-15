@@ -16,6 +16,7 @@ mod log_monitor;
 mod pipeline;
 mod project_paths;
 mod prompt;
+mod providers;
 mod scheduler;
 mod spawner;
 mod step_profile;
