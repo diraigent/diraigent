@@ -18,6 +18,7 @@ mod observations;
 mod packages;
 mod playbooks;
 mod projects;
+mod provider_configs;
 mod related;
 mod reports;
 mod roles;
@@ -45,6 +46,7 @@ pub use observations::*;
 pub use packages::*;
 pub use playbooks::*;
 pub use projects::*;
+pub use provider_configs::*;
 pub use related::*;
 pub use reports::*;
 pub use roles::*;
@@ -92,6 +94,7 @@ pub(crate) enum Table {
     Package,
     Playbook,
     Project,
+    ProviderConfig,
     Report,
     Role,
     StepTemplate,
@@ -119,6 +122,7 @@ impl Table {
             Table::Package => "package",
             Table::Playbook => "playbook",
             Table::Project => "project",
+            Table::ProviderConfig => "provider_config",
             Table::Report => "report",
             Table::Role => "role",
             Table::StepTemplate => "step_template",
