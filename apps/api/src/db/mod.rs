@@ -781,4 +781,31 @@ pub trait DiraigentDb: Send + Sync {
         event_source: &str,
         event_severity: Option<&str>,
     ) -> Result<Vec<EventObservationRule>, AppError>;
+
+    // ── Provider Configs ──────────────────────────────────────────────────────
+    async fn create_provider_config(
+        &self,
+        tenant_id: Uuid,
+        project_id: Option<Uuid>,
+        req: &CreateProviderConfig,
+    ) -> Result<ProviderConfig, AppError>;
+    async fn get_provider_config(&self, id: Uuid) -> Result<ProviderConfig, AppError>;
+    async fn list_provider_configs(
+        &self,
+        tenant_id: Uuid,
+        project_id: Option<Uuid>,
+        filters: &ProviderConfigFilters,
+    ) -> Result<Vec<ProviderConfig>, AppError>;
+    async fn count_provider_configs(
+        &self,
+        tenant_id: Uuid,
+        project_id: Option<Uuid>,
+        filters: &ProviderConfigFilters,
+    ) -> Result<i64, AppError>;
+    async fn update_provider_config(
+        &self,
+        id: Uuid,
+        req: &UpdateProviderConfig,
+    ) -> Result<ProviderConfig, AppError>;
+    async fn delete_provider_config(&self, id: Uuid) -> Result<(), AppError>;
 }

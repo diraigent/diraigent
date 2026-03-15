@@ -13,6 +13,7 @@
 //!   decision.rationale        → "decision.rationale"
 //!   webhook.secret            → "webhook.secret"
 //!   changed_file.diff         → "changed_file.diff"
+//!   provider_config.api_key   → "provider_config.api_key"
 
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -107,6 +108,13 @@ impl CryptoDb {
     fn decrypt_changed_file(dek: &Dek, f: &mut ChangedFile) -> Result<(), CryptoError> {
         if let Some(ref d) = f.diff {
             f.diff = Some(dek.decrypt_str(d, "changed_file.diff")?);
+        }
+        Ok(())
+    }
+
+    fn decrypt_provider_config(dek: &Dek, pc: &mut ProviderConfig) -> Result<(), CryptoError> {
+        if let Some(ref key) = pc.api_key {
+            pc.api_key = Some(dek.decrypt_str(key, "provider_config.api_key")?);
         }
         Ok(())
     }
@@ -1837,5 +1845,104 @@ impl DiraigentDb for CryptoDb {
             event_source,
             event_severity
         )
+    }
+
+    // ── Provider Configs (encrypt api_key) ──
+    async fn create_provider_config(
+        &self,
+        tenant_id: Uuid,
+        project_id: Option<Uuid>,
+        req: &CreateProviderConfig,
+    ) -> Result<ProviderConfig, AppError> {
+        let dek = self.dek_for_tenant(tenant_id).await?;
+        if let Some(ref dek) = dek {
+            let encrypted_req = CreateProviderConfig {
+                provider: req.provider.clone(),
+                api_key: req
+                    .api_key
+                    .as_ref()
+                    .map(|k| dek.encrypt_str(k, "provider_config.api_key"))
+                    .transpose()?,
+                base_url: req.base_url.clone(),
+                default_model: req.default_model.clone(),
+            };
+            let mut pc = self
+                .inner
+                .create_provider_config(tenant_id, project_id, &encrypted_req)
+                .await?;
+            Self::decrypt_provider_config(dek, &mut pc)?;
+            Ok(pc)
+        } else {
+            self.inner
+                .create_provider_config(tenant_id, project_id, req)
+                .await
+        }
+    }
+
+    async fn get_provider_config(&self, id: Uuid) -> Result<ProviderConfig, AppError> {
+        let mut pc = self.inner.get_provider_config(id).await?;
+        if let Some(dek) = self.dek_for_tenant(pc.tenant_id).await? {
+            Self::decrypt_provider_config(&dek, &mut pc)?;
+        }
+        Ok(pc)
+    }
+
+    async fn list_provider_configs(
+        &self,
+        tenant_id: Uuid,
+        project_id: Option<Uuid>,
+        filters: &ProviderConfigFilters,
+    ) -> Result<Vec<ProviderConfig>, AppError> {
+        let mut items = self
+            .inner
+            .list_provider_configs(tenant_id, project_id, filters)
+            .await?;
+        if let Some(dek) = self.dek_for_tenant(tenant_id).await? {
+            for pc in &mut items {
+                Self::decrypt_provider_config(&dek, pc)?;
+            }
+        }
+        Ok(items)
+    }
+
+    async fn count_provider_configs(
+        &self,
+        tenant_id: Uuid,
+        project_id: Option<Uuid>,
+        filters: &ProviderConfigFilters,
+    ) -> Result<i64, AppError> {
+        delegate!(self, count_provider_configs, tenant_id, project_id, filters)
+    }
+
+    async fn update_provider_config(
+        &self,
+        id: Uuid,
+        req: &UpdateProviderConfig,
+    ) -> Result<ProviderConfig, AppError> {
+        let existing = self.inner.get_provider_config(id).await?;
+        let dek = self.dek_for_tenant(existing.tenant_id).await?;
+        if let Some(ref dek) = dek {
+            let encrypted_req = UpdateProviderConfig {
+                api_key: req
+                    .api_key
+                    .as_ref()
+                    .map(|k| dek.encrypt_str(k, "provider_config.api_key"))
+                    .transpose()?,
+                base_url: req.base_url.clone(),
+                default_model: req.default_model.clone(),
+            };
+            let mut pc = self
+                .inner
+                .update_provider_config(id, &encrypted_req)
+                .await?;
+            Self::decrypt_provider_config(dek, &mut pc)?;
+            Ok(pc)
+        } else {
+            self.inner.update_provider_config(id, req).await
+        }
+    }
+
+    async fn delete_provider_config(&self, id: Uuid) -> Result<(), AppError> {
+        delegate!(self, delete_provider_config, id)
     }
 }

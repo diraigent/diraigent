@@ -1986,3 +1986,52 @@ pub struct StaleTaskInfo {
     pub claimed_at: Option<DateTime<Utc>>,
     pub auto_release: bool,
 }
+
+// ── Provider Config Models ──
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ProviderConfig {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub project_id: Option<Uuid>,
+    pub provider: String,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+    pub default_model: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateProviderConfig {
+    pub provider: String,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+    pub default_model: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateProviderConfig {
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+    pub default_model: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct ProviderConfigFilters {
+    pub provider: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+/// Merged provider config produced by the resolution function.
+/// Project-level overrides global, with api_key falling back to global if absent.
+#[derive(Debug, Clone, Serialize)]
+pub struct ResolvedProviderConfig {
+    pub provider: String,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+    pub default_model: Option<String>,
+    /// Which config contributed the api_key: "project", "global", or null.
+    pub api_key_source: Option<String>,
+}

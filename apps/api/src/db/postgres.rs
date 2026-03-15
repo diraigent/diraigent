@@ -1396,4 +1396,43 @@ impl DiraigentDb for PostgresDb {
         )
         .await
     }
+
+    // Provider Configs
+    async fn create_provider_config(
+        &self,
+        tenant_id: Uuid,
+        project_id: Option<Uuid>,
+        req: &CreateProviderConfig,
+    ) -> Result<ProviderConfig, AppError> {
+        repository::create_provider_config(&self.0, tenant_id, project_id, req).await
+    }
+    async fn get_provider_config(&self, id: Uuid) -> Result<ProviderConfig, AppError> {
+        repository::get_provider_config(&self.0, id).await
+    }
+    async fn list_provider_configs(
+        &self,
+        tenant_id: Uuid,
+        project_id: Option<Uuid>,
+        filters: &ProviderConfigFilters,
+    ) -> Result<Vec<ProviderConfig>, AppError> {
+        repository::list_provider_configs(&self.0, tenant_id, project_id, filters).await
+    }
+    async fn count_provider_configs(
+        &self,
+        tenant_id: Uuid,
+        project_id: Option<Uuid>,
+        filters: &ProviderConfigFilters,
+    ) -> Result<i64, AppError> {
+        repository::count_provider_configs(&self.0, tenant_id, project_id, filters).await
+    }
+    async fn update_provider_config(
+        &self,
+        id: Uuid,
+        req: &UpdateProviderConfig,
+    ) -> Result<ProviderConfig, AppError> {
+        repository::update_provider_config(&self.0, id, req).await
+    }
+    async fn delete_provider_config(&self, id: Uuid) -> Result<(), AppError> {
+        repository::delete_provider_config(&self.0, id).await
+    }
 }
