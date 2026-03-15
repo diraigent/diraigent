@@ -491,6 +491,22 @@ Respond with ONLY a valid JSON object in this exact format, no markdown fences o
         }
     };
 
+    // Collect stderr concurrently to avoid pipe deadlocks and capture error diagnostics
+    let stderr_handle = child.stderr.take().map(|stderr| {
+        tokio::spawn(async move {
+            let reader = BufReader::new(stderr);
+            let mut lines_iter = reader.lines();
+            let mut buf = String::new();
+            while let Ok(Some(line)) = lines_iter.next_line().await {
+                if !buf.is_empty() {
+                    buf.push('\n');
+                }
+                buf.push_str(&line);
+            }
+            buf
+        })
+    });
+
     let reader = BufReader::new(stdout);
     let mut lines = reader.lines();
     let mut accumulated_text = String::new();
@@ -553,10 +569,36 @@ Respond with ONLY a valid JSON object in this exact format, no markdown fences o
         }
     }
 
-    let _ = child.wait().await;
+    let exit_status = child.wait().await;
+
+    // Collect stderr output
+    let stderr_text = match stderr_handle {
+        Some(handle) => handle.await.unwrap_or_default(),
+        None => String::new(),
+    };
 
     if is_error {
         send_error(sender, request_id, accumulated_text).await;
+        return;
+    }
+
+    // Check for empty response before attempting JSON parse
+    if accumulated_text.trim().is_empty() {
+        let mut msg = "Claude CLI returned empty response".to_string();
+        if let Ok(status) = &exit_status
+            && !status.success()
+        {
+            let code = status.code().unwrap_or(-1);
+            msg.push_str(&format!(" (exit code: {code})"));
+        }
+        let stderr_trimmed = stderr_text.trim();
+        if !stderr_trimmed.is_empty() {
+            // Include up to 500 chars of stderr for diagnostics
+            let truncated: String = stderr_trimmed.chars().take(500).collect();
+            msg.push_str(&format!(": {truncated}"));
+        }
+        warn!(msg = %msg, "plan request: empty claude response");
+        send_error(sender, request_id, msg).await;
         return;
     }
 
@@ -585,10 +627,11 @@ Respond with ONLY a valid JSON object in this exact format, no markdown fences o
                 text = %json_text,
                 "failed to parse plan response as JSON"
             );
+            let preview: String = json_text.chars().take(200).collect();
             send_error(
                 sender,
                 request_id,
-                format!("Failed to parse AI response as JSON: {e}"),
+                format!("Failed to parse AI response as JSON: {e} (preview: {preview})"),
             )
             .await;
             return;
