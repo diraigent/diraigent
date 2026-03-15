@@ -422,6 +422,18 @@ pub struct Task {
     pub cost_usd: f64,
 }
 
+/// Task with an attached composite score, returned by the ready-tasks endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScoredTask {
+    #[serde(flatten)]
+    pub task: Task,
+    /// Composite score used for ordering. Higher = more important.
+    pub score: f64,
+    /// Per-component score breakdown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score_components: Option<crate::scoring::TaskScore>,
+}
+
 /// Lightweight decision summary embedded in task responses.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecisionSummary {

@@ -3,6 +3,7 @@ use axum::http::StatusCode;
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::AppState;
@@ -180,12 +181,102 @@ async fn list_ready_tasks(
     OptionalAgentId(agent_id): OptionalAgentId,
     Path(project_id): Path<Uuid>,
     Query(pagination): Query<Pagination>,
-) -> Result<Json<Vec<Task>>, AppError> {
+) -> Result<Json<Vec<ScoredTask>>, AppError> {
     require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
-    let limit = pagination.limit.unwrap_or(50).min(100);
-    let offset = pagination.offset.unwrap_or(0);
-    let tasks = state.db.list_ready_tasks(project_id, limit, offset).await?;
-    Ok(Json(tasks))
+    let limit = pagination.limit.unwrap_or(50).min(100) as usize;
+    let offset = pagination.offset.unwrap_or(0) as usize;
+
+    // Fetch all ready tasks (unscored, up to 500 for scoring)
+    let tasks = state.db.list_ready_tasks(project_id, 500, 0).await?;
+
+    if tasks.is_empty() {
+        return Ok(Json(vec![]));
+    }
+
+    let task_ids: Vec<Uuid> = tasks.iter().map(|t| t.id).collect();
+
+    // Batch-load blocking counts: how many tasks each ready task blocks
+    let blocking_counts = batch_blocking_counts(&state.pool, &task_ids).await?;
+
+    // Batch-load active work priorities linked to each task
+    let work_priorities = batch_work_priorities(&state.pool, &task_ids).await?;
+
+    let now = chrono::Utc::now();
+    let weights = crate::scoring::ScoreWeights::default();
+
+    // Compute scores and build ScoredTask list
+    let mut scored: Vec<ScoredTask> = tasks
+        .into_iter()
+        .map(|task| {
+            let input = crate::scoring::TaskScoreInput {
+                created_at: task.created_at,
+                urgent: task.urgent,
+                blocking_count: *blocking_counts.get(&task.id).unwrap_or(&0),
+                work_priorities: work_priorities.get(&task.id).cloned().unwrap_or_default(),
+            };
+            let score = crate::scoring::compute_score(&input, now, &weights);
+            ScoredTask {
+                score: score.total,
+                score_components: Some(score),
+                task,
+            }
+        })
+        .collect();
+
+    // Sort by total score descending
+    scored.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Apply pagination in-memory after scoring
+    let paginated: Vec<ScoredTask> = scored.into_iter().skip(offset).take(limit).collect();
+
+    Ok(Json(paginated))
+}
+
+/// Batch-fetch how many downstream tasks each task blocks.
+/// Returns a map of task_id → number of tasks that depend on it.
+async fn batch_blocking_counts(
+    pool: &sqlx::PgPool,
+    task_ids: &[Uuid],
+) -> Result<HashMap<Uuid, i64>, AppError> {
+    let rows: Vec<(Uuid, i64)> = sqlx::query_as(
+        "SELECT td.depends_on AS task_id, COUNT(*)::bigint AS cnt
+         FROM diraigent.task_dependency td
+         WHERE td.depends_on = ANY($1)
+         GROUP BY td.depends_on",
+    )
+    .bind(task_ids)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().collect())
+}
+
+/// Batch-fetch active work item priorities linked to each task.
+/// Returns a map of task_id → list of work priorities.
+async fn batch_work_priorities(
+    pool: &sqlx::PgPool,
+    task_ids: &[Uuid],
+) -> Result<HashMap<Uuid, Vec<i32>>, AppError> {
+    let rows: Vec<(Uuid, i32)> = sqlx::query_as(
+        "SELECT tw.task_id, w.priority
+         FROM diraigent.task_work tw
+         JOIN diraigent.work w ON tw.work_id = w.id
+         WHERE tw.task_id = ANY($1)
+           AND w.status IN ('active', 'ready', 'processing')",
+    )
+    .bind(task_ids)
+    .fetch_all(pool)
+    .await?;
+
+    let mut map: HashMap<Uuid, Vec<i32>> = HashMap::new();
+    for (task_id, priority) in rows {
+        map.entry(task_id).or_default().push(priority);
+    }
+    Ok(map)
 }
 
 async fn list_blocked_task_ids(
