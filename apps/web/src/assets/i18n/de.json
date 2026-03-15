@@ -239,6 +239,7 @@
     "linkTask": "Aufgabe verknüpfen",
     "createTaskBtn": "Aufgabe hinzufügen",
     "executeBtn": "Ausführen",
+    "createAndExecute": "Erstellen & Ausführen",
     "startAllBtn": "Alle starten",
     "taskIdPlaceholder": "Aufgaben-ID",
     "link": "Verknüpfen",
