@@ -438,7 +438,7 @@ Decompose the following work item into 3-8 concrete, implementable tasks. Each t
 - Order tasks by dependency (tasks that must be done first come first)
 - Each task must have a clear, specific scope
 - kind must be one of: feature, bug, refactor, test, docs
-- spec should be a detailed technical description of what to implement
+- spec should be a concise technical description of what to implement (2-4 sentences, not a full design doc)
 - acceptance_criteria should be verifiable conditions (not vague)
 - depends_on is an array of zero-based indices referencing earlier tasks in this list that must complete first
 - The first task must always have depends_on: [] (empty array)
@@ -458,6 +458,10 @@ Respond with ONLY a valid JSON object in this exact format, no markdown fences o
             "--no-session-persistence",
             "--model",
             "sonnet",
+            "--max-turns",
+            "1",
+            "--max-tokens",
+            "16000",
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

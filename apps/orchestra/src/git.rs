@@ -328,11 +328,17 @@ impl WorktreeManager {
             *self.last_fetch.lock().unwrap() = None;
         }
 
+        // Save pre-merge HEAD so we can roll back if push fails.
+        let pre_merge_head = self
+            .git_output(&["rev-parse", "HEAD"])
+            .context("save pre-merge HEAD")?
+            .trim()
+            .to_string();
+
         // Attempt merge
         match self.git(&["merge", "--no-edit", &branch]) {
             Ok(_) => {
                 info!("merged {branch} -> {target_branch}");
-                self.git(&["branch", "-d", &branch]).ok();
                 if self.auto_push.load(Ordering::Relaxed) {
                     // Delete remote branch if it was pushed
                     if self
@@ -345,11 +351,27 @@ impl WorktreeManager {
                             info!("deleted remote branch {branch}");
                         }
                     }
-                    // Push merged target to origin, retrying on concurrent changes
-                    self.push_branch_with_retry(target_branch)?;
+                    // Push merged target to origin, retrying on concurrent changes.
+                    // If push fails, roll back the local merge to avoid leaving the
+                    // target branch in a diverged state (the task branch is preserved
+                    // so the merge can be retried later).
+                    if let Err(e) = self.push_branch_with_retry(target_branch) {
+                        error!(
+                            "push failed after merge, resetting {target_branch} to pre-merge state: {e}"
+                        );
+                        self.git(&["reset", "--hard", &pre_merge_head]).ok();
+                        *self.last_fetch.lock().unwrap() = None;
+                        bail!(
+                            "push {target_branch} failed after merge of {branch}: {e}; \
+                             local branch reset to pre-merge state"
+                        );
+                    }
+                    // Push succeeded — safe to delete the local task branch now
+                    self.git(&["branch", "-d", &branch]).ok();
                     *self.last_fetch.lock().unwrap() = None;
                 } else {
                     info!("auto_push disabled, skipping push to origin");
+                    self.git(&["branch", "-d", &branch]).ok();
                 }
                 Ok(())
             }
@@ -1736,7 +1758,7 @@ mod tests {
         );
     }
 
-    // ── Test 4: Rebase-fail fallthrough — merge still proceeds ─────
+    // ── Test 4: Rebase-fail fallthrough — merge rolls back on push failure ─
 
     #[test]
     fn merge_to_main_rebase_fail_falls_through_to_merge() {
@@ -1771,23 +1793,32 @@ mod tests {
 
         create_task_branch(&local, task_id);
 
+        // Record pre-merge HEAD
+        let pre_merge_head = git(&local, &["rev-parse", "main"]).trim().to_string();
+
         // merge_to_main with auto_push=true: pull --rebase will fail (no origin), but
-        // merge should proceed. push_main_with_retry will also fail, so the function
-        // returns Err overall.
+        // merge should proceed. push_branch_with_retry will also fail, so the function
+        // returns Err overall and the local merge is rolled back.
         let result = mgr.merge_to_main(task_id);
         assert!(
             result.is_err(),
             "should return error because push to origin fails"
         );
 
-        // The merge itself should have succeeded — task commit is on local main
+        // The local main branch should have been reset to its pre-merge state
+        // (no stale merge commit left behind).
+        let post_head = git(&local, &["rev-parse", "main"]).trim().to_string();
+        assert_eq!(
+            pre_merge_head, post_head,
+            "local main should be reset to pre-merge HEAD after push failure"
+        );
         let log = git(&local, &["log", "--oneline", "main"]);
         assert!(
-            log.contains("task work"),
-            "merge commit should be on local main despite push failure, got: {log}"
+            !log.contains("task work"),
+            "merge commit should NOT be on local main after rollback, got: {log}"
         );
 
-        // The task branch should be deleted (merge was successful before push failed)
+        // The task branch should be preserved (not deleted) so it can be retried
         let branch = TaskId::new(task_id).branch_name();
         let branch_exists = Command::new("git")
             .arg("-C")
@@ -1798,8 +1829,8 @@ mod tests {
             .status
             .success();
         assert!(
-            !branch_exists,
-            "branch should be deleted after successful merge"
+            branch_exists,
+            "task branch should be preserved after push failure for retry"
         );
     }
 
