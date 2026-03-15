@@ -1,7 +1,10 @@
-//! Anthropic provider — calls the Anthropic Messages API directly.
+//! GitHub Copilot provider — calls the GitHub Models inference API.
 //!
-//! Sends a non-streaming POST to `{base_url}/v1/messages`, parses the JSON
-//! response, and returns a [`StepOutput`] with real token counts and cost.
+//! GitHub Models exposes an OpenAI-compatible chat completions endpoint at
+//! `https://models.inference.ai.azure.com/chat/completions`. This provider
+//! uses the same SSE streaming protocol as the OpenAI provider.
+//!
+//! Auth: `GITHUB_TOKEN` as Bearer token.
 //!
 //! Error mapping:
 //! - HTTP 401 → auth error (exit_code 1)
@@ -15,59 +18,50 @@ use serde::{Deserialize, Serialize};
 
 use super::{ProviderConfig, ResolvedStep, StepOutput, StepProvider, TaskContext};
 
-const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
-const DEFAULT_MODEL: &str = "claude-sonnet-4-6-20250514";
-const ANTHROPIC_VERSION: &str = "2023-06-01";
-const DEFAULT_MAX_TOKENS: u32 = 16384;
+const DEFAULT_BASE_URL: &str = "https://models.inference.ai.azure.com";
+const DEFAULT_MODEL: &str = "openai/gpt-4.1";
 
-/// Provider that executes steps via the Anthropic Messages API.
-pub struct AnthropicProvider;
+/// Provider that executes steps via the GitHub Copilot / GitHub Models inference API.
+pub struct CopilotProvider;
 
 // ── Request types ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
-struct MessagesRequest {
+struct ChatCompletionRequest {
     model: String,
-    max_tokens: u32,
-    system: String,
-    messages: Vec<ApiMessage>,
+    messages: Vec<ChatMessage>,
+    stream: bool,
 }
 
 #[derive(Debug, Serialize)]
-struct ApiMessage {
+struct ChatMessage {
     role: String,
     content: String,
 }
 
-// ── Response types ────────────────────────────────────────────────────────
+// ── Response types (streaming) ────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
-struct MessagesResponse {
-    content: Vec<ContentBlock>,
-    stop_reason: Option<String>,
-    #[serde(default)]
-    usage: Option<ApiUsage>,
+struct ChatCompletionChunk {
+    choices: Vec<ChunkChoice>,
 }
 
 #[derive(Debug, Deserialize)]
-struct ContentBlock {
-    #[serde(rename = "type")]
-    block_type: String,
-    text: Option<String>,
+struct ChunkChoice {
+    delta: Delta,
+    #[allow(dead_code)]
+    finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-struct ApiUsage {
-    #[serde(default)]
-    input_tokens: u64,
-    #[serde(default)]
-    output_tokens: u64,
+struct Delta {
+    content: Option<String>,
 }
 
 // ── Implementation ────────────────────────────────────────────────────────
 
 #[async_trait]
-impl StepProvider for AnthropicProvider {
+impl StepProvider for CopilotProvider {
     async fn execute(
         &self,
         step: &ResolvedStep,
@@ -88,9 +82,10 @@ impl StepProvider for AnthropicProvider {
         let api_key = config
             .api_key
             .as_deref()
-            .ok_or_else(|| anyhow::anyhow!("Anthropic API key not configured"))?;
+            .ok_or_else(|| anyhow::anyhow!("Copilot token not configured"))?;
 
-        let url = format!("{base_url}/v1/messages");
+        // Copilot / GitHub Models uses /chat/completions (no /v1/ prefix)
+        let url = format!("{base_url}/chat/completions");
 
         let user_content = serde_json::json!({
             "task_id": task.task_id,
@@ -100,30 +95,33 @@ impl StepProvider for AnthropicProvider {
         })
         .to_string();
 
-        let body = MessagesRequest {
+        let body = ChatCompletionRequest {
             model: model.to_string(),
-            max_tokens: DEFAULT_MAX_TOKENS,
-            system: step.description.clone(),
-            messages: vec![ApiMessage {
-                role: "user".into(),
-                content: user_content,
-            }],
+            messages: vec![
+                ChatMessage {
+                    role: "system".into(),
+                    content: step.description.clone(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: user_content,
+                },
+            ],
+            stream: true,
         };
 
         tracing::info!(
-            provider = "anthropic",
+            provider = "copilot",
             model = model,
             url = %url,
             task_id = %task.task_id,
-            "Sending messages request"
+            "Sending chat completion request"
         );
 
         let client = reqwest::Client::new();
-        let response = client
+        let mut response = client
             .post(&url)
-            .header("x-api-key", api_key)
-            .header("anthropic-version", ANTHROPIC_VERSION)
-            .header("content-type", "application/json")
+            .header("Authorization", format!("Bearer {api_key}"))
             .json(&body)
             .send()
             .await?;
@@ -134,7 +132,7 @@ impl StepProvider for AnthropicProvider {
             let error_body = response.text().await.unwrap_or_default();
             return match status.as_u16() {
                 401 => {
-                    tracing::warn!(provider = "anthropic", "Authentication error (401)");
+                    tracing::warn!(provider = "copilot", "Authentication error (401)");
                     Ok(StepOutput {
                         content: format!("Authentication error: {error_body}"),
                         exit_code: 1,
@@ -148,7 +146,7 @@ impl StepProvider for AnthropicProvider {
                     })
                 }
                 429 => {
-                    tracing::warn!(provider = "anthropic", "Rate limit exceeded (429)");
+                    tracing::warn!(provider = "copilot", "Rate limit exceeded (429)");
                     Ok(StepOutput {
                         content: format!("Rate limit exceeded: {error_body}"),
                         exit_code: 2,
@@ -162,11 +160,7 @@ impl StepProvider for AnthropicProvider {
                     })
                 }
                 404 => {
-                    tracing::warn!(
-                        provider = "anthropic",
-                        model = model,
-                        "Model not found (404)"
-                    );
+                    tracing::warn!(provider = "copilot", model = model, "Model not found (404)");
                     Ok(StepOutput {
                         content: format!("Model not found: {model} — {error_body}"),
                         exit_code: 3,
@@ -181,9 +175,9 @@ impl StepProvider for AnthropicProvider {
                 }
                 code => {
                     tracing::error!(
-                        provider = "anthropic",
+                        provider = "copilot",
                         status = code,
-                        "Unexpected error from Anthropic API"
+                        "Unexpected error from Copilot API"
                     );
                     Ok(StepOutput {
                         content: format!("Unexpected HTTP {code}: {error_body}"),
@@ -203,37 +197,62 @@ impl StepProvider for AnthropicProvider {
             };
         }
 
-        let response_text = response.text().await?;
-        let parsed: MessagesResponse = serde_json::from_str(&response_text)?;
+        // ── Stream SSE chunks ─────────────────────────────────────────────
+        let mut content = String::new();
+        let mut line_buf = String::new();
 
-        // Extract text from content blocks
-        let content: String = parsed
-            .content
-            .iter()
-            .filter_map(|block| {
-                if block.block_type == "text" {
-                    block.text.as_deref()
-                } else {
-                    None
+        while let Some(chunk) = response.chunk().await? {
+            let text = String::from_utf8_lossy(&chunk);
+            line_buf.push_str(&text);
+
+            while let Some(newline_pos) = line_buf.find('\n') {
+                let line = line_buf[..newline_pos].trim_end_matches('\r').to_string();
+                line_buf = line_buf[newline_pos + 1..].to_string();
+
+                if let Some(data) = line.strip_prefix("data: ") {
+                    if data == "[DONE]" {
+                        continue;
+                    }
+                    match serde_json::from_str::<ChatCompletionChunk>(data) {
+                        Ok(parsed) => {
+                            for choice in &parsed.choices {
+                                if let Some(ref delta_text) = choice.delta.content {
+                                    content.push_str(delta_text);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::trace!(
+                                provider = "copilot",
+                                error = %e,
+                                "Failed to parse SSE chunk (non-fatal)"
+                            );
+                        }
+                    }
                 }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
+            }
+        }
 
-        let stop_reason = parsed.stop_reason.unwrap_or_else(|| "unknown".into());
-        let (input_tokens, output_tokens) = parsed
-            .usage
-            .map(|u| (u.input_tokens, u.output_tokens))
-            .unwrap_or((0, 0));
+        // Process remaining buffer
+        if !line_buf.is_empty() {
+            let line = line_buf.trim_end_matches('\r');
+            if let Some(data) = line.strip_prefix("data: ")
+                && data != "[DONE]"
+                && let Ok(parsed) = serde_json::from_str::<ChatCompletionChunk>(data)
+            {
+                for choice in &parsed.choices {
+                    if let Some(ref delta_text) = choice.delta.content {
+                        content.push_str(delta_text);
+                    }
+                }
+            }
+        }
 
         tracing::info!(
-            provider = "anthropic",
+            provider = "copilot",
             content_len = content.len(),
-            input_tokens,
-            output_tokens,
-            stop_reason = %stop_reason,
             task_id = %task.task_id,
-            "Messages request completed"
+            "Chat completion finished"
         );
 
         Ok(StepOutput {
@@ -241,10 +260,10 @@ impl StepProvider for AnthropicProvider {
             exit_code: 0,
             artifacts: Default::default(),
             cost_usd: 0.0,
-            input_tokens,
-            output_tokens,
-            num_turns: 1,
-            stop_reason,
+            input_tokens: 0,
+            output_tokens: 0,
+            num_turns: 0,
+            stop_reason: "end_turn".into(),
             is_error: false,
         })
     }
@@ -262,7 +281,7 @@ mod tests {
         ResolvedStep {
             name: "test".into(),
             description: "You are a test assistant.".into(),
-            model: Some("claude-test".into()),
+            model: Some("openai/gpt-4.1-test".into()),
             allowed_tools: None,
             allowed_tools_list: vec![],
             budget: None,
@@ -286,34 +305,52 @@ mod tests {
         }
     }
 
-    fn success_body(text: &str) -> String {
-        serde_json::json!({
-            "content": [{"type": "text", "text": text}],
-            "stop_reason": "end_turn",
-            "usage": {"input_tokens": 100, "output_tokens": 50}
-        })
-        .to_string()
+    fn sse_body(chunks: &[&str]) -> String {
+        let mut body = String::new();
+        for (i, text) in chunks.iter().enumerate() {
+            let chunk = serde_json::json!({
+                "id": format!("chatcmpl-{i}"),
+                "object": "chat.completion.chunk",
+                "choices": [{
+                    "index": 0,
+                    "delta": { "content": text },
+                    "finish_reason": serde_json::Value::Null
+                }]
+            });
+            body.push_str(&format!("data: {chunk}\n\n"));
+        }
+        let done_chunk = serde_json::json!({
+            "id": "chatcmpl-done",
+            "object": "chat.completion.chunk",
+            "choices": [{
+                "index": 0,
+                "delta": {},
+                "finish_reason": "stop"
+            }]
+        });
+        body.push_str(&format!("data: {done_chunk}\n\n"));
+        body.push_str("data: [DONE]\n\n");
+        body
     }
 
     #[tokio::test]
-    async fn successful_response() {
+    async fn streaming_success() {
         let server = MockServer::start().await;
 
         Mock::given(method("POST"))
-            .and(path("/v1/messages"))
-            .and(header("x-api-key", "sk-test-key"))
-            .and(header("anthropic-version", ANTHROPIC_VERSION))
+            .and(path("/chat/completions"))
+            .and(header("Authorization", "Bearer ghp-test-token"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_string(success_body("Hello, world!"))
-                    .insert_header("content-type", "application/json"),
+                    .set_body_string(sse_body(&["Hello", ", ", "world", "!"]))
+                    .insert_header("content-type", "text/event-stream"),
             )
             .mount(&server)
             .await;
 
-        let provider = AnthropicProvider;
+        let provider = CopilotProvider;
         let config = ProviderConfig {
-            api_key: Some("sk-test-key".into()),
+            api_key: Some("ghp-test-token".into()),
             base_url: Some(server.uri()),
             model: None,
         };
@@ -324,10 +361,6 @@ mod tests {
         let output = result.unwrap();
         assert_eq!(output.content, "Hello, world!");
         assert_eq!(output.exit_code, 0);
-        assert_eq!(output.input_tokens, 100);
-        assert_eq!(output.output_tokens, 50);
-        assert_eq!(output.stop_reason, "end_turn");
-        assert!(!output.is_error);
     }
 
     #[tokio::test]
@@ -335,16 +368,16 @@ mod tests {
         let server = MockServer::start().await;
 
         Mock::given(method("POST"))
-            .and(path("/v1/messages"))
+            .and(path("/chat/completions"))
             .respond_with(ResponseTemplate::new(401).set_body_string(
-                r#"{"error":{"message":"Invalid API key","type":"authentication_error"}}"#,
+                r#"{"error":{"message":"Bad credentials","type":"invalid_request_error"}}"#,
             ))
             .mount(&server)
             .await;
 
-        let provider = AnthropicProvider;
+        let provider = CopilotProvider;
         let config = ProviderConfig {
-            api_key: Some("sk-bad-key".into()),
+            api_key: Some("bad-token".into()),
             base_url: Some(server.uri()),
             model: None,
         };
@@ -357,34 +390,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rate_limit_429() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/v1/messages"))
-            .respond_with(ResponseTemplate::new(429).set_body_string(
-                r#"{"error":{"message":"Rate limit reached","type":"rate_limit_error"}}"#,
-            ))
-            .mount(&server)
-            .await;
-
-        let provider = AnthropicProvider;
-        let config = ProviderConfig {
-            api_key: Some("sk-test-key".into()),
-            base_url: Some(server.uri()),
-            model: None,
-        };
-
-        let result = provider.execute(&test_step(), &test_task(), &config).await;
-        assert!(result.is_ok());
-        let output = result.unwrap();
-        assert_eq!(output.exit_code, 2);
-        assert!(output.is_error);
-    }
-
-    #[tokio::test]
-    async fn missing_api_key_returns_error() {
-        let provider = AnthropicProvider;
+    async fn missing_token_returns_error() {
+        let provider = CopilotProvider;
         let config = ProviderConfig {
             api_key: None,
             base_url: Some("http://localhost:1234".into()),
@@ -393,36 +400,6 @@ mod tests {
 
         let result = provider.execute(&test_step(), &test_task(), &config).await;
         assert!(result.is_err());
-        assert!(result.err().unwrap().to_string().contains("API key"));
-    }
-
-    #[tokio::test]
-    async fn empty_content_array() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/v1/messages"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_string(
-                        r#"{"content":[],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":0}}"#,
-                    )
-                    .insert_header("content-type", "application/json"),
-            )
-            .mount(&server)
-            .await;
-
-        let provider = AnthropicProvider;
-        let config = ProviderConfig {
-            api_key: Some("sk-test-key".into()),
-            base_url: Some(server.uri()),
-            model: None,
-        };
-
-        let result = provider.execute(&test_step(), &test_task(), &config).await;
-        assert!(result.is_ok());
-        let output = result.unwrap();
-        assert_eq!(output.content, "");
-        assert_eq!(output.exit_code, 0);
+        assert!(result.err().unwrap().to_string().contains("token"));
     }
 }

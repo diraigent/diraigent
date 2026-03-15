@@ -6,6 +6,10 @@ use tokio::process::Command;
 use tracing::{debug, error, info, warn};
 
 /// Handle a plan.request by spawning `claude -p` with the planning prompt.
+///
+/// Uses `--tools ""` to disable all tools — plan requests are pure prompt→JSON
+/// and don't need file access. This prevents Claude from spending turns on tool
+/// calls and returning empty responses.
 pub async fn handle_plan_request(
     sender: WsSender,
     request_id: &str,
@@ -76,7 +80,8 @@ Respond with a JSON object matching the required schema."#
 
     let json_schema = r#"{"type":"object","properties":{"tasks":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"kind":{"type":"string","enum":["feature","bug","refactor","test","docs"]},"spec":{"type":"string"},"acceptance_criteria":{"type":"array","items":{"type":"string"}},"depends_on":{"type":"array","items":{"type":"integer"}}},"required":["title","kind","spec","acceptance_criteria","depends_on"]}}},"required":["tasks"]}"#;
 
-    // Spawn claude -p
+    // Spawn claude -p with --tools "" to disable all tools.
+    // Plan requests are pure prompt→JSON — no file access needed.
     let mut child = match Command::new("claude")
         .args([
             "-p",
@@ -87,7 +92,9 @@ Respond with a JSON object matching the required schema."#
             "--model",
             "sonnet",
             "--max-turns",
-            "2",
+            "1",
+            "--tools",
+            "",
             "--json-schema",
             json_schema,
         ])
@@ -131,7 +138,7 @@ Respond with a JSON object matching the required schema."#
         }
     };
 
-    // Collect stderr concurrently to avoid pipe deadlocks and capture error diagnostics
+    // Collect stderr concurrently to avoid pipe deadlocks
     let stderr_handle = child.stderr.take().map(|stderr| {
         tokio::spawn(async move {
             let reader = BufReader::new(stderr);
@@ -168,7 +175,6 @@ Respond with a JSON object matching the required schema."#
         let event: serde_json::Value = match serde_json::from_str(&line) {
             Ok(v) => v,
             Err(_) => {
-                // Capture non-JSON lines for diagnostics (truncate to 200 chars)
                 let preview: String = line.chars().take(200).collect();
                 skipped_lines.push(preview);
                 continue;
@@ -187,7 +193,6 @@ Respond with a JSON object matching the required schema."#
                 let inner = &event["event"];
                 let inner_type = inner["type"].as_str().unwrap_or("");
                 if inner_type == "content_block_delta" {
-                    // Try delta.text (standard) and delta.partial_json (json mode)
                     if let Some(text) = inner["delta"]["text"].as_str() {
                         accumulated_text.push_str(text);
                     } else if let Some(json) = inner["delta"]["partial_json"].as_str() {
@@ -196,8 +201,7 @@ Respond with a JSON object matching the required schema."#
                 }
             }
             "assistant" => {
-                // Extract text from this assistant message; keep the latest
-                // non-empty text (the final assistant turn has the answer).
+                // Extract text from assistant messages; keep the latest non-empty text.
                 if let Some(content) = event["message"]["content"].as_array() {
                     let full_text: String = content
                         .iter()
@@ -217,31 +221,14 @@ Respond with a JSON object matching the required schema."#
             }
             "result" => {
                 saw_result = true;
-                // Log the key fields of the result event for diagnostics
                 let has_structured = event.get("structured_output").is_some();
                 let structured_is_null = event
                     .get("structured_output")
                     .map(|v| v.is_null())
                     .unwrap_or(true);
-                let result_preview: String = event
-                    .get("result")
-                    .map(|v| v.to_string().chars().take(300).collect())
-                    .unwrap_or_default();
-                let structured_preview: String = event
-                    .get("structured_output")
-                    .map(|v| v.to_string().chars().take(300).collect())
-                    .unwrap_or_default();
-                let result_keys: Vec<String> = event
-                    .as_object()
-                    .map(|o| o.keys().cloned().collect())
-                    .unwrap_or_default();
-                info!(
+                debug!(
                     has_structured,
-                    structured_is_null,
-                    result_preview = %result_preview,
-                    structured_preview = %structured_preview,
-                    result_keys = ?result_keys,
-                    "plan request: result event received"
+                    structured_is_null, "plan request: result event received"
                 );
 
                 is_error = event["is_error"].as_bool().unwrap_or(false);
@@ -251,10 +238,8 @@ Respond with a JSON object matching the required schema."#
                         .unwrap_or("Unknown error")
                         .to_string();
                 } else if has_structured && !structured_is_null {
-                    // --json-schema produces structured_output in the result event
                     accumulated_text = event["structured_output"].to_string();
                 } else {
-                    // Try .result (may be text or null)
                     accumulated_text = event["result"].as_str().unwrap_or("").to_string();
                 }
                 break;
@@ -278,9 +263,8 @@ Respond with a JSON object matching the required schema."#
         return;
     }
 
-    // Check for empty response before attempting JSON parse
+    // Check for empty response
     if accumulated_text.trim().is_empty() {
-        // Build event type summary, e.g. "stream_event=150, result=1, assistant=2"
         let type_summary: String = {
             let mut pairs: Vec<_> = event_type_counts.iter().collect();
             pairs.sort_by_key(|(_, count)| std::cmp::Reverse(**count));
@@ -318,12 +302,7 @@ Respond with a JSON object matching the required schema."#
         return;
     }
 
-    // Parse the JSON response from Claude's text output.
-    // Claude sometimes emits preamble text before the JSON or wraps it in
-    // markdown fences.  We try progressively more aggressive extraction:
-    //   1. Direct parse (already valid JSON)
-    //   2. Strip ```json ... ``` fences
-    //   3. Find the first '{' / last '}' and extract the substring
+    // Parse JSON response (may have preamble or markdown fences)
     let text = accumulated_text.trim();
     let json_text = extract_json_object(text);
 
@@ -350,7 +329,6 @@ Respond with a JSON object matching the required schema."#
     let tasks = if let Some(tasks) = parsed.get("tasks") {
         tasks.clone()
     } else if parsed.is_array() {
-        // Claude might return just the array
         parsed
     } else {
         send_error(
@@ -386,7 +364,6 @@ fn extract_json_object(text: &str) -> &str {
     // 2. Strip markdown fences: ```json ... ``` or ``` ... ```
     if let Some(fence_start) = text.find("```") {
         let after_fence = &text[fence_start + 3..];
-        // Skip optional language tag on the same line
         let content_start = after_fence.find('\n').map(|i| i + 1).unwrap_or(0);
         let inner = &after_fence[content_start..];
         if let Some(end) = inner.find("```") {
@@ -405,6 +382,6 @@ fn extract_json_object(text: &str) -> &str {
         return &text[start..=end];
     }
 
-    // 4. Fallback — return as-is and let the caller's parse error handle it
+    // 4. Fallback
     text
 }
