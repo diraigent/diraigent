@@ -1,6 +1,6 @@
 import { Component, inject, signal, effect, OnDestroy, DestroyRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subscription, timer } from 'rxjs';
@@ -11,10 +11,16 @@ import { CI_STATUS_COLORS } from '../../shared/ui-constants';
 @Component({
   selector: 'app-pipelines',
   standalone: true,
-  imports: [TranslocoModule, FormsModule],
+  imports: [TranslocoModule, FormsModule, RouterLink],
   template: `
     <div class="p-3 sm:p-6" *transloco="let t">
-      <h1 class="text-2xl font-semibold text-text-primary mb-3 sm:mb-6">{{ t('pipelines.title') }}</h1>
+      <div class="flex items-center justify-between mb-3 sm:mb-6">
+        <h1 class="text-2xl font-semibold text-text-primary">{{ t('pipelines.title') }}</h1>
+        <a routerLink="/pipelines/setup"
+           class="px-4 py-2 text-sm font-medium bg-surface border border-border text-text-primary rounded-lg hover:border-accent/50 transition-colors">
+          {{ t('pipelines.setupForgejo') }}
+        </a>
+      </div>
 
       <!-- Filters -->
       <div class="flex flex-wrap items-center gap-3 mb-4">
@@ -92,7 +98,15 @@ import { CI_STATUS_COLORS } from '../../shared/ui-constants';
               d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
           <h3 class="text-lg font-medium text-text-primary mb-1">{{ t('pipelines.emptyTitle') }}</h3>
-          <p class="text-sm text-text-muted">{{ t('pipelines.emptyDescription') }}</p>
+          <p class="text-sm text-text-muted mb-6">{{ t('pipelines.emptyDescription') }}</p>
+          <a routerLink="/pipelines/setup"
+             class="inline-flex items-center gap-2 px-5 py-2.5 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90 transition-opacity">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            {{ t('pipelines.setupForgejo') }}
+          </a>
         </div>
       }
 
