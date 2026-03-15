@@ -1716,6 +1716,8 @@ export class WorkPage {
   }
 
   openCreate(): void {
+    this.saveInlineField();
+    this.selected.set(null);
     this.editing.set(null);
     this.formTitle = '';
     this.formDescription = '';
