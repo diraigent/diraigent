@@ -225,6 +225,7 @@ async fn connect_and_run(
                     } => {
                         let sender = tx.clone();
                         let api_clone = api.clone();
+                        let pp = projects_path.to_path_buf();
                         tokio::spawn(async move {
                             plan::handle_plan_request(plan::PlanRequestParams {
                                 sender,
@@ -235,6 +236,7 @@ async fn connect_and_run(
                                 project_name,
                                 project_id: project_id.to_string(),
                                 api: api_clone,
+                                projects_path: pp,
                             })
                             .await;
                         });
