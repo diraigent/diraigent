@@ -3,7 +3,7 @@ import { TranslocoModule } from '@jsverse/transloco';
 import { FormsModule } from '@angular/forms';
 import { DatePipe, SlicePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
-import { SpTask, SpTaskUpdate, SpTaskComment, SpTaskDependencies, ChangedFileSummary, UpdateTaskRequest, RelatedItems, RelatedItem, TaskScoreComponents } from '../../../../core/services/tasks-api.service';
+import { SpTask, SpTaskUpdate, SpTaskComment, SpTaskDependencies, ChangedFileSummary, UpdateTaskRequest, RelatedItems, TaskScoreComponents } from '../../../../core/services/tasks-api.service';
 import { SpPlaybook } from '../../../../core/services/playbooks-api.service';
 import { TaskBranchStatus } from '../../../../core/services/git-api.service';
 import { SpVerification, VerificationStatus, VerificationKind } from '../../../../core/services/verifications-api.service';

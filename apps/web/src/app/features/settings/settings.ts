@@ -274,6 +274,32 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' 
                   <span class="block text-xs text-text-secondary mt-1">{{ t('settings.observationRetentionDaysHint') }}</span>
                 </label>
 
+                <!-- Plan Provider -->
+                <div class="block">
+                  <label for="sett-plan-provider" class="block text-sm font-medium text-text-secondary mb-1">{{ t('settings.planProvider') }}</label>
+                  <select id="sett-plan-provider" [(ngModel)]="formPlanProvider"
+                    class="w-full bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                           focus:outline-none focus:ring-1 focus:ring-accent">
+                    @for (opt of providerOptions; track opt) {
+                      <option [value]="opt">{{ opt }}</option>
+                    }
+                  </select>
+                  <span class="block text-xs text-text-secondary mt-1">{{ t('settings.planProviderHint') }}</span>
+                </div>
+
+                <!-- Chat Provider -->
+                <div class="block">
+                  <label for="sett-chat-provider" class="block text-sm font-medium text-text-secondary mb-1">{{ t('settings.chatProvider') }}</label>
+                  <select id="sett-chat-provider" [(ngModel)]="formChatProvider"
+                    class="w-full bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                           focus:outline-none focus:ring-1 focus:ring-accent">
+                    @for (opt of providerOptions; track opt) {
+                      <option [value]="opt">{{ opt }}</option>
+                    }
+                  </select>
+                  <span class="block text-xs text-text-secondary mt-1">{{ t('settings.chatProviderHint') }}</span>
+                </div>
+
                 <!-- Save button -->
                 <div class="flex items-center gap-3 pt-2">
                   <button (click)="saveProject()"
@@ -637,8 +663,8 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' 
                 </h3>
                 <div class="space-y-3">
                   <div>
-                    <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.providerName') }}</label>
-                    <select [ngModel]="providerForm().provider" (ngModelChange)="updateProviderForm('provider', $event)"
+                    <label for="provider-name" class="block text-xs text-text-muted mb-0.5">{{ t('settings.providerName') }}</label>
+                    <select id="provider-name" [ngModel]="providerForm().provider" (ngModelChange)="updateProviderForm('provider', $event)"
                       class="w-full bg-bg text-text-primary text-sm rounded px-3 py-2 border border-border focus:outline-none focus:ring-1 focus:ring-accent">
                       <option value="anthropic">Anthropic</option>
                       <option value="openai">OpenAI</option>
@@ -646,20 +672,20 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' 
                     </select>
                   </div>
                   <div>
-                    <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.providerApiKey') }}</label>
-                    <input type="password" [ngModel]="providerForm().api_key ?? ''" (ngModelChange)="updateProviderForm('api_key', $event)"
+                    <label for="provider-api-key" class="block text-xs text-text-muted mb-0.5">{{ t('settings.providerApiKey') }}</label>
+                    <input id="provider-api-key" type="password" [ngModel]="providerForm().api_key ?? ''" (ngModelChange)="updateProviderForm('api_key', $event)"
                       placeholder="sk-..."
                       class="w-full bg-bg text-text-primary text-sm rounded px-3 py-2 border border-border focus:outline-none focus:ring-1 focus:ring-accent" />
                   </div>
                   <div>
-                    <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.providerBaseUrl') }}</label>
-                    <input type="text" [ngModel]="providerForm().base_url ?? ''" (ngModelChange)="updateProviderForm('base_url', $event)"
+                    <label for="provider-base-url" class="block text-xs text-text-muted mb-0.5">{{ t('settings.providerBaseUrl') }}</label>
+                    <input id="provider-base-url" type="text" [ngModel]="providerForm().base_url ?? ''" (ngModelChange)="updateProviderForm('base_url', $event)"
                       placeholder="https://api.openai.com"
                       class="w-full bg-bg text-text-primary text-sm rounded px-3 py-2 border border-border focus:outline-none focus:ring-1 focus:ring-accent" />
                   </div>
                   <div>
-                    <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.providerDefaultModel') }}</label>
-                    <input type="text" [ngModel]="providerForm().default_model ?? ''" (ngModelChange)="updateProviderForm('default_model', $event)"
+                    <label for="provider-default-model" class="block text-xs text-text-muted mb-0.5">{{ t('settings.providerDefaultModel') }}</label>
+                    <input id="provider-default-model" type="text" [ngModel]="providerForm().default_model ?? ''" (ngModelChange)="updateProviderForm('default_model', $event)"
                       placeholder="gpt-4o"
                       class="w-full bg-bg text-text-primary text-sm rounded px-3 py-2 border border-border focus:outline-none focus:ring-1 focus:ring-accent" />
                   </div>
@@ -732,27 +758,27 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' 
                 </h3>
                 <div class="space-y-3">
                   <div>
-                    <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleName') }}</label>
-                    <input type="text" [ngModel]="eventRuleForm().name" (ngModelChange)="updateEventRuleForm('name', $event)"
+                    <label for="rule-name" class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleName') }}</label>
+                    <input id="rule-name" type="text" [ngModel]="eventRuleForm().name" (ngModelChange)="updateEventRuleForm('name', $event)"
                       placeholder="e.g. High-severity alert"
                       class="w-full bg-bg text-text-primary text-sm rounded px-3 py-2 border border-border focus:outline-none focus:ring-1 focus:ring-accent" />
                   </div>
                   <div class="grid grid-cols-2 gap-3">
                     <div>
-                      <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleEventKind') }}</label>
-                      <input type="text" [ngModel]="eventRuleForm().event_kind ?? ''" (ngModelChange)="updateEventRuleForm('event_kind', $event)"
+                      <label for="rule-event-kind" class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleEventKind') }}</label>
+                      <input id="rule-event-kind" type="text" [ngModel]="eventRuleForm().event_kind ?? ''" (ngModelChange)="updateEventRuleForm('event_kind', $event)"
                         placeholder="e.g. task.completed"
                         class="w-full bg-bg text-text-primary text-xs rounded px-2.5 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent" />
                     </div>
                     <div>
-                      <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleEventSource') }}</label>
-                      <input type="text" [ngModel]="eventRuleForm().event_source ?? ''" (ngModelChange)="updateEventRuleForm('event_source', $event)"
+                      <label for="rule-event-source" class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleEventSource') }}</label>
+                      <input id="rule-event-source" type="text" [ngModel]="eventRuleForm().event_source ?? ''" (ngModelChange)="updateEventRuleForm('event_source', $event)"
                         placeholder="e.g. orchestra"
                         class="w-full bg-bg text-text-primary text-xs rounded px-2.5 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent" />
                     </div>
                     <div>
-                      <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleSeverityGte') }}</label>
-                      <select [ngModel]="eventRuleForm().severity_gte ?? ''" (ngModelChange)="updateEventRuleForm('severity_gte', $event)"
+                      <label for="rule-severity-gte" class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleSeverityGte') }}</label>
+                      <select id="rule-severity-gte" [ngModel]="eventRuleForm().severity_gte ?? ''" (ngModelChange)="updateEventRuleForm('severity_gte', $event)"
                         class="w-full bg-bg text-text-primary text-xs rounded px-2.5 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent">
                         <option value="">Any</option>
                         <option value="info">Info+</option>
@@ -763,8 +789,8 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' 
                       </select>
                     </div>
                     <div>
-                      <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleObsKind') }}</label>
-                      <select [ngModel]="eventRuleForm().observation_kind ?? ''" (ngModelChange)="updateEventRuleForm('observation_kind', $event)"
+                      <label for="rule-obs-kind" class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleObsKind') }}</label>
+                      <select id="rule-obs-kind" [ngModel]="eventRuleForm().observation_kind ?? ''" (ngModelChange)="updateEventRuleForm('observation_kind', $event)"
                         class="w-full bg-bg text-text-primary text-xs rounded px-2.5 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent">
                         <option value="">Default</option>
                         <option value="insight">Insight</option>
@@ -776,8 +802,8 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' 
                       </select>
                     </div>
                     <div>
-                      <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleObsSeverity') }}</label>
-                      <select [ngModel]="eventRuleForm().observation_severity ?? ''" (ngModelChange)="updateEventRuleForm('observation_severity', $event)"
+                      <label for="rule-obs-severity" class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleObsSeverity') }}</label>
+                      <select id="rule-obs-severity" [ngModel]="eventRuleForm().observation_severity ?? ''" (ngModelChange)="updateEventRuleForm('observation_severity', $event)"
                         class="w-full bg-bg text-text-primary text-xs rounded px-2.5 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent">
                         <option value="">Default</option>
                         <option value="info">Info</option>
@@ -789,14 +815,14 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' 
                     </div>
                   </div>
                   <div>
-                    <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleTitleTemplate') }}</label>
-                    <input type="text" [ngModel]="eventRuleForm().title_template" (ngModelChange)="updateEventRuleForm('title_template', $event)"
+                    <label for="rule-title-template" class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleTitleTemplate') }}</label>
+                    <input id="rule-title-template" type="text" [ngModel]="eventRuleForm().title_template" (ngModelChange)="updateEventRuleForm('title_template', $event)"
                       placeholder="e.g. Task completed for {task_id}"
                       class="w-full bg-bg text-text-primary text-sm rounded px-3 py-2 border border-border focus:outline-none focus:ring-1 focus:ring-accent" />
                   </div>
                   <div>
-                    <label class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleDescTemplate') }}</label>
-                    <textarea [ngModel]="eventRuleForm().description_template ?? ''" (ngModelChange)="updateEventRuleForm('description_template', $event)"
+                    <label for="rule-desc-template" class="block text-xs text-text-muted mb-0.5">{{ t('settings.ruleDescTemplate') }}</label>
+                    <textarea id="rule-desc-template" [ngModel]="eventRuleForm().description_template ?? ''" (ngModelChange)="updateEventRuleForm('description_template', $event)"
                       rows="3" placeholder="Optional description template..."
                       class="w-full bg-bg text-text-primary text-xs rounded px-2.5 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent resize-y"></textarea>
                   </div>
@@ -1162,6 +1188,9 @@ export class SettingsPage implements OnInit, OnDestroy {
   formUploadLogs = false;
   formDoneRetentionDays = 1;
   formObservationRetentionDays = 30;
+  formPlanProvider = 'claude-code';
+  formChatProvider = 'claude-code';
+  readonly providerOptions = ['claude-code', 'anthropic', 'openai', 'copilot', 'ollama'];
   savingProject = signal(false);
   projectSaved = signal(false);
 
@@ -1295,6 +1324,8 @@ export class SettingsPage implements OnInit, OnDestroy {
         this.formUploadLogs = (p.metadata?.['upload_logs'] as boolean) ?? false;
         this.formDoneRetentionDays = (p.metadata?.['done_retention_days'] as number) ?? 1;
         this.formObservationRetentionDays = (p.metadata?.['observation_retention_days'] as number) ?? 30;
+        this.formPlanProvider = (p.metadata?.['plan_provider'] as string) ?? 'claude-code';
+        this.formChatProvider = (p.metadata?.['chat_provider'] as string) ?? 'claude-code';
         this.loading.set(false);
       },
       error: () => this.loading.set(false),
@@ -1349,7 +1380,7 @@ export class SettingsPage implements OnInit, OnDestroy {
       git_mode: this.formGitMode,
       git_root: this.formGitRoot || null,
       project_root: this.formProjectRoot || null,
-      metadata: { ...(this.project()?.metadata || {}), auto_push: this.formAutoPush, upload_logs: this.formUploadLogs, done_retention_days: this.formDoneRetentionDays, observation_retention_days: this.formObservationRetentionDays },
+      metadata: { ...(this.project()?.metadata || {}), auto_push: this.formAutoPush, upload_logs: this.formUploadLogs, done_retention_days: this.formDoneRetentionDays, observation_retention_days: this.formObservationRetentionDays, plan_provider: this.formPlanProvider, chat_provider: this.formChatProvider },
     };
 
     this.api.updateProject(pid, update).subscribe({

@@ -202,6 +202,15 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
                 {{ t('goals.status.' + goal.status) }}
               </span>
+              @if (conflictMap().get(goal.id); as conflicts) {
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-ctp-red/20 text-ctp-red"
+                  title="Tasks with merge conflicts">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  </svg>
+                  {{ conflicts.length }}
+                </span>
+              }
             </div>
             @if (goal.id !== selected()?.id) {
               @if (goal.description) {
@@ -1238,6 +1247,7 @@ export class WorkPage {
   progressMap = signal<Map<string, SpWorkProgress>>(new Map());
   statsMap = signal<Map<string, SpWorkStats>>(new Map());
   childrenMap = signal<Map<string, SpWork[]>>(new Map());
+  conflictMap = signal<Map<string, string[]>>(new Map());
 
   showForm = signal(false);
   editing = signal<SpWork | null>(null);
@@ -1700,6 +1710,59 @@ export class WorkPage {
         error: () => {
           remaining--;
           if (remaining === 0) this.statsMap.set(new Map(map));
+        },
+      });
+    }
+    this.loadConflictStatuses(goals);
+  }
+
+  private loadConflictStatuses(goals: SpWork[]): void {
+    const relevantGoals = goals.filter(g => g.status === 'active' || g.status === 'paused');
+    if (relevantGoals.length === 0) {
+      this.conflictMap.set(new Map());
+      return;
+    }
+
+    const newConflictMap = new Map<string, string[]>();
+    let goalsRemaining = relevantGoals.length;
+
+    for (const goal of relevantGoals) {
+      this.api.listTasks(goal.id, { limit: 100 }).pipe(
+        catchError(() => of([] as SpTask[])),
+      ).subscribe({
+        next: (tasks) => {
+          const activeTasks = tasks.filter(t =>
+            t.state !== 'done' && t.state !== 'cancelled' && t.state !== 'backlog'
+          );
+
+          if (activeTasks.length === 0) {
+            goalsRemaining--;
+            if (goalsRemaining === 0) this.conflictMap.set(new Map(newConflictMap));
+            return;
+          }
+
+          let taskRemaining = activeTasks.length;
+          const conflicts: string[] = [];
+
+          for (const task of activeTasks) {
+            this.git.taskBranchStatus(task.id).pipe(
+              catchError(() => of(null as TaskBranchStatus | null)),
+            ).subscribe({
+              next: (status) => {
+                if (status?.has_conflict) {
+                  conflicts.push(task.id);
+                }
+                taskRemaining--;
+                if (taskRemaining === 0) {
+                  if (conflicts.length > 0) {
+                    newConflictMap.set(goal.id, conflicts);
+                  }
+                  goalsRemaining--;
+                  if (goalsRemaining === 0) this.conflictMap.set(new Map(newConflictMap));
+                }
+              },
+            });
+          }
         },
       });
     }

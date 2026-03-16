@@ -1,6 +1,8 @@
 use crate::project::api::ProjectsApi;
+use crate::providers::{ProviderConfig, ProviderFactory, ResolvedStep, TaskContext};
 use crate::ws::WsSender;
 use crate::ws::protocol::WsMessage;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -20,12 +22,13 @@ pub struct PlanRequestParams {
     pub projects_path: PathBuf,
 }
 
-/// Handle a plan.request by spawning the Claude Code CLI to decompose a work
-/// item into concrete tasks.
+/// Handle a plan.request by decomposing a work item into concrete tasks.
 ///
-/// Spawns `claude -p` directly (like the chat handler) with read-only tools so
-/// the planner can inspect the codebase before producing a plan.  The CLI runs
-/// in the project's working directory resolved from the API.
+/// Reads `metadata.plan_provider` from the project to determine which provider
+/// to use.  Defaults to "claude-code" which spawns the Claude CLI directly
+/// (with read-only tools so the planner can inspect the codebase).  Other
+/// providers (anthropic, openai, ollama, copilot) use the provider abstraction
+/// for a stateless API call.
 pub async fn handle_plan_request(params: PlanRequestParams) {
     let PlanRequestParams {
         sender,
@@ -38,18 +41,6 @@ pub async fn handle_plan_request(params: PlanRequestParams) {
         api,
         projects_path,
     } = params;
-
-    let send_error = |sender: WsSender, request_id: String, msg: String| async move {
-        let ws_msg = WsMessage::PlanResponse {
-            request_id,
-            success: false,
-            error: Some(msg),
-            tasks: serde_json::Value::Array(vec![]),
-        };
-        if let Err(e) = sender.send(ws_msg) {
-            error!("failed to send plan error via WS: {e}");
-        }
-    };
 
     // Resolve the project's working directory from the API.
     let working_dir = crate::project::paths::resolve_working_dir(&api, &project_id, &projects_path)
@@ -115,6 +106,57 @@ Respond with ONLY a JSON object matching this schema (no markdown fences, no pre
 {{"tasks": [{{"title": "...", "kind": "feature|bug|refactor|test|docs", "spec": "...", "acceptance_criteria": ["..."], "depends_on": [0]}}]}}"#
     );
 
+    // Resolve provider from project metadata (default: "claude-code")
+    let provider_name = match api.get_project(&project_id).await {
+        Ok(project) => project["metadata"]["plan_provider"]
+            .as_str()
+            .unwrap_or("claude-code")
+            .to_string(),
+        Err(e) => {
+            warn!("plan request: failed to fetch project metadata: {e}, using default provider");
+            "claude-code".to_string()
+        }
+    };
+
+    if provider_name == "claude-code" {
+        handle_plan_via_cli(sender, request_id, prompt, &system_prompt, &working_dir).await;
+    } else {
+        handle_plan_via_provider(
+            sender,
+            request_id,
+            prompt,
+            &system_prompt,
+            &provider_name,
+            &project_id,
+            &api,
+        )
+        .await;
+    }
+}
+
+/// Handle a plan request via the Claude Code CLI (default path).
+///
+/// Spawns `claude -p` directly with read-only tools so the planner can inspect
+/// the codebase before producing a plan.
+async fn handle_plan_via_cli(
+    sender: WsSender,
+    request_id: String,
+    prompt: String,
+    system_prompt: &str,
+    working_dir: &std::path::Path,
+) {
+    let send_error = |sender: WsSender, request_id: String, msg: String| async move {
+        let ws_msg = WsMessage::PlanResponse {
+            request_id,
+            success: false,
+            error: Some(msg),
+            tasks: serde_json::Value::Array(vec![]),
+        };
+        if let Err(e) = sender.send(ws_msg) {
+            error!("failed to send plan error via WS: {e}");
+        }
+    };
+
     info!("plan request: spawning claude-code CLI");
 
     // Spawn Claude Code CLI directly (like the chat handler)
@@ -128,13 +170,13 @@ Respond with ONLY a JSON object matching this schema (no markdown fences, no pre
             "--model",
             "claude-sonnet-4-6-20250514",
             "--system-prompt",
-            &system_prompt,
+            system_prompt,
             "--tools",
             "Bash(read:*),Read,Glob,Grep,WebFetch,WebSearch",
             "--permission-mode",
             "bypassPermissions",
         ])
-        .current_dir(&working_dir)
+        .current_dir(working_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -230,8 +272,130 @@ Respond with ONLY a JSON object matching this schema (no markdown fences, no pre
         output_tokens, "plan request: claude-code completed"
     );
 
-    // Parse JSON response (may have preamble or markdown fences)
-    let text = result_text.trim();
+    send_plan_result(sender, request_id, &result_text);
+}
+
+/// Handle a plan request via a non-claude-code provider (anthropic, openai, etc.).
+///
+/// Uses the provider abstraction for a stateless API call.
+async fn handle_plan_via_provider(
+    sender: WsSender,
+    request_id: String,
+    prompt: String,
+    system_prompt: &str,
+    provider_name: &str,
+    project_id: &str,
+    api: &ProjectsApi,
+) {
+    let send_error = |sender: WsSender, request_id: String, msg: String| async move {
+        let ws_msg = WsMessage::PlanResponse {
+            request_id,
+            success: false,
+            error: Some(msg),
+            tasks: serde_json::Value::Array(vec![]),
+        };
+        if let Err(e) = sender.send(ws_msg) {
+            error!("failed to send plan error via WS: {e}");
+        }
+    };
+
+    info!("plan request: calling provider '{provider_name}'");
+
+    let provider = match ProviderFactory::create(provider_name) {
+        Ok(p) => p,
+        Err(e) => {
+            send_error(
+                sender,
+                request_id,
+                format!("Failed to create provider: {e}"),
+            )
+            .await;
+            return;
+        }
+    };
+
+    // Resolve credentials from API
+    let provider_cfg = match api.resolve_provider_config(project_id, provider_name).await {
+        Ok(cfg) => ProviderConfig {
+            api_key: cfg["api_key"].as_str().map(String::from),
+            base_url: cfg["base_url"].as_str().map(String::from),
+            model: cfg["default_model"].as_str().map(String::from),
+        },
+        Err(e) => {
+            warn!("plan request: no provider config for '{provider_name}': {e}");
+            ProviderConfig {
+                api_key: None,
+                base_url: None,
+                model: None,
+            }
+        }
+    };
+
+    let step = ResolvedStep {
+        name: "plan".into(),
+        description: "You are a technical project planner. Respond with valid JSON only.".into(),
+        model: Some(
+            provider_cfg
+                .model
+                .clone()
+                .unwrap_or_else(|| "claude-sonnet-4-6-20250514".into()),
+        ),
+        allowed_tools: None,
+        allowed_tools_list: vec![],
+        budget: None,
+        env: HashMap::new(),
+        system_prompt: Some(system_prompt.to_string()),
+        mcp_servers: None,
+        agents: None,
+        agent: None,
+        settings: None,
+    };
+
+    let task_ctx = TaskContext {
+        task_id: format!("plan-{}", &request_id),
+        project_id: project_id.to_string(),
+        project_context: String::new(),
+        previous_step_output: None,
+        working_dir: None,
+        log_file: None,
+        user_prompt: Some(prompt),
+    };
+
+    let output = match provider.execute(&step, &task_ctx, &provider_cfg).await {
+        Ok(output) => output,
+        Err(e) => {
+            send_error(sender, request_id, format!("Provider error: {e}")).await;
+            return;
+        }
+    };
+
+    if output.is_error {
+        send_error(sender, request_id, output.content).await;
+        return;
+    }
+
+    if output.content.trim().is_empty() {
+        send_error(
+            sender,
+            request_id,
+            "Provider returned empty response".into(),
+        )
+        .await;
+        return;
+    }
+
+    info!(
+        input_tokens = output.input_tokens,
+        output_tokens = output.output_tokens,
+        "plan request: provider completed"
+    );
+
+    send_plan_result(sender, request_id, &output.content);
+}
+
+/// Parse JSON from the AI response text and send the plan result via WS.
+fn send_plan_result(sender: WsSender, request_id: String, text: &str) {
+    let text = text.trim();
     let json_text = extract_json_object(text);
 
     let parsed: serde_json::Value = match serde_json::from_str(json_text) {
@@ -243,12 +407,17 @@ Respond with ONLY a JSON object matching this schema (no markdown fences, no pre
                 "failed to parse plan response as JSON"
             );
             let preview: String = json_text.chars().take(200).collect();
-            send_error(
-                sender,
+            let ws_msg = WsMessage::PlanResponse {
                 request_id,
-                format!("Failed to parse AI response as JSON: {e} (preview: {preview})"),
-            )
-            .await;
+                success: false,
+                error: Some(format!(
+                    "Failed to parse AI response as JSON: {e} (preview: {preview})"
+                )),
+                tasks: serde_json::Value::Array(vec![]),
+            };
+            if let Err(e) = sender.send(ws_msg) {
+                error!("failed to send plan error via WS: {e}");
+            }
             return;
         }
     };
@@ -259,12 +428,15 @@ Respond with ONLY a JSON object matching this schema (no markdown fences, no pre
     } else if parsed.is_array() {
         parsed
     } else {
-        send_error(
-            sender,
+        let ws_msg = WsMessage::PlanResponse {
             request_id,
-            "AI response did not contain a 'tasks' array".into(),
-        )
-        .await;
+            success: false,
+            error: Some("AI response did not contain a 'tasks' array".into()),
+            tasks: serde_json::Value::Array(vec![]),
+        };
+        if let Err(e) = sender.send(ws_msg) {
+            error!("failed to send plan error via WS: {e}");
+        }
         return;
     };
 
