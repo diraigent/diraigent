@@ -77,7 +77,7 @@ type SetupStep = 'form' | 'webhook' | 'sync';
             <label class="block">
               <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('forgejo.token') }}</span>
               <input type="password" [(ngModel)]="formToken"
-                placeholder="gto_..."
+                placeholder="Forgejo access token"
                 class="w-full bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 border border-border
                        focus:outline-none focus:ring-1 focus:ring-accent" />
               <span class="block text-xs text-text-muted mt-1">{{ t('forgejo.tokenHint') }}</span>

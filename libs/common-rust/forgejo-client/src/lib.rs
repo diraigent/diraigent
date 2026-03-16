@@ -156,7 +156,7 @@ impl ForgejoClient {
     async fn get_json<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
         let mut req = self.http.get(url);
         if let Some(ref token) = self.token {
-            req = req.bearer_auth(token);
+            req = req.header("Authorization", format!("token {token}"));
         }
 
         tracing::debug!(url = %url, "Forgejo API request");
@@ -295,7 +295,7 @@ mod tests {
 
         Mock::given(method("GET"))
             .and(path("/api/v1/repos/owner/repo/actions/runs"))
-            .and(header("Authorization", "Bearer my-secret-token"))
+            .and(header("Authorization", "token my-secret-token"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "workflow_runs": [],
                 "total_count": 0
