@@ -174,40 +174,10 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
           [class]="goal.id === selected()?.id
             ? 'bg-accent/10 border-accent'
             : 'bg-surface border-border hover:border-accent/50'"
+          [class.border-l-4]="goal.status === 'active' || goal.status === 'paused'"
+          [class.border-l-ctp-green]="goal.status === 'active'"
+          [class.border-l-ctp-yellow]="goal.status === 'paused'"
           [class.opacity-60]="goal.status === 'achieved'">
-          <!-- Status banner (top of card) -->
-          @if (goal.status !== 'active') {
-            <div class="flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-semibold {{ statusBannerClass(goal.status) }}">
-              @switch (goal.status) {
-                @case ('achieved') {
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                }
-                @case ('paused') {
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                }
-                @case ('abandoned') {
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                  </svg>
-                }
-                @case ('ready') {
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                }
-                @case ('processing') {
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                }
-              }
-              {{ t('goals.status.' + goal.status) }}
-            </div>
-          }
           <!-- Accordion header -->
           <button (click)="selectItem(goal)" class="w-full text-left p-4">
             <div class="flex items-center gap-2">
@@ -220,6 +190,11 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ typeColor(goal.work_type) }}">
                 {{ t('goals.type.' + goal.work_type) }}
               </span>
+              @if (goal.status !== 'active') {
+                <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
+                  {{ t('goals.status.' + goal.status) }}
+                </span>
+              }
               @if (conflictMap().get(goal.id); as conflicts) {
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-ctp-red/20 text-ctp-red"
                   title="Tasks with merge conflicts">
@@ -294,6 +269,11 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
 
               <!-- Actions row -->
               <div class="flex items-center gap-2 mb-3 flex-wrap">
+                @if (goal.status !== 'active') {
+                  <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
+                    {{ t('goals.status.' + goal.status) }}
+                  </span>
+                }
                 <select [(ngModel)]="formWorkType" (change)="saveInlineField()"
                   class="text-xs rounded-lg px-2 py-1 border border-border bg-surface text-text-primary
                          focus:outline-none focus:ring-1 focus:ring-accent">
@@ -1895,17 +1875,6 @@ export class WorkPage {
 
   statusColor(status: WorkStatus): string {
     return STATUS_COLORS[status] ?? '';
-  }
-
-  statusBannerClass(status: WorkStatus): string {
-    const map: Record<string, string> = {
-      achieved: 'bg-ctp-blue/15 text-ctp-blue',
-      paused: 'bg-ctp-yellow/15 text-ctp-yellow',
-      abandoned: 'bg-ctp-overlay0/15 text-ctp-overlay0',
-      ready: 'bg-ctp-sapphire/15 text-ctp-sapphire',
-      processing: 'bg-ctp-peach/15 text-ctp-peach',
-    };
-    return map[status] ?? 'bg-surface-hover text-text-secondary';
   }
 
   progressColor(status: WorkStatus): string {
