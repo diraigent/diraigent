@@ -1746,7 +1746,7 @@ export class WorkPage {
   }
 
   private loadConflictStatuses(goals: SpWork[]): void {
-    const relevantGoals = goals.filter(g => g.status === 'active' || g.status === 'paused');
+    const relevantGoals = goals.filter(g => g.status !== 'achieved' && g.status !== 'abandoned');
     if (relevantGoals.length === 0) {
       this.conflictMap.set(new Map());
       this.unmergedMap.set(new Map());
@@ -1759,7 +1759,7 @@ export class WorkPage {
         catchError(() => of([] as SpTask[])),
         switchMap(tasks => {
           const activeTasks = tasks.filter(t =>
-            t.state !== 'done' && t.state !== 'cancelled' && t.state !== 'backlog'
+            t.state !== 'cancelled'
           );
           if (activeTasks.length === 0) {
             return of({ goalId: goal.id, conflicts: [] as string[], unmerged: [] as string[] });
