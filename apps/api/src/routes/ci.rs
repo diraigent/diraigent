@@ -48,6 +48,7 @@ async fn list_runs(
             filters.branch.as_deref(),
             filters.status.as_deref(),
             filters.workflow_name.as_deref(),
+            filters.provider.as_deref(),
             per_page,
             offset,
         ),
@@ -56,6 +57,7 @@ async fn list_runs(
             filters.branch.as_deref(),
             filters.status.as_deref(),
             filters.workflow_name.as_deref(),
+            filters.provider.as_deref(),
         ),
     )
     .await

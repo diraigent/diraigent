@@ -98,7 +98,7 @@ async fn webhook_workflow_run_creates_ci_run() {
     ) = sqlx::query_as(
         "SELECT id, workflow_name, status, branch, commit_sha, triggered_by
              FROM diraigent.ci_run
-             WHERE project_id = $1 AND forgejo_run_id = $2",
+             WHERE project_id = $1 AND external_id = $2",
     )
     .bind(project_id)
     .bind(42_i64)

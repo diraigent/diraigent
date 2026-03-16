@@ -825,7 +825,7 @@ pub trait DiraigentDb: Send + Sync {
     async fn upsert_ci_run(
         &self,
         project_id: Uuid,
-        forgejo_run_id: i64,
+        external_id: i64,
         workflow_name: &str,
         status: &str,
         branch: Option<&str>,
@@ -833,11 +833,13 @@ pub trait DiraigentDb: Send + Sync {
         triggered_by: Option<&str>,
         started_at: Option<chrono::DateTime<chrono::Utc>>,
         finished_at: Option<chrono::DateTime<chrono::Utc>>,
+        provider: &str,
     ) -> Result<CiRun, AppError>;
-    async fn get_ci_run_by_forgejo_id(
+    async fn get_ci_run_by_external_id(
         &self,
         project_id: Uuid,
-        forgejo_run_id: i64,
+        provider: &str,
+        external_id: i64,
     ) -> Result<Option<CiRun>, AppError>;
     #[allow(clippy::too_many_arguments)]
     async fn upsert_ci_job_by_name(
@@ -867,6 +869,7 @@ pub trait DiraigentDb: Send + Sync {
         branch: Option<&str>,
         status: Option<&str>,
         workflow_name: Option<&str>,
+        provider: Option<&str>,
         limit: i64,
         offset: i64,
     ) -> Result<Vec<CiRun>, AppError>;
@@ -876,6 +879,7 @@ pub trait DiraigentDb: Send + Sync {
         branch: Option<&str>,
         status: Option<&str>,
         workflow_name: Option<&str>,
+        provider: Option<&str>,
     ) -> Result<i64, AppError>;
     async fn get_ci_run(&self, id: Uuid) -> Result<CiRun, AppError>;
     async fn list_ci_jobs_for_run(&self, ci_run_id: Uuid) -> Result<Vec<CiJob>, AppError>;

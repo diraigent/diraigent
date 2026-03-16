@@ -1457,7 +1457,7 @@ impl DiraigentDb for PostgresDb {
     async fn upsert_ci_run(
         &self,
         project_id: Uuid,
-        forgejo_run_id: i64,
+        external_id: i64,
         workflow_name: &str,
         status: &str,
         branch: Option<&str>,
@@ -1465,11 +1465,12 @@ impl DiraigentDb for PostgresDb {
         triggered_by: Option<&str>,
         started_at: Option<chrono::DateTime<chrono::Utc>>,
         finished_at: Option<chrono::DateTime<chrono::Utc>>,
+        provider: &str,
     ) -> Result<CiRun, AppError> {
         repository::upsert_ci_run(
             &self.0,
             project_id,
-            forgejo_run_id,
+            external_id,
             workflow_name,
             status,
             branch,
@@ -1477,15 +1478,17 @@ impl DiraigentDb for PostgresDb {
             triggered_by,
             started_at,
             finished_at,
+            provider,
         )
         .await
     }
-    async fn get_ci_run_by_forgejo_id(
+    async fn get_ci_run_by_external_id(
         &self,
         project_id: Uuid,
-        forgejo_run_id: i64,
+        provider: &str,
+        external_id: i64,
     ) -> Result<Option<CiRun>, AppError> {
-        repository::get_ci_run_by_forgejo_id(&self.0, project_id, forgejo_run_id).await
+        repository::get_ci_run_by_external_id(&self.0, project_id, provider, external_id).await
     }
     async fn upsert_ci_job_by_name(
         &self,
@@ -1536,6 +1539,7 @@ impl DiraigentDb for PostgresDb {
         branch: Option<&str>,
         status: Option<&str>,
         workflow_name: Option<&str>,
+        provider: Option<&str>,
         limit: i64,
         offset: i64,
     ) -> Result<Vec<CiRun>, AppError> {
@@ -1545,6 +1549,7 @@ impl DiraigentDb for PostgresDb {
             branch,
             status,
             workflow_name,
+            provider,
             limit,
             offset,
         )
@@ -1556,8 +1561,10 @@ impl DiraigentDb for PostgresDb {
         branch: Option<&str>,
         status: Option<&str>,
         workflow_name: Option<&str>,
+        provider: Option<&str>,
     ) -> Result<i64, AppError> {
-        repository::count_ci_runs(&self.0, project_id, branch, status, workflow_name).await
+        repository::count_ci_runs(&self.0, project_id, branch, status, workflow_name, provider)
+            .await
     }
     async fn get_ci_run(&self, id: Uuid) -> Result<CiRun, AppError> {
         repository::get_ci_run(&self.0, id).await
