@@ -42,6 +42,8 @@ pub enum WsMessage {
         description: String,
         success_criteria: serde_json::Value,
         project_name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
     },
 
     // Orchestra -> API

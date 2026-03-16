@@ -240,6 +240,14 @@ async fn plan_work(
         })
         .await;
 
+    // Read plan_model from project metadata (if set)
+    let plan_model = project
+        .metadata
+        .get("plan_model")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
     let ws_msg = crate::ws_protocol::WsMessage::PlanRequest {
         request_id: request_id.clone(),
         project_id,
@@ -247,6 +255,7 @@ async fn plan_work(
         description: work.description.clone().unwrap_or_default(),
         success_criteria: work.success_criteria.clone(),
         project_name: project.name.clone(),
+        model: plan_model,
     };
 
     if !state.ws_registry.send_to_agent(connected_agent, ws_msg) {

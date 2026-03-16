@@ -47,16 +47,31 @@ pub async fn handle_chat_request_ws(
         }
     };
 
-    // Resolve chat provider from project metadata (default: "claude-code")
-    let chat_provider = match api.get_project(project_id).await {
-        Ok(project) => project["metadata"]["chat_provider"]
-            .as_str()
-            .unwrap_or("claude-code")
-            .to_string(),
+    // Resolve chat provider and model from project metadata (default: "claude-code")
+    let (chat_provider, metadata_model) = match api.get_project(project_id).await {
+        Ok(project) => {
+            let provider = project["metadata"]["chat_provider"]
+                .as_str()
+                .unwrap_or("claude-code")
+                .to_string();
+            let model_meta = project["metadata"]["chat_model"]
+                .as_str()
+                .map(|s| s.to_string());
+            (provider, model_meta)
+        }
         Err(e) => {
             warn!("chat: failed to fetch project metadata: {e}, using default provider");
-            "claude-code".to_string()
+            ("claude-code".to_string(), None)
         }
+    };
+
+    // Model priority: client override (from WS message) > project metadata > original model param
+    let resolved_model = if model.is_empty() {
+        metadata_model.unwrap_or_else(|| model.to_string())
+    } else {
+        // If the client sent a model, use it; but if it matches a generic fallback
+        // and metadata has a specific one, prefer metadata
+        model.to_string()
     };
 
     // Resolve the project's working directory from the API.
@@ -85,7 +100,7 @@ pub async fn handle_chat_request_ws(
             project_id,
             &user_prompt,
             system_prompt,
-            model,
+            &resolved_model,
             &chat_provider,
             api,
         )
@@ -103,7 +118,7 @@ pub async fn handle_chat_request_ws(
             "--include-partial-messages",
             "--no-session-persistence",
             "--model",
-            model,
+            &resolved_model,
             "--system-prompt",
             system_prompt,
             "--tools",

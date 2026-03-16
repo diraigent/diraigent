@@ -61,6 +61,8 @@ pub enum WsMessage {
         description: String,
         success_criteria: serde_json::Value,
         project_name: String,
+        #[serde(default)]
+        model: Option<String>,
     },
 
     // Orchestra -> API

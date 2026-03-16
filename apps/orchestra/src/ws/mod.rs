@@ -222,6 +222,7 @@ async fn connect_and_run(
                         description,
                         success_criteria,
                         project_name,
+                        model,
                     } => {
                         let sender = tx.clone();
                         let api_clone = api.clone();
@@ -237,6 +238,7 @@ async fn connect_and_run(
                                 project_id: project_id.to_string(),
                                 api: api_clone,
                                 projects_path: pp,
+                                model,
                             })
                             .await;
                         });
