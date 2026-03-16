@@ -86,6 +86,27 @@ export interface SyncForgejoResponse {
   errors: number;
 }
 
+export interface GitHubIntegrationResponse {
+  id: string;
+  project_id: string;
+  base_url: string;
+  webhook_url: string;
+  webhook_secret: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateGitHubIntegration {
+  base_url?: string;
+  token?: string;
+}
+
+export interface SyncGitHubResponse {
+  synced: number;
+  errors: number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class CiApiService extends BaseApiService {
   registerForgejo(projectId: string, req: CreateForgejoIntegration): Observable<ForgejoIntegrationResponse> {
@@ -98,6 +119,20 @@ export class CiApiService extends BaseApiService {
   syncForgejo(projectId: string): Observable<SyncForgejoResponse> {
     return this.http.post<SyncForgejoResponse>(
       `${this.baseUrl}/${projectId}/forgejo/sync`,
+      {},
+    );
+  }
+
+  registerGitHub(projectId: string, req: CreateGitHubIntegration): Observable<GitHubIntegrationResponse> {
+    return this.http.post<GitHubIntegrationResponse>(
+      `${this.baseUrl}/${projectId}/integrations/github`,
+      req,
+    );
+  }
+
+  syncGitHub(projectId: string): Observable<SyncGitHubResponse> {
+    return this.http.post<SyncGitHubResponse>(
+      `${this.baseUrl}/${projectId}/github/sync`,
       {},
     );
   }
