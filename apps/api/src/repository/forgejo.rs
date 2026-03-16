@@ -34,13 +34,13 @@ pub async fn get_forgejo_integration(
 }
 
 /// Upsert a CI run record from a webhook event.
-/// Uses ON CONFLICT to update an existing run if the (project_id, forgejo_run_id) pair
-/// already exists.
+/// Uses ON CONFLICT to update an existing run if the (project_id, provider, external_id)
+/// triple already exists.
 #[allow(clippy::too_many_arguments)]
 pub async fn upsert_ci_run(
     pool: &PgPool,
     project_id: Uuid,
-    forgejo_run_id: i64,
+    external_id: i64,
     workflow_name: &str,
     status: &str,
     branch: Option<&str>,
@@ -48,11 +48,12 @@ pub async fn upsert_ci_run(
     triggered_by: Option<&str>,
     started_at: Option<DateTime<Utc>>,
     finished_at: Option<DateTime<Utc>>,
+    provider: &str,
 ) -> Result<CiRun, AppError> {
     let row = sqlx::query_as::<_, CiRun>(
-        "INSERT INTO diraigent.ci_run (project_id, forgejo_run_id, workflow_name, status, branch, commit_sha, triggered_by, started_at, finished_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         ON CONFLICT (project_id, forgejo_run_id)
+        "INSERT INTO diraigent.ci_run (project_id, external_id, workflow_name, status, branch, commit_sha, triggered_by, started_at, finished_at, provider)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (project_id, provider, external_id)
          DO UPDATE SET status = EXCLUDED.status,
                        workflow_name = EXCLUDED.workflow_name,
                        branch = EXCLUDED.branch,
@@ -63,7 +64,7 @@ pub async fn upsert_ci_run(
          RETURNING *",
     )
     .bind(project_id)
-    .bind(forgejo_run_id)
+    .bind(external_id)
     .bind(workflow_name)
     .bind(status)
     .bind(branch)
@@ -71,23 +72,26 @@ pub async fn upsert_ci_run(
     .bind(triggered_by)
     .bind(started_at)
     .bind(finished_at)
+    .bind(provider)
     .fetch_one(pool)
     .await?;
 
     Ok(row)
 }
 
-/// Look up a CI run by the project's internal ID and the Forgejo run ID.
-pub async fn get_ci_run_by_forgejo_id(
+/// Look up a CI run by (project_id, provider, external_id).
+pub async fn get_ci_run_by_external_id(
     pool: &PgPool,
     project_id: Uuid,
-    forgejo_run_id: i64,
+    provider: &str,
+    external_id: i64,
 ) -> Result<Option<CiRun>, AppError> {
     let row = sqlx::query_as::<_, CiRun>(
-        "SELECT * FROM diraigent.ci_run WHERE project_id = $1 AND forgejo_run_id = $2",
+        "SELECT * FROM diraigent.ci_run WHERE project_id = $1 AND provider = $2 AND external_id = $3",
     )
     .bind(project_id)
-    .bind(forgejo_run_id)
+    .bind(provider)
+    .bind(external_id)
     .fetch_optional(pool)
     .await?;
 
@@ -190,6 +194,7 @@ pub async fn list_ci_runs(
     branch: Option<&str>,
     status: Option<&str>,
     workflow_name: Option<&str>,
+    provider: Option<&str>,
     limit: i64,
     offset: i64,
 ) -> Result<Vec<CiRun>, AppError> {
@@ -199,13 +204,15 @@ pub async fn list_ci_runs(
            AND ($2::text IS NULL OR branch = $2)
            AND ($3::text IS NULL OR status = $3)
            AND ($4::text IS NULL OR workflow_name = $4)
+           AND ($5::text IS NULL OR provider = $5)
          ORDER BY started_at DESC NULLS LAST, created_at DESC
-         LIMIT $5 OFFSET $6",
+         LIMIT $6 OFFSET $7",
     )
     .bind(project_id)
     .bind(branch)
     .bind(status)
     .bind(workflow_name)
+    .bind(provider)
     .bind(limit)
     .bind(offset)
     .fetch_all(pool)
@@ -221,18 +228,21 @@ pub async fn count_ci_runs(
     branch: Option<&str>,
     status: Option<&str>,
     workflow_name: Option<&str>,
+    provider: Option<&str>,
 ) -> Result<i64, AppError> {
     let count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM diraigent.ci_run
          WHERE project_id = $1
            AND ($2::text IS NULL OR branch = $2)
            AND ($3::text IS NULL OR status = $3)
-           AND ($4::text IS NULL OR workflow_name = $4)",
+           AND ($4::text IS NULL OR workflow_name = $4)
+           AND ($5::text IS NULL OR provider = $5)",
     )
     .bind(project_id)
     .bind(branch)
     .bind(status)
     .bind(workflow_name)
+    .bind(provider)
     .fetch_one(pool)
     .await?;
 

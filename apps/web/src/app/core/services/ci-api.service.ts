@@ -8,7 +8,8 @@ export type CiRunStatus = 'success' | 'failure' | 'running' | 'pending' | 'skipp
 export interface CiRun {
   id: string;
   project_id: string;
-  forgejo_run_id: number;
+  external_id: number;
+  provider: string;
   workflow_name: string;
   status: string;
   branch: string | null;
@@ -59,6 +60,7 @@ export interface CiRunFilters {
   branch?: string;
   status?: string;
   workflow_name?: string;
+  provider?: string;
   page?: number;
   per_page?: number;
 }
@@ -105,6 +107,7 @@ export class CiApiService extends BaseApiService {
     if (filters?.branch) params = params.set('branch', filters.branch);
     if (filters?.status) params = params.set('status', filters.status);
     if (filters?.workflow_name) params = params.set('workflow_name', filters.workflow_name);
+    if (filters?.provider) params = params.set('provider', filters.provider);
     if (filters?.page) params = params.set('page', filters.page.toString());
     if (filters?.per_page) params = params.set('per_page', filters.per_page.toString());
 

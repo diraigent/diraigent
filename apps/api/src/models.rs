@@ -2076,7 +2076,8 @@ pub struct ForgejoIntegration {
 pub struct CiRun {
     pub id: Uuid,
     pub project_id: Uuid,
-    pub forgejo_run_id: i64,
+    pub external_id: i64,
+    pub provider: String,
     pub workflow_name: String,
     pub status: String,
     pub branch: Option<String>,
@@ -2116,6 +2117,7 @@ pub struct CiRunFilters {
     pub branch: Option<String>,
     pub status: Option<String>,
     pub workflow_name: Option<String>,
+    pub provider: Option<String>,
     pub page: Option<i64>,
     pub per_page: Option<i64>,
 }
