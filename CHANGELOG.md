@@ -1,6 +1,15 @@
 # Changelog
 
 
+## v20260316-0831-developer (2026-03-16)
+
+### Fixed
+- **Web**: Fix undici security vulnerabilities by updating package dependencies
+- **Web**: Add missing ready/processing states to work item color maps and remove unused SlicePipe import
+
+---
+
+
 ## v20260316-0646-developer (2026-03-16)
 
 ### Added
