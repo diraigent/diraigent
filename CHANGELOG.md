@@ -1,5 +1,26 @@
 # Changelog
 
+## v20260316-0006-developer (2026-03-16)
+
+### Added
+- **Orchestra**: Configurable per-project AI providers for plan and chat handlers via project metadata (`plan_provider`, `chat_provider`)
+- **Orchestra**: Provider-based chat handler supporting anthropic, openai, ollama, and copilot as alternatives to claude-code CLI
+- **Orchestra**: Provider-based plan handler for non-claude-code providers with stateless API calls
+- **Web**: Plan Provider and Chat Provider selection dropdowns in Project Settings
+- **Web**: Merge conflict indicator badge on work items showing count of tasks with branch conflicts
+- **Web**: i18n keys for plan/chat provider settings (English and German)
+
+### Changed
+- **Orchestra**: Refactored plan handler into `handle_plan_via_cli` and `handle_plan_via_provider` code paths with shared `send_plan_result` helper
+- **CI/CD**: Release script now pushes to all remotes for both release and non-release merges (tags only on release)
+- **CI/CD**: Release script merges target back into source branch to keep changelog synchronized
+
+### Fixed
+- **Web**: Associated labels with form controls in provider config and event rule forms (accessibility)
+- **Web**: Removed unused import in task-detail component
+
+---
+
 
 ## v20260315-2323-developer (2026-03-15)
 
