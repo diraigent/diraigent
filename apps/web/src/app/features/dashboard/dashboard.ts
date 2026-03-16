@@ -7,7 +7,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { forkJoin, timer, switchMap, of, map } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { TasksApiService, SpTask } from '../../core/services/tasks-api.service';
-import { DiraigentApiService, DgProject, TokenDayCount, CostSummary } from '../../core/services/diraigent-api.service';
+import { DiraigentApiService, DgProject, TokenDayCount, CostSummary, ProjectMetrics } from '../../core/services/diraigent-api.service';
 import { GitApiService, BranchInfo } from '../../core/services/git-api.service';
 import { SpWork } from '../../core/services/work-api.service';
 import { taskStateColor, taskTransitions, WORK_STATUS_COLORS } from '../../shared/ui-constants';
@@ -459,7 +459,14 @@ export class DashboardPage {
                 .listBranchesForProject(project.id, 'agent/')
                 .pipe(catchError(() => of({ current_branch: '', branches: [] as BranchInfo[] })));
               const metrics$ = this.diraigentApi.getProjectMetrics(project.id, 30).pipe(
-                catchError(() => of({ tokens_per_day: [] as TokenDayCount[], cost_summary: { total_input_tokens: 0, total_output_tokens: 0, total_cost_usd: 0 } as CostSummary } as any)),
+                catchError(() => of({
+                  project_id: project.id, range_days: 30,
+                  task_summary: { total: 0, done: 0, cancelled: 0, in_progress: 0, ready: 0, backlog: 0, human_review: 0 },
+                  tasks_per_day: [], avg_time_in_state_hours: [], agent_breakdown: [],
+                  playbook_completion: [], task_costs: [],
+                  tokens_per_day: [] as TokenDayCount[],
+                  cost_summary: { total_input_tokens: 0, total_output_tokens: 0, total_cost_usd: 0 },
+                } satisfies ProjectMetrics)),
               );
               return forkJoin([tasks$, work$, branches$, metrics$]).pipe(
                 map(([tasks, works, branchRes, metrics]) => ({

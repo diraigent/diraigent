@@ -25,6 +25,7 @@ rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs"] 
 http = "1"
 futures-util = "0.3"
 diraigent-types.workspace = true
+diraigent-analyzer = { path = "../analyzer" }
 clap = { version = "4", features = ["derive"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-loki = { version = "0.2", default-features = false, features = ["rustls", "compat-0-2-1"] }

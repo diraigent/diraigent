@@ -898,6 +898,7 @@ dependencies = [
  "base64",
  "chrono",
  "clap",
+ "diraigent-analyzer",
  "diraigent-types",
  "dotenvy",
  "futures-util",

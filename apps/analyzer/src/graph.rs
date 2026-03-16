@@ -218,9 +218,7 @@ fn expand_and_resolve(base: &str, module_path: &str, file_set: &HashSet<&str>) -
         }
 
         // Fall back to the prefix module if nothing resolved
-        if !resolved_any
-            && let Some(r) = try_resolve_module(base, prefix, file_set)
-        {
+        if !resolved_any && let Some(r) = try_resolve_module(base, prefix, file_set) {
             results.push(r);
         }
 
@@ -607,7 +605,6 @@ pub fn to_dot(graph: &DependencyGraph) -> String {
     out.push_str("}\n");
     out
 }
-
 
 // ---------------------------------------------------------------------------
 // Entry point

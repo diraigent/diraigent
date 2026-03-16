@@ -119,6 +119,51 @@ import { environment } from '../../../environments/environment';
         </div>
       </section>
 
+      <!-- Account -->
+      <section class="mb-8">
+        <h2 class="text-lg font-medium text-text-primary mb-4">{{ t('tenantSettings.account') }}</h2>
+        <div class="bg-surface rounded-lg border border-border p-6 space-y-4">
+          <p class="text-sm text-text-secondary">{{ t('tenantSettings.accountHint') }}</p>
+          @if (authProviderBase) {
+            <div class="flex flex-wrap gap-3">
+              <a [href]="authProviderBase + '/if/user/'"
+                target="_blank" rel="noopener"
+                class="inline-flex items-center gap-2 px-4 py-2 bg-bg-subtle text-text-primary rounded-lg text-sm border border-border hover:border-accent">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                {{ t('tenantSettings.manageAccount') }}
+              </a>
+            </div>
+          }
+          <div class="pt-4 border-t border-border">
+            <p class="text-sm text-ctp-red/80 mb-3">{{ t('tenantSettings.deleteAccountWarning') }}</p>
+            @if (!confirmingDelete()) {
+              <button (click)="confirmingDelete.set(true)"
+                class="px-4 py-2 bg-ctp-red/10 text-ctp-red rounded-lg text-sm border border-ctp-red/30 hover:bg-ctp-red/20">
+                {{ t('tenantSettings.deleteAccount') }}
+              </button>
+            } @else {
+              <div class="flex items-center gap-3">
+                <button (click)="deleteAccount()"
+                  [disabled]="deletingAccount()"
+                  class="px-4 py-2 bg-ctp-red text-ctp-base rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
+                  @if (deletingAccount()) { {{ t('tenantSettings.deleting') }} } @else { {{ t('tenantSettings.confirmDelete') }} }
+                </button>
+                <button (click)="confirmingDelete.set(false)"
+                  class="px-4 py-2 bg-bg-subtle text-text-primary rounded-lg text-sm border border-border hover:border-accent">
+                  {{ t('common.cancel') }}
+                </button>
+              </div>
+            }
+            @if (deleteError()) {
+              <p class="text-sm text-ctp-red mt-2">{{ deleteError() }}</p>
+            }
+          </div>
+        </div>
+      </section>
+
       <!-- Version Info -->
       <section class="mb-8">
         <h2 class="text-lg font-medium text-text-primary mb-4">{{ t('tenantSettings.versionInfo') }}</h2>
@@ -183,6 +228,12 @@ export class TenantSettingsPage {
   rotatingKeys = signal(false);
   rotationResult = signal('');
   showPassphrasePrompt = signal(false);
+
+  // Account
+  authProviderBase = environment.authProviderBase;
+  confirmingDelete = signal(false);
+  deletingAccount = signal(false);
+  deleteError = signal('');
 
   // Version Info
   webVersion = environment.appVersion;
@@ -303,6 +354,31 @@ export class TenantSettingsPage {
         this.encryptionError.set(err.error?.message || this.transloco.translate('tenantSettings.keyRotationFailed'));
       },
     });
+  }
+
+  deleteAccount(): void {
+    const token = this.auth.getAccessToken();
+    if (!token) {
+      this.deleteError.set(this.transloco.translate('tenantSettings.noAccessTokenShort'));
+      return;
+    }
+    this.deletingAccount.set(true);
+    this.deleteError.set('');
+    fetch(`${environment.apiServer}/account`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        // Account deleted — redirect to auth provider or home
+        window.location.href = this.authProviderBase
+          ? `${this.authProviderBase}/if/flow/default-invalidation-flow/`
+          : '/';
+      })
+      .catch(err => {
+        this.deletingAccount.set(false);
+        this.deleteError.set(err.message || this.transloco.translate('tenantSettings.deleteAccountFailed'));
+      });
   }
 
   async switchToPassphraseMode(_passphrase: string): Promise<void> {

@@ -219,6 +219,11 @@ export async function setupMocks(page: Page) {
       return route.fulfill({ json: [] });
     }
 
+    // Account deletion
+    if (path === 'account' && route.request().method() === 'DELETE') {
+      return route.fulfill({ json: { deleted: true } });
+    }
+
     // Health
     if (path === 'health/ready' || url.includes('/health/live')) {
       return route.fulfill({ json: { status: 'ok' } });
