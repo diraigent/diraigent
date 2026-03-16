@@ -10,7 +10,6 @@ use uuid::Uuid;
 use crate::AppState;
 use crate::auth::AuthUser;
 use crate::error::AppError;
-use crate::models::{PlanSseEvent, PlannedTask};
 use crate::ws_protocol::WsMessage;
 use crate::ws_registry::GitResponsePayload;
 
@@ -88,29 +87,6 @@ async fn handle_socket(state: AppState, agent_id: Uuid, socket: WebSocket) {
                                 data,
                             },
                         );
-                    }
-                    WsMessage::PlanResponse {
-                        request_id,
-                        success,
-                        error,
-                        tasks,
-                    } => {
-                        let event = if success {
-                            match serde_json::from_value::<Vec<PlannedTask>>(tasks) {
-                                Ok(parsed) => PlanSseEvent::Done {
-                                    tasks: parsed,
-                                    success_criteria: None,
-                                },
-                                Err(e) => PlanSseEvent::Error {
-                                    message: format!("Failed to parse plan: {e}"),
-                                },
-                            }
-                        } else {
-                            PlanSseEvent::Error {
-                                message: error.unwrap_or_else(|| "Planning failed".into()),
-                            }
-                        };
-                        state.ws_registry.route_plan_event(&request_id, event).await;
                     }
                     WsMessage::Heartbeat => {
                         let db = state.db.clone();

@@ -2,7 +2,7 @@ pub mod git_dispatch;
 pub mod protocol;
 
 use self::protocol::WsMessage;
-use crate::handlers::{chat, plan};
+use crate::handlers::chat;
 use crate::project::api::ProjectsApi;
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
@@ -17,7 +17,7 @@ pub type WsSender = mpsc::UnboundedSender<WsMessage>;
 /// Run the WebSocket client loop with automatic reconnection.
 ///
 /// Connects to `{api_url}/agents/{agent_id}/ws`, dispatches incoming
-/// chat, plan, and git requests, and sends responses back up the same connection.
+/// chat and git requests, and sends responses back up the same connection.
 /// On disconnect, waits 5 seconds and reconnects. Exits when `shutdown` is set.
 pub async fn run_ws_loop(
     api_url: &str,
@@ -212,34 +212,6 @@ async fn connect_and_run(
                                 &api_clone,
                                 &pp,
                             )
-                            .await;
-                        });
-                    }
-                    WsMessage::PlanRequest {
-                        request_id,
-                        project_id,
-                        title,
-                        description,
-                        success_criteria,
-                        project_name,
-                        model,
-                    } => {
-                        let sender = tx.clone();
-                        let api_clone = api.clone();
-                        let pp = projects_path.to_path_buf();
-                        tokio::spawn(async move {
-                            plan::handle_plan_request(plan::PlanRequestParams {
-                                sender,
-                                request_id,
-                                title,
-                                description,
-                                success_criteria,
-                                project_name,
-                                project_id: project_id.to_string(),
-                                api: api_clone,
-                                projects_path: pp,
-                                model,
-                            })
                             .await;
                         });
                     }
