@@ -50,6 +50,10 @@ pub fn routes() -> Router<AppState> {
             post(unlock_encryption),
         )
         .route("/tenants/{tenant_id}/encryption/rotate", post(rotate_keys))
+        .route(
+            "/tenants/{tenant_id}/encryption/dek",
+            get(get_dek_for_orchestra),
+        )
 }
 
 // ── Authorization helpers ──
@@ -435,6 +439,28 @@ pub(crate) async fn auto_init_encryption(
 
     state.dek_cache.put(tenant_id, dek).await;
     tracing::info!(tenant_id = %tenant_id, "auto-initialized login-derived encryption for new tenant");
+}
+
+/// Export the raw DEK (base64) for orchestra configuration.
+///
+/// Requires: owner role + encryption must be unlocked (DEK in cache).
+/// This is the value for the `DIRAIGENT_DEK` environment variable.
+async fn get_dek_for_orchestra(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path(tenant_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_owner(&state, tenant_id, user_id).await?;
+    let tenant = state.db.get_tenant_by_id(tenant_id).await?;
+    if tenant.encryption_mode == "none" {
+        return Err(AppError::Validation(
+            "Encryption is not enabled for this tenant".into(),
+        ));
+    }
+    let dek = state.dek_cache.get(&tenant_id).await.ok_or_else(|| {
+        AppError::Conflict("Encryption is not unlocked. Log in first to unlock the DEK.".into())
+    })?;
+    Ok(Json(serde_json::json!({ "dek": dek.to_base64() })))
 }
 
 /// Response from GET encryption salt.

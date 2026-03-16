@@ -50,6 +50,14 @@ impl Dek {
         Dek { key }
     }
 
+    /// Export the raw DEK as a base64-encoded string.
+    ///
+    /// Used for orchestra onboarding — the admin copies this value into
+    /// the `DIRAIGENT_DEK` environment variable.
+    pub fn to_base64(&self) -> String {
+        B64.encode(self.key)
+    }
+
     /// Construct from raw bytes (e.g. after unwrapping).
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
         if bytes.len() != DEK_LEN {

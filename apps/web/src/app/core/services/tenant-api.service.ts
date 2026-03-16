@@ -134,6 +134,13 @@ export class TenantApiService {
     );
   }
 
+  /** Get the raw DEK (base64) for orchestra configuration. Owner-only. */
+  getDekForOrchestra(tenantId: string): Observable<{ dek: string }> {
+    return this.http.get<{ dek: string }>(
+      `${this.baseUrl}/tenants/${tenantId}/encryption/dek`,
+    );
+  }
+
   /** Rotate the tenant's encryption key. Requires encryption to be unlocked. */
   rotateKeys(tenantId: string, accessToken: string): Observable<{ new_key_version: number; fields_rotated: number }> {
     return this.http.post<{ new_key_version: number; fields_rotated: number }>(

@@ -1,12 +1,13 @@
 import { Component, inject, OnInit, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TranslocoModule } from '@jsverse/transloco';
-import { switchMap } from 'rxjs';
+import { catchError, of, switchMap } from 'rxjs';
 import {
   AgentsApiService,
   SpAgentRegistered,
 } from '../../core/services/agents-api.service';
 import { SpRole, TeamApiService } from '../../core/services/team-api.service';
+import { TenantApiService } from '../../core/services/tenant-api.service';
 import { ModalWrapperComponent } from '../../shared/components/modal-wrapper/modal-wrapper';
 
 const CAPABILITY_PRESETS: Record<string, string[]> = {
@@ -124,8 +125,13 @@ const CAPABILITY_PRESETS: Record<string, string[]> = {
               <p class="font-medium text-text-primary mb-1">{{ t('agents.envHint') }}</p>
               <code class="block font-mono text-xs mt-1 select-all whitespace-pre">DIRAIGENT_API_URL={{ apiUrl }}
 DIRAIGENT_API_TOKEN={{ r.api_key }}
-AGENT_ID={{ r.id }}</code>
+AGENT_ID={{ r.id }}@if (dek()) {
+
+DIRAIGENT_DEK={{ dek() }}}</code>
             </div>
+            @if (dek()) {
+              <p class="text-xs text-ctp-yellow mt-1">{{ t('agents.dekWarning') }}</p>
+            }
 
             <button (click)="onDone()" type="button"
               class="w-full px-4 py-2 text-sm font-medium bg-accent text-bg rounded-lg
@@ -142,6 +148,7 @@ AGENT_ID={{ r.id }}</code>
 export class CreateAgentModalComponent implements OnInit {
   private api = inject(AgentsApiService);
   private teamApi = inject(TeamApiService);
+  private tenantApi = inject(TenantApiService);
 
   created = output<SpAgentRegistered>();
   cancelled = output<void>();
@@ -151,6 +158,7 @@ export class CreateAgentModalComponent implements OnInit {
   result = signal<SpAgentRegistered | null>(null);
   copied = signal(false);
   roles = signal<SpRole[]>([]);
+  dek = signal('');
 
   name = '';
   capsInput = 'rust, typescript, angular, sql, docker, code-review';
@@ -166,6 +174,13 @@ export class CreateAgentModalComponent implements OnInit {
           this.selectedRoleId = roles[0].id;
         }
       },
+    });
+    // Fetch DEK for orchestra env hint (best-effort — only works for owners with encryption enabled)
+    this.tenantApi.getMyTenant().pipe(
+      switchMap(tenant => tenant ? this.tenantApi.getDekForOrchestra(tenant.id) : of(null)),
+      catchError(() => of(null)),
+    ).subscribe({
+      next: (res) => { if (res?.dek) this.dek.set(res.dek); },
     });
   }
 

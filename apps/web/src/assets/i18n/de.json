@@ -141,6 +141,7 @@
     "created": "Agent erstellt",
     "apiKeyWarning": "Kopiere diesen API-Schlüssel jetzt — er wird nicht erneut angezeigt.",
     "envHint": "Zur orchestra .env-Datei hinzufügen:",
+    "dekWarning": "Der Verschlüsselungsschlüssel (DIRAIGENT_DEK) wird nur einmal angezeigt. Sicher aufbewahren.",
     "revoke": "Agent widerrufen",
     "role": "Rolle",
     "roleHint": "Weist den Agenten als Teammitglied mit dieser Rolle zu."
