@@ -327,32 +327,23 @@ fn has_source_changes(git_root: &Path, old_commit: &str, new_commit: &str) -> Re
     Ok(!diff.trim().is_empty())
 }
 
-/// Run the analyzer binary with the given arguments.
-fn run_analyzer(git_root: &Path, args: &[&str]) -> Result<()> {
-    // Look for diraigent-analyzer as sibling of current exe, then in PATH
-    let analyzer_bin = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join("diraigent-analyzer")))
-        .filter(|p| p.exists())
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| "diraigent-analyzer".to_string());
+/// Run the analyzer scan step, writing output to the given path.
+fn run_scan(git_root: &Path, output_path: &Path) {
+    diraigent_analyzer::scan::run(
+        git_root.to_path_buf(),
+        Some(output_path.to_path_buf()),
+        false,
+    );
+}
 
-    debug!("Running: {} {}", analyzer_bin, args.join(" "));
-
-    let output = std::process::Command::new(&analyzer_bin)
-        .args(args)
-        .current_dir(git_root)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .with_context(|| format!("failed to run {analyzer_bin}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("analyzer command failed: {stderr}");
-    }
-
-    Ok(())
+/// Run the analyzer api-surface step, writing output to the given path.
+fn run_api_surface(git_root: &Path, output_path: &Path) {
+    diraigent_analyzer::api_surface::run(
+        git_root.to_path_buf(),
+        Some(output_path.to_path_buf()),
+        "json",
+        false,
+    );
 }
 
 /// Run the full indexing pipeline for a single project.
@@ -410,35 +401,14 @@ async fn run_pipeline(
     let api_surface_path = tmp_dir.join("api-surface.json");
 
     // Step 1: Scan
-    run_analyzer(
-        git_root,
-        &[
-            "scan",
-            &git_root.to_string_lossy(),
-            "-o",
-            &scan_path.to_string_lossy(),
-        ],
-    )?;
+    run_scan(git_root, &scan_path);
     info!("project {project_id}: scan complete");
 
     // Step 2: API Surface
-    run_analyzer(
-        git_root,
-        &[
-            "api-surface",
-            &git_root.to_string_lossy(),
-            "-o",
-            &api_surface_path.to_string_lossy(),
-            "--format",
-            "json",
-        ],
-    )?;
+    run_api_surface(git_root, &api_surface_path);
     info!("project {project_id}: api-surface complete");
 
     // Step 3: Sync to knowledge store
-    let api_url = api.base_url();
-    let api_token = api.api_token();
-    let agent_id = api.agent_id();
     let cache_path = tmp_dir.join(".analyzer-sync-cache.json");
 
     // Copy the persistent sync cache into temp dir if it exists
@@ -447,26 +417,20 @@ async fn run_pipeline(
         std::fs::copy(&persistent_cache, &cache_path).ok();
     }
 
-    run_analyzer(
-        git_root,
-        &[
-            "sync",
-            "-m",
-            &scan_path.to_string_lossy(),
-            "-a",
-            &api_surface_path.to_string_lossy(),
-            "--project-id",
-            project_id,
-            "--api-url",
-            api_url,
-            "--api-token",
-            api_token,
-            "--agent-id",
-            agent_id,
-            "-c",
-            &cache_path.to_string_lossy(),
-        ],
-    )?;
+    let sync_config = diraigent_analyzer::sync::SyncConfig {
+        manifest_path: scan_path.clone(),
+        summaries_path: None,
+        api_surface_path: api_surface_path.clone(),
+        cache_path: cache_path.clone(),
+        api_url: api.base_url().to_string(),
+        api_token: api.api_token().to_string(),
+        project_id: project_id.to_string(),
+        agent_id: Some(api.agent_id().to_string()),
+        dry_run: false,
+    };
+    if let Err(e) = diraigent_analyzer::sync::run(sync_config).await {
+        anyhow::bail!("analyzer sync failed: {e}");
+    }
     info!("project {project_id}: sync complete");
 
     // Copy sync cache back to persistent location
