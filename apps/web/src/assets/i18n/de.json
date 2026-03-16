@@ -55,6 +55,8 @@
     "title": "Dashboard",
     "welcome": "Willkommen bei Diraigent",
     "openTasks": "Offene Aufgaben",
+    "activeWork": "Aktive Arbeit",
+    "noActiveWork": "Keine aktiven Arbeitselemente",
     "project": "Projekt",
     "lastUpdated": "Zuletzt aktualisiert",
     "stats": {

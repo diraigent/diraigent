@@ -1,13 +1,17 @@
 import { Component, inject, signal, computed, DestroyRef, HostListener } from '@angular/core';
 import { DatePipe } from '@angular/common';
+import { Router } from '@angular/router';
+import { HttpClient } from '@angular/common/http';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { forkJoin, timer, switchMap, of, map } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { TasksApiService, SpTask } from '../../core/services/tasks-api.service';
 import { DiraigentApiService, DgProject } from '../../core/services/diraigent-api.service';
+import { SpWork } from '../../core/services/work-api.service';
 import { taskStateColor, taskTransitions } from '../../shared/ui-constants';
 import { TokenUsageChartComponent, ChartProject } from './token-usage-chart';
+import { environment } from '../../../environments/environment';
 
 interface ProjectTasks {
   project: DgProject;
@@ -18,6 +22,20 @@ interface OpenTaskRow {
   task: SpTask;
   projectName: string;
 }
+
+interface ActiveWorkRow {
+  work: SpWork;
+  projectName: string;
+}
+
+const WORK_STATUS_COLORS: Record<string, string> = {
+  active: 'bg-ctp-green/20 text-ctp-green',
+  ready: 'bg-ctp-sapphire/20 text-ctp-sapphire',
+  processing: 'bg-ctp-peach/20 text-ctp-peach',
+  achieved: 'bg-ctp-blue/20 text-ctp-blue',
+  paused: 'bg-ctp-yellow/20 text-ctp-yellow',
+  abandoned: 'bg-ctp-overlay0/20 text-ctp-overlay0',
+};
 
 const ACTIVE_STATES = new Set(['backlog', 'ready', 'working', 'implement', 'review', 'merge', 'human_review']);
 const IN_PROGRESS_STATES = new Set(['working', 'implement', 'review', 'merge', 'human_review']);
@@ -113,6 +131,40 @@ const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('w
           }
         </div>
 
+        <!-- Active Work section -->
+        <h2 class="text-lg font-semibold text-text-primary mb-3">{{ t('dashboard.activeWork') }}</h2>
+        @if (allActiveWork().length === 0) {
+          <p class="text-sm text-text-muted mb-8">{{ t('dashboard.noActiveWork') }}</p>
+        } @else {
+          <div class="bg-surface rounded-lg border border-border overflow-hidden mb-8">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-border text-text-secondary text-left">
+                  <th class="px-4 py-3 font-medium w-36">{{ t('dashboard.project') }}</th>
+                  <th class="px-4 py-3 font-medium">{{ t('tasks.title') }}</th>
+                  <th class="px-4 py-3 font-medium w-28">{{ t('tasks.state') }}</th>
+                  <th class="px-4 py-3 font-medium w-24">{{ t('goals.fieldType') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of allActiveWork(); track row.work.id) {
+                  <tr class="border-b border-border last:border-b-0 hover:bg-surface-hover transition-colors cursor-pointer"
+                      (click)="navigateToWork(row.work.id)">
+                    <td class="px-4 py-3 text-text-muted text-xs truncate max-w-[144px]">{{ row.projectName }}</td>
+                    <td class="px-4 py-3 text-text-primary font-medium">{{ row.work.title }}</td>
+                    <td class="px-4 py-3">
+                      <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ workStatusColor(row.work.status) }}">
+                        {{ row.work.status }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-text-secondary text-xs">{{ row.work.work_type }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+
         <!-- Open tasks table -->
         <h2 class="text-lg font-semibold text-text-primary mb-3">{{ t('dashboard.openTasks') }}</h2>
         <div class="bg-surface rounded-lg border border-border overflow-hidden">
@@ -180,9 +232,12 @@ const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('w
 export class DashboardPage {
   private tasksApi = inject(TasksApiService);
   private diraigentApi = inject(DiraigentApiService);
+  private http = inject(HttpClient);
+  private router = inject(Router);
   private destroyRef = inject(DestroyRef);
 
   allProjectTasks = signal<ProjectTasks[]>([]);
+  allActiveWork = signal<ActiveWorkRow[]>([]);
   loading = signal(true);
   error = signal(false);
   lastUpdated = signal<Date>(new Date());
@@ -316,31 +371,61 @@ export class DashboardPage {
     });
   }
 
+  workStatusColor(status: string): string {
+    return WORK_STATUS_COLORS[status] ?? 'bg-ctp-overlay0/20 text-ctp-overlay0';
+  }
+
+  navigateToWork(workId: string): void {
+    this.router.navigate(['/work'], { queryParams: { workId } });
+  }
+
   private startPolling(): void {
     timer(0, 30_000)
       .pipe(
         switchMap(() => this.diraigentApi.getProjects()),
-        switchMap(projects =>
-          projects.length === 0
-            ? of([] as ProjectTasks[])
-            : forkJoin(
-                projects.map(project => {
-                  const retentionDays = (project.metadata?.['done_retention_days'] as number) ?? 1;
-                  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
-                  return this.tasksApi
-                    .listForProject(project.id, { limit: 200, hide_done_before: cutoff })
-                    .pipe(
-                      catchError(() => of({ data: [] as SpTask[], total: 0, limit: 200, offset: 0, has_more: false })),
-                      map(res => ({ project, tasks: res.data }) as ProjectTasks),
-                    );
-                }),
-              ),
-        ),
+        switchMap(projects => {
+          if (projects.length === 0) {
+            return of({ projectTasks: [] as ProjectTasks[], activeWork: [] as ActiveWorkRow[] });
+          }
+          return forkJoin(
+            projects.map(project => {
+              const retentionDays = (project.metadata?.['done_retention_days'] as number) ?? 1;
+              const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+              const tasks$ = this.tasksApi
+                .listForProject(project.id, { limit: 200, hide_done_before: cutoff })
+                .pipe(
+                  catchError(() => of({ data: [] as SpTask[], total: 0, limit: 200, offset: 0, has_more: false })),
+                  map(res => res.data),
+                );
+              const work$ = this.http
+                .get<SpWork[]>(`${environment.apiServer}/${project.id}/work`, { params: { limit: '200' } })
+                .pipe(catchError(() => of([] as SpWork[])));
+              return forkJoin([tasks$, work$]).pipe(
+                map(([tasks, works]) => ({ project, tasks, works })),
+              );
+            }),
+          ).pipe(
+            map(results => ({
+              projectTasks: results.map(r => ({ project: r.project, tasks: r.tasks })) as ProjectTasks[],
+              activeWork: results
+                .flatMap(r =>
+                  r.works
+                    .filter(w => !['achieved', 'abandoned'].includes(w.status))
+                    .map(w => ({ work: w, projectName: r.project.name }) as ActiveWorkRow),
+                )
+                .sort((a, b) =>
+                  b.work.priority - a.work.priority
+                  || new Date(b.work.updated_at).getTime() - new Date(a.work.updated_at).getTime(),
+                ),
+            })),
+          );
+        }),
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe({
-        next: projectTasks => {
+        next: ({ projectTasks, activeWork }) => {
           this.allProjectTasks.set(projectTasks);
+          this.allActiveWork.set(activeWork);
           this.loading.set(false);
           this.error.set(false);
           this.lastUpdated.set(new Date());
