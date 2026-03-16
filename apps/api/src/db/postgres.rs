@@ -1595,4 +1595,25 @@ impl DiraigentDb for PostgresDb {
         repository::create_forgejo_integration(&self.0, project_id, base_url, token, webhook_secret)
             .await
     }
+
+    // GitHub CI
+    async fn get_github_integration(&self, id: Uuid) -> Result<GitHubIntegration, AppError> {
+        repository::get_github_integration(&self.0, id).await
+    }
+    async fn get_github_integration_by_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<GitHubIntegration, AppError> {
+        repository::get_github_integration_by_project(&self.0, project_id).await
+    }
+    async fn create_github_integration(
+        &self,
+        project_id: Uuid,
+        base_url: &str,
+        token: Option<&str>,
+        webhook_secret: &str,
+    ) -> Result<GitHubIntegration, AppError> {
+        repository::create_github_integration(&self.0, project_id, base_url, token, webhook_secret)
+            .await
+    }
 }

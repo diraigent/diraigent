@@ -41,6 +41,9 @@ features = ["rest"]
 [dependencies.forgejo-client]
 path = "../../libs/common-rust/forgejo-client"
 
+[dependencies.github-client]
+path = "../../libs/common-rust/github-client"
+
 [dev-dependencies]
 tokio-test.workspace = true
 tower = { version = "0.5", features = ["util"] }

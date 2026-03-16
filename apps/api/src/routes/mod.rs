@@ -10,6 +10,7 @@ mod events;
 mod files;
 mod forgejo_webhooks;
 mod git;
+mod github_webhooks;
 mod integrations;
 mod knowledge;
 mod locks;
@@ -107,6 +108,7 @@ pub fn router() -> Router<AppState> {
         .merge(reports::routes())
         .merge(task_logs::routes())
         .merge(forgejo_webhooks::routes())
+        .merge(github_webhooks::routes())
         .merge(ci::routes())
         .merge(ws::routes())
 }

@@ -16,6 +16,8 @@
 //!   provider_config.api_key   → "provider_config.api_key"
 //!   forgejo_integration.token → "forgejo_integration.token"
 //!   forgejo_integration.webhook_secret → "forgejo_integration.webhook_secret"
+//!   github_integration.token  → "github_integration.token"
+//!   github_integration.webhook_secret → "github_integration.webhook_secret"
 
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -130,6 +132,19 @@ impl CryptoDb {
         }
         if let Some(ref s) = fi.webhook_secret {
             fi.webhook_secret = Some(dek.decrypt_str(s, "forgejo_integration.webhook_secret")?);
+        }
+        Ok(())
+    }
+
+    fn decrypt_github_integration(
+        dek: &Dek,
+        gi: &mut GitHubIntegration,
+    ) -> Result<(), CryptoError> {
+        if let Some(ref t) = gi.token {
+            gi.token = Some(dek.decrypt_str(t, "github_integration.token")?);
+        }
+        if let Some(ref s) = gi.webhook_secret {
+            gi.webhook_secret = Some(dek.decrypt_str(s, "github_integration.webhook_secret")?);
         }
         Ok(())
     }
@@ -2179,6 +2194,59 @@ impl DiraigentDb for CryptoDb {
         } else {
             self.inner
                 .create_forgejo_integration(project_id, base_url, token, webhook_secret)
+                .await
+        }
+    }
+
+    // GitHub CI — encrypt token + webhook_secret
+    async fn get_github_integration(&self, id: Uuid) -> Result<GitHubIntegration, AppError> {
+        let mut gi = self.inner.get_github_integration(id).await?;
+        if let Some(dek) = self.dek_for_project(gi.project_id).await? {
+            Self::decrypt_github_integration(&dek, &mut gi)?;
+        }
+        Ok(gi)
+    }
+    async fn get_github_integration_by_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<GitHubIntegration, AppError> {
+        let mut gi = self
+            .inner
+            .get_github_integration_by_project(project_id)
+            .await?;
+        if let Some(dek) = self.dek_for_project(gi.project_id).await? {
+            Self::decrypt_github_integration(&dek, &mut gi)?;
+        }
+        Ok(gi)
+    }
+    async fn create_github_integration(
+        &self,
+        project_id: Uuid,
+        base_url: &str,
+        token: Option<&str>,
+        webhook_secret: &str,
+    ) -> Result<GitHubIntegration, AppError> {
+        let dek = self.dek_for_project(project_id).await?;
+        if let Some(ref dek) = dek {
+            let encrypted_token = token
+                .map(|t| dek.encrypt_str(t, "github_integration.token"))
+                .transpose()?;
+            let encrypted_secret =
+                dek.encrypt_str(webhook_secret, "github_integration.webhook_secret")?;
+            let mut gi = self
+                .inner
+                .create_github_integration(
+                    project_id,
+                    base_url,
+                    encrypted_token.as_deref(),
+                    &encrypted_secret,
+                )
+                .await?;
+            Self::decrypt_github_integration(dek, &mut gi)?;
+            Ok(gi)
+        } else {
+            self.inner
+                .create_github_integration(project_id, base_url, token, webhook_secret)
                 .await
         }
     }

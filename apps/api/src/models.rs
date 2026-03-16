@@ -2100,3 +2100,35 @@ pub struct ForgejoIntegrationResponse {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+
+// ── GitHub CI ──
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct GitHubIntegration {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub base_url: String,
+    pub token: Option<String>,
+    pub webhook_secret: Option<String>,
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateGitHubIntegration {
+    pub base_url: Option<String>,
+    pub token: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GitHubIntegrationResponse {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub base_url: String,
+    pub webhook_url: String,
+    pub webhook_secret: String,
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}

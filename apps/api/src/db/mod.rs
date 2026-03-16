@@ -894,4 +894,18 @@ pub trait DiraigentDb: Send + Sync {
         token: Option<&str>,
         webhook_secret: &str,
     ) -> Result<ForgejoIntegration, AppError>;
+
+    // ── GitHub CI ────────────────────────────────────────────────────────────
+    async fn get_github_integration(&self, id: Uuid) -> Result<GitHubIntegration, AppError>;
+    async fn get_github_integration_by_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<GitHubIntegration, AppError>;
+    async fn create_github_integration(
+        &self,
+        project_id: Uuid,
+        base_url: &str,
+        token: Option<&str>,
+        webhook_secret: &str,
+    ) -> Result<GitHubIntegration, AppError>;
 }
