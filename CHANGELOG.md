@@ -1,5 +1,27 @@
 # Changelog
 
+## v20260316-1113-developer (2026-03-16)
+
+### Added
+- **Web**: Active Work section on dashboard displaying cross-project work items
+- **Web**: "Plan & Execute" option in work item creation dialog
+- **Web**: Deep-link support via `?workId=<uuid>` query parameter on work page
+- **Web**: Work status counts and section header aggregation
+- **Web**: Lazy loading for completed and archived work sections
+- **Web**: Unmerged branch indicator on work item headers
+- **Web**: Merge conflict indicator on work items with conflicting tasks
+- **Web**: Acceptance criteria field on task form and task detail view
+
+### Changed
+- **Web**: Renamed "Create & Execute" button to "Execute" in work item dialog
+- **Web**: Improved menu positioning on task list
+
+### Removed
+- **Web**: Removed ready/processing from manual work status transitions
+- **Web**: Removed redundant active badge on work items
+
+---
+
 
 ## v20260316-1003-developer (2026-03-16)
 
