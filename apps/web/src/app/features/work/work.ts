@@ -1,6 +1,7 @@
 import { Component, ChangeDetectorRef, inject, signal, computed, effect, DestroyRef, PLATFORM_ID, ViewEncapsulation } from '@angular/core';
 import { NgTemplateOutlet, DatePipe, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subscription, forkJoin, of, timer, switchMap } from 'rxjs';
@@ -43,6 +44,8 @@ import { GitApiService, BranchInfo, MainPushStatus, TaskBranchStatus } from '../
 import { ChatService } from '../../core/services/chat.service';
 
 const STATUSES: WorkStatus[] = ['active', 'ready', 'processing', 'achieved', 'paused', 'abandoned'];
+// 'ready' and 'processing' are inferred from tasks — not manually selectable
+const MANUAL_STATUSES: WorkStatus[] = ['active', 'achieved', 'paused', 'abandoned'];
 
 const STATUS_COLORS: Record<WorkStatus, string> = {
   active: 'bg-ctp-green/20 text-ctp-green',
@@ -185,6 +188,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
       <!-- Goal accordion item template (reused across sections) -->
       <ng-template #goalItem let-goal>
         <div class="rounded-lg border transition-colors"
+          [attr.data-work-id]="goal.id"
           [class]="goal.id === selected()?.id
             ? 'bg-accent/10 border-accent'
             : 'bg-surface border-border hover:border-accent/50'"
@@ -216,6 +220,15 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                     <path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
                   </svg>
                   {{ conflicts.length }}
+                </span>
+              }
+              @if (unmergedMap().get(goal.id); as unmerged) {
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-ctp-yellow/20 text-ctp-yellow"
+                  title="Tasks with unmerged branches">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M6 3v12M18 9a3 3 0 100-6 3 3 0 000 6zM6 21a3 3 0 100-6 3 3 0 000 6zM18 9a9 9 0 01-9 9" />
+                  </svg>
+                  {{ unmerged.length }}
                 </span>
               }
             </div>
@@ -543,6 +556,21 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                         </svg>
                       }
                       {{ t('goals.executeBtn') }}
+                    </button>
+                    <button (click)="planExecuteWorkItem()"
+                      [disabled]="planExecuteLoading()"
+                      class="px-3 py-1.5 text-xs bg-ctp-mauve text-bg rounded hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
+                      @if (planExecuteLoading()) {
+                        <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                      } @else {
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                        </svg>
+                      }
+                      {{ t('goals.planExecuteBtn') }}
                     </button>
                     <button (click)="openCreateTaskForGoal()" class="px-3 py-1.5 text-xs bg-ctp-green text-bg rounded hover:opacity-90">
                       {{ t('goals.createTaskBtn') }}
@@ -997,6 +1025,17 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                     }
                     {{ t('goals.createAndExecute') }}
                   </button>
+                  <button (click)="submitFormAndPlanExecute()"
+                    [disabled]="createAndPlanExecuteLoading()"
+                    class="px-4 py-2 bg-ctp-mauve text-bg rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
+                    @if (createAndPlanExecuteLoading()) {
+                      <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                      </svg>
+                    }
+                    {{ t('goals.createAndPlanExecute') }}
+                  </button>
                 }
                 <button (click)="submitForm()" class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90">
                   {{ editing() ? t('goals.save') : t('goals.create') }}
@@ -1120,6 +1159,7 @@ export class WorkPage {
   private destroyRef = inject(DestroyRef);
   private cdr = inject(ChangeDetectorRef);
   private platformId = inject(PLATFORM_ID);
+  private route = inject(ActivatedRoute);
 
   /** True on touch-primary devices — disables CDK drag to preserve mobile scrolling. */
   isTouch = signal(false);
@@ -1138,6 +1178,7 @@ export class WorkPage {
   statsMap = signal<Map<string, SpWorkStats>>(new Map());
   childrenMap = signal<Map<string, SpWork[]>>(new Map());
   conflictMap = signal<Map<string, string[]>>(new Map());
+  unmergedMap = signal<Map<string, string[]>>(new Map());
 
   showForm = signal(false);
   editing = signal<SpWork | null>(null);
@@ -1215,7 +1256,9 @@ export class WorkPage {
   taskDetailResolving = signal(false);
   goalPlaybooks = signal<SpPlaybook[]>([]);
   executeLoading = signal(false);
+  planExecuteLoading = signal(false);
   createAndExecuteLoading = signal(false);
+  createAndPlanExecuteLoading = signal(false);
   editingTask = signal<SpTask | null>(null);
 
   // Project settings
@@ -1230,6 +1273,9 @@ export class WorkPage {
   private gitPollSub?: Subscription;
   private detailPollSub?: Subscription;
   private gitSub?: Subscription;
+
+  // Deep-link support: pending workId from query param
+  private pendingWorkId: string | null = null;
 
   // --- Computed: goal sections ---
 
@@ -1272,7 +1318,7 @@ export class WorkPage {
   availableTransitions = computed(() => {
     const sel = this.selected();
     if (!sel || sel.auto_status) return [];
-    return STATUSES.filter(s => s !== sel.status);
+    return MANUAL_STATUSES.filter(s => s !== sel.status);
   });
 
   private static readonly NON_WORKING_STATES = new Set(['backlog', 'ready', 'done', 'cancelled']);
@@ -1302,6 +1348,8 @@ export class WorkPage {
     if (isPlatformBrowser(this.platformId)) {
       this.isTouch.set(window.matchMedia('(pointer: coarse)').matches);
     }
+    // Read deep-link query param once on init
+    this.pendingWorkId = this.route.snapshot.queryParamMap.get('workId');
     effect(() => {
       this.ctx.projectId();
       this.selected.set(null);
@@ -1583,6 +1631,10 @@ export class WorkPage {
           this.selected.set(still ?? null);
         }
         this.loadAllProgress(items);
+        // Handle deep-link query param after items load
+        if (this.pendingWorkId) {
+          this.handleDeepLink(items);
+        }
       },
       error: () => this.loading.set(false),
     });
@@ -1686,11 +1738,18 @@ export class WorkPage {
     const relevantGoals = goals.filter(g => g.status === 'active' || g.status === 'paused');
     if (relevantGoals.length === 0) {
       this.conflictMap.set(new Map());
+      this.unmergedMap.set(new Map());
       return;
     }
 
     const newConflictMap = new Map<string, string[]>();
+    const newUnmergedMap = new Map<string, string[]>();
     let goalsRemaining = relevantGoals.length;
+
+    const finalize = () => {
+      this.conflictMap.set(new Map(newConflictMap));
+      this.unmergedMap.set(new Map(newUnmergedMap));
+    };
 
     for (const goal of relevantGoals) {
       this.api.listTasks(goal.id, { limit: 100 }).pipe(
@@ -1703,12 +1762,13 @@ export class WorkPage {
 
           if (activeTasks.length === 0) {
             goalsRemaining--;
-            if (goalsRemaining === 0) this.conflictMap.set(new Map(newConflictMap));
+            if (goalsRemaining === 0) finalize();
             return;
           }
 
           let taskRemaining = activeTasks.length;
           const conflicts: string[] = [];
+          const unmerged: string[] = [];
 
           for (const task of activeTasks) {
             this.git.taskBranchStatus(task.id).pipe(
@@ -1718,13 +1778,19 @@ export class WorkPage {
                 if (status?.has_conflict) {
                   conflicts.push(task.id);
                 }
+                if (status?.exists) {
+                  unmerged.push(task.id);
+                }
                 taskRemaining--;
                 if (taskRemaining === 0) {
                   if (conflicts.length > 0) {
                     newConflictMap.set(goal.id, conflicts);
                   }
+                  if (unmerged.length > 0) {
+                    newUnmergedMap.set(goal.id, unmerged);
+                  }
                   goalsRemaining--;
-                  if (goalsRemaining === 0) this.conflictMap.set(new Map(newConflictMap));
+                  if (goalsRemaining === 0) finalize();
                 }
               },
             });
@@ -1751,6 +1817,46 @@ export class WorkPage {
       this.loadMarkedTasks(goal.id);
     } else {
       this.markedTaskIds.set(new Set());
+    }
+  }
+
+  /** Handle deep-link: find the work item by pendingWorkId and select + scroll to it. */
+  private handleDeepLink(loadedItems: SpWork[]): void {
+    const workId = this.pendingWorkId;
+    if (!workId) return;
+
+    const found = loadedItems.find(i => i.id === workId);
+    if (found) {
+      this.pendingWorkId = null;
+      this.selectItem(found);
+      setTimeout(() => this.scrollToWork(workId), 150);
+    } else {
+      // Item might be in achieved/archived section or a different project — fetch by ID
+      this.api.get(workId).subscribe({
+        next: (work) => {
+          if (work.project_id !== this.ctx.projectId()) {
+            // Switch project context — the effect will re-trigger loadGoals
+            this.ctx.select(work.project_id);
+          } else {
+            // Same project but in a different status section (achieved/archived)
+            this.pendingWorkId = null;
+            this.selectItem(work);
+            setTimeout(() => this.scrollToWork(workId), 150);
+          }
+        },
+        error: () => {
+          // Invalid workId — silently ignore
+          this.pendingWorkId = null;
+        },
+      });
+    }
+  }
+
+  /** Scroll the work item with the given ID into the viewport. */
+  private scrollToWork(workId: string): void {
+    const el = document.querySelector(`[data-work-id="${workId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }
 
@@ -1938,6 +2044,48 @@ export class WorkPage {
       },
       error: () => {
         this.createAndExecuteLoading.set(false);
+      },
+    });
+  }
+
+  submitFormAndPlanExecute(): void {
+    const data: SpWorkCreate = {
+      title: this.formTitle,
+      description: this.formDescription,
+      success_criteria: this.formCriteria,
+      work_type: this.formWorkType,
+      priority: this.formPriority,
+      auto_status: this.formAutoStatus,
+    };
+    this.createAndPlanExecuteLoading.set(true);
+    this.api.create(data).pipe(
+      switchMap((created: SpWork) => {
+        const context: Record<string, unknown> = {};
+        if (created.description) {
+          context['spec'] = created.description;
+        }
+        if (created.success_criteria) {
+          context['acceptance_criteria'] = created.success_criteria
+            .split('\n')
+            .map((l) => l.trim())
+            .filter((l) => l.length > 0);
+        }
+        context['decompose'] = true;
+        const req: CreateTaskRequest = {
+          title: created.title,
+          work_id: created.id,
+          context,
+        };
+        return this.tasksApi.create(req);
+      }),
+    ).subscribe({
+      next: () => {
+        this.createAndPlanExecuteLoading.set(false);
+        this.closeForm();
+        this.loadGoals();
+      },
+      error: () => {
+        this.createAndPlanExecuteLoading.set(false);
       },
     });
   }
@@ -2348,6 +2496,39 @@ export class WorkPage {
       },
       error: () => {
         this.executeLoading.set(false);
+      },
+    });
+  }
+
+  planExecuteWorkItem(): void {
+    const sel = this.selected();
+    if (!sel) return;
+    this.planExecuteLoading.set(true);
+    const context: Record<string, unknown> = {};
+    if (sel.description) {
+      context['spec'] = sel.description;
+    }
+    if (sel.success_criteria) {
+      context['acceptance_criteria'] = sel.success_criteria
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+    }
+    context['decompose'] = true;
+    const req: CreateTaskRequest = {
+      title: sel.title,
+      work_id: sel.id,
+      context,
+    };
+    this.tasksApi.create(req).subscribe({
+      next: () => {
+        this.planExecuteLoading.set(false);
+        this.loadLinkedTasks(sel.id);
+        this.loadAllProgress([sel]);
+        this.loadStatsAndChildren(sel.id);
+      },
+      error: () => {
+        this.planExecuteLoading.set(false);
       },
     });
   }

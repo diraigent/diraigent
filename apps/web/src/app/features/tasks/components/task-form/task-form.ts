@@ -54,6 +54,13 @@ import { DEFAULT_TASK_KINDS } from '../../../../shared/ui-constants';
                        focus:outline-none focus:ring-1 focus:ring-accent resize-y font-mono"></textarea>
             </div>
             <div>
+              <label for="tf-acceptance" class="block text-sm text-text-secondary mb-1">{{ t('tasks.acceptanceCriteria') }}</label>
+              <textarea id="tf-acceptance" [(ngModel)]="formAcceptanceCriteria" rows="3"
+                [placeholder]="t('tasks.acceptanceCriteriaHint')"
+                class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                       focus:outline-none focus:ring-1 focus:ring-accent resize-y font-mono"></textarea>
+            </div>
+            <div>
               <label for="tf-playbook" class="block text-sm text-text-secondary mb-1">{{ t('tasks.playbook') }}</label>
               <select id="tf-playbook" [(ngModel)]="formPlaybookId"
                 class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
@@ -112,6 +119,7 @@ export class TaskFormComponent implements OnChanges {
   formKind = 'feature';
   formUrgent = false;
   formSpec = '';
+  formAcceptanceCriteria = '';
   formPlaybookId = '';
   formDecompose = false;
 
@@ -122,6 +130,8 @@ export class TaskFormComponent implements OnChanges {
       this.formKind = task.kind || 'feature';
       this.formUrgent = task.urgent;
       this.formSpec = (task.context?.['spec'] as string) ?? '';
+      const criteria = task.context?.['acceptance_criteria'] as string[] | undefined;
+      this.formAcceptanceCriteria = criteria?.join('\n') ?? '';
       this.formPlaybookId = task.playbook_id ?? '';
       this.loadPlaybooks();
     } else if (this.show()) {
@@ -129,6 +139,7 @@ export class TaskFormComponent implements OnChanges {
       this.formKind = 'feature';
       this.formUrgent = false;
       this.formSpec = '';
+      this.formAcceptanceCriteria = '';
       this.formPlaybookId = this.defaultPlaybookId;
       this.formDecompose = false;
       this.loadPlaybooks();
@@ -203,6 +214,11 @@ export class TaskFormComponent implements OnChanges {
     const task = this.editing();
     const context: Record<string, unknown> = {};
     if (this.formSpec.trim()) context['spec'] = this.formSpec.trim();
+    const acLines = this.formAcceptanceCriteria
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    if (acLines.length > 0) context['acceptance_criteria'] = acLines;
 
     if (task) {
       this.submitUpdate.emit({
