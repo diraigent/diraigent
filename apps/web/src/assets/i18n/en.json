@@ -270,6 +270,8 @@
     "children": "Sub-items",
     "status": {
       "active": "Active",
+      "ready": "Ready",
+      "processing": "Processing",
       "achieved": "Achieved",
       "paused": "Paused",
       "abandoned": "Abandoned"
@@ -305,6 +307,7 @@
   },
   "work": {
     "activeGoals": "Active Work",
+    "queuedGoals": "Queued",
     "activeTasks": "Active Tasks",
     "backlog": "Backlog",
     "completed": "Completed",

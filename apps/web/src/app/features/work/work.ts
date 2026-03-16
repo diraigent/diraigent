@@ -43,7 +43,7 @@ import { PlaybooksApiService, SpPlaybook } from '../../core/services/playbooks-a
 import { GitApiService, BranchInfo, MainPushStatus, TaskBranchStatus } from '../../core/services/git-api.service';
 import { ChatService } from '../../core/services/chat.service';
 
-const STATUSES: WorkStatus[] = ['active', 'achieved', 'paused', 'abandoned'];
+const STATUSES: WorkStatus[] = ['active', 'ready', 'processing', 'achieved', 'paused', 'abandoned'];
 
 const STATUS_COLORS: Record<WorkStatus, string> = {
   active: 'bg-ctp-green/20 text-ctp-green',
@@ -695,6 +695,21 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
           </div>
         }
 
+        <!-- Section: Queued Work (ready / processing) -->
+        @if (queuedGoals().length > 0) {
+          <div class="mb-6">
+            <h2 class="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-2 flex items-center gap-2">
+              {{ t('work.queuedGoals') }}
+              <span class="text-xs font-normal">({{ queuedGoals().length }})</span>
+            </h2>
+            <div class="space-y-2">
+              @for (g of queuedGoals(); track g.id) {
+                <ng-container *ngTemplateOutlet="goalItem; context: { $implicit: g }"></ng-container>
+              }
+            </div>
+          </div>
+        }
+
         <!-- Section: Active Tasks (unlinked) -->
         @if (activeUnlinkedTasks().length > 0) {
           <div class="mb-6">
@@ -911,7 +926,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
         }
 
         <!-- Empty state -->
-        @if (activeGoals().length === 0 && achievedGoals().length === 0 && archivedGoals().length === 0
+        @if (activeGoals().length === 0 && queuedGoals().length === 0 && achievedGoals().length === 0 && archivedGoals().length === 0
              && activeUnlinkedTasks().length === 0 && backlogUnlinkedTasks().length === 0
              && doneUnlinkedTasks().length === 0 && cancelledUnlinkedTasks().length === 0) {
           <p class="text-text-secondary text-sm">{{ t('common.empty') }}</p>
@@ -1349,6 +1364,7 @@ export class WorkPage {
   });
 
   activeGoals = computed(() => this.filteredGoals().filter(g => g.status === 'active'));
+  queuedGoals = computed(() => this.filteredGoals().filter(g => g.status === 'ready' || g.status === 'processing'));
   achievedGoals = computed(() =>
     this.filteredGoals()
       .filter(g => g.status === 'achieved')

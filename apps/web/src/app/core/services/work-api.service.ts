@@ -5,7 +5,7 @@ import { BaseCrudApiService } from './base-crud-api.service';
 import { AuthService } from './auth.service';
 import { SpTask } from './tasks-api.service';
 
-export type WorkStatus = 'active' | 'achieved' | 'paused' | 'abandoned';
+export type WorkStatus = 'active' | 'ready' | 'processing' | 'achieved' | 'paused' | 'abandoned';
 export type WorkType = 'epic' | 'feature' | 'milestone' | 'sprint' | 'initiative';
 
 export interface SpWork {
