@@ -125,6 +125,21 @@ pub async fn list_works(
     Ok(works)
 }
 
+pub async fn work_status_counts(
+    pool: &PgPool,
+    project_id: Uuid,
+) -> Result<Vec<(String, i64)>, AppError> {
+    let rows = sqlx::query_as::<_, (String, i64)>(
+        "SELECT status, COUNT(*) FROM diraigent.work
+         WHERE project_id = $1
+         GROUP BY status",
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
 pub async fn update_work(pool: &PgPool, id: Uuid, req: &UpdateWork) -> Result<Work, AppError> {
     let existing = get_work_by_id(pool, id).await?;
 

@@ -16,6 +16,7 @@ use crate::validation;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/{project_id}/work", post(create_work).get(list_works))
+        .route("/{project_id}/work/counts", get(work_status_counts))
         .route("/{project_id}/work/reorder", post(reorder_works))
         .route(
             "/work/{work_id}",
@@ -64,6 +65,18 @@ async fn list_works(
     require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
     let works = state.db.list_works(project_id, &filters).await?;
     Ok(Json(works))
+}
+
+async fn work_status_counts(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
+    Path(project_id): Path<Uuid>,
+) -> Result<Json<std::collections::HashMap<String, i64>>, AppError> {
+    require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
+    let rows = state.db.work_status_counts(project_id).await?;
+    let map: std::collections::HashMap<String, i64> = rows.into_iter().collect();
+    Ok(Json(map))
 }
 
 async fn reorder_works(

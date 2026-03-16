@@ -804,9 +804,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
             </svg>
             {{ t('work.completed') }}
-            @if (achievedLoaded()) {
-              <span class="text-xs font-normal">({{ achievedGoals().length + doneUnlinkedTasks().length }})</span>
-            }
+            <span class="text-xs font-normal">({{ achievedCount() }})</span>
           </button>
           @if (!collapsedSections().has('completed')) {
             @if (achievedLoading()) {
@@ -871,9 +869,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
             </svg>
             {{ t('work.archived') }}
-            @if (archivedLoaded()) {
-              <span class="text-xs font-normal">({{ archivedGoals().length + cancelledUnlinkedTasks().length }})</span>
-            }
+            <span class="text-xs font-normal">({{ archivedCount() }})</span>
           </button>
           @if (!collapsedSections().has('archived')) {
             @if (archivedLoading()) {
@@ -1169,6 +1165,13 @@ export class WorkPage {
 
   // Activate
   activatingWork = signal(false);
+
+  // Status counts (lightweight, loaded on every refresh)
+  statusCounts = signal<Record<string, number>>({});
+  achievedCount = computed(() => (this.statusCounts()['achieved'] ?? 0) + this.doneUnlinkedTasks().length);
+  archivedCount = computed(() =>
+    (this.statusCounts()['paused'] ?? 0) + (this.statusCounts()['abandoned'] ?? 0) + this.cancelledUnlinkedTasks().length,
+  );
 
   // Lazy-loaded completed & archived work items
   achievedItems = signal<SpWork[]>([]);
@@ -1582,6 +1585,10 @@ export class WorkPage {
         this.loadAllProgress(items);
       },
       error: () => this.loading.set(false),
+    });
+    // Fetch status counts for section headers
+    this.api.statusCounts().subscribe({
+      next: (counts) => this.statusCounts.set(counts),
     });
     // Reset lazy-loaded sections so they re-fetch on next expand
     this.achievedLoaded.set(false);

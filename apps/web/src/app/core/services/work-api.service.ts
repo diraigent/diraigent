@@ -102,6 +102,11 @@ export class WorkApiService extends BaseCrudApiService<SpWork, SpWorkCreate, SpW
     return this.fetchList(params);
   }
 
+  statusCounts(): Observable<Record<string, number>> {
+    if (!this.projectId) return EMPTY as Observable<Record<string, number>>;
+    return this.http.get<Record<string, number>>(`${this.baseUrl}/${this.projectId}/work/counts`);
+  }
+
   progress(id: string): Observable<SpWorkProgress> {
     return this.http.get<SpWorkProgress>(`${this.baseUrl}/work/${id}/progress`);
   }
