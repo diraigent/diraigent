@@ -222,6 +222,15 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   {{ conflicts.length }}
                 </span>
               }
+              @if (unmergedMap().get(goal.id); as unmerged) {
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-ctp-yellow/20 text-ctp-yellow"
+                  title="Tasks with unmerged branches">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M6 3v12M18 9a3 3 0 100-6 3 3 0 000 6zM6 21a3 3 0 100-6 3 3 0 000 6zM18 9a9 9 0 01-9 9" />
+                  </svg>
+                  {{ unmerged.length }}
+                </span>
+              }
             </div>
             @if (goal.id !== selected()?.id) {
               @if (goal.description) {
@@ -1143,6 +1152,7 @@ export class WorkPage {
   statsMap = signal<Map<string, SpWorkStats>>(new Map());
   childrenMap = signal<Map<string, SpWork[]>>(new Map());
   conflictMap = signal<Map<string, string[]>>(new Map());
+  unmergedMap = signal<Map<string, string[]>>(new Map());
 
   showForm = signal(false);
   editing = signal<SpWork | null>(null);
@@ -1700,11 +1710,18 @@ export class WorkPage {
     const relevantGoals = goals.filter(g => g.status === 'active' || g.status === 'paused');
     if (relevantGoals.length === 0) {
       this.conflictMap.set(new Map());
+      this.unmergedMap.set(new Map());
       return;
     }
 
     const newConflictMap = new Map<string, string[]>();
+    const newUnmergedMap = new Map<string, string[]>();
     let goalsRemaining = relevantGoals.length;
+
+    const finalize = () => {
+      this.conflictMap.set(new Map(newConflictMap));
+      this.unmergedMap.set(new Map(newUnmergedMap));
+    };
 
     for (const goal of relevantGoals) {
       this.api.listTasks(goal.id, { limit: 100 }).pipe(
@@ -1717,12 +1734,13 @@ export class WorkPage {
 
           if (activeTasks.length === 0) {
             goalsRemaining--;
-            if (goalsRemaining === 0) this.conflictMap.set(new Map(newConflictMap));
+            if (goalsRemaining === 0) finalize();
             return;
           }
 
           let taskRemaining = activeTasks.length;
           const conflicts: string[] = [];
+          const unmerged: string[] = [];
 
           for (const task of activeTasks) {
             this.git.taskBranchStatus(task.id).pipe(
@@ -1732,13 +1750,19 @@ export class WorkPage {
                 if (status?.has_conflict) {
                   conflicts.push(task.id);
                 }
+                if (status?.exists) {
+                  unmerged.push(task.id);
+                }
                 taskRemaining--;
                 if (taskRemaining === 0) {
                   if (conflicts.length > 0) {
                     newConflictMap.set(goal.id, conflicts);
                   }
+                  if (unmerged.length > 0) {
+                    newUnmergedMap.set(goal.id, unmerged);
+                  }
                   goalsRemaining--;
-                  if (goalsRemaining === 0) this.conflictMap.set(new Map(newConflictMap));
+                  if (goalsRemaining === 0) finalize();
                 }
               },
             });
