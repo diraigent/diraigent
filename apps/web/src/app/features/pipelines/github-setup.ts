@@ -63,24 +63,24 @@ type SetupStep = 'form' | 'webhook' | 'sync';
           <p class="text-sm text-text-secondary mb-6">{{ t('github.connectDescription') }}</p>
 
           <div class="space-y-4">
+            <!-- Repository URL -->
+            <label class="block">
+              <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('github.baseUrl') }}</span>
+              <input type="url" [(ngModel)]="formBaseUrl"
+                placeholder="https://github.com/owner/repo"
+                class="w-full bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                       focus:outline-none focus:ring-1 focus:ring-accent" />
+              <span class="block text-xs text-text-muted mt-1">{{ t('github.baseUrlHint') }}</span>
+            </label>
+
             <!-- Token (optional) -->
             <label class="block">
               <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('github.token') }}</span>
               <input type="password" [(ngModel)]="formToken"
-                placeholder="ghp_..."
+                placeholder="GitHub access token"
                 class="w-full bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 border border-border
                        focus:outline-none focus:ring-1 focus:ring-accent" />
               <span class="block text-xs text-text-muted mt-1">{{ t('github.tokenHint') }}</span>
-            </label>
-
-            <!-- Base URL (optional, for GitHub Enterprise) -->
-            <label class="block">
-              <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('github.baseUrl') }}</span>
-              <input type="url" [(ngModel)]="formBaseUrl"
-                placeholder="https://api.github.com"
-                class="w-full bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                       focus:outline-none focus:ring-1 focus:ring-accent" />
-              <span class="block text-xs text-text-muted mt-1">{{ t('github.baseUrlHint') }}</span>
             </label>
 
             @if (error()) {
@@ -91,7 +91,7 @@ type SetupStep = 'form' | 'webhook' | 'sync';
 
             <div class="flex items-center gap-3 pt-2">
               <button (click)="register()"
-                [disabled]="registering()"
+                [disabled]="registering() || !formBaseUrl.trim()"
                 class="px-5 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity">
                 @if (registering()) {
                   {{ t('github.registering') }}
@@ -236,7 +236,7 @@ export class GitHubSetupPage {
   readonly steps: SetupStep[] = ['form', 'webhook', 'sync'];
 
   // Form state
-  formBaseUrl = 'https://api.github.com';
+  formBaseUrl = '';
   formToken = '';
 
   // Step state
@@ -260,13 +260,13 @@ export class GitHubSetupPage {
 
   register(): void {
     const pid = this.ctx.projectId();
-    if (!pid) return;
+    if (!pid || !this.formBaseUrl.trim()) return;
 
     this.registering.set(true);
     this.error.set(null);
 
     this.ciApi.registerGitHub(pid, {
-      base_url: this.formBaseUrl.trim() || undefined,
+      base_url: this.formBaseUrl.trim(),
       token: this.formToken.trim() || undefined,
     }).subscribe({
       next: (result) => {

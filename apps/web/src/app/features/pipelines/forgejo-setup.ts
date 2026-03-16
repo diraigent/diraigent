@@ -67,7 +67,7 @@ type SetupStep = 'form' | 'webhook' | 'sync';
             <label class="block">
               <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('forgejo.baseUrl') }}</span>
               <input type="url" [(ngModel)]="formBaseUrl"
-                placeholder="https://git.example.com"
+                placeholder="https://git.example.com/owner/repo"
                 class="w-full bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 border border-border
                        focus:outline-none focus:ring-1 focus:ring-accent" />
               <span class="block text-xs text-text-muted mt-1">{{ t('forgejo.baseUrlHint') }}</span>

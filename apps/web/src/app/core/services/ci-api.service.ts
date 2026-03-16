@@ -98,7 +98,7 @@ export interface GitHubIntegrationResponse {
 }
 
 export interface CreateGitHubIntegration {
-  base_url?: string;
+  base_url: string;
   token?: string;
 }
 

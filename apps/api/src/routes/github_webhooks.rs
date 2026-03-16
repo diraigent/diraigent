@@ -426,6 +426,26 @@ fn extract_owner_repo(repo_url: &str) -> Option<(String, String)> {
     }
 }
 
+/// Extract the GitHub API base URL from a repo URL.
+///
+/// - `https://github.com/owner/repo` → `https://api.github.com`
+/// - `https://github.example.com/owner/repo` → `https://github.example.com`
+fn extract_github_api_base(repo_url: &str) -> Option<String> {
+    let after_scheme = repo_url.find("://")?;
+    let scheme = &repo_url[..after_scheme];
+    let rest = &repo_url[after_scheme + 3..];
+    let host_end = rest.find('/').unwrap_or(rest.len());
+    let host = &rest[..host_end];
+
+    // Public GitHub: API lives on a different host
+    if host == "github.com" {
+        Some("https://api.github.com".to_string())
+    } else {
+        // GitHub Enterprise: API is on the same host
+        Some(format!("{scheme}://{host}"))
+    }
+}
+
 /// POST /{project_id}/github/sync
 ///
 /// Manually sync recent CI runs from the GitHub API for backfill.
@@ -460,41 +480,32 @@ async fn sync_github_runs(
         }
     };
 
-    // Get project for repo_url
-    let project = match state.db.get_project_by_id(project_id).await {
-        Ok(p) => p,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": format!("Failed to load project: {e}")})),
-            )
-                .into_response();
-        }
-    };
-
-    let repo_url = match &project.repo_url {
-        Some(url) if !url.is_empty() => url.as_str(),
-        _ => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": "Project has no repo_url configured"})),
-            )
-                .into_response();
-        }
-    };
-
-    let (owner, repo) = match extract_owner_repo(repo_url) {
+    // Extract owner/repo and API base from integration's base_url (repo URL)
+    let (owner, repo) = match extract_owner_repo(&integration.base_url) {
         Some(pair) => pair,
         None => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": "Could not extract owner/repo from repo_url"})),
+                Json(serde_json::json!({"error": "Could not extract owner/repo from integration URL"})),
             )
                 .into_response();
         }
     };
 
-    let client = github_client::GitHubClient::new(&integration.base_url, integration.token.clone());
+    let api_base = match extract_github_api_base(&integration.base_url) {
+        Some(base) => base,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(
+                    serde_json::json!({"error": "Could not extract API base from integration URL"}),
+                ),
+            )
+                .into_response();
+        }
+    };
+
+    let client = github_client::GitHubClient::new(&api_base, integration.token.clone());
 
     // Fetch the last N runs (2 pages of 25 = up to 50 runs)
     let mut synced_count: usize = 0;
