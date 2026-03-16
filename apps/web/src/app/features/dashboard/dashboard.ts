@@ -8,6 +8,7 @@ import { forkJoin, timer, switchMap, of, map } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { TasksApiService, SpTask } from '../../core/services/tasks-api.service';
 import { DiraigentApiService, DgProject } from '../../core/services/diraigent-api.service';
+import { GitApiService, BranchInfo } from '../../core/services/git-api.service';
 import { SpWork } from '../../core/services/work-api.service';
 import { taskStateColor, taskTransitions, WORK_STATUS_COLORS } from '../../shared/ui-constants';
 import { TokenUsageChartComponent, ChartProject } from './token-usage-chart';
@@ -28,6 +29,12 @@ interface ActiveWorkRow {
   projectName: string;
 }
 
+interface UnmergedBranchRow {
+  branch: BranchInfo;
+  taskTitle: string | null;
+  taskState: string | null;
+  projectName: string;
+}
 
 const ACTIVE_STATES = new Set(['backlog', 'ready', 'working', 'implement', 'review', 'merge', 'human_review']);
 const IN_PROGRESS_STATES = new Set(['working', 'implement', 'review', 'merge', 'human_review']);
@@ -122,6 +129,64 @@ const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('w
             }
           }
         </div>
+
+        <!-- Unmerged branches -->
+        @if (unmergedBranches().length > 0) {
+          <h2 class="text-lg font-semibold text-text-primary mb-3 flex items-center gap-2">
+            {{ t('dashboard.unmergedBranches') }}
+            <span class="text-sm font-normal text-ctp-yellow">({{ unmergedBranches().length }})</span>
+          </h2>
+          <div class="bg-surface rounded-lg border border-border overflow-hidden mb-8">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-border text-text-secondary text-left">
+                  <th class="px-4 py-3 font-medium w-36">{{ t('dashboard.project') }}</th>
+                  <th class="px-4 py-3 font-medium">{{ t('dashboard.branch') }}</th>
+                  <th class="px-4 py-3 font-medium">{{ t('tasks.title') }}</th>
+                  <th class="px-4 py-3 font-medium w-28">{{ t('tasks.state') }}</th>
+                  <th class="px-4 py-3 font-medium w-28">{{ t('dashboard.status') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of unmergedBranches(); track row.branch.name) {
+                  <tr class="border-b border-border last:border-b-0 hover:bg-surface-hover transition-colors">
+                    <td class="px-4 py-3 text-text-muted text-xs truncate max-w-[144px]">{{ row.projectName }}</td>
+                    <td class="px-4 py-3 font-mono text-xs text-text-primary truncate max-w-[240px]" [title]="row.branch.name">
+                      {{ row.branch.name }}
+                    </td>
+                    <td class="px-4 py-3 text-text-primary text-xs">{{ row.taskTitle ?? '—' }}</td>
+                    <td class="px-4 py-3">
+                      @if (row.taskState) {
+                        <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ stateColor(row.taskState) }}">
+                          {{ row.taskState }}
+                        </span>
+                      } @else {
+                        <span class="text-text-muted text-xs">—</span>
+                      }
+                    </td>
+                    <td class="px-4 py-3">
+                      @if (row.branch.is_pushed) {
+                        <span class="inline-flex items-center gap-1 text-xs text-ctp-green">
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path d="M5 13l4 4L19 7" />
+                          </svg>
+                          {{ t('dashboard.pushed') }}
+                        </span>
+                      } @else {
+                        <span class="inline-flex items-center gap-1 text-xs text-ctp-yellow">
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                          </svg>
+                          {{ t('dashboard.localOnly') }}
+                        </span>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
 
         <!-- Active Work section -->
         <h2 class="text-lg font-semibold text-text-primary mb-3">{{ t('dashboard.activeWork') }}</h2>
@@ -224,12 +289,14 @@ const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('w
 export class DashboardPage {
   private tasksApi = inject(TasksApiService);
   private diraigentApi = inject(DiraigentApiService);
+  private gitApi = inject(GitApiService);
   private http = inject(HttpClient);
   private router = inject(Router);
   private destroyRef = inject(DestroyRef);
 
   allProjectTasks = signal<ProjectTasks[]>([]);
   allActiveWork = signal<ActiveWorkRow[]>([]);
+  unmergedBranches = signal<UnmergedBranchRow[]>([]);
   loading = signal(true);
   error = signal(false);
   lastUpdated = signal<Date>(new Date());
@@ -377,7 +444,7 @@ export class DashboardPage {
         switchMap(() => this.diraigentApi.getProjects()),
         switchMap(projects => {
           if (projects.length === 0) {
-            return of({ projectTasks: [] as ProjectTasks[], activeWork: [] as ActiveWorkRow[] });
+            return of({ projectTasks: [] as ProjectTasks[], activeWork: [] as ActiveWorkRow[], unmerged: [] as UnmergedBranchRow[] });
           }
           return forkJoin(
             projects.map(project => {
@@ -392,32 +459,54 @@ export class DashboardPage {
               const work$ = this.http
                 .get<SpWork[]>(`${environment.apiServer}/${project.id}/work`, { params: { limit: '200' } })
                 .pipe(catchError(() => of([] as SpWork[])));
-              return forkJoin([tasks$, work$]).pipe(
-                map(([tasks, works]) => ({ project, tasks, works })),
+              const branches$ = this.gitApi
+                .listBranchesForProject(project.id, 'agent/')
+                .pipe(catchError(() => of({ current_branch: '', branches: [] as BranchInfo[] })));
+              return forkJoin([tasks$, work$, branches$]).pipe(
+                map(([tasks, works, branchRes]) => ({ project, tasks, works, branches: branchRes.branches })),
               );
             }),
           ).pipe(
-            map(results => ({
-              projectTasks: results.map(r => ({ project: r.project, tasks: r.tasks })) as ProjectTasks[],
-              activeWork: results
-                .flatMap(r =>
-                  r.works
-                    .filter(w => !['achieved', 'abandoned'].includes(w.status))
-                    .map(w => ({ work: w, projectName: r.project.name }) as ActiveWorkRow),
-                )
-                .sort((a, b) =>
-                  b.work.priority - a.work.priority
-                  || new Date(b.work.updated_at).getTime() - new Date(a.work.updated_at).getTime(),
-                ),
-            })),
+            map(results => {
+              const unmerged: UnmergedBranchRow[] = [];
+              for (const r of results) {
+                const taskByPrefix = new Map(r.tasks.map(t => [t.id.substring(0, 12), t]));
+                for (const branch of r.branches) {
+                  const matchedTask = branch.task_id_prefix ? taskByPrefix.get(branch.task_id_prefix) : null;
+                  // Skip branches whose task is already done/cancelled (merged)
+                  if (matchedTask && (matchedTask.state === 'done' || matchedTask.state === 'cancelled')) continue;
+                  unmerged.push({
+                    branch,
+                    taskTitle: matchedTask?.title ?? null,
+                    taskState: matchedTask?.state ?? null,
+                    projectName: r.project.name,
+                  });
+                }
+              }
+              return {
+                projectTasks: results.map(r => ({ project: r.project, tasks: r.tasks })) as ProjectTasks[],
+                activeWork: results
+                  .flatMap(r =>
+                    r.works
+                      .filter(w => !['achieved', 'abandoned'].includes(w.status))
+                      .map(w => ({ work: w, projectName: r.project.name }) as ActiveWorkRow),
+                  )
+                  .sort((a, b) =>
+                    b.work.priority - a.work.priority
+                    || new Date(b.work.updated_at).getTime() - new Date(a.work.updated_at).getTime(),
+                  ),
+                unmerged,
+              };
+            }),
           );
         }),
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe({
-        next: ({ projectTasks, activeWork }) => {
+        next: ({ projectTasks, activeWork, unmerged }) => {
           this.allProjectTasks.set(projectTasks);
           this.allActiveWork.set(activeWork);
+          this.unmergedBranches.set(unmerged);
           this.loading.set(false);
           this.error.set(false);
           this.lastUpdated.set(new Date());

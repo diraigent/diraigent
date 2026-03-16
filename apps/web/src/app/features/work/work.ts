@@ -5,7 +5,7 @@ import { ActivatedRoute } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subscription, forkJoin, of, timer, switchMap } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { catchError, map } from 'rxjs/operators';
 import {
   CdkDragDrop,
   CdkDrag,
@@ -267,6 +267,54 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   [placeholder]="t('goals.fieldTitle')" />
               </div>
 
+              <!-- Status transitions -->
+              @if (availableTransitions().length > 0 || goal.status !== 'active') {
+                <div class="flex flex-wrap gap-2 mb-4">
+                  @if (goal.status !== 'active') {
+                    <button (click)="activateWork(goal)"
+                      [disabled]="activatingWork()"
+                      class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-green/15 text-ctp-green hover:bg-ctp-green/25 transition-colors disabled:opacity-50">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 3l14 9-14 9V3z" />
+                      </svg>
+                      {{ activatingWork() ? t('common.loading') : t('goals.activate') }}
+                    </button>
+                  }
+                  @for (s of availableTransitions(); track s) {
+                    @if (s === 'achieved') {
+                      <button (click)="transitionStatus(goal, 'achieved')"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-blue/15 text-ctp-blue hover:bg-ctp-blue/25 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        {{ t('goals.status.achieved') }}
+                      </button>
+                    } @else if (s === 'paused') {
+                      <button (click)="transitionStatus(goal, 'paused')"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-yellow/15 text-ctp-yellow hover:bg-ctp-yellow/25 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        {{ t('goals.status.paused') }}
+                      </button>
+                    } @else if (s === 'abandoned') {
+                      <button (click)="transitionStatus(goal, 'abandoned')"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-overlay0/15 text-ctp-overlay0 hover:bg-ctp-overlay0/25 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636" />
+                        </svg>
+                        {{ t('goals.status.abandoned') }}
+                      </button>
+                    } @else {
+                      <button (click)="transitionStatus(goal, s)"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors">
+                        {{ t('goals.status.' + s) }}
+                      </button>
+                    }
+                  }
+                </div>
+              }
+
               <!-- Actions row -->
               <div class="flex items-center gap-2 mb-3 flex-wrap">
                 @if (goal.status !== 'active') {
@@ -300,25 +348,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   </button>
                 </div>
               </div>
-
-              <!-- Status transitions -->
-              @if (availableTransitions().length > 0) {
-                <div class="flex flex-wrap gap-2 mb-4">
-                  @for (s of availableTransitions(); track s) {
-                    <button (click)="transitionStatus(goal, s)"
-                      class="px-3 py-1 text-xs rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors">
-                      {{ t('goals.transitionTo') }} {{ t('goals.status.' + s) }}
-                    </button>
-                  }
-                  @if (goal.status !== 'active') {
-                    <button (click)="activateWork(goal)"
-                      [disabled]="activatingWork()"
-                      class="px-3 py-1 text-xs rounded-lg bg-ctp-green/15 text-ctp-green hover:bg-ctp-green/25 transition-colors disabled:opacity-50">
-                      {{ activatingWork() ? t('common.loading') : t('goals.activate') }}
-                    </button>
-                  }
-                </div>
-              }
 
               <!-- Progress -->
               @if (progressMap().get(goal.id); as prog) {
@@ -1724,62 +1753,47 @@ export class WorkPage {
       return;
     }
 
-    const newConflictMap = new Map<string, string[]>();
-    const newUnmergedMap = new Map<string, string[]>();
-    let goalsRemaining = relevantGoals.length;
-
-    const finalize = () => {
-      this.conflictMap.set(new Map(newConflictMap));
-      this.unmergedMap.set(new Map(newUnmergedMap));
-    };
-
-    for (const goal of relevantGoals) {
+    // For each relevant goal: fetch linked tasks, then check branch status for each
+    const goal$ = relevantGoals.map(goal =>
       this.api.listTasks(goal.id, { limit: 100 }).pipe(
         catchError(() => of([] as SpTask[])),
-      ).subscribe({
-        next: (tasks) => {
+        switchMap(tasks => {
           const activeTasks = tasks.filter(t =>
             t.state !== 'done' && t.state !== 'cancelled' && t.state !== 'backlog'
           );
-
           if (activeTasks.length === 0) {
-            goalsRemaining--;
-            if (goalsRemaining === 0) finalize();
-            return;
+            return of({ goalId: goal.id, conflicts: [] as string[], unmerged: [] as string[] });
           }
-
-          let taskRemaining = activeTasks.length;
-          const conflicts: string[] = [];
-          const unmerged: string[] = [];
-
-          for (const task of activeTasks) {
-            this.git.taskBranchStatus(task.id).pipe(
+          // Use project-scoped variant to avoid EMPTY when localStorage projectId is missing
+          const branchChecks$ = activeTasks.map(task =>
+            this.git.taskBranchStatusForProject(goal.project_id, task.id).pipe(
               catchError(() => of(null as TaskBranchStatus | null)),
-            ).subscribe({
-              next: (status) => {
-                if (status?.has_conflict) {
-                  conflicts.push(task.id);
-                }
-                if (status?.exists) {
-                  unmerged.push(task.id);
-                }
-                taskRemaining--;
-                if (taskRemaining === 0) {
-                  if (conflicts.length > 0) {
-                    newConflictMap.set(goal.id, conflicts);
-                  }
-                  if (unmerged.length > 0) {
-                    newUnmergedMap.set(goal.id, unmerged);
-                  }
-                  goalsRemaining--;
-                  if (goalsRemaining === 0) finalize();
-                }
-              },
-            });
-          }
-        },
-      });
-    }
+              map(status => ({ taskId: task.id, status })),
+            )
+          );
+          return forkJoin(branchChecks$).pipe(
+            map(results => {
+              const conflicts = results.filter(r => r.status?.has_conflict).map(r => r.taskId);
+              const unmerged = results.filter(r => r.status?.exists).map(r => r.taskId);
+              return { goalId: goal.id, conflicts, unmerged };
+            }),
+          );
+        }),
+      )
+    );
+
+    forkJoin(goal$).subscribe({
+      next: (results) => {
+        const newConflictMap = new Map<string, string[]>();
+        const newUnmergedMap = new Map<string, string[]>();
+        for (const { goalId, conflicts, unmerged } of results) {
+          if (conflicts.length > 0) newConflictMap.set(goalId, conflicts);
+          if (unmerged.length > 0) newUnmergedMap.set(goalId, unmerged);
+        }
+        this.conflictMap.set(newConflictMap);
+        this.unmergedMap.set(newUnmergedMap);
+      },
+    });
   }
 
   selectItem(goal: SpWork): void {

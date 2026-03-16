@@ -58,6 +58,11 @@
     "activeWork": "Aktive Arbeit",
     "noActiveWork": "Keine aktiven Arbeitselemente",
     "project": "Projekt",
+    "branch": "Branch",
+    "status": "Status",
+    "pushed": "Gepusht",
+    "localOnly": "Nur lokal",
+    "unmergedBranches": "Nicht gemergte Branches",
     "lastUpdated": "Zuletzt aktualisiert",
     "stats": {
       "active": "Aktiv",
