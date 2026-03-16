@@ -305,7 +305,7 @@ fn render_detail(f: &mut Frame, area: Rect, app: &mut App) {
             if let Some(spec) = context.get("spec").and_then(|s| s.as_str()) {
                 if !spec.is_empty() {
                     lines.push(Line::styled(
-                        "── Description ──",
+                        "── Spec ──",
                         Style::default().fg(theme::surface1()),
                     ));
                     for line in spec.lines() {
