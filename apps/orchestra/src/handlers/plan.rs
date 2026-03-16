@@ -20,6 +20,8 @@ pub struct PlanRequestParams {
     pub project_id: String,
     pub api: ProjectsApi,
     pub projects_path: PathBuf,
+    /// Optional model override from the client/project metadata.
+    pub model: Option<String>,
 }
 
 /// Handle a plan.request by decomposing a work item into concrete tasks.
@@ -40,6 +42,7 @@ pub async fn handle_plan_request(params: PlanRequestParams) {
         project_id,
         api,
         projects_path,
+        model: model_override,
     } = params;
 
     // Resolve the project's working directory from the API.
@@ -106,20 +109,40 @@ Respond with ONLY a JSON object matching this schema (no markdown fences, no pre
 {{"tasks": [{{"title": "...", "kind": "feature|bug|refactor|test|docs", "spec": "...", "acceptance_criteria": ["..."], "depends_on": [0]}}]}}"#
     );
 
-    // Resolve provider from project metadata (default: "claude-code")
-    let provider_name = match api.get_project(&project_id).await {
-        Ok(project) => project["metadata"]["plan_provider"]
-            .as_str()
-            .unwrap_or("claude-code")
-            .to_string(),
+    // Resolve provider and model from project metadata (default: "claude-code")
+    let (provider_name, metadata_model) = match api.get_project(&project_id).await {
+        Ok(project) => {
+            let provider = project["metadata"]["plan_provider"]
+                .as_str()
+                .unwrap_or("claude-code")
+                .to_string();
+            let model = project["metadata"]["plan_model"]
+                .as_str()
+                .map(|s| s.to_string());
+            (provider, model)
+        }
         Err(e) => {
             warn!("plan request: failed to fetch project metadata: {e}, using default provider");
-            "claude-code".to_string()
+            ("claude-code".to_string(), None)
         }
     };
 
+    // Model priority: client override > project metadata > default
+    let resolved_model = model_override
+        .filter(|m| !m.is_empty())
+        .or(metadata_model)
+        .unwrap_or_else(|| "sonnet".to_string());
+
     if provider_name == "claude-code" {
-        handle_plan_via_cli(sender, request_id, prompt, &system_prompt, &working_dir).await;
+        handle_plan_via_cli(
+            sender,
+            request_id,
+            prompt,
+            &system_prompt,
+            &working_dir,
+            &resolved_model,
+        )
+        .await;
     } else {
         handle_plan_via_provider(
             sender,
@@ -129,6 +152,7 @@ Respond with ONLY a JSON object matching this schema (no markdown fences, no pre
             &provider_name,
             &project_id,
             &api,
+            &resolved_model,
         )
         .await;
     }
@@ -144,6 +168,7 @@ async fn handle_plan_via_cli(
     prompt: String,
     system_prompt: &str,
     working_dir: &std::path::Path,
+    model: &str,
 ) {
     let send_error = |sender: WsSender, request_id: String, msg: String| async move {
         let ws_msg = WsMessage::PlanResponse {
@@ -168,7 +193,7 @@ async fn handle_plan_via_cli(
             "--verbose",
             "--no-session-persistence",
             "--model",
-            "claude-sonnet-4-6-20250514",
+            model,
             "--system-prompt",
             system_prompt,
             "--tools",
@@ -278,6 +303,7 @@ async fn handle_plan_via_cli(
 /// Handle a plan request via a non-claude-code provider (anthropic, openai, etc.).
 ///
 /// Uses the provider abstraction for a stateless API call.
+#[allow(clippy::too_many_arguments)]
 async fn handle_plan_via_provider(
     sender: WsSender,
     request_id: String,
@@ -286,6 +312,7 @@ async fn handle_plan_via_provider(
     provider_name: &str,
     project_id: &str,
     api: &ProjectsApi,
+    resolved_model: &str,
 ) {
     let send_error = |sender: WsSender, request_id: String, msg: String| async move {
         let ws_msg = WsMessage::PlanResponse {
@@ -338,7 +365,7 @@ async fn handle_plan_via_provider(
             provider_cfg
                 .model
                 .clone()
-                .unwrap_or_else(|| "claude-sonnet-4-6-20250514".into()),
+                .unwrap_or_else(|| resolved_model.to_string()),
         ),
         allowed_tools: None,
         allowed_tools_list: vec![],
