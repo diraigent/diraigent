@@ -241,7 +241,7 @@
     "createTaskBtn": "Aufgabe hinzufügen",
     "activate": "Aktivieren",
     "executeBtn": "Ausführen",
-    "createAndExecute": "Erstellen & Ausführen",
+    "createAndExecute": "Ausführen",
     "startAllBtn": "Alle starten",
     "taskIdPlaceholder": "Aufgaben-ID",
     "link": "Verknüpfen",
