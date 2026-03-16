@@ -274,19 +274,6 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' 
                   <span class="block text-xs text-text-secondary mt-1">{{ t('settings.observationRetentionDaysHint') }}</span>
                 </label>
 
-                <!-- Plan Provider -->
-                <div class="block">
-                  <label for="sett-plan-provider" class="block text-sm font-medium text-text-secondary mb-1">{{ t('settings.planProvider') }}</label>
-                  <select id="sett-plan-provider" [(ngModel)]="formPlanProvider"
-                    class="w-full bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                           focus:outline-none focus:ring-1 focus:ring-accent">
-                    @for (opt of providerOptions; track opt) {
-                      <option [value]="opt">{{ opt }}</option>
-                    }
-                  </select>
-                  <span class="block text-xs text-text-secondary mt-1">{{ t('settings.planProviderHint') }}</span>
-                </div>
-
                 <!-- Chat Provider -->
                 <div class="block">
                   <label for="sett-chat-provider" class="block text-sm font-medium text-text-secondary mb-1">{{ t('settings.chatProvider') }}</label>
@@ -298,6 +285,19 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' 
                     }
                   </select>
                   <span class="block text-xs text-text-secondary mt-1">{{ t('settings.chatProviderHint') }}</span>
+                </div>
+
+                <!-- Chat Model -->
+                <div class="block">
+                  <label for="sett-chat-model" class="block text-sm font-medium text-text-secondary mb-1">{{ t('settings.chatModel') }}</label>
+                  <select id="sett-chat-model" [(ngModel)]="formChatModel"
+                    class="w-full bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                           focus:outline-none focus:ring-1 focus:ring-accent">
+                    @for (opt of modelOptions; track opt.value) {
+                      <option [value]="opt.value">{{ opt.label }}</option>
+                    }
+                  </select>
+                  <span class="block text-xs text-text-secondary mt-1">{{ t('settings.chatModelHint') }}</span>
                 </div>
 
                 <!-- Save button -->
@@ -551,7 +551,10 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' 
                                     {{ task.state }}
                                   </button>
                                   @if (openMenuId() === task.id) {
-                                    <div class="absolute z-50 mt-1 left-0 bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[120px]">
+                                    <div class="absolute z-50 left-0 bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[120px]"
+                                         [class.mt-1]="!menuOpenUpward()"
+                                         [class.bottom-full]="menuOpenUpward()"
+                                         [class.mb-1]="menuOpenUpward()">
                                       @for (target of getTransitions(task.state); track target) {
                                         <button (click)="onTransition($event, task, target)"
                                           class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover transition-colors flex items-center gap-2 cursor-pointer">
@@ -1188,9 +1191,15 @@ export class SettingsPage implements OnInit, OnDestroy {
   formUploadLogs = false;
   formDoneRetentionDays = 1;
   formObservationRetentionDays = 30;
-  formPlanProvider = 'claude-code';
   formChatProvider = 'claude-code';
+  formChatModel = '';
   readonly providerOptions = ['claude-code', 'anthropic', 'openai', 'copilot', 'ollama'];
+  readonly modelOptions = [
+    { value: '', label: 'Default' },
+    { value: 'sonnet', label: 'Sonnet' },
+    { value: 'opus', label: 'Opus' },
+    { value: 'haiku', label: 'Haiku' },
+  ];
   savingProject = signal(false);
   projectSaved = signal(false);
 
@@ -1217,6 +1226,7 @@ export class SettingsPage implements OnInit, OnDestroy {
   agentTasks = signal<SpAgentTask[]>([]);
   tasksLoading = signal(false);
   openMenuId = signal<string | null>(null);
+  menuOpenUpward = signal(false);
   showCreateModal = signal(false);
 
   // Team tab state
@@ -1324,8 +1334,8 @@ export class SettingsPage implements OnInit, OnDestroy {
         this.formUploadLogs = (p.metadata?.['upload_logs'] as boolean) ?? false;
         this.formDoneRetentionDays = (p.metadata?.['done_retention_days'] as number) ?? 1;
         this.formObservationRetentionDays = (p.metadata?.['observation_retention_days'] as number) ?? 30;
-        this.formPlanProvider = (p.metadata?.['plan_provider'] as string) ?? 'claude-code';
         this.formChatProvider = (p.metadata?.['chat_provider'] as string) ?? 'claude-code';
+        this.formChatModel = (p.metadata?.['chat_model'] as string) ?? '';
         this.loading.set(false);
       },
       error: () => this.loading.set(false),
@@ -1380,7 +1390,7 @@ export class SettingsPage implements OnInit, OnDestroy {
       git_mode: this.formGitMode,
       git_root: this.formGitRoot || null,
       project_root: this.formProjectRoot || null,
-      metadata: { ...(this.project()?.metadata || {}), auto_push: this.formAutoPush, upload_logs: this.formUploadLogs, done_retention_days: this.formDoneRetentionDays, observation_retention_days: this.formObservationRetentionDays, plan_provider: this.formPlanProvider, chat_provider: this.formChatProvider },
+      metadata: { ...(this.project()?.metadata || {}), auto_push: this.formAutoPush, upload_logs: this.formUploadLogs, done_retention_days: this.formDoneRetentionDays, observation_retention_days: this.formObservationRetentionDays, chat_provider: this.formChatProvider, chat_model: this.formChatModel || null },
     };
 
     this.api.updateProject(pid, update).subscribe({
@@ -1545,7 +1555,15 @@ export class SettingsPage implements OnInit, OnDestroy {
 
   toggleStateMenu(event: Event, taskId: string): void {
     event.stopPropagation();
-    this.openMenuId.set(this.openMenuId() === taskId ? null : taskId);
+    if (this.openMenuId() === taskId) {
+      this.openMenuId.set(null);
+      return;
+    }
+    const button = event.target as HTMLElement;
+    const rect = button.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    this.menuOpenUpward.set(spaceBelow < 200);
+    this.openMenuId.set(taskId);
   }
 
   onTransition(event: Event, task: SpAgentTask, target: string): void {

@@ -1,5 +1,34 @@
 # Changelog
 
+
+## v20260316-0646-developer (2026-03-16)
+
+### Added
+- **Libs**: GitHub Actions REST API client crate (`github-client`) with support for workflows, runs, jobs, and artifacts
+- **API**: Multi-provider CI support via generalized `ci_run` table with provider column (migration 036)
+- **Web**: GitHub CI integration setup wizard with 3-step onboarding flow
+- **Web**: Provider badges and multi-provider filtering on pipelines page
+- **Web**: Queued items now visible in task list view
+
+### Changed
+- **Orchestra**: Plan handler removed; planning now routed through chat handler with model selection via project metadata
+- **Orchestra**: Simplified WS protocol — removed plan-specific message types
+- **Web**: Simplified work view — removed inline AI planning, chat, and merge-conflict indicator UI
+- **Web**: State dropdown opens upward when near viewport bottom to prevent clipping
+- **API**: Forgejo webhook and integration code updated for provider-agnostic CI schema
+- **Web**: Updated i18n strings (en + de) for GitHub setup and provider terminology
+
+### Fixed
+- **Web**: Vertical scroll constraints removed from task updates and comments sections
+- **Web**: Lint issues — labels associated with form controls, unused imports removed
+- **Web**: Redundant active badge hidden on work items
+
+### Removed
+- **API**: Work planning REST endpoint and WebSocket plan protocol
+- **Orchestra**: Dedicated plan handler (`plan.rs`)
+
+---
+
 ## v20260316-0006-developer (2026-03-16)
 
 ### Added

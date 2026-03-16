@@ -23,7 +23,6 @@ import {
   SpWorkCreate,
   SpWorkProgress,
   SpWorkStats,
-  PlannedTask,
 } from '../../core/services/work-api.service';
 import {
   TasksApiService,
@@ -43,7 +42,7 @@ import { PlaybooksApiService, SpPlaybook } from '../../core/services/playbooks-a
 import { GitApiService, BranchInfo, MainPushStatus, TaskBranchStatus } from '../../core/services/git-api.service';
 import { ChatService } from '../../core/services/chat.service';
 
-const STATUSES: WorkStatus[] = ['active', 'achieved', 'paused', 'abandoned'];
+const STATUSES: WorkStatus[] = ['active', 'ready', 'processing', 'achieved', 'paused', 'abandoned'];
 
 const STATUS_COLORS: Record<WorkStatus, string> = {
   active: 'bg-ctp-green/20 text-ctp-green',
@@ -199,9 +198,11 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ typeColor(goal.work_type) }}">
                 {{ t('goals.type.' + goal.work_type) }}
               </span>
-              <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
-                {{ t('goals.status.' + goal.status) }}
-              </span>
+              @if (goal.status !== 'active') {
+                <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
+                  {{ t('goals.status.' + goal.status) }}
+                </span>
+              }
               @if (conflictMap().get(goal.id); as conflicts) {
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-ctp-red/20 text-ctp-red"
                   title="Tasks with merge conflicts">
@@ -267,9 +268,11 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
 
               <!-- Actions row -->
               <div class="flex items-center gap-2 mb-3 flex-wrap">
-                <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
-                  {{ t('goals.status.' + goal.status) }}
-                </span>
+                @if (goal.status !== 'active') {
+                  <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
+                    {{ t('goals.status.' + goal.status) }}
+                  </span>
+                }
                 <select [(ngModel)]="formWorkType" (change)="saveInlineField()"
                   class="text-xs rounded-lg px-2 py-1 border border-border bg-surface text-text-primary
                          focus:outline-none focus:ring-1 focus:ring-accent">
@@ -364,7 +367,9 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                           [class.border-l-ctp-yellow]="child.status === 'paused'"
                           [class.opacity-60]="child.status === 'achieved'">
                           <span class="text-text-primary">{{ child.title }}</span>
-                          <span class="px-1.5 py-0.5 rounded-full text-xs {{ statusColor(child.status) }}">{{ t('goals.status.' + child.status) }}</span>
+                          @if (child.status !== 'active') {
+                            <span class="px-1.5 py-0.5 rounded-full text-xs {{ statusColor(child.status) }}">{{ t('goals.status.' + child.status) }}</span>
+                          }
                         </button>
                       }
                     </div>
@@ -517,22 +522,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                 <div class="flex items-center justify-between mb-2">
                   <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider">{{ t('goals.linkedTasks') }}</h3>
                   <div class="flex gap-2">
-                    <button (click)="planTasksForGoal()"
-                      [disabled]="planLoading()"
-                      class="px-3 py-1.5 text-xs bg-ctp-mauve text-bg rounded hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
-                      @if (planLoading()) {
-                        <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                        </svg>
-                        {{ planStatusMessage() || t('goals.planLoading') }}
-                      } @else {
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                          <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                        </svg>
-                        {{ t('goals.planTasksBtn') }}
-                      }
-                    </button>
                     <button (click)="executeWorkItem()"
                       [disabled]="executeLoading()"
                       class="px-3 py-1.5 text-xs bg-ctp-peach text-bg rounded hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
@@ -684,6 +673,21 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                     <ng-container *ngTemplateOutlet="goalItem; context: { $implicit: g }"></ng-container>
                   </div>
                 </div>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- Section: Queued Work (ready / processing) -->
+        @if (queuedGoals().length > 0) {
+          <div class="mb-6">
+            <h2 class="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-2 flex items-center gap-2">
+              {{ t('work.queuedGoals') }}
+              <span class="text-xs font-normal">({{ queuedGoals().length }})</span>
+            </h2>
+            <div class="space-y-2">
+              @for (g of queuedGoals(); track g.id) {
+                <ng-container *ngTemplateOutlet="goalItem; context: { $implicit: g }"></ng-container>
               }
             </div>
           </div>
@@ -905,7 +909,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
         }
 
         <!-- Empty state -->
-        @if (activeGoals().length === 0 && achievedGoals().length === 0 && archivedGoals().length === 0
+        @if (activeGoals().length === 0 && queuedGoals().length === 0 && achievedGoals().length === 0 && archivedGoals().length === 0
              && activeUnlinkedTasks().length === 0 && backlogUnlinkedTasks().length === 0
              && doneUnlinkedTasks().length === 0 && cancelledUnlinkedTasks().length === 0) {
           <p class="text-text-secondary text-sm">{{ t('common.empty') }}</p>
@@ -1080,135 +1084,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
         </div>
       }
 
-      <!-- Plan Preview Dialog -->
-      @if (showPlanDialog()) {
-        <div class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[70]"
-             role="button" tabindex="0" aria-label="Close plan dialog"
-             (click)="closePlanDialog()" (keydown.enter)="closePlanDialog()">
-          <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-2xl max-h-[90vh] flex flex-col"
-               tabindex="-1" (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()">
-            <div class="flex items-center justify-between mb-2">
-              <h2 class="text-lg font-semibold text-text-primary">{{ t('goals.planDialogTitle') }}</h2>
-              <button (click)="closePlanDialog()" class="p-1.5 text-text-secondary hover:text-text-primary rounded">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <p class="text-sm text-text-secondary mb-4">{{ t('goals.planDialogDesc') }}</p>
-
-            @if (planSuccessCriteria().length > 0) {
-              <div class="mb-4 bg-ctp-green/5 border border-ctp-green/20 rounded-lg p-3">
-                <h3 class="text-xs font-semibold text-ctp-green uppercase tracking-wider mb-2">{{ t('goals.planGeneratedCriteria') }}</h3>
-                <ul class="space-y-1">
-                  @for (criterion of planSuccessCriteria(); track $index) {
-                    <li class="flex items-start gap-1.5 text-xs text-text-primary">
-                      <span class="text-ctp-green mt-0.5 shrink-0">&#10003;</span>
-                      <span>{{ criterion }}</span>
-                    </li>
-                  }
-                </ul>
-              </div>
-            }
-
-            @if (plannedTasks().length === 0) {
-              <p class="text-sm text-text-secondary py-8 text-center">{{ t('goals.planEmpty') }}</p>
-            } @else {
-              <div class="flex-1 overflow-y-auto min-h-0 mb-4 space-y-3">
-                @for (task of plannedTasks(); track $index) {
-                  <div class="bg-surface border border-border rounded-lg p-3">
-                    <div class="flex items-center gap-2 mb-2">
-                      <input type="text" [(ngModel)]="task.title"
-                        class="flex-1 bg-bg text-text-primary text-sm font-medium rounded px-2 py-1.5 border border-border
-                               focus:outline-none focus:ring-1 focus:ring-accent" />
-                      <span class="px-2 py-0.5 rounded-full text-xs font-medium shrink-0"
-                        [class]="planKindColor(task.kind)">
-                        {{ task.kind }}
-                      </span>
-                      <button (click)="togglePlanTaskExpanded($index)"
-                        class="p-1 text-text-secondary hover:text-text-primary rounded shrink-0"
-                        [title]="planExpandedTasks().has($index) ? 'Collapse' : 'Expand'">
-                        <svg class="w-4 h-4 transition-transform duration-200"
-                          [class.rotate-90]="planExpandedTasks().has($index)"
-                          fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-                        </svg>
-                      </button>
-                      <button (click)="removePlannedTask($index)"
-                        class="p-1 text-text-secondary hover:text-ctp-red rounded shrink-0"
-                        [title]="t('goals.planRemoveTask')">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                          <path d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                    @if (planExpandedTasks().has($index)) {
-                      <div class="mt-2 space-y-2">
-                        <div>
-                          <span class="text-xs font-semibold text-text-secondary uppercase tracking-wider block">{{ t('goals.planTaskSpec') }}</span>
-                          <textarea [(ngModel)]="task.spec" rows="4"
-                            class="w-full mt-1 bg-bg text-text-primary text-xs rounded px-2 py-1.5 border border-border
-                                   focus:outline-none focus:ring-1 focus:ring-accent resize-y"></textarea>
-                        </div>
-                        @if (task.depends_on && task.depends_on.length > 0) {
-                          <div>
-                            <span class="text-xs font-semibold text-text-secondary uppercase tracking-wider block">{{ t('goals.planDependsOn') }}</span>
-                            <div class="mt-1 flex flex-wrap gap-1">
-                              @for (depIdx of task.depends_on; track depIdx) {
-                                @if (plannedTasks()[depIdx]) {
-                                  <span class="px-1.5 py-0.5 bg-ctp-overlay0/20 text-text-secondary text-xs rounded">
-                                    {{ depIdx + 1 }}. {{ plannedTasks()[depIdx].title | slice:0:40 }}
-                                  </span>
-                                }
-                              }
-                            </div>
-                          </div>
-                        }
-                        @if (task.acceptance_criteria && task.acceptance_criteria.length > 0) {
-                          <div>
-                            <span class="text-xs font-semibold text-text-secondary uppercase tracking-wider block">{{ t('goals.planTaskCriteria') }}</span>
-                            <ul class="mt-1 space-y-1">
-                              @for (criterion of task.acceptance_criteria; track $index) {
-                                <li class="flex items-start gap-1.5 text-xs text-text-primary">
-                                  <span class="text-ctp-green mt-0.5 shrink-0">✓</span>
-                                  <span>{{ criterion }}</span>
-                                </li>
-                              }
-                            </ul>
-                          </div>
-                        }
-                      </div>
-                    }
-                  </div>
-                }
-              </div>
-            }
-
-            <!-- Footer -->
-            <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
-              <button (click)="closePlanDialog()" class="px-4 py-2 text-sm text-text-secondary hover:text-text-primary">
-                {{ t('goals.planCancel') }}
-              </button>
-              @if (plannedTasks().length > 0) {
-                <button (click)="confirmPlan()"
-                  [disabled]="planCreating()"
-                  class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
-                  @if (planCreating()) {
-                    <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                    </svg>
-                    {{ t('goals.planCreating') }}
-                  } @else {
-                    {{ t('goals.planCreateBtn', { count: plannedTasks().length }) }}
-                  }
-                </button>
-              }
-            </div>
-          </div>
-        </div>
-      }
-
       <!-- Task Create form (reuse TaskFormComponent) -->
       <app-task-form
         [show]="showTaskForm()"
@@ -1294,16 +1169,6 @@ export class WorkPage {
   pickerStateFilter = '';
   pickerUnlinkedOnly = true;
 
-  // Plan tasks
-  planLoading = signal(false);
-  planStatusMessage = signal('');
-  plannedTasks = signal<PlannedTask[]>([]);
-  planSuccessCriteria = signal<string[]>([]);
-  showPlanDialog = signal(false);
-  planCreating = signal(false);
-  planExpandedTasks = signal<Set<number>>(new Set());
-  planWorkId = signal<string | null>(null);
-
   // Task detail data (shared between linked and unlinked task expansion)
   selectedLinkedTask = signal<SpTask | null>(null);
   selectedUnlinkedTask = signal<SpTask | null>(null);
@@ -1343,6 +1208,7 @@ export class WorkPage {
   });
 
   activeGoals = computed(() => this.filteredGoals().filter(g => g.status === 'active'));
+  queuedGoals = computed(() => this.filteredGoals().filter(g => g.status === 'ready' || g.status === 'processing'));
   achievedGoals = computed(() =>
     this.filteredGoals()
       .filter(g => g.status === 'achieved')
@@ -2454,119 +2320,6 @@ export class WorkPage {
         this.loadStatsAndChildren(sel.id);
       },
     });
-  }
-
-  // --- Plan tasks ---
-
-  planTasksForGoal(): void {
-    const sel = this.selected();
-    if (!sel) return;
-    this.planWorkId.set(sel.id);
-    this.planLoading.set(true);
-    this.planStatusMessage.set('');
-    this.api.planTasksStream(sel.id).subscribe({
-      next: (event) => {
-        if (event.type === 'status') {
-          this.planStatusMessage.set(event.message);
-        } else if (event.type === 'done') {
-          this.plannedTasks.set(event.tasks);
-          this.planSuccessCriteria.set(event.success_criteria ?? []);
-          this.planExpandedTasks.set(new Set());
-          this.showPlanDialog.set(true);
-          this.planLoading.set(false);
-          this.planStatusMessage.set('');
-        }
-      },
-      error: () => {
-        this.planLoading.set(false);
-        this.planStatusMessage.set('');
-        alert(this.planErrorMessage);
-      },
-    });
-  }
-
-  private readonly planErrorMessage = 'Failed to generate task plan. Please try again.';
-
-  closePlanDialog(): void {
-    this.showPlanDialog.set(false);
-    this.plannedTasks.set([]);
-    this.planSuccessCriteria.set([]);
-    this.planCreating.set(false);
-    this.planExpandedTasks.set(new Set());
-    this.planWorkId.set(null);
-  }
-
-  removePlannedTask(index: number): void {
-    const tasks = [...this.plannedTasks()];
-    tasks.splice(index, 1);
-    // Update depends_on indices: shift references down and remove stale ones
-    for (const task of tasks) {
-      if (!task.depends_on) continue;
-      task.depends_on = task.depends_on
-        .filter(dep => dep !== index) // remove refs to the deleted task
-        .map(dep => (dep > index ? dep - 1 : dep)); // shift indices above the removed one
-    }
-    this.plannedTasks.set(tasks);
-    // Clean up expanded state
-    const expanded = new Set<number>();
-    for (const i of this.planExpandedTasks()) {
-      if (i < index) expanded.add(i);
-      else if (i > index) expanded.add(i - 1);
-    }
-    this.planExpandedTasks.set(expanded);
-  }
-
-  togglePlanTaskExpanded(index: number): void {
-    const current = new Set(this.planExpandedTasks());
-    if (current.has(index)) {
-      current.delete(index);
-    } else {
-      current.add(index);
-    }
-    this.planExpandedTasks.set(current);
-  }
-
-  planKindColor(kind: string): string {
-    const colors: Record<string, string> = {
-      feature: 'bg-ctp-blue/20 text-ctp-blue',
-      bug: 'bg-ctp-red/20 text-ctp-red',
-      refactor: 'bg-ctp-peach/20 text-ctp-peach',
-      test: 'bg-ctp-green/20 text-ctp-green',
-      docs: 'bg-ctp-lavender/20 text-ctp-lavender',
-    };
-    return colors[kind] ?? 'bg-ctp-overlay0/20 text-ctp-overlay0';
-  }
-
-  confirmPlan(): void {
-    const sel = this.selected();
-    if (!sel) return;
-    const tasks = this.plannedTasks();
-    if (tasks.length === 0) return;
-
-    this.planCreating.set(true);
-
-    // Use the batch apply-plan endpoint which creates all tasks and
-    // dependencies atomically in a single DB transaction. This prevents
-    // race conditions where the orchestra picks up dependent tasks
-    // before their dependency edges are registered.
-    this.api.applyPlan(sel.id, tasks).subscribe({
-      next: () => {
-        this.finishPlanCreation(sel);
-      },
-      error: () => {
-        this.planCreating.set(false);
-        alert(this.planErrorMessage);
-      },
-    });
-  }
-
-  private finishPlanCreation(sel: SpWork): void {
-    this.planCreating.set(false);
-    this.closePlanDialog();
-    this.loadLinkedTasks(sel.id);
-    this.loadAllProgress([sel]);
-    this.loadStatsAndChildren(sel.id);
-    this.loadGoals();
   }
 
   // --- Marked tasks ---

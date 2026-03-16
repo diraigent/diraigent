@@ -1,5 +1,4 @@
 use crate::chat::ChatSseEvent;
-use crate::models::PlanSseEvent;
 use crate::ws_protocol::WsMessage;
 use dashmap::DashMap;
 use tokio::sync::{mpsc, oneshot};
@@ -17,8 +16,6 @@ pub struct WsRegistry {
     connections: DashMap<Uuid, mpsc::UnboundedSender<WsMessage>>,
     /// Pending git requests: request_id -> oneshot sender
     pending_git: DashMap<String, oneshot::Sender<GitResponsePayload>>,
-    /// Active plan sessions: request_id -> mpsc sender for SSE events
-    active_plans: DashMap<String, mpsc::Sender<PlanSseEvent>>,
     /// Active chat sessions: session_id -> mpsc sender for SSE events
     active_chats: DashMap<String, mpsc::Sender<ChatSseEvent>>,
 }
@@ -34,7 +31,6 @@ impl WsRegistry {
         Self {
             connections: DashMap::new(),
             pending_git: DashMap::new(),
-            active_plans: DashMap::new(),
             active_chats: DashMap::new(),
         }
     }
@@ -84,37 +80,6 @@ impl WsRegistry {
         if let Some((_, tx)) = self.pending_git.remove(request_id) {
             let _ = tx.send(response);
         }
-    }
-
-    // ── Plan sessions (SSE-based) ──
-
-    /// Register an active plan session. Returns a receiver for SSE events.
-    pub fn register_plan_session(&self, request_id: String, tx: mpsc::Sender<PlanSseEvent>) {
-        self.active_plans.insert(request_id, tx);
-    }
-
-    /// Route a plan event to the correct session.
-    pub async fn route_plan_event(&self, request_id: &str, event: PlanSseEvent) {
-        let is_terminal = matches!(
-            &event,
-            PlanSseEvent::Done { .. } | PlanSseEvent::Error { .. }
-        );
-        if let Some(tx) = self.active_plans.get(request_id) {
-            let _ = tx.send(event).await;
-        }
-        if is_terminal {
-            self.active_plans.remove(request_id);
-        }
-    }
-
-    /// Check if a plan session is still active.
-    pub fn is_plan_active(&self, request_id: &str) -> bool {
-        self.active_plans.contains_key(request_id)
-    }
-
-    /// Remove a plan session (e.g. on timeout).
-    pub fn remove_plan_session(&self, request_id: &str) {
-        self.active_plans.remove(request_id);
     }
 
     // ── Chat sessions ──

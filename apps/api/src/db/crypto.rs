@@ -1993,7 +1993,7 @@ impl DiraigentDb for CryptoDb {
     async fn upsert_ci_run(
         &self,
         project_id: Uuid,
-        forgejo_run_id: i64,
+        external_id: i64,
         workflow_name: &str,
         status: &str,
         branch: Option<&str>,
@@ -2001,27 +2001,36 @@ impl DiraigentDb for CryptoDb {
         triggered_by: Option<&str>,
         started_at: Option<chrono::DateTime<chrono::Utc>>,
         finished_at: Option<chrono::DateTime<chrono::Utc>>,
+        provider: &str,
     ) -> Result<CiRun, AppError> {
         delegate!(
             self,
             upsert_ci_run,
             project_id,
-            forgejo_run_id,
+            external_id,
             workflow_name,
             status,
             branch,
             commit_sha,
             triggered_by,
             started_at,
-            finished_at
+            finished_at,
+            provider
         )
     }
-    async fn get_ci_run_by_forgejo_id(
+    async fn get_ci_run_by_external_id(
         &self,
         project_id: Uuid,
-        forgejo_run_id: i64,
+        provider: &str,
+        external_id: i64,
     ) -> Result<Option<CiRun>, AppError> {
-        delegate!(self, get_ci_run_by_forgejo_id, project_id, forgejo_run_id)
+        delegate!(
+            self,
+            get_ci_run_by_external_id,
+            project_id,
+            provider,
+            external_id
+        )
     }
     async fn upsert_ci_job_by_name(
         &self,
@@ -2072,6 +2081,7 @@ impl DiraigentDb for CryptoDb {
         branch: Option<&str>,
         status: Option<&str>,
         workflow_name: Option<&str>,
+        provider: Option<&str>,
         limit: i64,
         offset: i64,
     ) -> Result<Vec<CiRun>, AppError> {
@@ -2082,6 +2092,7 @@ impl DiraigentDb for CryptoDb {
             branch,
             status,
             workflow_name,
+            provider,
             limit,
             offset
         )
@@ -2092,6 +2103,7 @@ impl DiraigentDb for CryptoDb {
         branch: Option<&str>,
         status: Option<&str>,
         workflow_name: Option<&str>,
+        provider: Option<&str>,
     ) -> Result<i64, AppError> {
         delegate!(
             self,
@@ -2099,7 +2111,8 @@ impl DiraigentDb for CryptoDb {
             project_id,
             branch,
             status,
-            workflow_name
+            workflow_name,
+            provider
         )
     }
     async fn get_ci_run(&self, id: Uuid) -> Result<CiRun, AppError> {

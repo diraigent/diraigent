@@ -8,7 +8,8 @@ export type CiRunStatus = 'success' | 'failure' | 'running' | 'pending' | 'skipp
 export interface CiRun {
   id: string;
   project_id: string;
-  forgejo_run_id: number;
+  external_id: number;
+  provider: string;
   workflow_name: string;
   status: string;
   branch: string | null;
@@ -59,6 +60,7 @@ export interface CiRunFilters {
   branch?: string;
   status?: string;
   workflow_name?: string;
+  provider?: string;
   page?: number;
   per_page?: number;
 }
@@ -84,6 +86,27 @@ export interface SyncForgejoResponse {
   errors: number;
 }
 
+export interface GitHubIntegrationResponse {
+  id: string;
+  project_id: string;
+  base_url: string;
+  webhook_url: string;
+  webhook_secret: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateGitHubIntegration {
+  base_url?: string;
+  token?: string;
+}
+
+export interface SyncGitHubResponse {
+  synced: number;
+  errors: number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class CiApiService extends BaseApiService {
   registerForgejo(projectId: string, req: CreateForgejoIntegration): Observable<ForgejoIntegrationResponse> {
@@ -100,11 +123,26 @@ export class CiApiService extends BaseApiService {
     );
   }
 
+  registerGitHub(projectId: string, req: CreateGitHubIntegration): Observable<GitHubIntegrationResponse> {
+    return this.http.post<GitHubIntegrationResponse>(
+      `${this.baseUrl}/${projectId}/integrations/github`,
+      req,
+    );
+  }
+
+  syncGitHub(projectId: string): Observable<SyncGitHubResponse> {
+    return this.http.post<SyncGitHubResponse>(
+      `${this.baseUrl}/${projectId}/github/sync`,
+      {},
+    );
+  }
+
   listRuns(projectId: string, filters?: CiRunFilters): Observable<PaginatedResponse<CiRun>> {
     let params = new HttpParams();
     if (filters?.branch) params = params.set('branch', filters.branch);
     if (filters?.status) params = params.set('status', filters.status);
     if (filters?.workflow_name) params = params.set('workflow_name', filters.workflow_name);
+    if (filters?.provider) params = params.set('provider', filters.provider);
     if (filters?.page) params = params.set('page', filters.page.toString());
     if (filters?.per_page) params = params.set('per_page', filters.per_page.toString());
 
