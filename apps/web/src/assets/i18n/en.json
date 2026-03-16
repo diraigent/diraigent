@@ -661,6 +661,8 @@
     "spec": "Description",
     "specField": "Spec / Description",
     "files": "Files",
+    "acceptanceCriteria": "Acceptance Criteria",
+    "acceptanceCriteriaHint": "One criterion per line...",
     "testCmd": "Test Command",
     "playbook": "Playbook",
     "noPlaybook": "None",

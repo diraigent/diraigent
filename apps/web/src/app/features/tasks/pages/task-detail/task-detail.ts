@@ -368,6 +368,49 @@ const VERIFICATION_KIND_COLORS: Record<VerificationKind, string> = {
         }
       </div>
 
+      <!-- Acceptance Criteria -->
+      <div class="mb-4">
+        <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1">{{ t('tasks.acceptanceCriteria') }}</h3>
+        @if (editingAcceptanceCriteria()) {
+          <textarea id="inline-ac-edit" [(ngModel)]="editAcceptanceCriteria" rows="4"
+            [placeholder]="t('tasks.acceptanceCriteriaHint')"
+            (keydown.escape)="cancelAcceptanceCriteriaEdit(); $event.stopPropagation()"
+            class="w-full text-sm text-text-primary bg-surface rounded-lg p-3 border border-border
+                   focus:outline-none focus:ring-1 focus:ring-accent resize-y font-mono"></textarea>
+          <div class="flex justify-end gap-2 mt-1">
+            <button (click)="cancelAcceptanceCriteriaEdit()"
+              class="px-2 py-1 text-xs text-text-secondary hover:text-text-primary">
+              {{ t('tasks.cancel') }}
+            </button>
+            <button (click)="saveAcceptanceCriteriaEdit()"
+              class="px-2 py-1 text-xs bg-accent text-bg rounded hover:opacity-90">
+              {{ t('tasks.save') }}
+            </button>
+          </div>
+        } @else {
+          @if (acceptanceCriteria().length > 0) {
+            <div (click)="startAcceptanceCriteriaEdit()" (keydown.enter)="startAcceptanceCriteriaEdit()"
+              tabindex="0" role="button"
+              class="bg-bg rounded-lg p-3 border border-border cursor-pointer hover:border-accent/50 transition-colors">
+              <ul class="space-y-1">
+                @for (criterion of acceptanceCriteria(); track criterion) {
+                  <li class="flex items-start gap-2 text-sm text-text-primary">
+                    <span class="text-ctp-green shrink-0 mt-0.5">✓</span>
+                    <span>{{ criterion }}</span>
+                  </li>
+                }
+              </ul>
+            </div>
+          } @else {
+            <p (click)="startAcceptanceCriteriaEdit()" (keydown.enter)="startAcceptanceCriteriaEdit()"
+              tabindex="0" role="button"
+              class="text-sm text-text-muted bg-bg rounded-lg p-3 border border-border border-dashed cursor-pointer hover:border-accent/50 transition-colors">
+              {{ t('tasks.acceptanceCriteriaHint') }}
+            </p>
+          }
+        }
+      </div>
+
       <!-- Files -->
       @if (files().length > 0) {
         <div class="mb-4">
@@ -633,6 +676,8 @@ export class TaskDetailComponent {
   editTitle = '';
   editingSpec = signal(false);
   editSpec = '';
+  editingAcceptanceCriteria = signal(false);
+  editAcceptanceCriteria = '';
 
   @HostListener('document:click')
   closeMenus(): void {
@@ -667,6 +712,42 @@ export class TaskDetailComponent {
   testCmd(): string {
     const ctx = this.task().context;
     return (ctx?.['test_cmd'] as string) ?? '';
+  }
+
+  acceptanceCriteria(): string[] {
+    const ctx = this.task().context;
+    return (ctx?.['acceptance_criteria'] as string[]) ?? [];
+  }
+
+  startAcceptanceCriteriaEdit(): void {
+    this.editAcceptanceCriteria = this.acceptanceCriteria().join('\n');
+    this.editingAcceptanceCriteria.set(true);
+    setTimeout(() => {
+      const el = document.getElementById('inline-ac-edit') as HTMLTextAreaElement | null;
+      el?.focus();
+    });
+  }
+
+  saveAcceptanceCriteriaEdit(): void {
+    const lines = this.editAcceptanceCriteria
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    this.editingAcceptanceCriteria.set(false);
+    const oldCriteria = this.acceptanceCriteria();
+    if (JSON.stringify(lines) !== JSON.stringify(oldCriteria)) {
+      const context = { ...this.task().context };
+      if (lines.length > 0) {
+        context['acceptance_criteria'] = lines;
+      } else {
+        delete context['acceptance_criteria'];
+      }
+      this.inlineUpdate.emit({ context });
+    }
+  }
+
+  cancelAcceptanceCriteriaEdit(): void {
+    this.editingAcceptanceCriteria.set(false);
   }
 
   protected readonly stateColor = taskStateColor;
