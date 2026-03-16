@@ -92,11 +92,13 @@ export class WorkApiService extends BaseCrudApiService<SpWork, SpWorkCreate, SpW
   protected readonly resource = 'work';
   private auth = inject(AuthService);
 
-  list(status?: WorkStatus, workType?: WorkType, topLevel?: boolean): Observable<SpWork[]> {
+  list(opts?: { status?: WorkStatus; statusNot?: string; workType?: WorkType; topLevel?: boolean }): Observable<SpWork[]> {
     const params: Record<string, string> = {};
-    if (status) params['status'] = status;
-    if (workType) params['work_type'] = workType;
-    if (topLevel) params['top_level'] = 'true';
+    if (opts?.status) params['status'] = opts.status;
+    if (opts?.statusNot) params['status_not'] = opts.statusNot;
+    if (opts?.workType) params['work_type'] = opts.workType;
+    if (opts?.topLevel) params['top_level'] = 'true';
+    params['limit'] = '200';
     return this.fetchList(params);
   }
 

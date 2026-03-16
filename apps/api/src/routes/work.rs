@@ -274,6 +274,7 @@ async fn list_children(
     .await?;
     let filters = WorkFilters {
         status: None,
+        status_not: None,
         work_type: None,
         parent_work_id: Some(work_id),
         top_level: None,
