@@ -187,9 +187,29 @@ pub fn is_encrypted(value: &str) -> bool {
     value.starts_with(ENC_PREFIX)
 }
 
+/// Returns true if the JSON value (or any nested value) contains an encrypted string.
+/// Used as a fast pre-check to skip the full recursive walk when nothing is encrypted.
+fn contains_encrypted(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::String(s) => s.starts_with(ENC_PREFIX),
+        serde_json::Value::Object(map) => map.values().any(contains_encrypted),
+        serde_json::Value::Array(arr) => arr.iter().any(contains_encrypted),
+        _ => false,
+    }
+}
+
 /// Recursively walk a JSON value and decrypt any encrypted string fields.
 /// Uses the field path as AAD (e.g. "task.context", "knowledge.content").
+///
+/// Performs a fast pre-check: if no encrypted strings are present, returns immediately.
 pub fn decrypt_json_recursive(dek: &Dek, value: &mut serde_json::Value, path: &str) {
+    if !contains_encrypted(value) {
+        return;
+    }
+    decrypt_json_recursive_inner(dek, value, path);
+}
+
+fn decrypt_json_recursive_inner(dek: &Dek, value: &mut serde_json::Value, path: &str) {
     match value {
         serde_json::Value::String(s) if s.starts_with(ENC_PREFIX) => {
             match dek.decrypt_str(s, path) {
