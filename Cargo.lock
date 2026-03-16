@@ -1325,6 +1325,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "github-client"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-test",
+ "tracing",
+ "wiremock",
+]
+
+[[package]]
 name = "globset"
 version = "0.4.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
