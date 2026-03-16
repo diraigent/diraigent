@@ -27,7 +27,7 @@ import { SpTaskComment } from '../../../../core/services/tasks-api.service';
       @if (loading()) {
         <p class="text-text-muted text-xs">{{ t('common.loading') }}</p>
       } @else {
-        <div class="space-y-2 max-h-48 overflow-y-auto">
+        <div class="space-y-2">
           @for (comment of comments(); track comment.id) {
             <div class="text-xs">
               <div class="flex items-center gap-2 mb-0.5">
