@@ -659,6 +659,8 @@
     "spec": "Beschreibung",
     "specField": "Spezifikation / Beschreibung",
     "files": "Dateien",
+    "acceptanceCriteria": "Akzeptanzkriterien",
+    "acceptanceCriteriaHint": "Ein Kriterium pro Zeile...",
     "testCmd": "Testbefehl",
     "playbook": "Playbook",
     "noPlaybook": "Keine",
