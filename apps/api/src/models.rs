@@ -967,6 +967,8 @@ pub struct CreateEvent {
 #[derive(Debug, Deserialize, Default)]
 pub struct WorkFilters {
     pub status: Option<String>,
+    /// Comma-separated statuses to exclude (e.g. "achieved,paused,abandoned").
+    pub status_not: Option<String>,
     pub work_type: Option<String>,
     pub parent_work_id: Option<Uuid>,
     pub top_level: Option<bool>,

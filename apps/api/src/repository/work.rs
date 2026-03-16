@@ -90,9 +90,15 @@ pub async fn list_works(
     project_id: Uuid,
     filters: &WorkFilters,
 ) -> Result<Vec<Work>, AppError> {
-    let limit = filters.limit.unwrap_or(50).min(100);
+    let limit = filters.limit.unwrap_or(200).min(500);
     let offset = filters.offset.unwrap_or(0);
     let top_level = filters.top_level.unwrap_or(false);
+
+    let exclude_statuses: Vec<String> = filters
+        .status_not
+        .as_deref()
+        .map(|s| s.split(',').map(|v| v.trim().to_string()).collect())
+        .unwrap_or_default();
 
     let works = sqlx::query_as::<_, Work>(
         "SELECT * FROM diraigent.work
@@ -101,6 +107,7 @@ pub async fn list_works(
            AND ($3::text IS NULL OR work_type = $3)
            AND ($4::uuid IS NULL OR parent_work_id = $4)
            AND (NOT $5 OR parent_work_id IS NULL)
+           AND (cardinality($8::text[]) = 0 OR status != ALL($8))
          ORDER BY sort_order ASC, created_at DESC
          LIMIT $6 OFFSET $7",
     )
@@ -111,10 +118,26 @@ pub async fn list_works(
     .bind(top_level)
     .bind(limit)
     .bind(offset)
+    .bind(&exclude_statuses)
     .fetch_all(pool)
     .await?;
 
     Ok(works)
+}
+
+pub async fn work_status_counts(
+    pool: &PgPool,
+    project_id: Uuid,
+) -> Result<Vec<(String, i64)>, AppError> {
+    let rows = sqlx::query_as::<_, (String, i64)>(
+        "SELECT status, COUNT(*) FROM diraigent.work
+         WHERE project_id = $1
+         GROUP BY status",
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
 }
 
 pub async fn update_work(pool: &PgPool, id: Uuid, req: &UpdateWork) -> Result<Work, AppError> {

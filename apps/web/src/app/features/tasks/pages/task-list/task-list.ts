@@ -278,11 +278,11 @@ type SortDir = 'asc' | 'desc';
                       (click)="toggleStateMenu($event, task.id)">
                   {{ task.state }}
                 </button>
-                @if (openMenuId() === task.id) {
-                  <div class="absolute z-50 right-0 bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[120px]"
-                       [class.mt-1]="!menuOpenUpward()"
-                       [class.bottom-full]="menuOpenUpward()"
-                       [class.mb-1]="menuOpenUpward()">
+                @if (openMenuId() === task.id && menuPosition()) {
+                  <div class="fixed z-[100] bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[120px]"
+                       [style.left]="menuPosition()!.left + 'px'"
+                       [style.top]="menuOpenUpward() ? 'auto' : menuPosition()!.top + 'px'"
+                       [style.bottom]="menuOpenUpward() ? menuPosition()!.bottom + 'px' : 'auto'">
                     @for (target of getTransitions(task.state); track target) {
                       <button (click)="onTransition($event, task, target)"
                         class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover transition-colors flex items-center gap-2 cursor-pointer">
@@ -468,6 +468,7 @@ export class TaskListComponent {
   readonly bulkTransitionTargets = ['backlog', 'ready', 'done', 'cancelled'];
   openMenuId = signal<string | null>(null);
   menuOpenUpward = signal(false);
+  menuPosition = signal<{ top: number; bottom: number; left: number } | null>(null);
   sortField = signal<SortField>('created_at');
   sortDir = signal<SortDir>('desc');
   selectedIds = signal<Set<string>>(new Set());
@@ -554,6 +555,7 @@ export class TaskListComponent {
   @HostListener('document:click')
   closeMenu(): void {
     this.openMenuId.set(null);
+    this.menuPosition.set(null);
     this.bulkTransitionOpen.set(false);
   }
 
@@ -642,18 +644,26 @@ export class TaskListComponent {
     event.stopPropagation();
     if (this.openMenuId() === taskId) {
       this.openMenuId.set(null);
+      this.menuPosition.set(null);
       return;
     }
     const button = event.target as HTMLElement;
     const rect = button.getBoundingClientRect();
     const spaceBelow = window.innerHeight - rect.bottom;
-    this.menuOpenUpward.set(spaceBelow < 200);
+    const openUpward = spaceBelow < 200;
+    this.menuOpenUpward.set(openUpward);
+    this.menuPosition.set({
+      top: openUpward ? 0 : rect.bottom + 4,
+      bottom: openUpward ? window.innerHeight - rect.top + 4 : 0,
+      left: rect.right - 120,
+    });
     this.openMenuId.set(taskId);
   }
 
   onTransition(event: Event, task: SpTask, target: string): void {
     event.stopPropagation();
     this.openMenuId.set(null);
+    this.menuPosition.set(null);
     this.stateChange.emit({ task, target });
   }
 

@@ -610,6 +610,9 @@ impl DiraigentDb for CryptoDb {
     async fn list_works_for_task(&self, task_id: Uuid) -> Result<Vec<Work>, AppError> {
         delegate!(self, list_works_for_task, task_id)
     }
+    async fn work_status_counts(&self, project_id: Uuid) -> Result<Vec<(String, i64)>, AppError> {
+        delegate!(self, work_status_counts, project_id)
+    }
     // ── Work Comments ──
     async fn create_work_comment(
         &self,

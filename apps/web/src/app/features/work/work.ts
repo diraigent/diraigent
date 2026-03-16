@@ -128,21 +128,23 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               </button>
             }
           }
-          <button (click)="onReleaseProject()"
-            [disabled]="releasing()"
-            title="Squash-merge dev → main, tag, and push to all remotes"
-            class="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg
-                   bg-ctp-mauve/15 text-ctp-mauve hover:bg-ctp-mauve/25 transition-colors
-                   disabled:opacity-50 disabled:cursor-not-allowed">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path d="M7 7h.01M7 3h5a1.99 1.99 0 011.41.59l7 7a2 2 0 010 2.82l-5 5a2 2 0 01-2.82 0l-7-7A2 2 0 013 10V5a2 2 0 012-2z" />
-            </svg>
-            @if (releasing()) {
-              {{ t('git.releasing') }}
-            } @else {
-              {{ t('git.release') }}
-            }
-          </button>
+          @if (showRelease()) {
+            <button (click)="onReleaseProject()"
+              [disabled]="releasing()"
+              title="Squash-merge dev → main, tag, and push to all remotes"
+              class="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg
+                     bg-ctp-mauve/15 text-ctp-mauve hover:bg-ctp-mauve/25 transition-colors
+                     disabled:opacity-50 disabled:cursor-not-allowed">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M7 7h.01M7 3h5a1.99 1.99 0 011.41.59l7 7a2 2 0 010 2.82l-5 5a2 2 0 01-2.82 0l-7-7A2 2 0 013 10V5a2 2 0 012-2z" />
+              </svg>
+              @if (releasing()) {
+                {{ t('git.releasing') }}
+              } @else {
+                {{ t('git.release') }}
+              }
+            </button>
+          }
           <button (click)="openCreate()" class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90">
             {{ t('goals.create') }}
           </button>
@@ -792,20 +794,22 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
           </div>
         }
 
-        <!-- Section: Completed (achieved goals + done unlinked tasks) — collapsed by default -->
-        @if (achievedGoals().length > 0 || doneUnlinkedTasks().length > 0) {
-          <div class="mb-6">
-            <button (click)="toggleSection('completed')"
-              class="w-full flex items-center gap-2 mb-2 py-1.5 text-sm font-semibold text-text-secondary uppercase tracking-wider hover:text-text-primary transition-colors">
-              <svg class="w-4 h-4 shrink-0 transition-transform duration-200"
-                [class.rotate-90]="!collapsedSections().has('completed')"
-                fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-              {{ t('work.completed') }}
-              <span class="text-xs font-normal">({{ achievedGoals().length + doneUnlinkedTasks().length }})</span>
-            </button>
-            @if (!collapsedSections().has('completed')) {
+        <!-- Section: Completed (achieved goals + done unlinked tasks) — lazy loaded -->
+        <div class="mb-6">
+          <button (click)="toggleSection('completed')"
+            class="w-full flex items-center gap-2 mb-2 py-1.5 text-sm font-semibold text-text-secondary uppercase tracking-wider hover:text-text-primary transition-colors">
+            <svg class="w-4 h-4 shrink-0 transition-transform duration-200"
+              [class.rotate-90]="!collapsedSections().has('completed')"
+              fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+            {{ t('work.completed') }}
+            <span class="text-xs font-normal">({{ achievedCount() }})</span>
+          </button>
+          @if (!collapsedSections().has('completed')) {
+            @if (achievedLoading()) {
+              <p class="text-text-secondary text-sm ml-6">{{ t('common.loading') }}</p>
+            } @else {
               @if (achievedGoals().length > 0) {
                 <div class="space-y-2 mb-4">
                   @for (g of achievedGoals(); track g.id) {
@@ -848,24 +852,29 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   (detailPlaybookChange)="onUnlinkedTaskPlaybookChange($event)"
                   (detailPlaybookStepChange)="onUnlinkedTaskPlaybookStepChange($event)" />
               }
+              @if (achievedGoals().length === 0 && doneUnlinkedTasks().length === 0) {
+                <p class="text-text-secondary text-sm ml-6">{{ t('common.empty') }}</p>
+              }
             }
-          </div>
-        }
+          }
+        </div>
 
-        <!-- Section: Archived (paused/abandoned goals + cancelled unlinked tasks) — collapsed by default -->
-        @if (archivedGoals().length > 0 || cancelledUnlinkedTasks().length > 0) {
-          <div class="mb-6">
-            <button (click)="toggleSection('archived')"
-              class="w-full flex items-center gap-2 mb-2 py-1.5 text-sm font-semibold text-text-secondary uppercase tracking-wider hover:text-text-primary transition-colors">
-              <svg class="w-4 h-4 shrink-0 transition-transform duration-200"
-                [class.rotate-90]="!collapsedSections().has('archived')"
-                fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-              {{ t('work.archived') }}
-              <span class="text-xs font-normal">({{ archivedGoals().length + cancelledUnlinkedTasks().length }})</span>
-            </button>
-            @if (!collapsedSections().has('archived')) {
+        <!-- Section: Archived (paused/abandoned goals + cancelled unlinked tasks) — lazy loaded -->
+        <div class="mb-6">
+          <button (click)="toggleSection('archived')"
+            class="w-full flex items-center gap-2 mb-2 py-1.5 text-sm font-semibold text-text-secondary uppercase tracking-wider hover:text-text-primary transition-colors">
+            <svg class="w-4 h-4 shrink-0 transition-transform duration-200"
+              [class.rotate-90]="!collapsedSections().has('archived')"
+              fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+            {{ t('work.archived') }}
+            <span class="text-xs font-normal">({{ archivedCount() }})</span>
+          </button>
+          @if (!collapsedSections().has('archived')) {
+            @if (archivedLoading()) {
+              <p class="text-text-secondary text-sm ml-6">{{ t('common.loading') }}</p>
+            } @else {
               @if (archivedGoals().length > 0) {
                 <div class="space-y-2 mb-4">
                   @for (g of archivedGoals(); track g.id) {
@@ -908,14 +917,16 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   (detailPlaybookChange)="onUnlinkedTaskPlaybookChange($event)"
                   (detailPlaybookStepChange)="onUnlinkedTaskPlaybookStepChange($event)" />
               }
+              @if (archivedGoals().length === 0 && cancelledUnlinkedTasks().length === 0) {
+                <p class="text-text-secondary text-sm ml-6">{{ t('common.empty') }}</p>
+              }
             }
-          </div>
-        }
+          }
+        </div>
 
         <!-- Empty state -->
-        @if (activeGoals().length === 0 && queuedGoals().length === 0 && achievedGoals().length === 0 && archivedGoals().length === 0
-             && activeUnlinkedTasks().length === 0 && backlogUnlinkedTasks().length === 0
-             && doneUnlinkedTasks().length === 0 && cancelledUnlinkedTasks().length === 0) {
+        @if (activeGoals().length === 0 && queuedGoals().length === 0
+             && activeUnlinkedTasks().length === 0 && backlogUnlinkedTasks().length === 0) {
           <p class="text-text-secondary text-sm">{{ t('common.empty') }}</p>
         }
       }
@@ -1155,6 +1166,21 @@ export class WorkPage {
   // Activate
   activatingWork = signal(false);
 
+  // Status counts (lightweight, loaded on every refresh)
+  statusCounts = signal<Record<string, number>>({});
+  achievedCount = computed(() => (this.statusCounts()['achieved'] ?? 0) + this.doneUnlinkedTasks().length);
+  archivedCount = computed(() =>
+    (this.statusCounts()['paused'] ?? 0) + (this.statusCounts()['abandoned'] ?? 0) + this.cancelledUnlinkedTasks().length,
+  );
+
+  // Lazy-loaded completed & archived work items
+  achievedItems = signal<SpWork[]>([]);
+  achievedLoaded = signal(false);
+  achievedLoading = signal(false);
+  archivedItems = signal<SpWork[]>([]);
+  archivedLoaded = signal(false);
+  archivedLoading = signal(false);
+
   // Section collapse state
   collapsedSections = signal<Set<string>>(new Set(['completed', 'archived']));
 
@@ -1192,6 +1218,9 @@ export class WorkPage {
   createAndExecuteLoading = signal(false);
   editingTask = signal<SpTask | null>(null);
 
+  // Project settings
+  showRelease = computed(() => (this.ctx.project()?.metadata?.['show_release'] as boolean) ?? false);
+
   // Git status
   mainStatus = signal<MainPushStatus | null>(null);
   pushingMain = signal(false);
@@ -1213,12 +1242,19 @@ export class WorkPage {
 
   activeGoals = computed(() => this.filteredGoals().filter(g => g.status === 'active'));
   queuedGoals = computed(() => this.filteredGoals().filter(g => g.status === 'ready' || g.status === 'processing'));
-  achievedGoals = computed(() =>
-    this.filteredGoals()
-      .filter(g => g.status === 'achieved')
-      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
-  );
-  archivedGoals = computed(() => this.filteredGoals().filter(g => g.status === 'paused' || g.status === 'abandoned'));
+  achievedGoals = computed(() => {
+    const q = this.searchQuery().toLowerCase().trim();
+    const items = q
+      ? this.achievedItems().filter(g => g.title.toLowerCase().includes(q) || g.description.toLowerCase().includes(q))
+      : this.achievedItems();
+    return [...items].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+  });
+  archivedGoals = computed(() => {
+    const q = this.searchQuery().toLowerCase().trim();
+    return q
+      ? this.archivedItems().filter(g => g.title.toLowerCase().includes(q) || g.description.toLowerCase().includes(q))
+      : this.archivedItems();
+  });
 
   // --- Computed: unlinked task sections ---
 
@@ -1475,6 +1511,13 @@ export class WorkPage {
     const current = new Set(this.collapsedSections());
     if (current.has(section)) {
       current.delete(section);
+      // Lazy-load on first expand
+      if (section === 'completed' && !this.achievedLoaded()) {
+        this.loadAchievedGoals();
+      }
+      if (section === 'archived' && !this.archivedLoaded()) {
+        this.loadArchivedGoals();
+      }
     } else {
       current.add(section);
     }
@@ -1529,7 +1572,9 @@ export class WorkPage {
     this.loading.set(true);
     const status = this.selectedStatus as WorkStatus | '';
     const goalType = this.selectedWorkType as WorkType | '';
-    this.api.list(status || undefined, goalType || undefined).subscribe({
+    // Exclude completed/archived statuses from the main load — they are lazy-loaded on expand
+    const statusNot = !status ? 'achieved,paused,abandoned' : undefined;
+    this.api.list({ status: status || undefined, statusNot, workType: goalType || undefined }).subscribe({
       next: (items) => {
         this.items.set(items);
         this.loading.set(false);
@@ -1540,6 +1585,57 @@ export class WorkPage {
         this.loadAllProgress(items);
       },
       error: () => this.loading.set(false),
+    });
+    // Fetch status counts for section headers
+    this.api.statusCounts().subscribe({
+      next: (counts) => this.statusCounts.set(counts),
+    });
+    // Reset lazy-loaded sections so they re-fetch on next expand
+    this.achievedLoaded.set(false);
+    this.achievedItems.set([]);
+    this.archivedLoaded.set(false);
+    this.archivedItems.set([]);
+    // If sections are already expanded, reload them
+    if (!this.collapsedSections().has('completed')) {
+      this.loadAchievedGoals();
+    }
+    if (!this.collapsedSections().has('archived')) {
+      this.loadArchivedGoals();
+    }
+  }
+
+  private loadAchievedGoals(): void {
+    this.achievedLoading.set(true);
+    const goalType = this.selectedWorkType as WorkType | '';
+    this.api.list({ status: 'achieved', workType: goalType || undefined }).subscribe({
+      next: (items) => {
+        this.achievedItems.set(items);
+        this.achievedLoaded.set(true);
+        this.achievedLoading.set(false);
+        if (this.selected()) {
+          const still = items.find(i => i.id === this.selected()!.id);
+          if (still) this.selected.set(still);
+        }
+        this.loadAllProgress(items);
+      },
+      error: () => this.achievedLoading.set(false),
+    });
+  }
+
+  private loadArchivedGoals(): void {
+    this.archivedLoading.set(true);
+    const goalType = this.selectedWorkType as WorkType | '';
+    this.api.list({ statusNot: 'active,ready,processing,achieved', workType: goalType || undefined }).subscribe({
+      next: (items) => {
+        this.archivedItems.set(items);
+        this.archivedLoaded.set(true);
+        this.archivedLoading.set(false);
+        if (this.selected()) {
+          const still = items.find(i => i.id === this.selected()!.id);
+          if (still) this.selected.set(still);
+        }
+      },
+      error: () => this.archivedLoading.set(false),
     });
   }
 

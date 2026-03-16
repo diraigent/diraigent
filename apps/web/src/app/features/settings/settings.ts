@@ -208,6 +208,16 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' 
                   <span class="block text-xs text-text-secondary mt-1 ml-7">{{ t('settings.autoPushHint') }}</span>
                 }
 
+                <!-- Show Release Button -->
+                @if (formGitMode !== 'none') {
+                  <label class="flex items-center gap-3">
+                    <input type="checkbox" [(ngModel)]="formShowRelease"
+                      class="w-4 h-4 rounded border-border text-accent focus:ring-accent bg-bg-subtle" />
+                    <span class="text-sm font-medium text-text-secondary">{{ t('settings.showRelease') }}</span>
+                  </label>
+                  <span class="block text-xs text-text-secondary mt-1 ml-7">{{ t('settings.showReleaseHint') }}</span>
+                }
+
                 <!-- Resolved paths (read-only info) -->
                 <div class="block">
                   <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('settings.resolvedPath') }}</span>
@@ -1188,6 +1198,7 @@ export class SettingsPage implements OnInit, OnDestroy {
   formGitRoot = '';
   formProjectRoot = '';
   formAutoPush = true;
+  formShowRelease = false;
   formUploadLogs = false;
   formDoneRetentionDays = 1;
   formObservationRetentionDays = 30;
@@ -1331,6 +1342,7 @@ export class SettingsPage implements OnInit, OnDestroy {
         this.formGitRoot = p.git_root ?? '';
         this.formProjectRoot = p.project_root ?? '';
         this.formAutoPush = (p.metadata?.['auto_push'] as boolean) ?? false;
+        this.formShowRelease = (p.metadata?.['show_release'] as boolean) ?? false;
         this.formUploadLogs = (p.metadata?.['upload_logs'] as boolean) ?? false;
         this.formDoneRetentionDays = (p.metadata?.['done_retention_days'] as number) ?? 1;
         this.formObservationRetentionDays = (p.metadata?.['observation_retention_days'] as number) ?? 30;
@@ -1390,7 +1402,7 @@ export class SettingsPage implements OnInit, OnDestroy {
       git_mode: this.formGitMode,
       git_root: this.formGitRoot || null,
       project_root: this.formProjectRoot || null,
-      metadata: { ...(this.project()?.metadata || {}), auto_push: this.formAutoPush, upload_logs: this.formUploadLogs, done_retention_days: this.formDoneRetentionDays, observation_retention_days: this.formObservationRetentionDays, chat_provider: this.formChatProvider, chat_model: this.formChatModel || null },
+      metadata: { ...(this.project()?.metadata || {}), auto_push: this.formAutoPush, show_release: this.formShowRelease, upload_logs: this.formUploadLogs, done_retention_days: this.formDoneRetentionDays, observation_retention_days: this.formObservationRetentionDays, chat_provider: this.formChatProvider, chat_model: this.formChatModel || null },
     };
 
     this.api.updateProject(pid, update).subscribe({

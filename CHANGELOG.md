@@ -1,6 +1,29 @@
 # Changelog
 
 
+## v20260316-1003-developer (2026-03-16)
+
+### Added
+- **API**: Work status counts endpoint (`GET /work/status-counts`) for lightweight section header aggregation
+- **Web**: Lazy loading for completed and archived work sections using status counts
+- **Web**: Forgejo and GitHub brand logo icons in integration and pipeline UIs
+- **Web**: Shared `ProviderIcon` component for CI provider branding
+- **Web**: Queued items now visible in work item list
+- **Web**: Release button configurable via project settings
+
+### Changed
+- **Web**: Renamed 'Create & Execute' button to 'Execute' in work item dialog
+- **Web**: Improved menu positioning on task list to avoid clipping
+
+### Fixed
+- **Web**: State dropdown clipped when near viewport bottom — now opens upward
+- **Web**: Undici security vulnerabilities patched
+- **Web**: Build errors in work.ts resolved (added missing color map entries, removed unused SlicePipe)
+- **Web**: Removed redundant active badge on work items
+
+---
+
+
 ## v20260316-0831-developer (2026-03-16)
 
 ### Fixed
