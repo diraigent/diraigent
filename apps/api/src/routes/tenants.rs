@@ -86,6 +86,7 @@ async fn require_member(state: &AppState, tenant_id: Uuid, user_id: Uuid) -> Res
 async fn create_tenant(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
+    headers: axum::http::HeaderMap,
     Json(req): Json<CreateTenant>,
 ) -> Result<Json<Tenant>, AppError> {
     let tenant = state.db.create_tenant(&req).await?;
@@ -99,6 +100,16 @@ async fn create_tenant(
             },
         )
         .await?;
+
+    // Auto-initialize encryption for the new tenant
+    let token = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|h| h.strip_prefix("Bearer "));
+    auto_init_encryption(&state, tenant.id, user_id, token).await;
+
+    // Re-fetch to include updated encryption_mode
+    let tenant = state.db.get_tenant_by_id(tenant.id).await?;
     Ok(Json(tenant))
 }
 
@@ -342,6 +353,88 @@ async fn init_encryption(
         wrapped_dek,
         kdf_salt: salt,
     }))
+}
+
+/// Auto-initialize login-derived encryption for a newly created tenant.
+///
+/// Called internally during tenant creation. If the access token is unavailable
+/// (e.g. dev mode with X-Dev-User-Id), encryption is skipped — the tenant
+/// starts with `encryption_mode = "none"` and can be initialized later.
+pub(crate) async fn auto_init_encryption(
+    state: &AppState,
+    tenant_id: Uuid,
+    user_id: Uuid,
+    access_token: Option<&str>,
+) {
+    let token = match access_token {
+        Some(t) if !t.is_empty() => t,
+        _ => {
+            tracing::info!(
+                tenant_id = %tenant_id,
+                "skipping auto-encryption init — no access token available (dev mode?)"
+            );
+            return;
+        }
+    };
+
+    let salt = crypto::generate_salt();
+    let dek = Dek::generate();
+
+    let kek = match crypto::derive_kek(token, &salt) {
+        Ok(k) => k,
+        Err(e) => {
+            tracing::warn!(tenant_id = %tenant_id, error = %e, "auto-encryption init: KEK derivation failed");
+            return;
+        }
+    };
+
+    let wrapped_dek = match dek.wrap(&kek) {
+        Ok(w) => w,
+        Err(e) => {
+            tracing::warn!(tenant_id = %tenant_id, error = %e, "auto-encryption init: DEK wrapping failed");
+            return;
+        }
+    };
+
+    if let Err(e) = state
+        .db
+        .update_tenant(
+            tenant_id,
+            &UpdateTenant {
+                name: None,
+                encryption_mode: Some("login_derived".into()),
+                key_salt: Some(salt.clone()),
+                theme_preference: None,
+                accent_color: None,
+            },
+        )
+        .await
+    {
+        tracing::warn!(tenant_id = %tenant_id, error = %e, "auto-encryption init: failed to update tenant");
+        return;
+    }
+
+    if let Err(e) = state
+        .db
+        .create_wrapped_key(
+            tenant_id,
+            user_id,
+            &CreateWrappedKey {
+                key_type: "login_derived".into(),
+                wrapped_dek,
+                kdf_salt: salt,
+                kdf_params: None,
+                key_version: Some(1),
+            },
+        )
+        .await
+    {
+        tracing::warn!(tenant_id = %tenant_id, error = %e, "auto-encryption init: failed to store wrapped key");
+        return;
+    }
+
+    state.dek_cache.put(tenant_id, dek).await;
+    tracing::info!(tenant_id = %tenant_id, "auto-initialized login-derived encryption for new tenant");
 }
 
 /// Response from GET encryption salt.

@@ -33,7 +33,7 @@ mod sse;
 mod step_templates;
 mod task_logs;
 mod tasks;
-mod tenants;
+pub(crate) mod tenants;
 mod verifications;
 mod webhooks;
 pub(crate) mod work;
