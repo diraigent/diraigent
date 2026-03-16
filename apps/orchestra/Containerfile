@@ -23,9 +23,10 @@ COPY libs/common-rust/diraigent-types/Cargo.toml libs/common-rust/diraigent-type
 COPY libs/common-rust/shared-utils/Cargo.toml libs/common-rust/shared-utils/Cargo.toml
 COPY libs/common-rust/shared-build-utils/Cargo.toml libs/common-rust/shared-build-utils/Cargo.toml
 COPY apps/orchestra/Cargo.toml apps/orchestra/Cargo.toml
+COPY apps/analyzer/Cargo.toml apps/analyzer/Cargo.toml
 
 # Rewrite workspace to only include these crates
-RUN sed -i '/^members = \[/,/^\]/c\members = ["libs/common-rust/*", "apps/orchestra"]' Cargo.toml && \
+RUN sed -i '/^members = \[/,/^\]/c\members = ["libs/common-rust/*", "apps/orchestra", "apps/analyzer"]' Cargo.toml && \
     sed -i '/^exclude = \[/,/^\]/d' Cargo.toml
 
 # Create stub source files so cargo can resolve the dependency graph
@@ -33,7 +34,9 @@ RUN mkdir -p libs/common-rust/diraigent-types/src && echo "" > libs/common-rust/
     mkdir -p libs/common-rust/shared-utils/src && echo "" > libs/common-rust/shared-utils/src/lib.rs && \
     mkdir -p libs/common-rust/shared-build-utils/src && echo "" > libs/common-rust/shared-build-utils/src/lib.rs && \
     mkdir -p apps/orchestra/src && echo "fn main(){}" > apps/orchestra/src/main.rs && \
-    echo "fn main(){}" > apps/orchestra/src/cli.rs
+    echo "fn main(){}" > apps/orchestra/src/cli.rs && \
+    mkdir -p apps/analyzer/src && echo "" > apps/analyzer/src/lib.rs && \
+    echo "fn main(){}" > apps/analyzer/src/main.rs
 
 # Build dependencies only (this layer is cached until Cargo.toml/lock change)
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
@@ -48,12 +51,14 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
 # ── Layer 2: actual source code (rebuilds only app code, deps are cached) ──
 COPY libs/ libs/
 COPY apps/orchestra/ apps/orchestra/
+COPY apps/analyzer/ apps/analyzer/
 
 # Touch source files to ensure cargo rebuilds them (not the cached deps)
 RUN touch libs/common-rust/diraigent-types/src/lib.rs \
           libs/common-rust/shared-utils/src/lib.rs \
           apps/orchestra/src/main.rs \
-          apps/orchestra/src/cli.rs
+          apps/orchestra/src/cli.rs \
+          apps/analyzer/src/lib.rs
 
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
       PKG_CONFIG_ALLOW_CROSS=1 \
