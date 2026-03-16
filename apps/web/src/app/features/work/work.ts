@@ -199,9 +199,11 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ typeColor(goal.work_type) }}">
                 {{ t('goals.type.' + goal.work_type) }}
               </span>
-              <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
-                {{ t('goals.status.' + goal.status) }}
-              </span>
+              @if (goal.status !== 'active') {
+                <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
+                  {{ t('goals.status.' + goal.status) }}
+                </span>
+              }
               @if (conflictMap().get(goal.id); as conflicts) {
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-ctp-red/20 text-ctp-red"
                   title="Tasks with merge conflicts">
@@ -267,9 +269,11 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
 
               <!-- Actions row -->
               <div class="flex items-center gap-2 mb-3 flex-wrap">
-                <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
-                  {{ t('goals.status.' + goal.status) }}
-                </span>
+                @if (goal.status !== 'active') {
+                  <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
+                    {{ t('goals.status.' + goal.status) }}
+                  </span>
+                }
                 <select [(ngModel)]="formWorkType" (change)="saveInlineField()"
                   class="text-xs rounded-lg px-2 py-1 border border-border bg-surface text-text-primary
                          focus:outline-none focus:ring-1 focus:ring-accent">
@@ -364,7 +368,9 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                           [class.border-l-ctp-yellow]="child.status === 'paused'"
                           [class.opacity-60]="child.status === 'achieved'">
                           <span class="text-text-primary">{{ child.title }}</span>
-                          <span class="px-1.5 py-0.5 rounded-full text-xs {{ statusColor(child.status) }}">{{ t('goals.status.' + child.status) }}</span>
+                          @if (child.status !== 'active') {
+                            <span class="px-1.5 py-0.5 rounded-full text-xs {{ statusColor(child.status) }}">{{ t('goals.status.' + child.status) }}</span>
+                          }
                         </button>
                       }
                     </div>
