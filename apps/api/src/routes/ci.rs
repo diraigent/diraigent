@@ -180,11 +180,14 @@ async fn register_github_integration(
     // Generate a webhook secret (256-bit entropy via two UUIDs)
     let webhook_secret = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
 
-    let base_url = req.base_url.as_deref().unwrap_or("https://api.github.com");
-
     let integration = state
         .db
-        .create_github_integration(project_id, base_url, req.token.as_deref(), &webhook_secret)
+        .create_github_integration(
+            project_id,
+            &req.base_url,
+            req.token.as_deref(),
+            &webhook_secret,
+        )
         .await?;
 
     // Construct the webhook URL

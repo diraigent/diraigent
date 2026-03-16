@@ -375,51 +375,54 @@ fn extract_owner_repo(repo_url: &str) -> Option<(String, String)> {
     }
 }
 
+/// Extract the Forgejo API base URL (scheme + host) from a repo URL.
+///
+/// `https://git.example.com/owner/repo` → `https://git.example.com`
+fn extract_api_base(repo_url: &str) -> Option<String> {
+    // Find the scheme separator
+    let after_scheme = repo_url.find("://")?;
+    let rest = &repo_url[after_scheme + 3..];
+    // Host(+port) ends at the first '/'
+    let host_end = rest.find('/').unwrap_or(rest.len());
+    Some(repo_url[..after_scheme + 3 + host_end].to_string())
+}
+
 /// Fetch step details from the Forgejo API for a given job and store them.
 ///
 /// Failed API calls are logged and do NOT abort the job upsert.
 async fn fetch_and_store_steps(
     state: &AppState,
     integration: &crate::models::ForgejoIntegration,
-    project_id: Uuid,
+    _project_id: Uuid,
     external_run_id: i64,
     external_job_id: i64,
     ci_job_id: Uuid,
 ) {
-    // We need the project's repo_url to derive owner/repo
-    let project = match state.db.get_project_by_id(project_id).await {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::warn!(error = %e, "Failed to look up project for step fetch; skipping steps");
-            return;
-        }
-    };
-
-    let repo_url = match &project.repo_url {
-        Some(url) if !url.is_empty() => url.as_str(),
-        _ => {
+    // Extract owner/repo and API base from integration's base_url (repo URL)
+    let (owner, repo) = match extract_owner_repo(&integration.base_url) {
+        Some(pair) => pair,
+        None => {
             tracing::warn!(
-                project_id = %project_id,
-                "Project has no repo_url; cannot fetch steps from Forgejo API"
+                base_url = %integration.base_url,
+                "Could not extract owner/repo from integration base_url; skipping steps"
             );
             return;
         }
     };
 
-    let (owner, repo) = match extract_owner_repo(repo_url) {
-        Some(pair) => pair,
+    let api_base = match extract_api_base(&integration.base_url) {
+        Some(base) => base,
         None => {
             tracing::warn!(
-                repo_url,
-                "Could not extract owner/repo from repo_url; skipping steps"
+                base_url = %integration.base_url,
+                "Could not extract API base from integration base_url; skipping steps"
             );
             return;
         }
     };
 
     // Build a Forgejo API client from the integration config
-    let client =
-        forgejo_client::ForgejoClient::new(&integration.base_url, integration.token.clone());
+    let client = forgejo_client::ForgejoClient::new(&api_base, integration.token.clone());
 
     // Fetch steps from the API
     let steps = match client
@@ -519,42 +522,32 @@ async fn sync_forgejo_runs(
         }
     };
 
-    // Get project for repo_url
-    let project = match state.db.get_project_by_id(project_id).await {
-        Ok(p) => p,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": format!("Failed to load project: {e}")})),
-            )
-                .into_response();
-        }
-    };
-
-    let repo_url = match &project.repo_url {
-        Some(url) if !url.is_empty() => url.as_str(),
-        _ => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": "Project has no repo_url configured"})),
-            )
-                .into_response();
-        }
-    };
-
-    let (owner, repo) = match extract_owner_repo(repo_url) {
+    // Extract owner/repo and API base from integration's base_url (repo URL)
+    let (owner, repo) = match extract_owner_repo(&integration.base_url) {
         Some(pair) => pair,
         None => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": "Could not extract owner/repo from repo_url"})),
+                Json(serde_json::json!({"error": "Could not extract owner/repo from integration URL"})),
             )
                 .into_response();
         }
     };
 
-    let client =
-        forgejo_client::ForgejoClient::new(&integration.base_url, integration.token.clone());
+    let api_base = match extract_api_base(&integration.base_url) {
+        Some(base) => base,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(
+                    serde_json::json!({"error": "Could not extract API base from integration URL"}),
+                ),
+            )
+                .into_response();
+        }
+    };
+
+    let client = forgejo_client::ForgejoClient::new(&api_base, integration.token.clone());
 
     // Fetch the last N runs (2 pages of 25 = up to 50 runs)
     let mut synced_count: usize = 0;

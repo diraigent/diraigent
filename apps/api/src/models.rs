@@ -2117,7 +2117,7 @@ pub struct GitHubIntegration {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateGitHubIntegration {
-    pub base_url: Option<String>,
+    pub base_url: String,
     pub token: Option<String>,
 }
 
