@@ -244,6 +244,8 @@
     "activate": "Aktivieren",
     "executeBtn": "Ausführen",
     "createAndExecute": "Ausführen",
+    "planExecuteBtn": "Planen & Ausführen",
+    "createAndPlanExecute": "Planen & Ausführen",
     "startAllBtn": "Alle starten",
     "taskIdPlaceholder": "Aufgaben-ID",
     "link": "Verknüpfen",

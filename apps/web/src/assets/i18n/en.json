@@ -250,6 +250,8 @@
     "activate": "Activate",
     "executeBtn": "Execute",
     "createAndExecute": "Execute",
+    "planExecuteBtn": "Plan & Execute",
+    "createAndPlanExecute": "Plan & Execute",
     "startAllBtn": "Start All",
     "noLinkedTasks": "No tasks linked to this work item",
     "pickTasks": "Pick Tasks to Link",
