@@ -8,11 +8,12 @@ import {
 } from '../../../../core/services/integrations-api.service';
 import { ProjectContext } from '../../../../core/services/project-context.service';
 import { INTEGRATION_KIND_COLORS } from '../../../../shared/ui-constants';
+import { ProviderIconComponent } from '../../../../shared/components/provider-icon/provider-icon';
 
 @Component({
   selector: 'app-integration-list',
   standalone: true,
-  imports: [RouterLink, TranslocoModule],
+  imports: [RouterLink, TranslocoModule, ProviderIconComponent],
   template: `
     <div class="p-3 sm:p-6" *transloco="let t">
       <div class="flex items-center justify-between mb-3 sm:mb-6">
@@ -53,11 +54,9 @@ import { INTEGRATION_KIND_COLORS } from '../../../../shared/ui-constants';
                class="block bg-surface border border-border rounded-lg p-4 hover:border-accent/50 transition-colors">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-lg bg-bg-subtle flex items-center justify-center text-text-secondary">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
-                    </svg>
+                  <div class="w-10 h-10 rounded-lg bg-bg-subtle flex items-center justify-center"
+                       [class]="providerIconColor(integration.provider)">
+                    <app-provider-icon [provider]="integration.provider" size="md" />
                   </div>
                   <div>
                     <div class="flex items-center gap-2">
@@ -119,6 +118,14 @@ export class IntegrationListPage {
 
   kindColor(kind: IntegrationKind): string {
     return INTEGRATION_KIND_COLORS[kind] ?? INTEGRATION_KIND_COLORS['custom'];
+  }
+
+  providerIconColor(provider: string): string {
+    switch (provider) {
+      case 'github': return 'text-ctp-mauve';
+      case 'forgejo': return 'text-ctp-peach';
+      default: return 'text-text-secondary';
+    }
   }
 
   toggleEnabled(event: Event, integration: Integration): void {
