@@ -1,6 +1,7 @@
 import { Component, ChangeDetectorRef, inject, signal, computed, effect, DestroyRef, PLATFORM_ID, ViewEncapsulation } from '@angular/core';
 import { NgTemplateOutlet, DatePipe, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subscription, forkJoin, of, timer, switchMap } from 'rxjs';
@@ -185,6 +186,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
       <!-- Goal accordion item template (reused across sections) -->
       <ng-template #goalItem let-goal>
         <div class="rounded-lg border transition-colors"
+          [attr.data-work-id]="goal.id"
           [class]="goal.id === selected()?.id
             ? 'bg-accent/10 border-accent'
             : 'bg-surface border-border hover:border-accent/50'"
@@ -1120,6 +1122,7 @@ export class WorkPage {
   private destroyRef = inject(DestroyRef);
   private cdr = inject(ChangeDetectorRef);
   private platformId = inject(PLATFORM_ID);
+  private route = inject(ActivatedRoute);
 
   /** True on touch-primary devices — disables CDK drag to preserve mobile scrolling. */
   isTouch = signal(false);
@@ -1231,6 +1234,9 @@ export class WorkPage {
   private detailPollSub?: Subscription;
   private gitSub?: Subscription;
 
+  // Deep-link support: pending workId from query param
+  private pendingWorkId: string | null = null;
+
   // --- Computed: goal sections ---
 
   private filteredGoals = computed(() => {
@@ -1302,6 +1308,8 @@ export class WorkPage {
     if (isPlatformBrowser(this.platformId)) {
       this.isTouch.set(window.matchMedia('(pointer: coarse)').matches);
     }
+    // Read deep-link query param once on init
+    this.pendingWorkId = this.route.snapshot.queryParamMap.get('workId');
     effect(() => {
       this.ctx.projectId();
       this.selected.set(null);
@@ -1583,6 +1591,10 @@ export class WorkPage {
           this.selected.set(still ?? null);
         }
         this.loadAllProgress(items);
+        // Handle deep-link query param after items load
+        if (this.pendingWorkId) {
+          this.handleDeepLink(items);
+        }
       },
       error: () => this.loading.set(false),
     });
@@ -1751,6 +1763,46 @@ export class WorkPage {
       this.loadMarkedTasks(goal.id);
     } else {
       this.markedTaskIds.set(new Set());
+    }
+  }
+
+  /** Handle deep-link: find the work item by pendingWorkId and select + scroll to it. */
+  private handleDeepLink(loadedItems: SpWork[]): void {
+    const workId = this.pendingWorkId;
+    if (!workId) return;
+
+    const found = loadedItems.find(i => i.id === workId);
+    if (found) {
+      this.pendingWorkId = null;
+      this.selectItem(found);
+      setTimeout(() => this.scrollToWork(workId), 150);
+    } else {
+      // Item might be in achieved/archived section or a different project — fetch by ID
+      this.api.get(workId).subscribe({
+        next: (work) => {
+          if (work.project_id !== this.ctx.projectId()) {
+            // Switch project context — the effect will re-trigger loadGoals
+            this.ctx.select(work.project_id);
+          } else {
+            // Same project but in a different status section (achieved/archived)
+            this.pendingWorkId = null;
+            this.selectItem(work);
+            setTimeout(() => this.scrollToWork(workId), 150);
+          }
+        },
+        error: () => {
+          // Invalid workId — silently ignore
+          this.pendingWorkId = null;
+        },
+      });
+    }
+  }
+
+  /** Scroll the work item with the given ID into the viewport. */
+  private scrollToWork(workId: string): void {
+    const el = document.querySelector(`[data-work-id="${workId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }
 
