@@ -124,6 +124,15 @@ export class GitApiService {
     );
   }
 
+  listBranchesForProject(projectId: string, prefix?: string): Observable<BranchListResponse> {
+    const params: Record<string, string> = {};
+    if (prefix) params['prefix'] = prefix;
+    return this.http.get<BranchListResponse>(
+      `${this.baseUrl}/${projectId}/git/branches`,
+      { params },
+    );
+  }
+
   taskBranchStatusForProject(projectId: string, taskId: string): Observable<TaskBranchStatus> {
     return this.http.get<TaskBranchStatus>(
       `${this.baseUrl}/${projectId}/git/task-branch/${taskId}`,
