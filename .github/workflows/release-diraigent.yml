@@ -73,6 +73,15 @@ jobs:
           cd release
           sha256sum orchestra-* > checksums.txt
 
+      - name: GPG sign checksums
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --batch --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
+            --armor --detach-sign release/checksums.txt
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -84,3 +93,4 @@ jobs:
             release/orchestra-linux-arm64
             release/orchestra-macos-arm64
             release/checksums.txt
+            release/checksums.txt.asc

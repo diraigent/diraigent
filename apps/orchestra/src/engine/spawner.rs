@@ -21,12 +21,6 @@ pub async fn poll_ready_tasks(
     active: &ActiveTasks,
     lock_queue: &LockQueue,
 ) {
-    let tasks = active.lock().await;
-    if tasks.len() >= config.max_workers {
-        return;
-    }
-    drop(tasks);
-
     let projects = match api.list_projects().await {
         Ok(p) => p,
         Err(e) => {
@@ -34,6 +28,21 @@ pub async fn poll_ready_tasks(
             return;
         }
     };
+    poll_ready_tasks_with_projects(api, config, active, lock_queue, &projects).await;
+}
+
+pub async fn poll_ready_tasks_with_projects(
+    api: &ProjectsApi,
+    config: &Config,
+    active: &ActiveTasks,
+    lock_queue: &LockQueue,
+    projects: &[serde_json::Value],
+) {
+    let tasks = active.lock().await;
+    if tasks.len() >= config.max_workers {
+        return;
+    }
+    drop(tasks);
 
     if projects.is_empty() {
         info!("poll: no projects visible to this agent");
@@ -44,7 +53,7 @@ pub async fn poll_ready_tasks(
         projects.len()
     );
 
-    for project in &projects {
+    for project in projects {
         let tasks = active.lock().await;
         if tasks.len() >= config.max_workers {
             break;
@@ -124,7 +133,13 @@ pub async fn spawn_worker(
     let tid = TaskId::new(task_id);
 
     // Fetch task for title, per-task model override, and step resolution
-    let task_data = api.get_task(task_id).await.ok();
+    let task_data = match api.get_task(task_id).await {
+        Ok(data) => Some(data),
+        Err(e) => {
+            warn!("spawn {tid}: failed to fetch task data: {e} — proceeding with defaults");
+            None
+        }
+    };
     let title = task_data
         .as_ref()
         .and_then(|t| t["title"].as_str().map(|s| s.to_string()))

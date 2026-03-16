@@ -309,7 +309,8 @@ pub async fn run_worker(
     // deletions than insertions — this typically means the agent used Write (full rewrite)
     // instead of Edit (targeted diff), causing collateral deletion of unrelated code.
     //
-    // Thresholds: deletions > 50 AND deletions > 3× insertions is a strong signal.
+    // Thresholds configurable via step JSON: scope_min_deletions (default 50),
+    // scope_deletion_ratio (default 3). Set scope_min_deletions to 0 to disable.
     let is_retriable = step_config
         .step_json
         .as_ref()
@@ -320,9 +321,22 @@ pub async fn run_worker(
                 StepProfile::Implement
             )
         });
-    if is_retriable {
+    let scope_min_deletions: usize = step_config
+        .step_json
+        .as_ref()
+        .and_then(|s| s["scope_min_deletions"].as_u64())
+        .unwrap_or(50) as usize;
+    let scope_deletion_ratio: usize = step_config
+        .step_json
+        .as_ref()
+        .and_then(|s| s["scope_deletion_ratio"].as_u64())
+        .unwrap_or(3) as usize;
+    if is_retriable && scope_min_deletions > 0 {
         match worktree_mgr.diff_insertion_deletion_stats(task_id) {
-            Ok((insertions, deletions)) if deletions > 50 && deletions > insertions * 3 => {
+            Ok((insertions, deletions))
+                if deletions > scope_min_deletions
+                    && deletions > insertions * scope_deletion_ratio =>
+            {
                 warn!(
                     "worker {tid}: scope violation suspected — {deletions} deletions vs {insertions} insertions"
                 );

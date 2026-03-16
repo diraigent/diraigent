@@ -15,6 +15,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         docker-ce-cli docker-buildx-plugin \
     && curl -fsSL https://nodejs.org/dist/v25.6.1/node-v25.6.1-linux-x64.tar.xz \
         | tar xJ -C /usr/local --strip-components=1 \
+    && COSIGN_VERSION=2.4.3 \
+    && curl -fsSL "https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-linux-amd64" \
+        -o /usr/local/bin/cosign \
+    && chmod +x /usr/local/bin/cosign \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 LABEL org.opencontainers.image.title="diraigent-ci-deploy" \
