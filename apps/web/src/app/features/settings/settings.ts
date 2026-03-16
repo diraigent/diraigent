@@ -551,7 +551,10 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' 
                                     {{ task.state }}
                                   </button>
                                   @if (openMenuId() === task.id) {
-                                    <div class="absolute z-50 mt-1 left-0 bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[120px]">
+                                    <div class="absolute z-50 left-0 bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[120px]"
+                                         [class.mt-1]="!menuOpenUpward()"
+                                         [class.bottom-full]="menuOpenUpward()"
+                                         [class.mb-1]="menuOpenUpward()">
                                       @for (target of getTransitions(task.state); track target) {
                                         <button (click)="onTransition($event, task, target)"
                                           class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover transition-colors flex items-center gap-2 cursor-pointer">
@@ -1217,6 +1220,7 @@ export class SettingsPage implements OnInit, OnDestroy {
   agentTasks = signal<SpAgentTask[]>([]);
   tasksLoading = signal(false);
   openMenuId = signal<string | null>(null);
+  menuOpenUpward = signal(false);
   showCreateModal = signal(false);
 
   // Team tab state
@@ -1545,7 +1549,15 @@ export class SettingsPage implements OnInit, OnDestroy {
 
   toggleStateMenu(event: Event, taskId: string): void {
     event.stopPropagation();
-    this.openMenuId.set(this.openMenuId() === taskId ? null : taskId);
+    if (this.openMenuId() === taskId) {
+      this.openMenuId.set(null);
+      return;
+    }
+    const button = event.target as HTMLElement;
+    const rect = button.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    this.menuOpenUpward.set(spaceBelow < 200);
+    this.openMenuId.set(taskId);
   }
 
   onTransition(event: Event, task: SpAgentTask, target: string): void {
