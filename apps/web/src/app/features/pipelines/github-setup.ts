@@ -7,13 +7,14 @@ import {
   GitHubIntegrationResponse,
 } from '../../core/services/ci-api.service';
 import { ProjectContext } from '../../core/services/project-context.service';
+import { ProviderIconComponent } from '../../shared/components/provider-icon/provider-icon';
 
 type SetupStep = 'form' | 'webhook' | 'sync';
 
 @Component({
   selector: 'app-github-setup',
   standalone: true,
-  imports: [TranslocoModule, FormsModule],
+  imports: [TranslocoModule, FormsModule, ProviderIconComponent],
   template: `
     <div class="p-3 sm:p-6 max-w-3xl mx-auto" *transloco="let t">
       <!-- Header -->
@@ -24,7 +25,10 @@ type SetupStep = 'form' | 'webhook' | 'sync';
           </svg>
           {{ t('github.backToPipelines') }}
         </button>
-        <h1 class="text-2xl font-semibold text-text-primary">{{ t('github.title') }}</h1>
+        <h1 class="text-2xl font-semibold text-text-primary flex items-center gap-2">
+          <app-provider-icon provider="github" size="lg" class="text-ctp-mauve" />
+          {{ t('github.title') }}
+        </h1>
         <p class="text-sm text-text-secondary mt-1">{{ t('github.subtitle') }}</p>
       </div>
 

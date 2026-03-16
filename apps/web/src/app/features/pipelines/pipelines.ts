@@ -7,11 +7,12 @@ import { Subscription, timer } from 'rxjs';
 import { CiApiService, CiRun, CiRunFilters, PaginatedResponse } from '../../core/services/ci-api.service';
 import { ProjectContext } from '../../core/services/project-context.service';
 import { CI_STATUS_COLORS } from '../../shared/ui-constants';
+import { ProviderIconComponent } from '../../shared/components/provider-icon/provider-icon';
 
 @Component({
   selector: 'app-pipelines',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, RouterLink],
+  imports: [TranslocoModule, FormsModule, RouterLink, ProviderIconComponent],
   template: `
     <div class="p-3 sm:p-6" *transloco="let t">
       <div class="flex items-center justify-between mb-3 sm:mb-6">
@@ -33,11 +34,13 @@ import { CI_STATUS_COLORS } from '../../shared/ui-constants';
             }
           </button>
           <a routerLink="/pipelines/setup"
-             class="px-3 py-2 text-sm font-medium bg-surface border border-border text-text-primary rounded-lg hover:border-accent/50 transition-colors">
+             class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-surface border border-border text-text-primary rounded-lg hover:border-accent/50 transition-colors">
+            <app-provider-icon provider="forgejo" size="sm" />
             {{ t('pipelines.setupForgejo') }}
           </a>
           <a routerLink="/pipelines/github-setup"
-             class="px-3 py-2 text-sm font-medium bg-surface border border-border text-text-primary rounded-lg hover:border-accent/50 transition-colors">
+             class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-surface border border-border text-text-primary rounded-lg hover:border-accent/50 transition-colors">
+            <app-provider-icon provider="github" size="sm" />
             {{ t('pipelines.setupGitHub') }}
           </a>
         </div>
@@ -139,18 +142,12 @@ import { CI_STATUS_COLORS } from '../../shared/ui-constants';
           <div class="flex items-center gap-3">
             <a routerLink="/pipelines/setup"
                class="inline-flex items-center gap-2 px-5 py-2.5 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90 transition-opacity">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-              </svg>
+              <app-provider-icon provider="forgejo" size="sm" />
               {{ t('pipelines.setupForgejo') }}
             </a>
             <a routerLink="/pipelines/github-setup"
                class="inline-flex items-center gap-2 px-5 py-2.5 bg-surface border border-border text-text-primary rounded-lg text-sm font-medium hover:border-accent/50 transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-              </svg>
+              <app-provider-icon provider="github" size="sm" />
               {{ t('pipelines.setupGitHub') }}
             </a>
           </div>
@@ -181,6 +178,7 @@ import { CI_STATUS_COLORS } from '../../shared/ui-constants';
                   <td class="py-3 pr-4">
                     <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide"
                           [class]="providerBadgeClass(run.provider)">
+                      <app-provider-icon [provider]="run.provider || 'forgejo'" size="xs" />
                       {{ run.provider || 'forgejo' }}
                     </span>
                   </td>
