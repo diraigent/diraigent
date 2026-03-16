@@ -42,38 +42,20 @@ import { VerificationsApiService, SpVerification } from '../../core/services/ver
 import { PlaybooksApiService, SpPlaybook } from '../../core/services/playbooks-api.service';
 import { GitApiService, BranchInfo, MainPushStatus, TaskBranchStatus } from '../../core/services/git-api.service';
 import { ChatService } from '../../core/services/chat.service';
+import {
+  WORK_STATUS_COLORS, WORK_PROGRESS_COLORS, WORK_TYPE_COLORS,
+} from '../../shared/ui-constants';
 
 const STATUSES: WorkStatus[] = ['active', 'ready', 'processing', 'achieved', 'paused', 'abandoned'];
 // 'ready' and 'processing' are inferred from tasks — not manually selectable
 const MANUAL_STATUSES: WorkStatus[] = ['active', 'achieved', 'paused', 'abandoned'];
 
-const STATUS_COLORS: Record<WorkStatus, string> = {
-  active: 'bg-ctp-green/20 text-ctp-green',
-  ready: 'bg-ctp-sapphire/20 text-ctp-sapphire',
-  processing: 'bg-ctp-peach/20 text-ctp-peach',
-  achieved: 'bg-ctp-blue/20 text-ctp-blue',
-  paused: 'bg-ctp-yellow/20 text-ctp-yellow',
-  abandoned: 'bg-ctp-overlay0/20 text-ctp-overlay0',
-};
-
-const PROGRESS_COLORS: Record<WorkStatus, string> = {
-  active: 'bg-ctp-green',
-  ready: 'bg-ctp-sapphire',
-  processing: 'bg-ctp-peach',
-  achieved: 'bg-ctp-blue',
-  paused: 'bg-ctp-yellow',
-  abandoned: 'bg-ctp-overlay0',
-};
+const STATUS_COLORS = WORK_STATUS_COLORS;
+const PROGRESS_COLORS = WORK_PROGRESS_COLORS;
 
 const GOAL_TYPES: WorkType[] = ['epic', 'feature', 'milestone', 'sprint', 'initiative'];
 
-const TYPE_COLORS: Record<WorkType, string> = {
-  epic: 'bg-ctp-mauve/20 text-ctp-mauve',
-  feature: 'bg-ctp-blue/20 text-ctp-blue',
-  milestone: 'bg-ctp-peach/20 text-ctp-peach',
-  sprint: 'bg-ctp-teal/20 text-ctp-teal',
-  initiative: 'bg-ctp-lavender/20 text-ctp-lavender',
-};
+const TYPE_COLORS = WORK_TYPE_COLORS;
 
 const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
 

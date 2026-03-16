@@ -7,23 +7,13 @@ import { SpTask, SpTaskUpdate, SpTaskComment, SpTaskDependencies, ChangedFileSum
 import { SpPlaybook } from '../../../../core/services/playbooks-api.service';
 import { TaskBranchStatus } from '../../../../core/services/git-api.service';
 import { SpVerification, VerificationStatus, VerificationKind } from '../../../../core/services/verifications-api.service';
-import { taskStateColor, taskTransitions, DEFAULT_TASK_KINDS } from '../../../../shared/ui-constants';
+import {
+  taskStateColor, taskTransitions, DEFAULT_TASK_KINDS,
+  VERIFICATION_STATUS_COLORS, VERIFICATION_KIND_COLORS,
+} from '../../../../shared/ui-constants';
 import { TaskUpdatesComponent } from '../../components/task-updates/task-updates';
 import { TaskCommentsComponent } from '../../components/task-comments/task-comments';
 import { ChangedFilesComponent } from '../../components/changed-files/changed-files';
-
-const VERIFICATION_STATUS_COLORS: Record<VerificationStatus, string> = {
-  pass: 'bg-ctp-green/20 text-ctp-green',
-  fail: 'bg-ctp-red/20 text-ctp-red',
-  pending: 'bg-ctp-yellow/20 text-ctp-yellow',
-  skipped: 'bg-ctp-overlay0/20 text-ctp-overlay0',
-};
-
-const VERIFICATION_KIND_COLORS: Record<VerificationKind, string> = {
-  test: 'bg-ctp-blue/20 text-ctp-blue',
-  acceptance: 'bg-ctp-teal/20 text-ctp-teal',
-  sign_off: 'bg-ctp-mauve/20 text-ctp-mauve',
-};
 
 
 @Component({

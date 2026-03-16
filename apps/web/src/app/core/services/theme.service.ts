@@ -2,6 +2,7 @@ import { Injectable, inject, signal, computed } from '@angular/core';
 import { PLATFORM_ID } from '@angular/core';
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { TenantApiService } from './tenant-api.service';
+import { STORAGE_KEYS } from '../../shared/ui-constants';
 
 export type ThemePreference = 'system' | 'catppuccin-latte' | 'catppuccin-frappe' | 'catppuccin-macchiato' | 'catppuccin-mocha';
 export type AccentColor = 'rosewater' | 'flamingo' | 'pink' | 'mauve' | 'red' | 'maroon' | 'peach' | 'yellow' | 'green' | 'teal' | 'sky' | 'sapphire' | 'blue' | 'lavender';
@@ -19,8 +20,8 @@ const VALID_THEMES = new Set<string>([
 ]);
 const VALID_ACCENTS = new Set<string>(ACCENT_COLORS);
 
-const themeKey = (tenantId?: string | null) => tenantId ? `zivue-theme-${tenantId}` : 'zivue-theme';
-const accentKey = (tenantId?: string | null) => tenantId ? `zivue-accent-${tenantId}` : 'zivue-accent';
+const themeKey = (tenantId?: string | null) => tenantId ? `${STORAGE_KEYS.THEME}-${tenantId}` : STORAGE_KEYS.THEME;
+const accentKey = (tenantId?: string | null) => tenantId ? `${STORAGE_KEYS.ACCENT}-${tenantId}` : STORAGE_KEYS.ACCENT;
 
 @Injectable({ providedIn: 'root' })
 export class ThemeService {
@@ -80,8 +81,8 @@ export class ThemeService {
     if (tenantId) {
       localStorage.setItem(themeKey(tenantId), theme);
       localStorage.setItem(accentKey(tenantId), accent);
-      localStorage.setItem('zivue-theme', theme);
-      localStorage.setItem('zivue-accent', accent);
+      localStorage.setItem(STORAGE_KEYS.THEME, theme);
+      localStorage.setItem(STORAGE_KEYS.ACCENT, accent);
     }
   }
 
@@ -96,7 +97,7 @@ export class ThemeService {
       const tid = this.tenantId();
       localStorage.setItem(themeKey(tid), preference);
       // Keep global key in sync for FOUC prevention
-      localStorage.setItem('zivue-theme', preference);
+      localStorage.setItem(STORAGE_KEYS.THEME, preference);
       this.applyTheme(this.resolvedTheme());
     }
     this.persistToServer();
@@ -108,7 +109,7 @@ export class ThemeService {
       const tid = this.tenantId();
       localStorage.setItem(accentKey(tid), accent);
       // Keep global key in sync for FOUC prevention
-      localStorage.setItem('zivue-accent', accent);
+      localStorage.setItem(STORAGE_KEYS.ACCENT, accent);
       this.applyAccent(accent);
     }
     this.persistToServer();

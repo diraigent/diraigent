@@ -4,25 +4,10 @@ import { FormsModule } from '@angular/forms';
 import { TranslocoModule } from '@jsverse/transloco';
 import { AuditApiService, SpAuditEntry } from '../../core/services/audit-api.service';
 import { ProjectContext } from '../../core/services/project-context.service';
+import { AUDIT_ENTITY_TYPE_COLORS, AUDIT_ACTION_COLORS } from '../../shared/ui-constants';
 
-const ENTITY_TYPE_COLORS: Record<string, string> = {
-  task: 'bg-ctp-blue/20 text-ctp-blue',
-  agent: 'bg-ctp-teal/20 text-ctp-teal',
-  knowledge: 'bg-ctp-green/20 text-ctp-green',
-  decision: 'bg-ctp-yellow/20 text-ctp-yellow',
-  observation: 'bg-ctp-peach/20 text-ctp-peach',
-  role: 'bg-ctp-red/20 text-ctp-red',
-  membership: 'bg-ctp-pink/20 text-ctp-pink',
-  integration: 'bg-ctp-mauve/20 text-ctp-mauve',
-  playbook: 'bg-ctp-lavender/20 text-ctp-lavender',
-  work: 'bg-ctp-green/20 text-ctp-green',
-};
-
-const ACTION_COLORS: Record<string, string> = {
-  created: 'text-ctp-green',
-  updated: 'text-ctp-yellow',
-  deleted: 'text-ctp-red',
-};
+const ENTITY_TYPE_COLORS = AUDIT_ENTITY_TYPE_COLORS;
+const ACTION_COLORS = AUDIT_ACTION_COLORS;
 
 @Component({
   selector: 'app-audit',

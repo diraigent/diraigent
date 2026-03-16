@@ -14,24 +14,12 @@ import { FilterBarComponent } from '../../shared/components/filter-bar/filter-ba
 import { ListDetailLayoutComponent } from '../../shared/components/list-detail-layout/list-detail-layout';
 import { ModalWrapperComponent } from '../../shared/components/modal-wrapper/modal-wrapper';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog';
+import {
+  REPORT_STATUS_COLORS, REPORT_KIND_COLORS,
+} from '../../shared/ui-constants';
 
 const STATUSES: ReportStatus[] = ['pending', 'in_progress', 'completed', 'failed'];
 const KINDS: ReportKind[] = ['security', 'component', 'architecture', 'performance', 'custom'];
-
-const REPORT_STATUS_COLORS: Record<ReportStatus, string> = {
-  pending: 'bg-ctp-yellow/20 text-ctp-yellow',
-  in_progress: 'bg-ctp-blue/20 text-ctp-blue',
-  completed: 'bg-ctp-green/20 text-ctp-green',
-  failed: 'bg-ctp-red/20 text-ctp-red',
-};
-
-const REPORT_KIND_COLORS: Record<ReportKind, string> = {
-  security: 'bg-ctp-red/20 text-ctp-red',
-  component: 'bg-ctp-blue/20 text-ctp-blue',
-  architecture: 'bg-ctp-teal/20 text-ctp-teal',
-  performance: 'bg-ctp-peach/20 text-ctp-peach',
-  custom: 'bg-ctp-overlay0/20 text-ctp-overlay0',
-};
 
 @Component({
   selector: 'app-reports',

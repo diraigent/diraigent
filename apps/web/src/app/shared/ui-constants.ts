@@ -6,6 +6,9 @@
 import { DecisionStatus } from '../core/services/decisions-api.service';
 import { ObservationKind, ObservationSeverity } from '../core/services/observations-api.service';
 import { IntegrationKind } from '../core/services/integrations-api.service';
+import type { WorkStatus, WorkType } from '../core/services/work-api.service';
+import type { VerificationStatus, VerificationKind } from '../core/services/verifications-api.service';
+import type { ReportStatus, ReportKind } from '../core/services/reports-api.service';
 
 // ── Decisions ────────────────────────────────────────────────────────────────
 
@@ -137,6 +140,101 @@ export function taskTransitions(state: string): string[] {
   // For unknown step states (custom playbook steps), allow the same transitions as implement
   return TASK_VALID_TRANSITIONS[state] ?? ['ready', 'done', 'cancelled'];
 }
+
+// ── Work Items ──────────────────────────────────────────────────────────────
+
+export const WORK_STATUS_COLORS: Record<WorkStatus, string> = {
+  active: 'bg-ctp-green/20 text-ctp-green',
+  ready: 'bg-ctp-sapphire/20 text-ctp-sapphire',
+  processing: 'bg-ctp-peach/20 text-ctp-peach',
+  achieved: 'bg-ctp-blue/20 text-ctp-blue',
+  paused: 'bg-ctp-yellow/20 text-ctp-yellow',
+  abandoned: 'bg-ctp-overlay0/20 text-ctp-overlay0',
+};
+
+export const WORK_PROGRESS_COLORS: Record<WorkStatus, string> = {
+  active: 'bg-ctp-green',
+  ready: 'bg-ctp-sapphire',
+  processing: 'bg-ctp-peach',
+  achieved: 'bg-ctp-blue',
+  paused: 'bg-ctp-yellow',
+  abandoned: 'bg-ctp-overlay0',
+};
+
+export const WORK_TYPE_COLORS: Record<WorkType, string> = {
+  epic: 'bg-ctp-mauve/20 text-ctp-mauve',
+  feature: 'bg-ctp-blue/20 text-ctp-blue',
+  milestone: 'bg-ctp-green/20 text-ctp-green',
+  sprint: 'bg-ctp-peach/20 text-ctp-peach',
+  initiative: 'bg-ctp-teal/20 text-ctp-teal',
+};
+
+// ── Verifications ───────────────────────────────────────────────────────────
+
+export const VERIFICATION_STATUS_COLORS: Record<VerificationStatus, string> = {
+  pass: 'bg-ctp-green/20 text-ctp-green',
+  fail: 'bg-ctp-red/20 text-ctp-red',
+  pending: 'bg-ctp-yellow/20 text-ctp-yellow',
+  skipped: 'bg-ctp-overlay0/20 text-ctp-overlay0',
+};
+
+export const VERIFICATION_KIND_COLORS: Record<VerificationKind, string> = {
+  test: 'bg-ctp-blue/20 text-ctp-blue',
+  acceptance: 'bg-ctp-teal/20 text-ctp-teal',
+  sign_off: 'bg-ctp-mauve/20 text-ctp-mauve',
+};
+
+// ── Reports ─────────────────────────────────────────────────────────────────
+
+export const REPORT_STATUS_COLORS: Record<ReportStatus, string> = {
+  pending: 'bg-ctp-yellow/20 text-ctp-yellow',
+  in_progress: 'bg-ctp-blue/20 text-ctp-blue',
+  completed: 'bg-ctp-green/20 text-ctp-green',
+  failed: 'bg-ctp-red/20 text-ctp-red',
+};
+
+export const REPORT_KIND_COLORS: Record<ReportKind, string> = {
+  security: 'bg-ctp-red/20 text-ctp-red',
+  component: 'bg-ctp-blue/20 text-ctp-blue',
+  architecture: 'bg-ctp-teal/20 text-ctp-teal',
+  performance: 'bg-ctp-peach/20 text-ctp-peach',
+  custom: 'bg-ctp-overlay0/20 text-ctp-overlay0',
+};
+
+// ── Audit ───────────────────────────────────────────────────────────────────
+
+export const AUDIT_ENTITY_TYPE_COLORS: Record<string, string> = {
+  task: 'bg-ctp-blue/20 text-ctp-blue',
+  agent: 'bg-ctp-teal/20 text-ctp-teal',
+  knowledge: 'bg-ctp-green/20 text-ctp-green',
+  decision: 'bg-ctp-yellow/20 text-ctp-yellow',
+  observation: 'bg-ctp-peach/20 text-ctp-peach',
+  role: 'bg-ctp-red/20 text-ctp-red',
+  membership: 'bg-ctp-pink/20 text-ctp-pink',
+  integration: 'bg-ctp-mauve/20 text-ctp-mauve',
+  playbook: 'bg-ctp-lavender/20 text-ctp-lavender',
+  work: 'bg-ctp-green/20 text-ctp-green',
+};
+
+export const AUDIT_ACTION_COLORS: Record<string, string> = {
+  created: 'text-ctp-green',
+  updated: 'text-ctp-yellow',
+  deleted: 'text-ctp-red',
+};
+
+// ── Storage Keys ────────────────────────────────────────────────────────────
+
+export const STORAGE_KEYS = {
+  PROJECT: 'diraigent-project',
+  CHAT_PREFIX: 'diraigent-chat-',
+  CHAT_MODEL: 'diraigent-chat-model',
+  CHAT_COLLAPSED: 'diraigent-chat-collapsed',
+  CHAT_FULLSCREEN: 'diraigent-chat-fullscreen',
+  THEME: 'zivue-theme',
+  ACCENT: 'zivue-accent',
+} as const;
+
+// ── Helper functions ────────────────────────────────────────────────────────
 
 /**
  * Derives the full list of filter states from the loaded playbooks.
