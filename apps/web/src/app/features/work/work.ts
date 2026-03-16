@@ -44,6 +44,8 @@ import { GitApiService, BranchInfo, MainPushStatus, TaskBranchStatus } from '../
 import { ChatService } from '../../core/services/chat.service';
 
 const STATUSES: WorkStatus[] = ['active', 'ready', 'processing', 'achieved', 'paused', 'abandoned'];
+// 'ready' and 'processing' are inferred from tasks — not manually selectable
+const MANUAL_STATUSES: WorkStatus[] = ['active', 'achieved', 'paused', 'abandoned'];
 
 const STATUS_COLORS: Record<WorkStatus, string> = {
   active: 'bg-ctp-green/20 text-ctp-green',
@@ -1278,7 +1280,7 @@ export class WorkPage {
   availableTransitions = computed(() => {
     const sel = this.selected();
     if (!sel || sel.auto_status) return [];
-    return STATUSES.filter(s => s !== sel.status);
+    return MANUAL_STATUSES.filter(s => s !== sel.status);
   });
 
   private static readonly NON_WORKING_STATES = new Set(['backlog', 'ready', 'done', 'cancelled']);
