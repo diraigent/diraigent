@@ -9,7 +9,8 @@
     "build:prod": "ng build --configuration=production",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "lint": "ng lint"
+    "lint": "ng lint",
+    "e2e:screenshots": "npx playwright test e2e/review-screenshots.spec.ts"
   },
   "dependencies": {
     "@angular/cdk": "^21.2.0",
