@@ -1663,6 +1663,14 @@ impl DiraigentDb for CryptoDb {
         self.inner.ensure_dev_user(user_id).await
     }
 
+    async fn delete_user_account(&self, user_id: Uuid) -> Result<(), AppError> {
+        self.inner.delete_user_account(user_id).await
+    }
+
+    async fn get_user_id_by_auth_id(&self, auth_user_id: &str) -> Result<Option<Uuid>, AppError> {
+        self.inner.get_user_id_by_auth_id(auth_user_id).await
+    }
+
     // ── Webhook dispatch (internal) ──
     async fn list_webhooks_enabled(&self, project_id: Uuid) -> anyhow::Result<Vec<Webhook>> {
         self.inner.list_webhooks_enabled(project_id).await

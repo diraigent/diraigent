@@ -1203,6 +1203,14 @@ impl DiraigentDb for PostgresDb {
         Ok(())
     }
 
+    async fn delete_user_account(&self, user_id: Uuid) -> Result<(), AppError> {
+        repository::delete_user_account(&self.0, user_id).await
+    }
+
+    async fn get_user_id_by_auth_id(&self, auth_user_id: &str) -> Result<Option<Uuid>, AppError> {
+        repository::get_user_id_by_auth_id(&self.0, auth_user_id).await
+    }
+
     // ── Tenants ───────────────────────────────────────────────────────────────
     async fn create_tenant(&self, req: &CreateTenant) -> Result<Tenant, AppError> {
         repository::create_tenant(&self.0, req).await

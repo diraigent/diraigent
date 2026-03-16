@@ -643,6 +643,12 @@ pub trait DiraigentDb: Send + Sync {
     // ── Auth User ────────────────────────────────────────────────────────────
     async fn resolve_or_create_user(&self, auth_user_id: &str) -> Result<Uuid, AppError>;
 
+    /// Delete a user account: nullify all references, then delete the auth_user row.
+    async fn delete_user_account(&self, user_id: Uuid) -> Result<(), AppError>;
+
+    /// Look up auth_user by external auth_user_id (e.g. Authentik sub claim).
+    async fn get_user_id_by_auth_id(&self, auth_user_id: &str) -> Result<Option<Uuid>, AppError>;
+
     /// Ensure an auth_user row exists for a specific user_id (used by dev auth
     /// bypasses where the user_id is known but may not have a DB record yet).
     async fn ensure_dev_user(&self, user_id: Uuid) -> Result<(), AppError>;

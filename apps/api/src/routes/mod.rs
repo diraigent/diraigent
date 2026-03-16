@@ -1,5 +1,7 @@
+mod account;
 mod agents;
 mod audit;
+mod authentik_webhooks;
 mod changed_files;
 mod chat;
 mod ci;
@@ -110,5 +112,7 @@ pub fn router() -> Router<AppState> {
         .merge(forgejo_webhooks::routes())
         .merge(github_webhooks::routes())
         .merge(ci::routes())
+        .merge(account::routes())
+        .merge(authentik_webhooks::routes())
         .merge(ws::routes())
 }

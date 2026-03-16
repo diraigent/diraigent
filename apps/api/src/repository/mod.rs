@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 
+mod account;
 mod agents;
 mod audit;
 mod decisions;
@@ -34,6 +35,7 @@ mod verifications;
 mod webhooks;
 mod work;
 
+pub use account::*;
 pub use agents::*;
 pub use audit::*;
 pub use decisions::*;
