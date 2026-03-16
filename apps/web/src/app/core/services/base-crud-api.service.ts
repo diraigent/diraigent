@@ -2,6 +2,7 @@ import { inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { EMPTY, Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { STORAGE_KEYS } from '../../shared/ui-constants';
 
 /**
  * Minimal base providing `http` and `baseUrl` to all API services.
@@ -26,7 +27,7 @@ export abstract class BaseCrudApiService<T, C, U> extends BaseApiService {
   protected abstract readonly resource: string;
 
   protected get projectId(): string {
-    return localStorage.getItem('diraigent-project') ?? '';
+    return localStorage.getItem(STORAGE_KEYS.PROJECT) ?? '';
   }
 
   /** Call from subclass `list()` to delegate to the standard project-scoped endpoint. */

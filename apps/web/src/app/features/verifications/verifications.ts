@@ -12,22 +12,15 @@ import {
   VerificationStatus,
 } from '../../core/services/verifications-api.service';
 import { TasksApiService, SpTask } from '../../core/services/tasks-api.service';
+import {
+  VERIFICATION_STATUS_COLORS, VERIFICATION_KIND_COLORS,
+} from '../../shared/ui-constants';
 
 const KINDS: VerificationKind[] = ['test', 'acceptance', 'sign_off'];
 const STATUSES: VerificationStatus[] = ['pass', 'fail', 'pending', 'skipped'];
 
-const STATUS_COLORS: Record<VerificationStatus, string> = {
-  pass: 'bg-ctp-green/20 text-ctp-green',
-  fail: 'bg-ctp-red/20 text-ctp-red',
-  pending: 'bg-ctp-yellow/20 text-ctp-yellow',
-  skipped: 'bg-ctp-overlay0/20 text-ctp-overlay0',
-};
-
-const KIND_COLORS: Record<VerificationKind, string> = {
-  test: 'bg-ctp-blue/20 text-ctp-blue',
-  acceptance: 'bg-ctp-teal/20 text-ctp-teal',
-  sign_off: 'bg-ctp-mauve/20 text-ctp-mauve',
-};
+const STATUS_COLORS = VERIFICATION_STATUS_COLORS;
+const KIND_COLORS = VERIFICATION_KIND_COLORS;
 
 @Component({
   selector: 'app-verifications',

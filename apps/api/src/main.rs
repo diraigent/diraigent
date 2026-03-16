@@ -63,12 +63,16 @@ async fn main() -> anyhow::Result<()> {
     let connect_opts = db_url
         .parse::<sqlx::postgres::PgConnectOptions>()?
         .options([("search_path", "public,diraigent")]);
+    let max_connections: u32 = env::var("DB_MAX_CONNECTIONS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10);
     let pool = {
         const MAX_RETRIES: u32 = 5;
         let mut attempt = 0u32;
         loop {
             match PgPoolOptions::new()
-                .max_connections(10)
+                .max_connections(max_connections)
                 .acquire_timeout(Duration::from_secs(30))
                 .connect_with(connect_opts.clone())
                 .await
@@ -233,7 +237,12 @@ async fn main() -> anyhow::Result<()> {
         .nest("/v1", routes::router())
         .layer(middleware::from_fn(add_request_id))
         .layer(middleware::from_fn(metrics::record_metrics))
-        .layer(DefaultBodyLimit::max(1024 * 1024))
+        .layer(DefaultBodyLimit::max(
+            env::var("MAX_BODY_SIZE")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1024 * 1024), // 1 MB default
+        ))
         .layer(middleware::from_fn(csrf::csrf_check))
         .layer(middleware::from_fn(rate_limit::rate_limit))
         .layer(cors)

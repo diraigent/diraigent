@@ -364,16 +364,18 @@ export class ReviewPage implements OnDestroy {
     // This replaces the 30 s polling timer — updates are now instant.
     this.sseSub = this.reviewSse.events.pipe(
       switchMap(() => this.fetchReviewTasks()),
-    ).subscribe(items => {
-      const newCount = items.length;
-      if (newCount > this.prevCount && this.prevCount >= 0 && !document.hasFocus()) {
-        this.notify(newCount);
-      }
-      this.prevCount = newCount;
-      const existingMap = new Map(this.reviewItems().map(i => [i.task.id, i.expanded]));
-      this.reviewItems.set(
-        items.map(item => ({ ...item, expanded: existingMap.get(item.task.id) ?? false })),
-      );
+    ).subscribe({
+      next: items => {
+        const newCount = items.length;
+        if (newCount > this.prevCount && this.prevCount >= 0 && !document.hasFocus()) {
+          this.notify(newCount);
+        }
+        this.prevCount = newCount;
+        const existingMap = new Map(this.reviewItems().map(i => [i.task.id, i.expanded]));
+        this.reviewItems.set(
+          items.map(item => ({ ...item, expanded: existingMap.get(item.task.id) ?? false })),
+        );
+      },
     });
   }
 
@@ -383,17 +385,20 @@ export class ReviewPage implements OnDestroy {
 
   load(): void {
     this.loading.set(true);
-    this.fetchReviewTasks().subscribe(items => {
-      const newCount = items.length;
-      if (newCount > this.prevCount && this.prevCount >= 0 && !document.hasFocus()) {
-        this.notify(newCount);
-      }
-      this.prevCount = newCount;
-      const existingMap = new Map(this.reviewItems().map(i => [i.task.id, i.expanded]));
-      this.reviewItems.set(
-        items.map(item => ({ ...item, expanded: existingMap.get(item.task.id) ?? false })),
-      );
-      this.loading.set(false);
+    this.fetchReviewTasks().subscribe({
+      next: items => {
+        const newCount = items.length;
+        if (newCount > this.prevCount && this.prevCount >= 0 && !document.hasFocus()) {
+          this.notify(newCount);
+        }
+        this.prevCount = newCount;
+        const existingMap = new Map(this.reviewItems().map(i => [i.task.id, i.expanded]));
+        this.reviewItems.set(
+          items.map(item => ({ ...item, expanded: existingMap.get(item.task.id) ?? false })),
+        );
+        this.loading.set(false);
+      },
+      error: () => this.loading.set(false),
     });
   }
 

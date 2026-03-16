@@ -841,9 +841,8 @@ enum BulkAction {
 /// Run a bulk operation over tasks, handling the get_task + project_id guard +
 /// succeeded/failed collection boilerplate.
 ///
-/// For each task_id: fetches the task, verifies it belongs to `project_id`,
-/// then executes the [`BulkAction`]. Fires the appropriate event on success
-/// and collects results into `(Vec<Uuid>, Vec<BulkFailure>)`.
+/// Batch-fetches all tasks in a single query, verifies project ownership,
+/// then executes the [`BulkAction`] per task.
 async fn bulk_operate(
     state: &AppState,
     project_id: Uuid,
@@ -855,122 +854,196 @@ async fn bulk_operate(
     let mut succeeded = Vec::new();
     let mut failed = Vec::new();
 
-    for task_id in task_ids {
-        match state.db.get_task_by_id(*task_id).await {
-            Ok(task) if task.project_id == project_id => {
-                let result = match action {
-                    BulkAction::Transition {
-                        target_state,
-                        playbook_step,
-                    } => 'transition: {
-                        let old_state = task.state.clone();
-                        // Completing a "review" step additionally requires
-                        // review authority (mirrors single-task transition_task).
-                        if target_state == "done"
-                            && old_state == "review"
-                            && let Err(e) = require_authority(
-                                state.db.as_ref(),
-                                agent_id,
-                                user_id,
-                                project_id,
-                                "review",
-                            )
-                            .await
-                        {
-                            break 'transition Err(e.to_string());
-                        }
-                        match state
-                            .db
-                            .transition_task(*task_id, target_state, *playbook_step)
-                            .await
-                        {
-                            Ok(new_task) => {
-                                if matches!(new_task.state.as_str(), "done" | "cancelled")
-                                    || (new_task.state == "ready"
-                                        && !is_lifecycle_state(&old_state))
-                                {
-                                    let _ = state.db.release_file_locks_for_task(*task_id).await;
-                                }
-                                crate::metrics::record_task_transition(&old_state, &new_task.state);
-                                state.fire_event(
-                                    project_id,
-                                    "task.transitioned",
-                                    "task",
-                                    *task_id,
-                                    agent_id,
-                                    Some(user_id),
-                                    serde_json::json!({"task_id": task_id, "title": new_task.title, "from": old_state, "to": new_task.state}),
-                                );
-                                crate::routes::work::refresh_auto_status_works(
-                                    state, *task_id, agent_id,
-                                )
-                                .await;
-                                Ok(())
-                            }
-                            Err(e) => Err(e.to_string()),
-                        }
-                    }
-                    BulkAction::Delegate {
-                        delegated_by,
-                        target_agent_id,
-                        role_id,
-                    } => {
-                        match state
-                            .db
-                            .delegate_task(*task_id, *delegated_by, *target_agent_id, *role_id)
-                            .await
-                        {
-                            Ok(new_task) => {
-                                state.fire_event(
-                                    project_id,
-                                    "task.delegated",
-                                    "task",
-                                    *task_id,
-                                    agent_id,
-                                    Some(user_id),
-                                    serde_json::json!({"task_id": task_id, "title": new_task.title, "to_agent_id": target_agent_id, "from_agent_id": task.assigned_agent_id}),
-                                );
-                                Ok(())
-                            }
-                            Err(e) => Err(e.to_string()),
-                        }
-                    }
-                    BulkAction::Delete => match state.db.delete_task(*task_id).await {
-                        Ok(()) => {
-                            state.fire_event(
-                                project_id,
-                                "task.deleted",
-                                "task",
-                                *task_id,
-                                agent_id,
-                                Some(user_id),
-                                serde_json::json!({"task_id": task_id, "title": task.title}),
-                            );
-                            Ok(())
-                        }
-                        Err(e) => Err(e.to_string()),
-                    },
-                };
-                match result {
-                    Ok(()) => succeeded.push(*task_id),
-                    Err(e) => failed.push(BulkFailure {
-                        task_id: *task_id,
-                        error: e,
-                    }),
-                }
+    // Batch-fetch all tasks in one query
+    let tasks_result = state.db.get_tasks_by_ids(task_ids).await;
+    let fetched: std::collections::HashMap<Uuid, Task> = match tasks_result {
+        Ok(tasks) => tasks.into_iter().map(|t| (t.id, t)).collect(),
+        Err(e) => {
+            // If the batch fetch itself fails, fail all tasks
+            for id in task_ids {
+                failed.push(BulkFailure {
+                    task_id: *id,
+                    error: e.to_string(),
+                });
             }
-            Ok(_) => failed.push(BulkFailure {
-                task_id: *task_id,
-                error: "Task does not belong to this project".into(),
-            }),
+            return (succeeded, failed);
+        }
+    };
+
+    for task_id in task_ids {
+        let task = match fetched.get(task_id) {
+            Some(t) if t.project_id == project_id => t,
+            Some(_) => {
+                failed.push(BulkFailure {
+                    task_id: *task_id,
+                    error: "Task does not belong to this project".into(),
+                });
+                continue;
+            }
+            None => {
+                failed.push(BulkFailure {
+                    task_id: *task_id,
+                    error: "Task not found".into(),
+                });
+                continue;
+            }
+        };
+
+        let result = match action {
+            BulkAction::Transition {
+                target_state,
+                playbook_step,
+            } => {
+                bulk_transition_single(
+                    state,
+                    project_id,
+                    *task_id,
+                    task,
+                    target_state,
+                    *playbook_step,
+                    agent_id,
+                    user_id,
+                )
+                .await
+            }
+            BulkAction::Delegate {
+                delegated_by,
+                target_agent_id,
+                role_id,
+            } => {
+                bulk_delegate_single(
+                    state,
+                    project_id,
+                    *task_id,
+                    task,
+                    *delegated_by,
+                    *target_agent_id,
+                    *role_id,
+                    agent_id,
+                    user_id,
+                )
+                .await
+            }
+            BulkAction::Delete => {
+                bulk_delete_single(state, project_id, *task_id, task, agent_id, user_id).await
+            }
+        };
+
+        match result {
+            Ok(()) => succeeded.push(*task_id),
             Err(e) => failed.push(BulkFailure {
                 task_id: *task_id,
-                error: e.to_string(),
+                error: e,
             }),
         }
     }
 
     (succeeded, failed)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn bulk_transition_single(
+    state: &AppState,
+    project_id: Uuid,
+    task_id: Uuid,
+    task: &Task,
+    target_state: &str,
+    playbook_step: Option<i32>,
+    agent_id: Option<Uuid>,
+    user_id: Uuid,
+) -> Result<(), String> {
+    let old_state = task.state.clone();
+    if target_state == "done"
+        && old_state == "review"
+        && let Err(e) =
+            require_authority(state.db.as_ref(), agent_id, user_id, project_id, "review").await
+    {
+        return Err(e.to_string());
+    }
+    match state
+        .db
+        .transition_task(task_id, target_state, playbook_step)
+        .await
+    {
+        Ok(new_task) => {
+            if matches!(new_task.state.as_str(), "done" | "cancelled")
+                || (new_task.state == "ready" && !is_lifecycle_state(&old_state))
+            {
+                let _ = state.db.release_file_locks_for_task(task_id).await;
+            }
+            crate::metrics::record_task_transition(&old_state, &new_task.state);
+            state.fire_event(
+                project_id,
+                "task.transitioned",
+                "task",
+                task_id,
+                agent_id,
+                Some(user_id),
+                serde_json::json!({"task_id": task_id, "title": new_task.title, "from": old_state, "to": new_task.state}),
+            );
+            crate::routes::work::refresh_auto_status_works(state, task_id, agent_id).await;
+            Ok(())
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn bulk_delegate_single(
+    state: &AppState,
+    project_id: Uuid,
+    task_id: Uuid,
+    task: &Task,
+    delegated_by: Uuid,
+    target_agent_id: Uuid,
+    role_id: Option<Uuid>,
+    agent_id: Option<Uuid>,
+    user_id: Uuid,
+) -> Result<(), String> {
+    match state
+        .db
+        .delegate_task(task_id, delegated_by, target_agent_id, role_id)
+        .await
+    {
+        Ok(new_task) => {
+            state.fire_event(
+                project_id,
+                "task.delegated",
+                "task",
+                task_id,
+                agent_id,
+                Some(user_id),
+                serde_json::json!({"task_id": task_id, "title": new_task.title, "to_agent_id": target_agent_id, "from_agent_id": task.assigned_agent_id}),
+            );
+            Ok(())
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+async fn bulk_delete_single(
+    state: &AppState,
+    project_id: Uuid,
+    task_id: Uuid,
+    task: &Task,
+    agent_id: Option<Uuid>,
+    user_id: Uuid,
+) -> Result<(), String> {
+    match state.db.delete_task(task_id).await {
+        Ok(()) => {
+            state.fire_event(
+                project_id,
+                "task.deleted",
+                "task",
+                task_id,
+                agent_id,
+                Some(user_id),
+                serde_json::json!({"task_id": task_id, "title": task.title}),
+            );
+            Ok(())
+        }
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 async fn bulk_transition_tasks(

@@ -24,17 +24,16 @@ pub fn routes() -> Router<AppState> {
 }
 
 /// Resolve the package for a project and build a full ProjectResponse.
+///
+/// Uses the in-memory package cache to avoid a DB round-trip per project.
 async fn build_response(state: &AppState, project: Project) -> Result<ProjectResponse, AppError> {
-    let package = if let Some(pkg_id) = project.package_id {
-        state
-            .db
-            .get_package_by_id(pkg_id)
-            .await
-            .ok()
-            .map(PackageInfo::from)
-    } else {
-        None
-    };
+    let package = state
+        .pkg_cache
+        .get_for_project(project.id)
+        .await
+        .ok()
+        .flatten()
+        .map(PackageInfo::from);
     Ok(ProjectResponse::new(
         project,
         state.projects_path.as_ref(),

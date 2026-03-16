@@ -9,7 +9,7 @@ import { catchError } from 'rxjs/operators';
 import { TasksApiService, SpTask } from '../../core/services/tasks-api.service';
 import { DiraigentApiService, DgProject } from '../../core/services/diraigent-api.service';
 import { SpWork } from '../../core/services/work-api.service';
-import { taskStateColor, taskTransitions } from '../../shared/ui-constants';
+import { taskStateColor, taskTransitions, WORK_STATUS_COLORS } from '../../shared/ui-constants';
 import { TokenUsageChartComponent, ChartProject } from './token-usage-chart';
 import { environment } from '../../../environments/environment';
 
@@ -28,14 +28,6 @@ interface ActiveWorkRow {
   projectName: string;
 }
 
-const WORK_STATUS_COLORS: Record<string, string> = {
-  active: 'bg-ctp-green/20 text-ctp-green',
-  ready: 'bg-ctp-sapphire/20 text-ctp-sapphire',
-  processing: 'bg-ctp-peach/20 text-ctp-peach',
-  achieved: 'bg-ctp-blue/20 text-ctp-blue',
-  paused: 'bg-ctp-yellow/20 text-ctp-yellow',
-  abandoned: 'bg-ctp-overlay0/20 text-ctp-overlay0',
-};
 
 const ACTIVE_STATES = new Set(['backlog', 'ready', 'working', 'implement', 'review', 'merge', 'human_review']);
 const IN_PROGRESS_STATES = new Set(['working', 'implement', 'review', 'merge', 'human_review']);
@@ -372,7 +364,7 @@ export class DashboardPage {
   }
 
   workStatusColor(status: string): string {
-    return WORK_STATUS_COLORS[status] ?? 'bg-ctp-overlay0/20 text-ctp-overlay0';
+    return (WORK_STATUS_COLORS as Record<string, string>)[status] ?? 'bg-ctp-overlay0/20 text-ctp-overlay0';
   }
 
   navigateToWork(workId: string): void {

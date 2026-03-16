@@ -14,19 +14,36 @@ struct Entry {
 
 // ── IP-based limit ────────────────────────────────────────────────────────────
 static IP_MAP: LazyLock<DashMap<IpAddr, Entry>> = LazyLock::new(DashMap::new);
-const IP_MAX: u32 = 600;
 
 // ── Per-agent limit ───────────────────────────────────────────────────────────
 static AGENT_MAP: LazyLock<DashMap<Uuid, Entry>> = LazyLock::new(DashMap::new);
-/// Per-agent-ID ceiling: 200 req / 60 s.
-const AGENT_MAX: u32 = 200;
 
 // ── Per-project limit ─────────────────────────────────────────────────────────
 static PROJECT_MAP: LazyLock<DashMap<Uuid, Entry>> = LazyLock::new(DashMap::new);
-/// Per-project-ID ceiling: 1000 req / 60 s.
-const PROJECT_MAX: u32 = 1_000;
 
 const WINDOW_SECS: u64 = 60;
+
+/// Rate limit ceilings, configurable via environment variables.
+/// Parsed once on first use.
+struct Limits {
+    ip: u32,
+    agent: u32,
+    project: u32,
+}
+
+static LIMITS: LazyLock<Limits> = LazyLock::new(|| {
+    fn env_or(key: &str, default: u32) -> u32 {
+        std::env::var(key)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(default)
+    }
+    Limits {
+        ip: env_or("RATE_LIMIT_IP", 600),
+        agent: env_or("RATE_LIMIT_AGENT", 200),
+        project: env_or("RATE_LIMIT_PROJECT", 1_000),
+    }
+});
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -122,14 +139,14 @@ pub async fn rate_limit(request: Request<Body>, next: Next) -> Response<Body> {
 
     // 1. IP-based limit
     let ip = extract_ip(&request);
-    if !check(&IP_MAP, ip, IP_MAX, now) {
+    if !check(&IP_MAP, ip, LIMITS.ip, now) {
         crate::metrics::record_rate_limit();
         return rate_limited_response();
     }
 
     // 2. Per-agent-ID limit (only when header is present)
     if let Some(agent_id) = extract_agent_id(&request)
-        && !check(&AGENT_MAP, agent_id, AGENT_MAX, now)
+        && !check(&AGENT_MAP, agent_id, LIMITS.agent, now)
     {
         crate::metrics::record_rate_limit();
         return rate_limited_response();
@@ -137,7 +154,7 @@ pub async fn rate_limit(request: Request<Body>, next: Next) -> Response<Body> {
 
     // 3. Per-project-ID limit (derived from URL path)
     if let Some(project_id) = extract_project_id(&request)
-        && !check(&PROJECT_MAP, project_id, PROJECT_MAX, now)
+        && !check(&PROJECT_MAP, project_id, LIMITS.project, now)
     {
         crate::metrics::record_rate_limit();
         return rate_limited_response();

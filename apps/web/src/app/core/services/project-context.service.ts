@@ -1,7 +1,8 @@
 import { Injectable, inject, signal, effect } from '@angular/core';
 import { DiraigentApiService, DgProject } from './diraigent-api.service';
+import { STORAGE_KEYS } from '../../shared/ui-constants';
 
-const STORAGE_KEY = 'diraigent-project';
+const STORAGE_KEY = STORAGE_KEYS.PROJECT;
 
 @Injectable({ providedIn: 'root' })
 export class ProjectContext {

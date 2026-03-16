@@ -79,6 +79,15 @@ pub async fn get_task_by_id(pool: &PgPool, task_id: Uuid) -> Result<Task, AppErr
     fetch_by_id(pool, Table::Task, task_id, "Task not found").await
 }
 
+/// Fetch multiple tasks by ID in a single query.
+pub async fn get_tasks_by_ids(pool: &PgPool, ids: &[Uuid]) -> Result<Vec<Task>, AppError> {
+    let tasks = sqlx::query_as::<_, Task>("SELECT * FROM diraigent.task WHERE id = ANY($1)")
+        .bind(ids)
+        .fetch_all(pool)
+        .await?;
+    Ok(tasks)
+}
+
 pub async fn list_tasks_by_decision(
     pool: &PgPool,
     decision_id: Uuid,

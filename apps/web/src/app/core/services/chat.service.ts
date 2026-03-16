@@ -13,8 +13,10 @@ interface ActiveTool {
   toolName: string;
 }
 
-const STORAGE_PREFIX = 'diraigent-chat-';
-const MODEL_STORAGE_KEY = 'diraigent-chat-model';
+import { STORAGE_KEYS } from '../../shared/ui-constants';
+
+const STORAGE_PREFIX = STORAGE_KEYS.CHAT_PREFIX;
+const MODEL_STORAGE_KEY = STORAGE_KEYS.CHAT_MODEL;
 
 /** Available chat models. */
 export const CHAT_MODELS = ['sonnet', 'opus', 'haiku'] as const;

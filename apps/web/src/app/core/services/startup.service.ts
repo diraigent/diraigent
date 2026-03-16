@@ -36,7 +36,7 @@ export class StartupService {
     try {
       this.oauth.configure(cfg);
     } catch (e) {
-      console.warn('oauth.configure failed', e);
+      if (!environment.production) console.warn('oauth.configure failed', e);
     }
 
     try {
@@ -55,7 +55,7 @@ export class StartupService {
       this.auth.markInitialized();
       this.oauth.loadDiscoveryDocumentAndTryLogin()
         .then(() => this.oauth.setupAutomaticSilentRefresh())
-        .catch(err => console.warn('Background OAuth discovery failed', err));
+        .catch(err => { if (!environment.production) console.warn('Background OAuth discovery failed', err); });
     } else {
       // Slow path: no valid token or completing a login callback.
       // Wait for discovery before marking initialized.
@@ -70,16 +70,16 @@ export class StartupService {
           try {
             await this.oauth.refreshToken();
           } catch (refreshErr) {
-            console.warn('Token refresh failed', refreshErr);
+            if (!environment.production) console.warn('Token refresh failed', refreshErr);
           }
         }
         this.oauth.setupAutomaticSilentRefresh();
       } catch (err) {
-        console.warn('OAuth discovery/login failed or timed out', err);
+        if (!environment.production) console.warn('OAuth discovery/login failed or timed out', err);
         // If we had an auth code but token exchange failed, mark as failed
         // so the auth guard doesn't keep redirecting
         if (hasAuthCode) {
-          console.error('Token exchange failed — breaking redirect loop');
+          if (!environment.production) console.error('Token exchange failed — breaking redirect loop');
           this._loginFailed = true;
         }
       }
@@ -112,15 +112,15 @@ export class StartupService {
           this.tenantApi.unlockEncryption(tenant.id, token).subscribe({
             next: res => {
               if (res.status === 'unlocked') {
-                console.info('Encryption unlocked for tenant', tenant.slug);
+                if (!environment.production) console.info('Encryption unlocked for tenant', tenant.slug);
               }
             },
-            error: err => console.warn('Failed to unlock encryption:', err),
+            error: err => { if (!environment.production) console.warn('Failed to unlock encryption:', err); },
           });
         } else if (tenant.encryption_mode === 'passphrase') {
           // Passphrase mode requires user input — handled by the UI.
           // Signal that passphrase prompt is needed.
-          console.info('Tenant uses passphrase encryption — prompt required');
+          if (!environment.production) console.info('Tenant uses passphrase encryption — prompt required');
           this.passphraseRequired = true;
         }
       },
