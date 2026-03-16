@@ -1,5 +1,5 @@
 import { Component, ChangeDetectorRef, inject, signal, computed, effect, DestroyRef, PLATFORM_ID, ViewEncapsulation } from '@angular/core';
-import { NgTemplateOutlet, DatePipe, SlicePipe, isPlatformBrowser } from '@angular/common';
+import { NgTemplateOutlet, DatePipe, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -46,6 +46,8 @@ const STATUSES: WorkStatus[] = ['active', 'ready', 'processing', 'achieved', 'pa
 
 const STATUS_COLORS: Record<WorkStatus, string> = {
   active: 'bg-ctp-green/20 text-ctp-green',
+  ready: 'bg-ctp-sapphire/20 text-ctp-sapphire',
+  processing: 'bg-ctp-peach/20 text-ctp-peach',
   achieved: 'bg-ctp-blue/20 text-ctp-blue',
   paused: 'bg-ctp-yellow/20 text-ctp-yellow',
   abandoned: 'bg-ctp-overlay0/20 text-ctp-overlay0',
@@ -53,6 +55,8 @@ const STATUS_COLORS: Record<WorkStatus, string> = {
 
 const PROGRESS_COLORS: Record<WorkStatus, string> = {
   active: 'bg-ctp-green',
+  ready: 'bg-ctp-sapphire',
+  processing: 'bg-ctp-peach',
   achieved: 'bg-ctp-blue',
   paused: 'bg-ctp-yellow',
   abandoned: 'bg-ctp-overlay0',
@@ -73,7 +77,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
 @Component({
   selector: 'app-work',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, DatePipe, SlicePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent, CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList],
+  imports: [TranslocoModule, FormsModule, DatePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent, CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList],
   encapsulation: ViewEncapsulation.None,
   styles: [`
     .cdk-drag-animating {
