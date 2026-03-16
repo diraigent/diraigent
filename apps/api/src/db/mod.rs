@@ -50,6 +50,7 @@ pub trait DiraigentDb: Send + Sync {
         created_by: Uuid,
     ) -> Result<Task, AppError>;
     async fn get_task_by_id(&self, task_id: Uuid) -> Result<Task, AppError>;
+    async fn get_tasks_by_ids(&self, ids: &[Uuid]) -> Result<Vec<Task>, AppError>;
     async fn list_tasks(
         &self,
         project_id: Uuid,

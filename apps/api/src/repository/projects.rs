@@ -44,9 +44,7 @@ pub async fn create_project(
     // repo_path is kept in sync with git_root for backward compat
     let legacy_repo_path = git_root.clone().or_else(|| req.repo_path.clone());
 
-    // Default tenant for projects that don't specify one
-    let default_tenant_id: Uuid = "00000000-0000-0000-0000-000000000001".parse().unwrap();
-    let tenant_id = req.tenant_id.unwrap_or(default_tenant_id);
+    let tenant_id = req.tenant_id.unwrap_or(crate::constants::DEFAULT_TENANT_ID);
 
     let project = sqlx::query_as::<_, Project>(
         "INSERT INTO diraigent.project (name, slug, description, owner_id, parent_id, repo_url, repo_path, default_branch, service_name, metadata, default_playbook_id, package_id, git_mode, git_root, project_root, tenant_id)

@@ -66,6 +66,9 @@ impl DiraigentDb for PostgresDb {
     async fn get_task_by_id(&self, task_id: Uuid) -> Result<Task, AppError> {
         repository::get_task_by_id(&self.0, task_id).await
     }
+    async fn get_tasks_by_ids(&self, ids: &[Uuid]) -> Result<Vec<Task>, AppError> {
+        repository::get_tasks_by_ids(&self.0, ids).await
+    }
     async fn list_tasks(
         &self,
         project_id: Uuid,
@@ -1164,10 +1167,11 @@ impl DiraigentDb for PostgresDb {
         // on their first tenant-scoped request.
         if let Err(e) = sqlx::query(
             "INSERT INTO diraigent.tenant_member (tenant_id, user_id, role)
-             VALUES ('00000000-0000-0000-0000-000000000001', $1, 'member')
+             VALUES ($2, $1, 'member')
              ON CONFLICT (tenant_id, user_id) DO NOTHING",
         )
         .bind(user_id)
+        .bind(crate::constants::DEFAULT_TENANT_ID)
         .execute(&self.0)
         .await
         {

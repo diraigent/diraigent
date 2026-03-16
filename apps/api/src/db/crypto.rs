@@ -225,6 +225,27 @@ impl DiraigentDb for CryptoDb {
         Ok(task)
     }
 
+    async fn get_tasks_by_ids(&self, ids: &[Uuid]) -> Result<Vec<Task>, AppError> {
+        let mut tasks = self.inner.get_tasks_by_ids(ids).await?;
+        // Group by project to avoid redundant DEK lookups
+        let mut dek_cache: std::collections::HashMap<Uuid, Option<crate::crypto::Dek>> =
+            std::collections::HashMap::new();
+        for task in &mut tasks {
+            let dek = match dek_cache.entry(task.project_id) {
+                std::collections::hash_map::Entry::Occupied(e) => e.get().clone(),
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    let d = self.dek_for_project(task.project_id).await?;
+                    e.insert(d.clone());
+                    d
+                }
+            };
+            if let Some(ref dek) = dek {
+                Self::decrypt_task(dek, task)?;
+            }
+        }
+        Ok(tasks)
+    }
+
     async fn list_tasks(
         &self,
         project_id: Uuid,
