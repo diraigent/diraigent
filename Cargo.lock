@@ -863,6 +863,7 @@ dependencies = [
  "diraigent-types",
  "forgejo-client",
  "futures",
+ "github-client",
  "hex",
  "hkdf",
  "hmac",

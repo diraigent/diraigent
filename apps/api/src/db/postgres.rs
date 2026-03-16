@@ -1203,6 +1203,14 @@ impl DiraigentDb for PostgresDb {
         Ok(())
     }
 
+    async fn delete_user_account(&self, user_id: Uuid) -> Result<(), AppError> {
+        repository::delete_user_account(&self.0, user_id).await
+    }
+
+    async fn get_user_id_by_auth_id(&self, auth_user_id: &str) -> Result<Option<Uuid>, AppError> {
+        repository::get_user_id_by_auth_id(&self.0, auth_user_id).await
+    }
+
     // ── Tenants ───────────────────────────────────────────────────────────────
     async fn create_tenant(&self, req: &CreateTenant) -> Result<Tenant, AppError> {
         repository::create_tenant(&self.0, req).await
@@ -1593,6 +1601,27 @@ impl DiraigentDb for PostgresDb {
         webhook_secret: &str,
     ) -> Result<ForgejoIntegration, AppError> {
         repository::create_forgejo_integration(&self.0, project_id, base_url, token, webhook_secret)
+            .await
+    }
+
+    // GitHub CI
+    async fn get_github_integration(&self, id: Uuid) -> Result<GitHubIntegration, AppError> {
+        repository::get_github_integration(&self.0, id).await
+    }
+    async fn get_github_integration_by_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<GitHubIntegration, AppError> {
+        repository::get_github_integration_by_project(&self.0, project_id).await
+    }
+    async fn create_github_integration(
+        &self,
+        project_id: Uuid,
+        base_url: &str,
+        token: Option<&str>,
+        webhook_secret: &str,
+    ) -> Result<GitHubIntegration, AppError> {
+        repository::create_github_integration(&self.0, project_id, base_url, token, webhook_secret)
             .await
     }
 }

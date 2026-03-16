@@ -643,6 +643,12 @@ pub trait DiraigentDb: Send + Sync {
     // ── Auth User ────────────────────────────────────────────────────────────
     async fn resolve_or_create_user(&self, auth_user_id: &str) -> Result<Uuid, AppError>;
 
+    /// Delete a user account: nullify all references, then delete the auth_user row.
+    async fn delete_user_account(&self, user_id: Uuid) -> Result<(), AppError>;
+
+    /// Look up auth_user by external auth_user_id (e.g. Authentik sub claim).
+    async fn get_user_id_by_auth_id(&self, auth_user_id: &str) -> Result<Option<Uuid>, AppError>;
+
     /// Ensure an auth_user row exists for a specific user_id (used by dev auth
     /// bypasses where the user_id is known but may not have a DB record yet).
     async fn ensure_dev_user(&self, user_id: Uuid) -> Result<(), AppError>;
@@ -894,4 +900,18 @@ pub trait DiraigentDb: Send + Sync {
         token: Option<&str>,
         webhook_secret: &str,
     ) -> Result<ForgejoIntegration, AppError>;
+
+    // ── GitHub CI ────────────────────────────────────────────────────────────
+    async fn get_github_integration(&self, id: Uuid) -> Result<GitHubIntegration, AppError>;
+    async fn get_github_integration_by_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<GitHubIntegration, AppError>;
+    async fn create_github_integration(
+        &self,
+        project_id: Uuid,
+        base_url: &str,
+        token: Option<&str>,
+        webhook_secret: &str,
+    ) -> Result<GitHubIntegration, AppError>;
 }

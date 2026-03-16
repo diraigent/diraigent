@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 
+mod account;
 mod agents;
 mod audit;
 mod decisions;
@@ -11,6 +12,7 @@ mod event_rules;
 mod events;
 mod files;
 mod forgejo;
+mod github;
 mod integrations;
 mod knowledge;
 mod memberships;
@@ -33,6 +35,7 @@ mod verifications;
 mod webhooks;
 mod work;
 
+pub use account::*;
 pub use agents::*;
 pub use audit::*;
 pub use decisions::*;
@@ -40,6 +43,7 @@ pub use event_rules::*;
 pub use events::*;
 pub use files::*;
 pub use forgejo::*;
+pub use github::*;
 pub use integrations::*;
 pub use knowledge::*;
 pub use memberships::*;

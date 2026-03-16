@@ -7,7 +7,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { forkJoin, timer, switchMap, of, map } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { TasksApiService, SpTask } from '../../core/services/tasks-api.service';
-import { DiraigentApiService, DgProject } from '../../core/services/diraigent-api.service';
+import { DiraigentApiService, DgProject, TokenDayCount, CostSummary } from '../../core/services/diraigent-api.service';
 import { GitApiService, BranchInfo } from '../../core/services/git-api.service';
 import { SpWork } from '../../core/services/work-api.service';
 import { taskStateColor, taskTransitions, WORK_STATUS_COLORS } from '../../shared/ui-constants';
@@ -297,6 +297,8 @@ export class DashboardPage {
   allProjectTasks = signal<ProjectTasks[]>([]);
   allActiveWork = signal<ActiveWorkRow[]>([]);
   unmergedBranches = signal<UnmergedBranchRow[]>([]);
+  allTokensPerDay = signal<TokenDayCount[]>([]);
+  allCostSummaries = signal<CostSummary[]>([]);
   loading = signal(true);
   error = signal(false);
   lastUpdated = signal<Date>(new Date());
@@ -321,9 +323,7 @@ export class DashboardPage {
   });
 
   totalCostUsd = computed(() =>
-    this.allProjectTasks()
-      .flatMap(pt => pt.tasks)
-      .reduce((sum, t) => sum + (t.cost_usd ?? 0), 0),
+    this.allCostSummaries().reduce((sum, c) => sum + c.total_cost_usd, 0),
   );
 
   chartProjects = computed<ChartProject[]>(() =>
@@ -331,34 +331,30 @@ export class DashboardPage {
   );
 
   tokenStats = computed(() => {
-    const allTasks = this.allProjectTasks().flatMap(pt => pt.tasks);
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const weekStart = new Date(todayStart);
+    const days = this.allTokensPerDay();
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const weekStart = new Date();
     weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const weekStartStr = weekStart.toISOString().slice(0, 10);
 
-    const sumTokens = (tasks: SpTask[]) => {
-      const input = tasks.reduce((s, t) => s + (t.input_tokens ?? 0), 0);
-      const output = tasks.reduce((s, t) => s + (t.output_tokens ?? 0), 0);
+    const sumDays = (filtered: TokenDayCount[]) => {
+      const input = filtered.reduce((s, d) => s + d.input_tokens, 0);
+      const output = filtered.reduce((s, d) => s + d.output_tokens, 0);
       return { input, output, total: input + output };
     };
 
-    const todayTasks = allTasks.filter(t => {
-      if (isInProgress(t.state) && t.claimed_at && new Date(t.claimed_at) >= todayStart) return true;
-      if (t.state === 'done' && t.completed_at && new Date(t.completed_at) >= todayStart) return true;
-      return false;
-    });
+    const todayDays = days.filter(d => d.day === todayStr);
+    const weekDays = days.filter(d => d.day >= weekStartStr);
 
-    const weekTasks = allTasks.filter(t => {
-      if (isInProgress(t.state) && t.claimed_at && new Date(t.claimed_at) >= weekStart) return true;
-      if (t.state === 'done' && t.completed_at && new Date(t.completed_at) >= weekStart) return true;
-      return false;
-    });
+    // Total from cost summaries (covers all time, not just loaded days)
+    const totalCosts = this.allCostSummaries();
+    const totalInput = totalCosts.reduce((s, c) => s + c.total_input_tokens, 0);
+    const totalOutput = totalCosts.reduce((s, c) => s + c.total_output_tokens, 0);
 
     return {
-      today: sumTokens(todayTasks),
-      week: sumTokens(weekTasks),
-      total: sumTokens(allTasks),
+      today: sumDays(todayDays),
+      week: sumDays(weekDays),
+      total: { input: totalInput, output: totalOutput, total: totalInput + totalOutput },
     };
   });
 
@@ -444,7 +440,7 @@ export class DashboardPage {
         switchMap(() => this.diraigentApi.getProjects()),
         switchMap(projects => {
           if (projects.length === 0) {
-            return of({ projectTasks: [] as ProjectTasks[], activeWork: [] as ActiveWorkRow[], unmerged: [] as UnmergedBranchRow[] });
+            return of({ projectTasks: [] as ProjectTasks[], activeWork: [] as ActiveWorkRow[], unmerged: [] as UnmergedBranchRow[], tokensPerDay: [] as TokenDayCount[], costSummaries: [] as CostSummary[] });
           }
           return forkJoin(
             projects.map(project => {
@@ -462,8 +458,16 @@ export class DashboardPage {
               const branches$ = this.gitApi
                 .listBranchesForProject(project.id, 'agent/')
                 .pipe(catchError(() => of({ current_branch: '', branches: [] as BranchInfo[] })));
-              return forkJoin([tasks$, work$, branches$]).pipe(
-                map(([tasks, works, branchRes]) => ({ project, tasks, works, branches: branchRes.branches })),
+              const metrics$ = this.diraigentApi.getProjectMetrics(project.id, 30).pipe(
+                catchError(() => of({ tokens_per_day: [] as TokenDayCount[], cost_summary: { total_input_tokens: 0, total_output_tokens: 0, total_cost_usd: 0 } as CostSummary } as any)),
+              );
+              return forkJoin([tasks$, work$, branches$, metrics$]).pipe(
+                map(([tasks, works, branchRes, metrics]) => ({
+                  project, tasks, works,
+                  branches: branchRes.branches,
+                  tokensPerDay: (metrics.tokens_per_day ?? []) as TokenDayCount[],
+                  costSummary: (metrics.cost_summary ?? { total_input_tokens: 0, total_output_tokens: 0, total_cost_usd: 0 }) as CostSummary,
+                })),
               );
             }),
           ).pipe(
@@ -496,6 +500,8 @@ export class DashboardPage {
                     || new Date(b.work.updated_at).getTime() - new Date(a.work.updated_at).getTime(),
                   ),
                 unmerged,
+                tokensPerDay: results.flatMap(r => r.tokensPerDay),
+                costSummaries: results.map(r => r.costSummary),
               };
             }),
           );
@@ -503,10 +509,12 @@ export class DashboardPage {
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe({
-        next: ({ projectTasks, activeWork, unmerged }) => {
+        next: ({ projectTasks, activeWork, unmerged, tokensPerDay, costSummaries }) => {
           this.allProjectTasks.set(projectTasks);
           this.allActiveWork.set(activeWork);
           this.unmergedBranches.set(unmerged);
+          this.allTokensPerDay.set(tokensPerDay);
+          this.allCostSummaries.set(costSummaries);
           this.loading.set(false);
           this.error.set(false);
           this.lastUpdated.set(new Date());

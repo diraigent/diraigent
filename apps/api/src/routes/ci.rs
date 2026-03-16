@@ -20,6 +20,10 @@ pub fn routes() -> Router<AppState> {
             "/{project_id}/integrations/forgejo",
             post(register_forgejo_integration),
         )
+        .route(
+            "/{project_id}/integrations/github",
+            post(register_github_integration),
+        )
 }
 
 /// GET /{project_id}/ci/runs
@@ -149,6 +153,51 @@ async fn register_forgejo_integration(
     );
 
     Ok(Json(ForgejoIntegrationResponse {
+        id: integration.id,
+        project_id: integration.project_id,
+        base_url: integration.base_url,
+        webhook_url,
+        webhook_secret,
+        enabled: integration.enabled,
+        created_at: integration.created_at,
+        updated_at: integration.updated_at,
+    }))
+}
+
+/// POST /{project_id}/integrations/github
+///
+/// Register a new GitHub integration for a project. Generates a webhook
+/// URL and secret for configuring the GitHub webhook.
+async fn register_github_integration(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
+    Path(project_id): Path<Uuid>,
+    Json(req): Json<CreateGitHubIntegration>,
+) -> Result<Json<GitHubIntegrationResponse>, AppError> {
+    require_authority(state.db.as_ref(), agent_id, user_id, project_id, "manage").await?;
+
+    // Generate a webhook secret (256-bit entropy via two UUIDs)
+    let webhook_secret = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
+
+    let base_url = req.base_url.as_deref().unwrap_or("https://api.github.com");
+
+    let integration = state
+        .db
+        .create_github_integration(project_id, base_url, req.token.as_deref(), &webhook_secret)
+        .await?;
+
+    // Construct the webhook URL
+    let api_base = std::env::var("PUBLIC_URL")
+        .or_else(|_| std::env::var("API_BASE_URL"))
+        .unwrap_or_else(|_| "https://api.diraigent.com".to_string());
+    let webhook_url = format!(
+        "{}/v1/webhooks/github/{}",
+        api_base.trim_end_matches('/'),
+        integration.id
+    );
+
+    Ok(Json(GitHubIntegrationResponse {
         id: integration.id,
         project_id: integration.project_id,
         base_url: integration.base_url,

@@ -1,4 +1,5 @@
 mod api_surface;
+mod graph;
 mod scan;
 mod summarize;
 mod sync;
@@ -12,7 +13,8 @@ use clap::{Parser, Subcommand};
 // ---------------------------------------------------------------------------
 
 /// Static codebase analyzer — extracts per-file metadata, API surface maps,
-/// and AI-powered summaries for Rust, TypeScript, and SQL source files.
+/// dependency graphs, and AI-powered summaries for Rust, TypeScript, and SQL
+/// source files.
 #[derive(Parser)]
 #[command(name = "diraigent-analyzer")]
 struct Cli {
@@ -93,6 +95,28 @@ enum Commands {
         /// Dry run — compute what would change without calling the API
         #[arg(long)]
         dry_run: bool,
+    },
+
+    /// Build a dependency graph from a scan manifest JSON
+    Graph {
+        /// Path to a manifest JSON file (produced by `scan`)
+        manifest: PathBuf,
+
+        /// Output file path (writes to stdout if omitted)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Pretty-print JSON output
+        #[arg(long)]
+        pretty: bool,
+
+        /// Output Mermaid diagram instead of JSON
+        #[arg(long)]
+        mermaid: bool,
+
+        /// Output Graphviz DOT format instead of JSON
+        #[arg(long)]
+        dot: bool,
     },
 
     /// Generate AI-powered summaries for each module in the manifest
@@ -194,6 +218,13 @@ fn main() {
             format,
             pretty,
         } => api_surface::run(root, output, &format, pretty),
+        Commands::Graph {
+            manifest,
+            output,
+            pretty,
+            mermaid,
+            dot,
+        } => graph::run(manifest, output, pretty, mermaid, dot),
         Commands::Summarize {
             manifest,
             root,
