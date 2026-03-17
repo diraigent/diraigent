@@ -370,6 +370,19 @@ pub async fn list_wrapped_keys(
     .await?)
 }
 
+/// Get any login_derived wrapped key for a tenant (used for auto-unlock).
+pub async fn get_any_login_derived_key(
+    pool: &PgPool,
+    tenant_id: Uuid,
+) -> Result<Option<WrappedKey>, AppError> {
+    Ok(sqlx::query_as::<_, WrappedKey>(
+        "SELECT * FROM diraigent.wrapped_key WHERE tenant_id = $1 AND key_type = 'login_derived' AND user_id IS NOT NULL ORDER BY key_version DESC LIMIT 1",
+    )
+    .bind(tenant_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
 pub async fn delete_wrapped_key(pool: &PgPool, key_id: Uuid) -> Result<(), AppError> {
     super::delete_by_id(pool, Table::WrappedKey, key_id, "Wrapped key not found").await
 }
