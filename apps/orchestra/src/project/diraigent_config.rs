@@ -42,33 +42,6 @@ pub struct HookConfig {
     pub env: HashMap<String, String>,
 }
 
-/// Environment variables passed by orchestra to every `.diraigent/` script.
-pub struct ScriptEnv {
-    pub project_id: String,
-    pub project_path: PathBuf,
-    pub branch: String,
-    pub target_branch: String,
-    pub user_id: String,
-    pub version: String,
-}
-
-impl ScriptEnv {
-    /// Convert to a list of (key, value) pairs for `Command::envs`.
-    pub fn as_pairs(&self) -> Vec<(&str, String)> {
-        vec![
-            ("DIRAIGENT_PROJECT_ID", self.project_id.clone()),
-            (
-                "DIRAIGENT_PROJECT_PATH",
-                self.project_path.to_string_lossy().to_string(),
-            ),
-            ("DIRAIGENT_BRANCH", self.branch.clone()),
-            ("DIRAIGENT_TARGET_BRANCH", self.target_branch.clone()),
-            ("DIRAIGENT_USER_ID", self.user_id.clone()),
-            ("DIRAIGENT_VERSION", self.version.clone()),
-        ]
-    }
-}
-
 // ── Built-in templates ──────────────────────────────────────────────
 
 /// Registry of built-in release templates.

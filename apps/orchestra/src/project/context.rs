@@ -32,17 +32,3 @@ pub async fn fetch_context(
 
     Ok(ctx)
 }
-
-/// Like [`fetch_context`] but returns an empty JSON object on error
-/// instead of propagating the error. Used in prompt building where a
-/// missing context should degrade gracefully rather than abort the task.
-pub async fn fetch_context_or_empty(
-    api: &ProjectsApi,
-    project_id: &str,
-    task_id: Option<&str>,
-    dek: Option<&Dek>,
-) -> Value {
-    fetch_context(api, project_id, task_id, dek)
-        .await
-        .unwrap_or(Value::Object(serde_json::Map::new()))
-}

@@ -543,41 +543,6 @@ impl WorktreeManager {
         unreachable!()
     }
 
-    /// Clean up all task worktrees.
-    pub fn cleanup_all(&self) {
-        if self.git_root.is_none() {
-            // Clean up plain task directories
-            if self.worktree_dir.exists()
-                && let Ok(entries) = std::fs::read_dir(&self.worktree_dir)
-            {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_dir() {
-                        std::fs::remove_dir_all(&path).ok();
-                    }
-                }
-            }
-            return;
-        }
-        if self.worktree_dir.exists()
-            && let Ok(entries) = std::fs::read_dir(&self.worktree_dir)
-        {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir()
-                    && path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().starts_with("task-"))
-                        .unwrap_or(false)
-                {
-                    self.remove_worktree_path(&path);
-                }
-            }
-        }
-        self.git(&["worktree", "prune"]).ok();
-        self.cleanup_merged_branches();
-    }
-
     /// Delete local and remote `agent/task-*` branches that are fully merged into
     /// the default branch.
     ///

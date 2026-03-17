@@ -507,13 +507,15 @@ mod tests {
 
         let poll_api = Arc::clone(&api);
         let poll_active = Arc::clone(&active);
+        let projects: Vec<serde_json::Value> = vec![];
         let poll_result = tokio::time::timeout(
             std::time::Duration::from_millis(50),
-            crate::engine::spawner::poll_ready_tasks(
+            crate::engine::spawner::poll_ready_tasks_with_projects(
                 &poll_api,
                 &config,
                 &poll_active,
                 &new_lock_queue(),
+                &projects,
             ),
         )
         .await;
