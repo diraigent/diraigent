@@ -8,7 +8,7 @@ import {
 } from '../../core/services/agents-api.service';
 import { SpRole, TeamApiService } from '../../core/services/team-api.service';
 import { TenantApiService } from '../../core/services/tenant-api.service';
-import { ProviderConfigsApiService, ProviderConfig } from '../../core/services/provider-configs-api.service';
+import { ProviderConfigsApiService } from '../../core/services/provider-configs-api.service';
 import { ModalWrapperComponent } from '../../shared/components/modal-wrapper/modal-wrapper';
 
 const CAPABILITY_PRESETS: Record<string, string[]> = {
