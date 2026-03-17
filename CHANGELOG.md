@@ -1,5 +1,13 @@
 # Changelog
 
+## v20260317-1936 (2026-03-17)
+
+### Changed
+- **CI/CD**: Simplified ARM64 cross-compilation (switched to rustls, removed OpenSSL dependency)
+- **CI/CD**: Release workflow now skips redundant checks on mirror remotes
+
+---
+
 ## v20260317-1917 (2026-03-17)
 
 ### Added

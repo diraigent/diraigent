@@ -22,7 +22,7 @@ async-trait = "0.1.64"
 # gRPC and protobuf
 tonic = "0.14.1"
 tonic-reflection = "0.14.2"
-tonic-tls = { version = "0.6.1", default-features = false, features = ["openssl"] }
+tonic-tls = { version = "0.6.1", default-features = false, features = ["rustls"] }
 tonic-health = "0.14.1"
 tonic-prost = "0.14.1"
 tonic-prost-build = "0.14.1"

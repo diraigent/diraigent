@@ -12,6 +12,7 @@ concurrency:
 jobs:
   check:
     name: Check for code changes
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     outputs:
       has_changes: ${{ steps.diff.outputs.has_changes }}
@@ -106,18 +107,12 @@ jobs:
       - name: Install cross-compilation tools (Linux ARM64)
         if: matrix.cross
         run: |
-          sudo dpkg --add-architecture arm64
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu libssl-dev:arm64
+          sudo apt-get install -y gcc-aarch64-linux-gnu
 
       - name: Build
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-          PKG_CONFIG_SYSROOT_DIR: /usr/aarch64-linux-gnu
-          PKG_CONFIG_ALLOW_CROSS: "1"
-          OPENSSL_DIR: /usr/aarch64-linux-gnu
-          OPENSSL_INCLUDE_DIR: /usr/include/aarch64-linux-gnu
-          OPENSSL_LIB_DIR: /usr/lib/aarch64-linux-gnu
         run: cargo build --release --target ${{ matrix.target }} -p ${{ matrix.package }} --bin ${{ matrix.binary }}
 
       - name: Upload artifact
