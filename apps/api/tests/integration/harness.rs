@@ -150,6 +150,7 @@ impl TestApp {
             user_cache: UserIdCache::default(),
             webhooks: WebhookDispatcher::new(db),
             repo_root: None,
+            is_production: false,
             projects_path: None,
             loki_url: None,
             dek_cache,

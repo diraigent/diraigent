@@ -37,7 +37,7 @@ async fn create_task_with_options() {
         )
         .await;
     assert_eq!(task["kind"].as_str().unwrap(), "bug");
-    assert_eq!(task["urgent"].as_bool().unwrap(), true);
+    assert!(task["urgent"].as_bool().unwrap());
     assert_eq!(task["context"]["spec"].as_str().unwrap(), "fix the login");
 
     app.cleanup().await;
@@ -109,7 +109,7 @@ async fn update_task_fields() {
         .await;
     assert_eq!(resp.status, StatusCode::OK);
     assert_eq!(resp.json["title"].as_str().unwrap(), "Updated title");
-    assert_eq!(resp.json["urgent"].as_bool().unwrap(), true);
+    assert!(resp.json["urgent"].as_bool().unwrap());
 
     app.cleanup().await;
 }

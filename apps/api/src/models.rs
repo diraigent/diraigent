@@ -2132,3 +2132,27 @@ pub struct GitHubIntegrationResponse {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+
+// ── Dashboard Summary ──
+
+/// Aggregated dashboard data across all projects the user has access to.
+/// Returned by `GET /dashboard/summary` to replace N*4 per-project polling.
+#[derive(Debug, Serialize)]
+pub struct DashboardSummary {
+    pub projects: Vec<DashboardProjectSummary>,
+    pub tokens_per_day: Vec<TokenDayCount>,
+}
+
+/// Per-project summary for the dashboard.
+#[derive(Debug, Serialize)]
+pub struct DashboardProjectSummary {
+    pub project: Project,
+    pub task_summary: TaskSummary,
+    pub active_work: Vec<Work>,
+    pub cost_summary: CostSummary,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DashboardQuery {
+    pub days: Option<i32>,
+}

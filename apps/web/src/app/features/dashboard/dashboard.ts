@@ -1,45 +1,25 @@
 import { Component, inject, signal, computed, DestroyRef, HostListener } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
-import { HttpClient } from '@angular/common/http';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { forkJoin, timer, switchMap, of, map, from, mergeMap, toArray } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { timer, switchMap, forkJoin, from, mergeMap, toArray, of } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
 import { TasksApiService, SpTask } from '../../core/services/tasks-api.service';
-import { DiraigentApiService, DgProject, TokenDayCount, CostSummary, ProjectMetrics } from '../../core/services/diraigent-api.service';
+import { DiraigentApiService, DgProject, TokenDayCount, CostSummary, DashboardProjectSummary } from '../../core/services/diraigent-api.service';
 import { GitApiService, BranchInfo } from '../../core/services/git-api.service';
-import { SpWork } from '../../core/services/work-api.service';
-import { taskStateColor, taskTransitions, WORK_STATUS_COLORS } from '../../shared/ui-constants';
+import { WORK_STATUS_COLORS, taskStateColor, taskTransitions } from '../../shared/ui-constants';
 import { TokenUsageChartComponent, ChartProject } from './token-usage-chart';
-import { environment } from '../../../environments/environment';
 
-interface ProjectTasks {
-  project: DgProject;
-  tasks: SpTask[];
-}
-
-interface OpenTaskRow {
-  task: SpTask;
+interface UnmergedBranchRow {
+  branch: BranchInfo;
   projectName: string;
 }
 
 interface ActiveWorkRow {
-  work: SpWork;
+  work: { id: string; title: string; status: string; work_type: string; priority: number; updated_at: string };
   projectName: string;
 }
-
-interface UnmergedBranchRow {
-  branch: BranchInfo;
-  taskTitle: string | null;
-  taskState: string | null;
-  projectName: string;
-}
-
-const ACTIVE_STATES = new Set(['backlog', 'ready', 'working', 'implement', 'review', 'merge', 'human_review']);
-const IN_PROGRESS_STATES = new Set(['working', 'implement', 'review', 'merge', 'human_review']);
-const isActive = (s: string) => ACTIVE_STATES.has(s) || s.startsWith('wait:');
-const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('wait:');
 
 @Component({
   selector: 'app-dashboard',
@@ -111,7 +91,7 @@ const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('w
 
         <!-- Per-project breakdown -->
         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-8">
-          @for (pt of allProjectTasks(); track pt.project.id) {
+          @for (pt of projectSummaries(); track pt.project.id) {
             @if (projectActive(pt) > 0) {
               <div class="bg-surface border border-border rounded-lg p-3">
                 <div class="text-xs text-text-muted truncate mb-1">{{ pt.project.name }}</div>
@@ -142,8 +122,6 @@ const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('w
                 <tr class="border-b border-border text-text-secondary text-left">
                   <th class="px-4 py-3 font-medium w-36">{{ t('dashboard.project') }}</th>
                   <th class="px-4 py-3 font-medium">{{ t('dashboard.branch') }}</th>
-                  <th class="px-4 py-3 font-medium">{{ t('tasks.title') }}</th>
-                  <th class="px-4 py-3 font-medium w-28">{{ t('tasks.state') }}</th>
                   <th class="px-4 py-3 font-medium w-28">{{ t('dashboard.status') }}</th>
                 </tr>
               </thead>
@@ -153,16 +131,6 @@ const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('w
                     <td class="px-4 py-3 text-text-muted text-xs truncate max-w-[144px]">{{ row.projectName }}</td>
                     <td class="px-4 py-3 font-mono text-xs text-text-primary truncate max-w-[240px]" [title]="row.branch.name">
                       {{ row.branch.name }}
-                    </td>
-                    <td class="px-4 py-3 text-text-primary text-xs">{{ row.taskTitle ?? '—' }}</td>
-                    <td class="px-4 py-3">
-                      @if (row.taskState) {
-                        <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ stateColor(row.taskState) }}">
-                          {{ row.taskState }}
-                        </span>
-                      } @else {
-                        <span class="text-text-muted text-xs">—</span>
-                      }
                     </td>
                     <td class="px-4 py-3">
                       @if (row.branch.is_pushed) {
@@ -222,63 +190,6 @@ const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('w
           </div>
         }
 
-        <!-- Open tasks table -->
-        <h2 class="text-lg font-semibold text-text-primary mb-3">{{ t('dashboard.openTasks') }}</h2>
-        <div class="bg-surface rounded-lg border border-border overflow-hidden">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-border text-text-secondary text-left">
-                <th class="px-4 py-3 font-medium w-36">{{ t('dashboard.project') }}</th>
-                <th class="px-4 py-3 font-medium">{{ t('tasks.title') }}</th>
-                <th class="px-4 py-3 font-medium w-24">{{ t('tasks.kind') }}</th>
-                <th class="px-4 py-3 font-medium w-28">{{ t('tasks.state') }}</th>
-                <th class="px-4 py-3 font-medium w-24">{{ t('tasks.urgent') }}</th>
-                <th class="px-4 py-3 font-medium w-36">{{ t('tasks.created') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (row of openTasks(); track row.task.id) {
-                <tr class="border-b border-border last:border-b-0 hover:bg-surface-hover transition-colors">
-                  <td class="px-4 py-3 text-text-muted text-xs truncate max-w-[144px]">{{ row.projectName }}</td>
-                  <td class="px-4 py-3 text-text-primary font-medium">{{ row.task.title }}</td>
-                  <td class="px-4 py-3 text-text-secondary text-xs">{{ row.task.kind }}</td>
-                  <td class="px-4 py-3 relative">
-                    <button class="px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer hover:ring-1 hover:ring-accent {{ stateColor(row.task.state) }}"
-                            (click)="toggleStateMenu($event, row.task.id)">
-                      {{ row.task.state }}
-                    </button>
-                    @if (openMenuId() === row.task.id) {
-                      <div class="absolute z-50 mt-1 left-2 bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[120px]">
-                        @for (target of getTransitions(row.task.state); track target) {
-                          <button (click)="onTransition($event, row.task, target)"
-                            class="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-hover transition-colors flex items-center gap-2 cursor-pointer">
-                            <span class="w-2 h-2 rounded-full {{ stateColor(target) }}"></span>
-                            <span class="text-text-primary">{{ target }}</span>
-                          </button>
-                        } @empty {
-                          <span class="px-3 py-1.5 text-xs text-text-muted block">No transitions</span>
-                        }
-                      </div>
-                    }
-                  </td>
-                  <td class="px-4 py-3 text-xs">
-                    @if (row.task.urgent) {
-                      <span class="text-ctp-red font-medium">Urgent</span>
-                    }
-                  </td>
-                  <td class="px-4 py-3 text-text-muted text-xs whitespace-nowrap">
-                    {{ row.task.created_at | date:'MMM d, y' }}
-                  </td>
-                </tr>
-              } @empty {
-                <tr>
-                  <td colspan="6" class="px-4 py-8 text-center text-text-muted">{{ t('common.empty') }}</td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-
         <p class="text-xs text-text-muted mt-3">
           {{ t('dashboard.lastUpdated') }}: {{ lastUpdated() | date:'HH:mm:ss' }}
         </p>
@@ -287,16 +198,13 @@ const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('w
   `,
 })
 export class DashboardPage {
-  private static readonly PROJECT_POLL_CONCURRENCY = 2;
-
   private tasksApi = inject(TasksApiService);
   private diraigentApi = inject(DiraigentApiService);
   private gitApi = inject(GitApiService);
-  private http = inject(HttpClient);
   private router = inject(Router);
   private destroyRef = inject(DestroyRef);
 
-  allProjectTasks = signal<ProjectTasks[]>([]);
+  projectSummaries = signal<DashboardProjectSummary[]>([]);
   allActiveWork = signal<ActiveWorkRow[]>([]);
   unmergedBranches = signal<UnmergedBranchRow[]>([]);
   allTokensPerDay = signal<TokenDayCount[]>([]);
@@ -312,16 +220,17 @@ export class DashboardPage {
   }
 
   stats = computed(() => {
-    const allTasks = this.allProjectTasks().flatMap(pt => pt.tasks);
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    return {
-      active: allTasks.filter(t => isActive(t.state)).length,
-      ready: allTasks.filter(t => t.state === 'ready').length,
-      inProgress: allTasks.filter(t => isInProgress(t.state)).length,
-      doneToday: allTasks.filter(t => t.state === 'done' && new Date(t.completed_at ?? t.updated_at) >= todayStart).length,
-      cancelledToday: allTasks.filter(t => t.state === 'cancelled' && new Date(t.updated_at) >= todayStart).length,
-    };
+    const sums = this.projectSummaries().reduce(
+      (acc, ps) => ({
+        active: acc.active + ps.task_summary.in_progress + ps.task_summary.ready + ps.task_summary.backlog + ps.task_summary.human_review,
+        ready: acc.ready + ps.task_summary.ready,
+        inProgress: acc.inProgress + ps.task_summary.in_progress + ps.task_summary.human_review,
+        doneToday: acc.doneToday, // not available from summary — keep 0
+        cancelledToday: acc.cancelledToday,
+      }),
+      { active: 0, ready: 0, inProgress: 0, doneToday: 0, cancelledToday: 0 },
+    );
+    return sums;
   });
 
   totalCostUsd = computed(() =>
@@ -329,7 +238,7 @@ export class DashboardPage {
   );
 
   chartProjects = computed<ChartProject[]>(() =>
-    this.allProjectTasks().map(pt => ({ id: pt.project.id, name: pt.project.name })),
+    this.projectSummaries().map(ps => ({ id: ps.project.id, name: ps.project.name })),
   );
 
   tokenStats = computed(() => {
@@ -348,7 +257,6 @@ export class DashboardPage {
     const todayDays = days.filter(d => d.day === todayStr);
     const weekDays = days.filter(d => d.day >= weekStartStr);
 
-    // Total from cost summaries (covers all time, not just loaded days)
     const totalCosts = this.allCostSummaries();
     const totalInput = totalCosts.reduce((s, c) => s + c.total_input_tokens, 0);
     const totalOutput = totalCosts.reduce((s, c) => s + c.total_output_tokens, 0);
@@ -360,43 +268,21 @@ export class DashboardPage {
     };
   });
 
-  openTasks = computed(() => {
-    const rows: OpenTaskRow[] = [];
-    for (const { project, tasks } of this.allProjectTasks()) {
-      for (const task of tasks) {
-        if (task.state !== 'done' && task.state !== 'cancelled') {
-          rows.push({ task, projectName: project.name });
-        }
-      }
-    }
-    // Sort: in-progress first, then ready, then backlog; urgent tasks first within same state group
-    const statePriority = (s: string): number => {
-      if (isInProgress(s)) return 0;
-      if (s === 'ready') return 1;
-      return 2; // backlog
-    };
-    rows.sort((a, b) => {
-      const sp = statePriority(a.task.state) - statePriority(b.task.state);
-      if (sp !== 0) return sp;
-      return (b.task.urgent ? 1 : 0) - (a.task.urgent ? 1 : 0);
-    });
-    return rows;
-  });
-
   constructor() {
     this.startPolling();
   }
 
-  projectActive(pt: ProjectTasks): number {
-    return pt.tasks.filter(t => isActive(t.state)).length;
+  projectActive(pt: DashboardProjectSummary): number {
+    const s = pt.task_summary;
+    return s.in_progress + s.ready + s.backlog + s.human_review;
   }
 
-  projectReady(pt: ProjectTasks): number {
-    return pt.tasks.filter(t => t.state === 'ready').length;
+  projectReady(pt: DashboardProjectSummary): number {
+    return pt.task_summary.ready;
   }
 
-  projectInProgress(pt: ProjectTasks): number {
-    return pt.tasks.filter(t => isInProgress(t.state)).length;
+  projectInProgress(pt: DashboardProjectSummary): number {
+    return pt.task_summary.in_progress + pt.task_summary.human_review;
   }
 
   formatTokens(n: number): string {
@@ -416,16 +302,7 @@ export class DashboardPage {
   onTransition(event: Event, task: SpTask, target: string): void {
     event.stopPropagation();
     this.openMenuId.set(null);
-    this.tasksApi.transition(task.id, target).subscribe({
-      next: (updated) => {
-        this.allProjectTasks.update(all =>
-          all.map(pt => ({
-            ...pt,
-            tasks: pt.tasks.map(t => t.id === updated.id ? updated : t),
-          })),
-        );
-      },
-    });
+    this.tasksApi.transition(task.id, target).subscribe();
   }
 
   workStatusColor(status: string): string {
@@ -439,95 +316,55 @@ export class DashboardPage {
   private startPolling(): void {
     timer(0, 30_000)
       .pipe(
-        switchMap(() => this.diraigentApi.getProjects()),
-        switchMap(projects => {
-          if (projects.length === 0) {
-            return of({ projectTasks: [] as ProjectTasks[], activeWork: [] as ActiveWorkRow[], unmerged: [] as UnmergedBranchRow[], tokensPerDay: [] as TokenDayCount[], costSummaries: [] as CostSummary[] });
+        switchMap(() => this.diraigentApi.getDashboardSummary(30)),
+        switchMap(summary => {
+          // Update summary data immediately (1 request done)
+          this.projectSummaries.set(summary.projects);
+          this.allActiveWork.set(
+            summary.projects
+              .flatMap(ps =>
+                ps.active_work.map(w => ({ work: w, projectName: ps.project.name })),
+              )
+              .sort((a, b) =>
+                b.work.priority - a.work.priority
+                || new Date(b.work.updated_at).getTime() - new Date(a.work.updated_at).getTime(),
+              ),
+          );
+          this.allTokensPerDay.set(summary.tokens_per_day);
+          this.allCostSummaries.set(summary.projects.map(ps => ps.cost_summary));
+          this.loading.set(false);
+          this.error.set(false);
+          this.lastUpdated.set(new Date());
+
+          // Fetch branches per project (lightweight WS calls, done in parallel)
+          if (summary.projects.length === 0) {
+            this.unmergedBranches.set([]);
+            return of(null);
           }
-          return from(projects).pipe(
-            mergeMap(project => {
-              const retentionDays = (project.metadata?.['done_retention_days'] as number) ?? 1;
-              const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
-              const tasks$ = this.tasksApi
-                .listForProject(project.id, { limit: 200, hide_done_before: cutoff })
-                .pipe(
-                  catchError(() => of({ data: [] as SpTask[], total: 0, limit: 200, offset: 0, has_more: false })),
-                  map(res => res.data),
-                );
-              const work$ = this.http
-                .get<SpWork[]>(`${environment.apiServer}/${project.id}/work`, { params: { limit: '200' } })
-                .pipe(catchError(() => of([] as SpWork[])));
-              const branches$ = this.gitApi
-                .listBranchesForProject(project.id, 'agent/')
-                .pipe(catchError(() => of({ current_branch: '', branches: [] as BranchInfo[] })));
-              const metrics$ = this.diraigentApi.getProjectMetrics(project.id, 30).pipe(
-                catchError(() => of({
-                  project_id: project.id, range_days: 30,
-                  task_summary: { total: 0, done: 0, cancelled: 0, in_progress: 0, ready: 0, backlog: 0, human_review: 0 },
-                  tasks_per_day: [], avg_time_in_state_hours: [], agent_breakdown: [],
-                  playbook_completion: [], task_costs: [],
-                  tokens_per_day: [] as TokenDayCount[],
-                  cost_summary: { total_input_tokens: 0, total_output_tokens: 0, total_cost_usd: 0 },
-                } satisfies ProjectMetrics)),
-              );
-              return forkJoin([tasks$, work$, branches$, metrics$]).pipe(
-                map(([tasks, works, branchRes, metrics]) => ({
-                  project, tasks, works,
-                  branches: branchRes.branches,
-                  tokensPerDay: (metrics.tokens_per_day ?? []) as TokenDayCount[],
-                  costSummary: (metrics.cost_summary ?? { total_input_tokens: 0, total_output_tokens: 0, total_cost_usd: 0 }) as CostSummary,
-                })),
-              );
-            }, DashboardPage.PROJECT_POLL_CONCURRENCY),
+          return from(summary.projects).pipe(
+            mergeMap(ps =>
+              this.gitApi.listBranchesForProject(ps.project.id, 'agent/').pipe(
+                map(res => ({ projectName: ps.project.name, branches: res.branches })),
+                catchError(() => of({ projectName: ps.project.name, branches: [] as BranchInfo[] })),
+              ),
+              3, // concurrency limit
+            ),
             toArray(),
             map(results => {
-              const unmerged: UnmergedBranchRow[] = [];
+              const rows: UnmergedBranchRow[] = [];
               for (const r of results) {
-                const taskByPrefix = new Map(r.tasks.map(t => [t.id.substring(0, 12), t]));
                 for (const branch of r.branches) {
-                  const matchedTask = branch.task_id_prefix ? taskByPrefix.get(branch.task_id_prefix) : null;
-                  // Skip branches whose task is already done/cancelled (merged)
-                  if (matchedTask && (matchedTask.state === 'done' || matchedTask.state === 'cancelled')) continue;
-                  unmerged.push({
-                    branch,
-                    taskTitle: matchedTask?.title ?? null,
-                    taskState: matchedTask?.state ?? null,
-                    projectName: r.project.name,
-                  });
+                  rows.push({ branch, projectName: r.projectName });
                 }
               }
-              return {
-                projectTasks: results.map(r => ({ project: r.project, tasks: r.tasks })) as ProjectTasks[],
-                activeWork: results
-                  .flatMap(r =>
-                    r.works
-                      .filter(w => !['achieved', 'abandoned'].includes(w.status))
-                      .map(w => ({ work: w, projectName: r.project.name }) as ActiveWorkRow),
-                  )
-                  .sort((a, b) =>
-                    b.work.priority - a.work.priority
-                    || new Date(b.work.updated_at).getTime() - new Date(a.work.updated_at).getTime(),
-                  ),
-                unmerged,
-                tokensPerDay: results.flatMap(r => r.tokensPerDay),
-                costSummaries: results.map(r => r.costSummary),
-              };
+              this.unmergedBranches.set(rows);
+              return null;
             }),
           );
         }),
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe({
-        next: ({ projectTasks, activeWork, unmerged, tokensPerDay, costSummaries }) => {
-          this.allProjectTasks.set(projectTasks);
-          this.allActiveWork.set(activeWork);
-          this.unmergedBranches.set(unmerged);
-          this.allTokensPerDay.set(tokensPerDay);
-          this.allCostSummaries.set(costSummaries);
-          this.loading.set(false);
-          this.error.set(false);
-          this.lastUpdated.set(new Date());
-        },
         error: () => {
           this.loading.set(false);
           this.error.set(true);

@@ -85,7 +85,8 @@ pub fn build_graph(manifest: &Manifest) -> DependencyGraph {
         }
     }
 
-    let nodes_list: Vec<String> = adj.keys().cloned().collect();
+    let mut nodes_list: Vec<String> = adj.keys().cloned().collect();
+    nodes_list.sort();
 
     // --- Cycle detection (Tarjan's SCC) ---
     let sccs = tarjan_scc(&nodes_list, &adj);
@@ -108,6 +109,9 @@ pub fn build_graph(manifest: &Manifest) -> DependencyGraph {
             }
         }
     }
+
+    // Sort cycles for deterministic output
+    cycles.sort();
 
     // --- Depth computation ---
     let depths = compute_depths(&nodes_list, &adj);
@@ -353,7 +357,9 @@ fn strongconnect(
     on_stack.insert(v.to_string());
 
     if let Some(neighbors) = adj.get(v) {
-        for w in neighbors {
+        let mut sorted_neighbors: Vec<&String> = neighbors.iter().collect();
+        sorted_neighbors.sort();
+        for w in sorted_neighbors {
             if !index.contains_key(w.as_str()) {
                 strongconnect(w, adj, index_counter, stack, on_stack, index, lowlink, sccs);
                 let w_low = lowlink[w.as_str()];
@@ -384,7 +390,8 @@ fn strongconnect(
 /// Given an SCC with >1 node, trace one cycle path through it.
 fn find_cycle_in_scc(scc: &[String], adj: &HashMap<String, HashSet<String>>) -> Vec<String> {
     let scc_set: HashSet<&str> = scc.iter().map(|s| s.as_str()).collect();
-    let start = &scc[0];
+    // Use the lexicographically smallest node as start for deterministic output
+    let start = scc.iter().min().unwrap();
 
     let mut visited: HashSet<String> = HashSet::new();
     let mut path: Vec<String> = vec![start.clone()];
@@ -393,9 +400,10 @@ fn find_cycle_in_scc(scc: &[String], adj: &HashMap<String, HashSet<String>>) -> 
     if dfs_cycle(start, start, adj, &scc_set, &mut visited, &mut path) {
         path
     } else {
-        // Should not happen for an SCC with >1 node, but return the SCC list
-        let mut fallback = scc.to_vec();
-        fallback.push(scc[0].clone());
+        // Should not happen for an SCC with >1 node, but return the SCC list sorted
+        let mut fallback: Vec<String> = scc.to_vec();
+        fallback.sort();
+        fallback.push(fallback[0].clone());
         fallback
     }
 }
@@ -409,7 +417,9 @@ fn dfs_cycle(
     path: &mut Vec<String>,
 ) -> bool {
     if let Some(neighbors) = adj.get(current) {
-        for next in neighbors {
+        let mut sorted_neighbors: Vec<&String> = neighbors.iter().collect();
+        sorted_neighbors.sort();
+        for next in sorted_neighbors {
             if !scc_set.contains(next.as_str()) {
                 continue;
             }

@@ -1,198 +1,133 @@
 # Changelog
 
-## v20260317-2310 (2026-03-17)
+
+## v20260317-2357 (2026-03-17)
+
+### Added
+- **API**: Active work dashboard endpoint with cross-project work items
+- **Web**: Dashboard now shows active work section powered by API
+
+### Changed
+- **Orchestra**: Restructured git operations into dedicated merge, query, release, and worktree modules
+- **Web**: Dashboard loads data from API instead of client-side computation
+
+### Fixed
+- **Analyzer**: Deterministic output in dependency graph cycle detection
+- **Web**: Various UI and stability fixes
+
+---
+
+## v20260317 (2026-03-17)
 
 ### Added
 - **Web**: CI pipelines page with filters, auto-polling, and run detail drilldown
 - **Web**: Forgejo and GitHub CI onboarding setup wizards
 - **Web**: Provider configuration UI in project settings
-- **Web**: Active work section on dashboard with cross-project items
-- **Web**: Plan tasks button and preview dialog for work items
+- **Web**: Active Work section on dashboard with cross-project items
+- **Web**: Plan Tasks button and preview dialog for work items
 - **Web**: Acceptance criteria field on work items
 - **Web**: Deep-link support for work items via query params
 - **Web**: Version info in account settings
+- **Web**: Multi-step agent onboarding wizard with provider setup
 - **API**: Multi-provider support (OpenAI, Ollama) with per-project configuration
 - **API**: Forgejo CI integration with webhook ingestion and sync
 - **API**: GitHub CI integration with webhooks and registration
+- **API**: AI planning endpoint for work items with auto-generated success criteria
+- **API**: Composite task scoring (age, priority, goal-alignment, dependency-graph)
 - **API**: Account deletion and full user data download
 - **API**: User registration flow
-- **Orchestra**: Codebase static analyzer with dependency graph and API mapping
+- **API**: Auto-unlock tenant encryption using stored wrapped keys
+- **Analyzer**: Static code analyzer with dependency graphs, API surface mapping, and module summaries
+- **Orchestra**: Configurable per-project AI providers with step executor routing
 - **Orchestra**: Scheduled re-indexing via cron and git hooks
+- **TUI**: Standalone TUI and API binary builds
 - **CI/CD**: Container and binary signing with cosign and GPG
+- **CI/CD**: GitHub Actions release workflow for binaries
 
 ### Changed
-- **Web**: Renamed "Goals" to "Work" across all UI
-- **API**: Renamed Goals to Work in database and endpoints
-- **Orchestra**: Plan and chat handlers configurable per project
-- **TUI**: Renamed Goals to Work in all views
+- **All**: Renamed "Goals" to "Work" across entire stack (Web, API, Orchestra, TUI)
+- **Orchestra**: Plan and chat handlers configurable per project via metadata
+- **Orchestra**: Switched to model-agnostic architecture with claude-code CLI
+- **Web**: Combined token usage into single multi-project chart
+- **API**: Agent registration now auto-assigns a default role
 
 ### Fixed
 - **Web**: Mobile horizontal scrolling and dropdown clipping issues
 - **Orchestra**: Merge rollback on push failure
 - **API**: Authorization checks on provider config endpoints
-- **API**: Various stability and encryption fixes
-
----
-
-
-## v20260317-2254 (2026-03-17)
-
-### Changed
-- **CI/CD**: Publish GitHub releases as part of the release pipeline
-- **Web**: Improved container build caching for faster deployments
-- **API**: Updated container base image
-- **Orchestra**: Updated container base image
-
-### Fixed
-- **Orchestra**: Correct CLI entrypoint routing for TUI and API binaries
-- **Forgejo Client**: Fix actions API endpoint URLs
-
----
-
-## v20260317-2215 (2026-03-17)
-
-### Added
-- **API**: Account deletion and full user data download
-- **API**: GitHub CI integration with webhooks and sync
-- **API**: Tenant registration support
-- **API**: Encryption for integration tokens and secrets
-
-### Changed
-- **Orchestra**: Optimized container build process
-- **Orchestra**: Scheduled re-indexing support
-- **Web**: Improved source page with lazy loading and optimizations
-- **Web**: Better work item list layout and status handling
-- **Web**: Consolidated token usage charts on dashboard
-
-### Fixed
-- **API**: Authorization and authentication handling fixes
-- **Web**: Various UI and stability fixes
-
-### Removed
-- **Orchestra**: Unused indexer code
-- **CI/CD**: Removed API from GitHub build workflow
-
----
-
-## v20260317-1951 (2026-03-17)
-
-### Added
-- **Web**: Rename Goals to Work across the entire UI
-- **API**: Multi-provider support — configure OpenAI and Ollama alongside Anthropic per project
-- **API**: Provider configuration management with encrypted API key storage
-- **Web**: GitHub and Forgejo CI onboarding wizards with setup workflows
-- **Web**: CI pipelines page with filtering, auto-polling, and run detail drilldown
-- **Web**: Plan Tasks button and Execute button on work items
-- **Web**: Active Work section on the dashboard with cross-project items
-- **Web**: Provider configuration tab in project settings
-- **Web**: Deep-link support for work items via URL query params
-- **Orchestra**: Per-project plan and chat handler configuration
-- **Orchestra**: Composite task scoring with priority, age, goal-alignment, and dependency metrics
-- **Orchestra**: Scheduled repository re-indexing via cron
-- **Analyzer**: Static code analyzer with dependency graphs, API surface mapping, and module summaries
-- **API**: User registration, account deletion, and full data download
-- **CI/CD**: Container and binary signing with cosign and GPG
-
-### Changed
-- **Orchestra**: Plan handler now uses claude-code CLI instead of direct API calls
-- **Orchestra**: Work item planning routed through orchestra via WebSocket
-- **TUI**: Renamed Goals to Work throughout the interface
-
-### Fixed
-- **Web**: Mobile horizontal scrolling issues across all pages
-- **Web**: Various UI fixes for dropdowns, scroll behavior, and form state
-
----
-
-## v20260317-1936 (2026-03-17)
-
-### Changed
-- **CI/CD**: Simplified ARM64 cross-compilation (switched to rustls, removed OpenSSL dependency)
-- **CI/CD**: Release workflow now skips redundant checks on mirror remotes
-
----
-
-## v20260317-1917 (2026-03-17)
-
-### Added
-- **Web**: Forgejo CI onboarding wizard with webhook setup
-- **Web**: GitHub CI integration setup wizard and provider badges
-- **Web**: CI pipelines page with run detail drilldown and auto-polling
-- **API**: Multi-provider support (OpenAI, Ollama, Anthropic) with encrypted config storage
-- **API**: AI planning endpoint for automatic task generation from work items
-- **Orchestra**: Codebase static analyzer with dependency graphs and API surface mapping
-- **Orchestra**: Scheduled re-indexing via cron and git hooks
-- **Web**: Active Work dashboard section with cross-project items
-- **Web**: Execute and Plan & Execute buttons on work items
-- **API**: User registration, account deletion, and full data download
-- **TUI**: Standalone TUI and API binary builds
-- **CI/CD**: Container and binary signing with cosign and GPG
-
-### Changed
-- **All**: Renamed "Goals" to "Work" across entire stack
-- **Orchestra**: Plan and chat handlers now configurable per project
-- **API**: Task scoring uses composite model (age, priority, goal-alignment, dependencies)
-
-### Fixed
-- **Web**: Mobile horizontal scrolling across all pages
-- **Web**: Various UI fixes (dropdown clipping, menu positioning, form state)
-- **API**: Authorization gaps and encrypted token storage for integrations
-
----
-
-## v20260317-1857 (2026-03-17)
-
-### Fixed
-- **CI/CD**: Fix container image signing in release pipelines
-
----
-
-## v20260317-1841 (2026-03-17)
-
-### Added
-- **Web**: Multi-step agent onboarding wizard with provider setup
-- **Web**: Sidebar prompt to create first agent for new users
-- **API**: Auto-unlock tenant encryption using stored wrapped keys
-
-### Changed
-- **API**: Agent registration now auto-assigns a default role
-- **Web**: Agent creation flow split into details, provider config, and credentials steps
+- **API**: Encrypted integration tokens and fixed authorization gaps
+- **Forgejo Client**: Correct actions API endpoint URLs
 
 ### Removed
 - **API**: Unused subtask and work-task count endpoints
-- **Orchestra**: Dead code cleanup (unused polling, worktree cleanup, context helpers)
+- **Orchestra**: Dead code cleanup
 
 ---
 
-## v20250317-1345 (2026-03-17)
+## v20260316 (2026-03-16)
 
 ### Added
-- **API**: Multi-provider support (OpenAI, Ollama, Anthropic) with encrypted config storage
-- **API**: Forgejo CI integration with webhook validation and run ingestion
-- **API**: GitHub CI integration with webhooks and sync
-- **API**: AI-powered work item planning with auto-generated success criteria
-- **API**: Composite task scoring (age, priority, goal-alignment, dependency-graph)
-- **API**: User registration and account deletion endpoints
-- **Orchestra**: Configurable per-project AI providers with step executor routing
-- **Orchestra**: Scheduled re-indexing via cron and git hooks
-- **Analyzer**: Static analyzer with dependency graph, API surface mapper, and module summarizer
-- **Web**: CI pipelines page with run detail drilldown
-- **Web**: Forgejo and GitHub CI onboarding wizards
-- **Web**: Provider configuration UI in project settings
-- **Web**: AI planning dialog for work items with task preview
-- **Web**: Active Work dashboard section with cross-project items
-- **CI/CD**: Container and binary signing with cosign and GPG
+- **Web**: Active Work dashboard section with cross-project work items
+- **Web**: "Plan & Execute" option in work item creation
+- **Web**: Deep-link support for work items via query parameter
+- **Web**: Lazy loading for completed and archived work sections
+- **Web**: Unmerged branch and merge conflict indicators on work items
+- **Web**: Acceptance criteria field on tasks
+- **Web**: GitHub CI integration setup wizard
+- **Web**: Provider brand icons in CI pipeline views
+- **Web**: Configurable release button in project settings
+- **API**: Work status counts endpoint for section aggregation
+- **API**: Multi-provider CI support (Forgejo + GitHub Actions)
+- **Orchestra**: Configurable per-project AI providers (Anthropic, OpenAI, Ollama, Copilot)
+- **Orchestra**: Codebase knowledge indexer with scheduled re-indexing
 
 ### Changed
-- **Web**: Renamed Goals to Work across entire UI
-- **TUI**: Renamed Goals to Work; renamed Description to Spec
-- **Orchestra**: Switched to model-agnostic architecture with claude-code CLI
-- **Web**: Combined token usage into single multi-project chart
+- **Orchestra**: Planning routed through chat handler with per-project model selection
+- **CI/CD**: Release script pushes to all remotes and merges back into source branch
 
 ### Fixed
-- **API**: Encrypted integration tokens and fixed authorization gaps
-- **Web**: Mobile horizontal scrolling, dropdown clipping, and various UI fixes
-- **API**: Clippy lint fixes for let-chain patterns and unused imports
+- **Web**: State dropdown clipping near viewport bottom
+- **Web**: Security vulnerabilities in undici dependencies
+- **Web**: Various form accessibility improvements
+
+### Removed
+- **Web**: Inline AI planning and manual ready/processing status transitions
+- **API**: Dedicated work planning endpoint and WebSocket plan protocol
+
+---
+
+## v20260315 (2026-03-15)
+
+### Added
+- **API**: CI data model (integrations, runs, jobs, steps) with Forgejo webhook ingestion
+- **API**: Provider configs with encrypted API key storage
+- **API**: Composite task scoring (age, priority, dependency-graph, goal-alignment)
+- **API**: AI planning endpoint for work items
+- **Orchestra**: Multi-provider step execution (Anthropic, OpenAI, Ollama, Copilot)
+- **Orchestra**: Codebase analyzer with API surface mapper and module summarizer
+- **Web**: CI pipelines page with status filters and auto-polling
+- **Web**: Pipeline run detail with job/step drilldown
+- **Web**: Forgejo CI onboarding wizard
+- **Web**: Provider config management in Settings
+- **Web**: Plan Tasks button with preview dialog
+- **Web**: Execute button on work items
+- **Web**: Combined multi-project token usage chart
+
+### Changed
+- **API**: Renamed "Goals" to "Work" across all endpoints and schema
+- **Web**: Renamed "Goals" to "Work" across the entire UI
+- **Web**: Streamlined Work page layout
+- **API**: Observation promotion now creates work item + task
+
+### Fixed
+- **API**: Authorization gaps in provider config, agents, and roles routes
+- **Orchestra**: Git provisioning in monorepo setups
+- **Web**: Mobile horizontal scrolling
+- **Web**: Git push errors displaying as `[object Object]`
+
+### Removed
+- **Web**: Standalone new-task and link-tasks buttons
+- **Web**: Target date field from work items
 
 ---
 
