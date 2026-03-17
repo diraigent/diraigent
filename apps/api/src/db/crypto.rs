@@ -18,6 +18,11 @@
 //!   forgejo_integration.webhook_secret → "forgejo_integration.webhook_secret"
 //!   github_integration.token  → "github_integration.token"
 //!   github_integration.webhook_secret → "github_integration.webhook_secret"
+//!   work.title                 → "work.title"
+//!   work.description           → "work.description"
+//!   work.success_criteria      → "work.success_criteria"
+//!   work.metadata              → "work.metadata"
+//!   work_comment.content       → "work_comment.content"
 
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -146,6 +151,27 @@ impl CryptoDb {
         if let Some(ref s) = gi.webhook_secret {
             gi.webhook_secret = Some(dek.decrypt_str(s, "github_integration.webhook_secret")?);
         }
+        Ok(())
+    }
+
+    /// Get DEK for the tenant that owns a work item (via its project).
+    async fn dek_for_work(&self, work_id: Uuid) -> Result<Option<Dek>, AppError> {
+        let work = self.inner.get_work_by_id(work_id).await?;
+        self.dek_for_project(work.project_id).await
+    }
+
+    fn decrypt_work(dek: &Dek, w: &mut Work) -> Result<(), CryptoError> {
+        w.title = dek.decrypt_str(&w.title, "work.title")?;
+        if let Some(ref d) = w.description {
+            w.description = Some(dek.decrypt_str(d, "work.description")?);
+        }
+        w.success_criteria = dek.decrypt_json(&w.success_criteria, "work.success_criteria")?;
+        w.metadata = dek.decrypt_json(&w.metadata, "work.metadata")?;
+        Ok(())
+    }
+
+    fn decrypt_work_comment(dek: &Dek, c: &mut WorkComment) -> Result<(), CryptoError> {
+        c.content = dek.decrypt_str(&c.content, "work_comment.content")?;
         Ok(())
     }
 }
@@ -556,30 +582,111 @@ impl DiraigentDb for CryptoDb {
         delegate!(self, verify_agent_owner, agent_id, user_id)
     }
 
-    // ── Work (no encrypted fields) ──
+    // ── Work (encrypt title, description, success_criteria, metadata) ──
     async fn create_work(
         &self,
         project_id: Uuid,
         req: &CreateWork,
         created_by: Uuid,
     ) -> Result<Work, AppError> {
-        delegate!(self, create_work, project_id, req, created_by)
+        if let Some(dek) = self.dek_for_project(project_id).await? {
+            let encrypted_req = CreateWork {
+                title: dek.encrypt_str(&req.title, "work.title")?,
+                description: req
+                    .description
+                    .as_ref()
+                    .map(|d| dek.encrypt_str(d, "work.description"))
+                    .transpose()?,
+                work_type: req.work_type.clone(),
+                priority: req.priority,
+                parent_work_id: req.parent_work_id,
+                auto_status: req.auto_status,
+                intent_type: req.intent_type.clone(),
+                success_criteria: req
+                    .success_criteria
+                    .as_ref()
+                    .map(|s| dek.encrypt_json(s, "work.success_criteria"))
+                    .transpose()?,
+                metadata: req
+                    .metadata
+                    .as_ref()
+                    .map(|m| dek.encrypt_json(m, "work.metadata"))
+                    .transpose()?,
+            };
+            let mut work = self
+                .inner
+                .create_work(project_id, &encrypted_req, created_by)
+                .await?;
+            Self::decrypt_work(&dek, &mut work)?;
+            Ok(work)
+        } else {
+            self.inner.create_work(project_id, req, created_by).await
+        }
     }
     async fn get_work_by_id(&self, id: Uuid) -> Result<Work, AppError> {
-        delegate!(self, get_work_by_id, id)
+        let mut work = self.inner.get_work_by_id(id).await?;
+        if let Some(dek) = self.dek_for_project(work.project_id).await? {
+            Self::decrypt_work(&dek, &mut work)?;
+        }
+        Ok(work)
     }
     async fn list_works(
         &self,
         project_id: Uuid,
         filters: &WorkFilters,
     ) -> Result<Vec<Work>, AppError> {
-        delegate!(self, list_works, project_id, filters)
+        let mut works = self.inner.list_works(project_id, filters).await?;
+        if let Some(dek) = self.dek_for_project(project_id).await? {
+            for w in &mut works {
+                Self::decrypt_work(&dek, w)?;
+            }
+        }
+        Ok(works)
     }
     async fn activate_work(&self, work_id: Uuid) -> Result<Work, AppError> {
-        delegate!(self, activate_work, work_id)
+        let mut work = self.inner.activate_work(work_id).await?;
+        if let Some(dek) = self.dek_for_project(work.project_id).await? {
+            Self::decrypt_work(&dek, &mut work)?;
+        }
+        Ok(work)
     }
     async fn update_work(&self, id: Uuid, req: &UpdateWork) -> Result<Work, AppError> {
-        delegate!(self, update_work, id, req)
+        if let Some(dek) = self.dek_for_work(id).await? {
+            let encrypted_req = UpdateWork {
+                title: req
+                    .title
+                    .as_ref()
+                    .map(|t| dek.encrypt_str(t, "work.title"))
+                    .transpose()?,
+                description: req
+                    .description
+                    .as_ref()
+                    .map(|d| dek.encrypt_str(d, "work.description"))
+                    .transpose()?,
+                status: req.status.clone(),
+                work_type: req.work_type.clone(),
+                priority: req.priority,
+                parent_work_id: req.parent_work_id,
+                auto_status: req.auto_status,
+                intent_type: req.intent_type.clone(),
+                success_criteria: req
+                    .success_criteria
+                    .as_ref()
+                    .map(|s| dek.encrypt_json(s, "work.success_criteria"))
+                    .transpose()?,
+                metadata: req
+                    .metadata
+                    .as_ref()
+                    .map(|m| dek.encrypt_json(m, "work.metadata"))
+                    .transpose()?,
+                sort_order: req.sort_order,
+            };
+            let mut work = self.inner.update_work(id, &encrypted_req).await?;
+            Self::decrypt_work(&dek, &mut work)?;
+            Ok(work)
+        } else {
+            self.inner.update_work(id, req).await
+        }
     }
     async fn delete_work(&self, id: Uuid) -> Result<(), AppError> {
         delegate!(self, delete_work, id)
@@ -599,7 +706,13 @@ impl DiraigentDb for CryptoDb {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<Task>, AppError> {
-        delegate!(self, list_work_tasks, work_id, limit, offset)
+        let mut tasks = self.inner.list_work_tasks(work_id, limit, offset).await?;
+        if let Some(dek) = self.dek_for_work(work_id).await? {
+            for t in &mut tasks {
+                Self::decrypt_task(&dek, t)?;
+            }
+        }
+        Ok(tasks)
     }
     async fn count_work_tasks(&self, work_id: Uuid) -> Result<i64, AppError> {
         delegate!(self, count_work_tasks, work_id)
@@ -624,7 +737,13 @@ impl DiraigentDb for CryptoDb {
         project_id: Uuid,
         work_ids: &[Uuid],
     ) -> Result<Vec<Work>, AppError> {
-        delegate!(self, reorder_works, project_id, work_ids)
+        let mut works = self.inner.reorder_works(project_id, work_ids).await?;
+        if let Some(dek) = self.dek_for_project(project_id).await? {
+            for w in &mut works {
+                Self::decrypt_work(&dek, w)?;
+            }
+        }
+        Ok(works)
     }
     async fn get_work_ids_for_task(&self, task_id: Uuid) -> Result<Vec<Uuid>, AppError> {
         delegate!(self, get_work_ids_for_task, task_id)
@@ -644,26 +763,54 @@ impl DiraigentDb for CryptoDb {
         )
     }
     async fn list_works_for_task(&self, task_id: Uuid) -> Result<Vec<Work>, AppError> {
-        delegate!(self, list_works_for_task, task_id)
+        let mut works = self.inner.list_works_for_task(task_id).await?;
+        if !works.is_empty() {
+            if let Some(dek) = self.dek_for_project(works[0].project_id).await? {
+                for w in &mut works {
+                    Self::decrypt_work(&dek, w)?;
+                }
+            }
+        }
+        Ok(works)
     }
     async fn work_status_counts(&self, project_id: Uuid) -> Result<Vec<(String, i64)>, AppError> {
         delegate!(self, work_status_counts, project_id)
     }
-    // ── Work Comments ──
+    // ── Work Comments (encrypt content) ──
     async fn create_work_comment(
         &self,
         work_id: Uuid,
         req: &CreateWorkComment,
         user_id: Option<Uuid>,
     ) -> Result<WorkComment, AppError> {
-        delegate!(self, create_work_comment, work_id, req, user_id)
+        if let Some(dek) = self.dek_for_work(work_id).await? {
+            let encrypted_req = CreateWorkComment {
+                agent_id: req.agent_id,
+                content: dek.encrypt_str(&req.content, "work_comment.content")?,
+                metadata: req.metadata.clone(),
+            };
+            let mut comment = self
+                .inner
+                .create_work_comment(work_id, &encrypted_req, user_id)
+                .await?;
+            Self::decrypt_work_comment(&dek, &mut comment)?;
+            Ok(comment)
+        } else {
+            self.inner.create_work_comment(work_id, req, user_id).await
+        }
     }
     async fn list_work_comments(
         &self,
         work_id: Uuid,
         p: &Pagination,
     ) -> Result<Vec<WorkComment>, AppError> {
-        delegate!(self, list_work_comments, work_id, p)
+        let mut comments = self.inner.list_work_comments(work_id, p).await?;
+        if let Some(dek) = self.dek_for_work(work_id).await? {
+            for c in &mut comments {
+                Self::decrypt_work_comment(&dek, c)?;
+            }
+        }
+        Ok(comments)
     }
 
     // ── Knowledge (encrypt content) ──
