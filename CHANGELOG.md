@@ -1,5 +1,35 @@
 # Changelog
 
+## v20260317-1951 (2026-03-17)
+
+### Added
+- **Web**: Rename Goals to Work across the entire UI
+- **API**: Multi-provider support — configure OpenAI and Ollama alongside Anthropic per project
+- **API**: Provider configuration management with encrypted API key storage
+- **Web**: GitHub and Forgejo CI onboarding wizards with setup workflows
+- **Web**: CI pipelines page with filtering, auto-polling, and run detail drilldown
+- **Web**: Plan Tasks button and Execute button on work items
+- **Web**: Active Work section on the dashboard with cross-project items
+- **Web**: Provider configuration tab in project settings
+- **Web**: Deep-link support for work items via URL query params
+- **Orchestra**: Per-project plan and chat handler configuration
+- **Orchestra**: Composite task scoring with priority, age, goal-alignment, and dependency metrics
+- **Orchestra**: Scheduled repository re-indexing via cron
+- **Analyzer**: Static code analyzer with dependency graphs, API surface mapping, and module summaries
+- **API**: User registration, account deletion, and full data download
+- **CI/CD**: Container and binary signing with cosign and GPG
+
+### Changed
+- **Orchestra**: Plan handler now uses claude-code CLI instead of direct API calls
+- **Orchestra**: Work item planning routed through orchestra via WebSocket
+- **TUI**: Renamed Goals to Work throughout the interface
+
+### Fixed
+- **Web**: Mobile horizontal scrolling issues across all pages
+- **Web**: Various UI fixes for dropdowns, scroll behavior, and form state
+
+---
+
 ## v20260317-1936 (2026-03-17)
 
 ### Changed
