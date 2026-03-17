@@ -10,7 +10,9 @@ use crate::auth::AuthUser;
 use crate::error::AppError;
 
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/account", get(get_account).delete(delete_account))
+    Router::new()
+        .route("/account", get(get_account).delete(delete_account))
+        .route("/account/export", get(export_account_data))
 }
 
 #[derive(Serialize)]
@@ -23,6 +25,17 @@ struct AccountResponse {
 /// Returns the authenticated user's internal ID.
 async fn get_account(AuthUser(user_id): AuthUser) -> Json<AccountResponse> {
     Json(AccountResponse { user_id })
+}
+
+/// `GET /v1/account/export`
+///
+/// Returns all data associated with the authenticated user as JSON.
+async fn export_account_data(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let data = crate::repository::export_user_data(&state.pool, user_id).await?;
+    Ok(Json(data))
 }
 
 #[derive(Serialize)]

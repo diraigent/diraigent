@@ -153,6 +153,17 @@ import { environment } from '../../../environments/environment';
             </div>
           }
           <div class="pt-4 border-t border-border">
+            <p class="text-sm text-text-secondary mb-3">{{ t('tenantSettings.exportHint') }}</p>
+            <button (click)="exportData()"
+              [disabled]="exportingData()"
+              class="inline-flex items-center gap-2 px-4 py-2 bg-bg-subtle text-text-primary rounded-lg text-sm border border-border hover:border-accent disabled:opacity-50">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              @if (exportingData()) { {{ t('tenantSettings.exporting') }} } @else { {{ t('tenantSettings.exportData') }} }
+            </button>
+          </div>
+          <div class="pt-4 border-t border-border">
             <p class="text-sm text-ctp-red/80 mb-3">{{ t('tenantSettings.deleteAccountWarning') }}</p>
             @if (!confirmingDelete()) {
               <button (click)="confirmingDelete.set(true)"
@@ -246,6 +257,7 @@ export class TenantSettingsPage {
 
   // Account
   authProviderBase = environment.authProviderBase;
+  exportingData = signal(false);
   confirmingDelete = signal(false);
   deletingAccount = signal(false);
   deleteError = signal('');
@@ -359,6 +371,30 @@ export class TenantSettingsPage {
         this.encryptionError.set(err.error?.message || this.transloco.translate('tenantSettings.keyRotationFailed'));
       },
     });
+  }
+
+  exportData(): void {
+    const token = this.auth.getAccessToken();
+    if (!token) return;
+    this.exportingData.set(true);
+    fetch(`${environment.apiServer}/account/export`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `diraigent-export-${new Date().toISOString().slice(0, 10)}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        this.exportingData.set(false);
+      })
+      .catch(() => this.exportingData.set(false));
   }
 
   deleteAccount(): void {
