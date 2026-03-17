@@ -6,7 +6,7 @@ use crate::models::*;
 
 /// Truncate a string to at most `max_chars` characters, appending "…" if truncated.
 /// Unlike byte-index slicing (`s[..n]`), this is UTF-8 safe.
-fn truncate_snippet(s: &str, max_chars: usize) -> String {
+pub fn truncate_snippet(s: &str, max_chars: usize) -> String {
     match s.char_indices().nth(max_chars) {
         Some((byte_idx, _)) => format!("{}…", &s[..byte_idx]),
         None => s.to_string(),
@@ -284,26 +284,25 @@ pub async fn find_related_items(
     let keywords = extract_keywords(query_texts);
     let exclude = exclude_ids.unwrap_or_default();
 
-    let knowledge = search_knowledge(
-        pool,
-        project_id,
-        &keywords,
-        file_paths,
-        &exclude,
-        limit_per_type,
-    )
-    .await?;
-    let decisions = search_decisions(
-        pool,
-        project_id,
-        &keywords,
-        file_paths,
-        &exclude,
-        limit_per_type,
-    )
-    .await?;
-    let observations =
-        search_observations(pool, project_id, &keywords, &exclude, limit_per_type).await?;
+    let (knowledge, decisions, observations) = tokio::try_join!(
+        search_knowledge(
+            pool,
+            project_id,
+            &keywords,
+            file_paths,
+            &exclude,
+            limit_per_type
+        ),
+        search_decisions(
+            pool,
+            project_id,
+            &keywords,
+            file_paths,
+            &exclude,
+            limit_per_type
+        ),
+        search_observations(pool, project_id, &keywords, &exclude, limit_per_type),
+    )?;
 
     Ok(RelatedItems {
         knowledge,

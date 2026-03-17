@@ -1242,6 +1242,13 @@ impl DiraigentDb for PostgresDb {
     async fn get_tenant_for_user(&self, user_id: Uuid) -> Result<Option<Tenant>, AppError> {
         repository::get_tenant_for_user(&self.0, user_id).await
     }
+    async fn check_user_project_tenant(
+        &self,
+        user_id: Uuid,
+        project_id: Uuid,
+    ) -> Result<bool, AppError> {
+        repository::check_user_project_tenant(&self.0, user_id, project_id).await
+    }
 
     // Wrapped Keys
     async fn create_wrapped_key(

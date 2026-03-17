@@ -628,6 +628,14 @@ pub trait DiraigentDb: Send + Sync {
     /// is older than `threshold_days`. Returns the IDs of agents that were revoked.
     async fn revoke_stale_agents(&self, threshold_days: i64) -> anyhow::Result<Vec<Uuid>>;
 
+    /// Check if the user belongs to the same tenant as the project in a single query.
+    /// Returns true if the user is a member of the project's tenant.
+    async fn check_user_project_tenant(
+        &self,
+        user_id: Uuid,
+        project_id: Uuid,
+    ) -> Result<bool, AppError>;
+
     // ── Auth User ────────────────────────────────────────────────────────────
     async fn resolve_or_create_user(&self, auth_user_id: &str) -> Result<Uuid, AppError>;
 

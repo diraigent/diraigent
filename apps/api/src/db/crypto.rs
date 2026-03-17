@@ -1915,6 +1915,13 @@ impl DiraigentDb for CryptoDb {
     async fn get_tenant_for_user(&self, user_id: Uuid) -> Result<Option<Tenant>, AppError> {
         delegate!(self, get_tenant_for_user, user_id)
     }
+    async fn check_user_project_tenant(
+        &self,
+        user_id: Uuid,
+        project_id: Uuid,
+    ) -> Result<bool, AppError> {
+        delegate!(self, check_user_project_tenant, user_id, project_id)
+    }
     async fn create_wrapped_key(
         &self,
         tenant_id: Uuid,
