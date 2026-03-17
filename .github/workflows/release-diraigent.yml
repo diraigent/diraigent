@@ -95,6 +95,9 @@ jobs:
       - name: Install cross-compilation tools (Linux ARM64)
         if: matrix.cross
         run: |
+          # Remove arm64 architecture if present — Azure mirrors don't carry
+          # arm64 indexes and apt-get update fails with 404s.
+          sudo dpkg --remove-architecture arm64 2>/dev/null || true
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
 

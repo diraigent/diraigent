@@ -1,5 +1,20 @@
 # Changelog
 
+
+## v20260317-2254 (2026-03-17)
+
+### Changed
+- **CI/CD**: Publish GitHub releases as part of the release pipeline
+- **Web**: Improved container build caching for faster deployments
+- **API**: Updated container base image
+- **Orchestra**: Updated container base image
+
+### Fixed
+- **Orchestra**: Correct CLI entrypoint routing for TUI and API binaries
+- **Forgejo Client**: Fix actions API endpoint URLs
+
+---
+
 ## v20260317-2215 (2026-03-17)
 
 ### Added
