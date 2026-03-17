@@ -764,11 +764,11 @@ impl DiraigentDb for CryptoDb {
     }
     async fn list_works_for_task(&self, task_id: Uuid) -> Result<Vec<Work>, AppError> {
         let mut works = self.inner.list_works_for_task(task_id).await?;
-        if !works.is_empty() {
-            if let Some(dek) = self.dek_for_project(works[0].project_id).await? {
-                for w in &mut works {
-                    Self::decrypt_work(&dek, w)?;
-                }
+        if !works.is_empty()
+            && let Some(dek) = self.dek_for_project(works[0].project_id).await?
+        {
+            for w in &mut works {
+                Self::decrypt_work(&dek, w)?;
             }
         }
         Ok(works)

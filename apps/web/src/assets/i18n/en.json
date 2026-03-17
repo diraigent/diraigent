@@ -534,6 +534,8 @@
     "showReleaseHint": "When enabled, a release button is shown on the work page that allows squash-merging dev into main, tagging, and pushing to all remotes.",
     "uploadLogs": "Upload Task Logs",
     "uploadLogsHint": "When enabled, the orchestra uploads task execution logs (including token usage and cost) to the API after each worker completes.",
+    "storeDiffs": "Store Diffs",
+    "storeDiffsHint": "When enabled, the orchestra collects and stores per-file diffs after each task completes. Disabled by default to save storage.",
     "doneRetentionDays": "Done Task Retention (days)",
     "doneRetentionDaysHint": "Number of days to keep completed and cancelled tasks visible before hiding them. Set to 0 to hide immediately.",
     "observationRetentionDays": "Observation Retention (days)",

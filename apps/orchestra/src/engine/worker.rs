@@ -191,6 +191,7 @@ pub async fn run_worker(
     step_config: &StepConfig,
     dek: Option<&Dek>,
     upload_logs: bool,
+    store_diffs: bool,
 ) -> Result<WorkerResult> {
     let tid = TaskId::new(task_id);
     let branch_name = tid.branch_name();
@@ -290,19 +291,20 @@ pub async fn run_worker(
         .commit_changes(&worktree_path, task_id)
         .unwrap_or(false);
 
-    // Collect and post changed files (always check branch diff, not just uncommitted changes —
-    // the agent commits its own changes during the run, so commit_changes may find nothing)
-    match worktree_mgr.collect_changed_files(task_id) {
-        Ok(files) if !files.is_empty() => {
-            info!("worker {tid}: posting {} changed files", files.len());
-            if let Err(e) = api.post_changed_files(task_id, &files).await {
-                warn!("worker {tid}: failed to post changed files: {e}");
+    // Collect and post changed files when store_diffs is enabled in project metadata.
+    if store_diffs {
+        match worktree_mgr.collect_changed_files(task_id) {
+            Ok(files) if !files.is_empty() => {
+                info!("worker {tid}: posting {} changed files", files.len());
+                if let Err(e) = api.post_changed_files(task_id, &files).await {
+                    warn!("worker {tid}: failed to post changed files: {e}");
+                }
             }
+            Ok(_) => {
+                info!("worker {tid}: no changed files found in branch diff");
+            }
+            Err(e) => warn!("worker {tid}: failed to collect changed files: {e}"),
         }
-        Ok(_) => {
-            info!("worker {tid}: no changed files found in branch diff");
-        }
-        Err(e) => warn!("worker {tid}: failed to collect changed files: {e}"),
     }
 
     // Scope violation detection: for implement steps, warn if the diff has far more

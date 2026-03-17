@@ -675,6 +675,7 @@ pub fn module_of(path: &str) -> String {
 }
 
 /// Try to resolve an import string to a known module in the workspace.
+#[allow(dead_code)]
 fn resolve_import_target(
     import: &str,
     known_modules: &std::collections::BTreeSet<String>,
@@ -707,6 +708,7 @@ fn resolve_import_target(
 ///
 /// For each file, maps its module to the set of modules it imports from.
 /// Only considers imports that reference another module in the workspace.
+#[allow(dead_code)]
 pub fn build_module_graph(
     manifest: &Manifest,
 ) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
@@ -745,6 +747,7 @@ pub fn build_module_graph(
 
 /// Detect cycles in a module dependency graph using Tarjan's SCC algorithm.
 /// Returns cycles as sorted vectors of module names (only SCCs with size > 1).
+#[allow(dead_code)]
 pub fn detect_module_cycles(
     graph: &std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
 ) -> Vec<Vec<String>> {
