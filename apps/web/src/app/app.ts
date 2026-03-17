@@ -59,10 +59,16 @@ import { ChatService } from './core/services/chat.service';
         <div class="text-center space-y-6">
           <h1 class="text-3xl font-semibold text-accent">Diraigent</h1>
           <p class="text-text-secondary">Sign in to access the dashboard</p>
-          <button (click)="auth.login()"
-                  class="px-6 py-2 rounded-lg bg-accent text-white hover:opacity-90 transition-opacity">
-            Login
-          </button>
+          <div class="flex gap-3 justify-center">
+            <button (click)="auth.login()"
+                    class="px-6 py-2 rounded-lg bg-accent text-white hover:opacity-90 transition-opacity">
+              Login
+            </button>
+            <a [href]="auth.registrationUrl"
+               class="px-6 py-2 rounded-lg border border-border text-text-secondary hover:bg-bg-muted transition-colors">
+              Register
+            </a>
+          </div>
         </div>
       </div>
       <router-outlet />
