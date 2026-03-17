@@ -111,6 +111,20 @@ pub async fn export_user_data(pool: &PgPool, user_id: Uuid) -> Result<serde_json
 pub async fn delete_user_account(pool: &PgPool, user_id: Uuid) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
 
+    // ── Delete sole-member tenants ────────────────────────────────────────
+    // If the user is the only member of a tenant, delete the tenant entirely.
+    // This cascades to projects, tasks, and all project-owned data.
+    sqlx::query(
+        "DELETE FROM diraigent.tenant WHERE id IN (
+            SELECT tm.tenant_id FROM diraigent.tenant_member tm
+            WHERE tm.user_id = $1
+            AND (SELECT count(*) FROM diraigent.tenant_member tm2 WHERE tm2.tenant_id = tm.tenant_id) = 1
+        )",
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+
     // ── Nullify non-FK references ─────────────────────────────────────────
 
     // audit_log.actor_user_id (nullable, no FK)
