@@ -1,5 +1,39 @@
 # Changelog
 
+## v20260317-2310 (2026-03-17)
+
+### Added
+- **Web**: CI pipelines page with filters, auto-polling, and run detail drilldown
+- **Web**: Forgejo and GitHub CI onboarding setup wizards
+- **Web**: Provider configuration UI in project settings
+- **Web**: Active work section on dashboard with cross-project items
+- **Web**: Plan tasks button and preview dialog for work items
+- **Web**: Acceptance criteria field on work items
+- **Web**: Deep-link support for work items via query params
+- **Web**: Version info in account settings
+- **API**: Multi-provider support (OpenAI, Ollama) with per-project configuration
+- **API**: Forgejo CI integration with webhook ingestion and sync
+- **API**: GitHub CI integration with webhooks and registration
+- **API**: Account deletion and full user data download
+- **API**: User registration flow
+- **Orchestra**: Codebase static analyzer with dependency graph and API mapping
+- **Orchestra**: Scheduled re-indexing via cron and git hooks
+- **CI/CD**: Container and binary signing with cosign and GPG
+
+### Changed
+- **Web**: Renamed "Goals" to "Work" across all UI
+- **API**: Renamed Goals to Work in database and endpoints
+- **Orchestra**: Plan and chat handlers configurable per project
+- **TUI**: Renamed Goals to Work in all views
+
+### Fixed
+- **Web**: Mobile horizontal scrolling and dropdown clipping issues
+- **Orchestra**: Merge rollback on push failure
+- **API**: Authorization checks on provider config endpoints
+- **API**: Various stability and encryption fixes
+
+---
+
 
 ## v20260317-2254 (2026-03-17)
 
