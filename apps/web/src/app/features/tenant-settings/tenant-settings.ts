@@ -128,7 +128,7 @@ import { environment } from '../../../environments/environment';
             <div class="flex flex-wrap gap-3">
               <a [href]="authProviderBase + '/if/flow/diraigent-user-settings/'"
                 target="_blank" rel="noopener"
-                class="inline-flex items-center gap-2 px-4 py-2 bg-bg-subtle text-text-primary rounded-lg text-sm border border-border hover:border-accent">
+                class="inline-flex items-center gap-2 px-4 py-2 bg-accent/10 text-accent rounded-lg text-sm border border-accent/30 hover:bg-accent/20">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
@@ -136,7 +136,7 @@ import { environment } from '../../../environments/environment';
               </a>
               <a [href]="authProviderBase + '/if/flow/default-password-change/'"
                 target="_blank" rel="noopener"
-                class="inline-flex items-center gap-2 px-4 py-2 bg-bg-subtle text-text-primary rounded-lg text-sm border border-border hover:border-accent">
+                class="inline-flex items-center gap-2 px-4 py-2 bg-accent/10 text-accent rounded-lg text-sm border border-accent/30 hover:bg-accent/20">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
                 </svg>
@@ -144,7 +144,7 @@ import { environment } from '../../../environments/environment';
               </a>
               <a [href]="authProviderBase + '/if/flow/default-authenticator-totp-setup/'"
                 target="_blank" rel="noopener"
-                class="inline-flex items-center gap-2 px-4 py-2 bg-bg-subtle text-text-primary rounded-lg text-sm border border-border hover:border-accent">
+                class="inline-flex items-center gap-2 px-4 py-2 bg-accent/10 text-accent rounded-lg text-sm border border-accent/30 hover:bg-accent/20">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                 </svg>
@@ -154,36 +154,26 @@ import { environment } from '../../../environments/environment';
           }
           <div class="pt-4 border-t border-border">
             <p class="text-sm text-ctp-red/80 mb-3">{{ t('tenantSettings.deleteAccountWarning') }}</p>
-            @if (authProviderBase) {
-              <a [href]="authProviderBase + '/if/flow/diraigent-account-delete/'"
-                class="inline-flex items-center gap-2 px-4 py-2 bg-ctp-red/10 text-ctp-red rounded-lg text-sm border border-ctp-red/30 hover:bg-ctp-red/20">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
+            @if (!confirmingDelete()) {
+              <button (click)="confirmingDelete.set(true)"
+                class="px-4 py-2 bg-ctp-red/10 text-ctp-red rounded-lg text-sm border border-ctp-red/30 hover:bg-ctp-red/20">
                 {{ t('tenantSettings.deleteAccount') }}
-              </a>
+              </button>
             } @else {
-              @if (!confirmingDelete()) {
-                <button (click)="confirmingDelete.set(true)"
-                  class="px-4 py-2 bg-ctp-red/10 text-ctp-red rounded-lg text-sm border border-ctp-red/30 hover:bg-ctp-red/20">
-                  {{ t('tenantSettings.deleteAccount') }}
+              <div class="flex items-center gap-3">
+                <button (click)="deleteAccount()"
+                  [disabled]="deletingAccount()"
+                  class="px-4 py-2 bg-ctp-red text-ctp-base rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
+                  @if (deletingAccount()) { {{ t('tenantSettings.deleting') }} } @else { {{ t('tenantSettings.confirmDelete') }} }
                 </button>
-              } @else {
-                <div class="flex items-center gap-3">
-                  <button (click)="deleteAccount()"
-                    [disabled]="deletingAccount()"
-                    class="px-4 py-2 bg-ctp-red text-ctp-base rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
-                    @if (deletingAccount()) { {{ t('tenantSettings.deleting') }} } @else { {{ t('tenantSettings.confirmDelete') }} }
-                  </button>
-                  <button (click)="confirmingDelete.set(false)"
-                    class="px-4 py-2 bg-bg-subtle text-text-primary rounded-lg text-sm border border-border hover:border-accent">
-                    {{ t('common.cancel') }}
-                  </button>
-                </div>
-              }
-              @if (deleteError()) {
-                <p class="text-sm text-ctp-red mt-2">{{ deleteError() }}</p>
-              }
+                <button (click)="confirmingDelete.set(false)"
+                  class="px-4 py-2 bg-bg-subtle text-text-primary rounded-lg text-sm border border-border hover:border-accent">
+                  {{ t('common.cancel') }}
+                </button>
+              </div>
+            }
+            @if (deleteError()) {
+              <p class="text-sm text-ctp-red mt-2">{{ deleteError() }}</p>
             }
           </div>
         </div>
@@ -385,8 +375,12 @@ export class TenantSettingsPage {
     })
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        // Fully clear local tokens + redirect to OIDC end-session endpoint
-        this.auth.logout();
+        if (this.authProviderBase) {
+          // Redirect to Authentik to also delete the auth identity
+          window.location.href = this.authProviderBase + '/if/flow/diraigent-account-delete/';
+        } else {
+          this.auth.logout();
+        }
       })
       .catch(err => {
         this.deletingAccount.set(false);

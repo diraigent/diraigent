@@ -254,7 +254,7 @@ pub async fn spawn_worker(
     );
 
     // Resolve per-project paths from the API.
-    let (git_mode, git_root, working_dir, auto_push, default_branch, upload_logs) =
+    let (git_mode, git_root, working_dir, auto_push, default_branch, upload_logs, store_diffs) =
         match project_paths::resolve_project_paths(api, project_id, &config.projects_path).await {
             Ok(paths) => (
                 paths.git_mode,
@@ -263,6 +263,7 @@ pub async fn spawn_worker(
                 paths.auto_push,
                 paths.default_branch,
                 paths.upload_logs,
+                paths.store_diffs,
             ),
             Err(e) => {
                 warn!("spawn {tid}: failed to resolve project paths: {e}");
@@ -272,6 +273,7 @@ pub async fn spawn_worker(
                     config.projects_path.clone(),
                     false,
                     "main".to_string(),
+                    false,
                     false,
                 )
             }
@@ -354,6 +356,7 @@ pub async fn spawn_worker(
                 &step_config,
                 dek.as_ref(),
                 upload_logs,
+                store_diffs,
             )
             .await
             {

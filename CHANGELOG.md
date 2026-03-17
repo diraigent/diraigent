@@ -1,5 +1,37 @@
 # Changelog
 
+## v20250317-1345 (2026-03-17)
+
+### Added
+- **API**: Multi-provider support (OpenAI, Ollama, Anthropic) with encrypted config storage
+- **API**: Forgejo CI integration with webhook validation and run ingestion
+- **API**: GitHub CI integration with webhooks and sync
+- **API**: AI-powered work item planning with auto-generated success criteria
+- **API**: Composite task scoring (age, priority, goal-alignment, dependency-graph)
+- **API**: User registration and account deletion endpoints
+- **Orchestra**: Configurable per-project AI providers with step executor routing
+- **Orchestra**: Scheduled re-indexing via cron and git hooks
+- **Analyzer**: Static analyzer with dependency graph, API surface mapper, and module summarizer
+- **Web**: CI pipelines page with run detail drilldown
+- **Web**: Forgejo and GitHub CI onboarding wizards
+- **Web**: Provider configuration UI in project settings
+- **Web**: AI planning dialog for work items with task preview
+- **Web**: Active Work dashboard section with cross-project items
+- **CI/CD**: Container and binary signing with cosign and GPG
+
+### Changed
+- **Web**: Renamed Goals to Work across entire UI
+- **TUI**: Renamed Goals to Work; renamed Description to Spec
+- **Orchestra**: Switched to model-agnostic architecture with claude-code CLI
+- **Web**: Combined token usage into single multi-project chart
+
+### Fixed
+- **API**: Encrypted integration tokens and fixed authorization gaps
+- **Web**: Mobile horizontal scrolling, dropdown clipping, and various UI fixes
+- **API**: Clippy lint fixes for let-chain patterns and unused imports
+
+---
+
 ## v20260314 (2026-03-14)
 
 ### Added

@@ -19,6 +19,9 @@ pub struct ProjectPaths {
     pub default_branch: String,
     /// When true, upload task execution logs to the API after each worker completes.
     pub upload_logs: bool,
+    /// When true, collect and store per-file diffs after each worker completes.
+    /// Disabled by default to save storage and processing time.
+    pub store_diffs: bool,
 }
 
 /// Fetch the project record and resolve git paths based on `git_mode`.
@@ -46,6 +49,9 @@ pub async fn resolve_project_paths(
     let upload_logs = project["metadata"]["upload_logs"]
         .as_bool()
         .unwrap_or(false);
+    let store_diffs = project["metadata"]["store_diffs"]
+        .as_bool()
+        .unwrap_or(false);
     let default_branch = project["default_branch"]
         .as_str()
         .unwrap_or("main")
@@ -59,6 +65,7 @@ pub async fn resolve_project_paths(
             auto_push,
             default_branch,
             upload_logs,
+            store_diffs,
         });
     }
 
@@ -92,6 +99,7 @@ pub async fn resolve_project_paths(
         auto_push,
         default_branch,
         upload_logs,
+        store_diffs,
     })
 }
 

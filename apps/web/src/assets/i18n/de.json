@@ -532,6 +532,8 @@
     "showReleaseHint": "Wenn aktiviert, wird auf der Work-Seite ein Release-Button angezeigt, der Squash-Merge von dev nach main, Tagging und Push zu allen Remotes ermoeglicht.",
     "uploadLogs": "Task-Logs hochladen",
     "uploadLogsHint": "Wenn aktiviert, laedt der Orchestrator nach Abschluss jedes Workers die Ausfuehrungsprotokolle (einschliesslich Token-Nutzung und Kosten) zur API hoch.",
+    "storeDiffs": "Diffs speichern",
+    "storeDiffsHint": "Wenn aktiviert, sammelt und speichert der Orchestrator nach Abschluss jeder Aufgabe die Diffs pro Datei. Standardmaessig deaktiviert um Speicherplatz zu sparen.",
     "doneRetentionDays": "Erledigte Aufgaben Aufbewahrung (Tage)",
     "doneRetentionDaysHint": "Anzahl der Tage, die erledigte und abgebrochene Aufgaben sichtbar bleiben, bevor sie ausgeblendet werden. 0 zum sofortigen Ausblenden.",
     "observationRetentionDays": "Beobachtungen Aufbewahrung (Tage)",
