@@ -1,7 +1,10 @@
 import { Component, Signal, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { catchError, of, switchMap, interval, startWith } from 'rxjs';
 import { AuthService } from '../../../core/services/auth.service';
+import { AgentsApiService } from '../../../core/services/agents-api.service';
 import { NavBadgeService } from '../../../core/services/nav-badge.service';
 import { ThemeToggleComponent } from '../theme-toggle/theme-toggle';
 import { ProjectSwitcherComponent } from '../project-switcher/project-switcher';
@@ -38,8 +41,19 @@ export class SidebarComponent {
   auth = inject(AuthService);
   badges = inject(NavBadgeService);
   private router = inject(Router);
+  private agentsApi = inject(AgentsApiService);
   mobileOpen = signal(false);
+  hasAgents = signal(false);
   readonly isNavGroup = isNavGroup;
+
+  constructor() {
+    // Poll agent count to show "no agents" CTA
+    interval(60_000).pipe(
+      startWith(0),
+      switchMap(() => this.agentsApi.getAgents().pipe(catchError(() => of([])))),
+      takeUntilDestroyed(),
+    ).subscribe(list => this.hasAgents.set(list.length > 0));
+  }
 
   /** Cast helper for template type safety in @else branch */
   asItem(entry: NavEntry): NavItem {

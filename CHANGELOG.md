@@ -1,5 +1,22 @@
 # Changelog
 
+## v20260317-1841 (2026-03-17)
+
+### Added
+- **Web**: Multi-step agent onboarding wizard with provider setup
+- **Web**: Sidebar prompt to create first agent for new users
+- **API**: Auto-unlock tenant encryption using stored wrapped keys
+
+### Changed
+- **API**: Agent registration now auto-assigns a default role
+- **Web**: Agent creation flow split into details, provider config, and credentials steps
+
+### Removed
+- **API**: Unused subtask and work-task count endpoints
+- **Orchestra**: Dead code cleanup (unused polling, worktree cleanup, context helpers)
+
+---
+
 ## v20250317-1345 (2026-03-17)
 
 ### Added

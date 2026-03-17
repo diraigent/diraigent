@@ -29,16 +29,15 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use super::DiraigentDb;
-use crate::crypto::{CryptoError, Dek, DekCache};
+use crate::crypto::{self, CryptoError, Dek, DekCache};
 use crate::error::AppError;
 use crate::models::*;
 
 /// A wrapper around a `DiraigentDb` that encrypts/decrypts sensitive fields transparently.
 ///
 /// The `dek_cache` is populated when a user authenticates with a tenant that has
-/// encryption enabled. If no DEK is cached for a tenant, operations on encrypted
-/// fields will fail with `CryptoError::NotInitialized` (for encrypted tenants)
-/// or pass through unchanged (for `encryption_mode = "none"`).
+/// encryption enabled. If no DEK is cached, auto-unlock is attempted using any
+/// stored login_derived wrapped key.
 pub struct CryptoDb {
     inner: Arc<dyn DiraigentDb>,
     dek_cache: DekCache,
@@ -50,16 +49,32 @@ impl CryptoDb {
     }
 
     /// Try to get the DEK for a tenant. Returns None if tenant has no encryption.
+    /// Auto-unlocks from a stored wrapped key if the cache is empty.
     async fn dek_for_tenant(&self, tenant_id: Uuid) -> Result<Option<Dek>, AppError> {
         let tenant = self.inner.get_tenant_by_id(tenant_id).await?;
         if tenant.encryption_mode == "none" {
             return Ok(None);
         }
-        self.dek_cache
-            .get(&tenant_id)
-            .await
-            .ok_or_else(|| CryptoError::NotInitialized.into())
-            .map(Some)
+        // Fast path: DEK already cached.
+        if let Some(dek) = self.dek_cache.get(&tenant_id).await {
+            return Ok(Some(dek));
+        }
+        // Auto-unlock: find any login_derived wrapped key and derive KEK to unwrap.
+        let salt = tenant
+            .key_salt
+            .as_deref()
+            .ok_or(CryptoError::NotInitialized)?;
+        let wrapped = self
+            .inner
+            .get_any_login_derived_key(tenant_id)
+            .await?
+            .ok_or(CryptoError::NoWrappedKey)?;
+        let user_id = wrapped.user_id.ok_or(CryptoError::NoWrappedKey)?;
+        let kek = crypto::derive_kek(&user_id.to_string(), salt)?;
+        let dek = Dek::unwrap(&wrapped.wrapped_dek, &kek)?;
+        self.dek_cache.put(tenant_id, dek.clone()).await;
+        tracing::info!(tenant_id = %tenant_id, "auto-unlocked tenant encryption from stored wrapped key");
+        Ok(Some(dek))
     }
 
     /// Get DEK for the tenant that owns a project.
@@ -385,26 +400,6 @@ impl DiraigentDb for CryptoDb {
     async fn delete_task(&self, task_id: Uuid) -> Result<(), AppError> {
         delegate!(self, delete_task, task_id)
     }
-    async fn list_subtasks(
-        &self,
-        parent_id: Uuid,
-        limit: i64,
-        offset: i64,
-    ) -> Result<Vec<Task>, AppError> {
-        let mut tasks = self.inner.list_subtasks(parent_id, limit, offset).await?;
-        if let Some(first) = tasks.first()
-            && let Some(dek) = self.dek_for_project(first.project_id).await?
-        {
-            for t in &mut tasks {
-                Self::decrypt_task(&dek, t)?;
-            }
-        }
-        Ok(tasks)
-    }
-    async fn count_subtasks(&self, parent_id: Uuid) -> Result<i64, AppError> {
-        delegate!(self, count_subtasks, parent_id)
-    }
-
     async fn update_task_cost(
         &self,
         task_id: Uuid,
@@ -546,9 +541,6 @@ impl DiraigentDb for CryptoDb {
     }
     async fn get_agent_by_id(&self, id: Uuid) -> Result<Agent, AppError> {
         delegate!(self, get_agent_by_id, id)
-    }
-    async fn list_agents(&self, p: &Pagination) -> Result<Vec<Agent>, AppError> {
-        delegate!(self, list_agents, p)
     }
     async fn list_tenant_agents(
         &self,
@@ -714,9 +706,6 @@ impl DiraigentDb for CryptoDb {
         }
         Ok(tasks)
     }
-    async fn count_work_tasks(&self, work_id: Uuid) -> Result<i64, AppError> {
-        delegate!(self, count_work_tasks, work_id)
-    }
     async fn bulk_link_tasks(&self, work_id: Uuid, task_ids: &[Uuid]) -> Result<i64, AppError> {
         delegate!(self, bulk_link_tasks, work_id, task_ids)
     }
@@ -761,17 +750,6 @@ impl DiraigentDb for CryptoDb {
             project_id,
             exclude_task_id
         )
-    }
-    async fn list_works_for_task(&self, task_id: Uuid) -> Result<Vec<Work>, AppError> {
-        let mut works = self.inner.list_works_for_task(task_id).await?;
-        if !works.is_empty()
-            && let Some(dek) = self.dek_for_project(works[0].project_id).await?
-        {
-            for w in &mut works {
-                Self::decrypt_work(&dek, w)?;
-            }
-        }
-        Ok(works)
     }
     async fn work_status_counts(&self, project_id: Uuid) -> Result<Vec<(String, i64)>, AppError> {
         delegate!(self, work_status_counts, project_id)
@@ -1951,6 +1929,12 @@ impl DiraigentDb for CryptoDb {
         user_id: Uuid,
     ) -> Result<Vec<WrappedKey>, AppError> {
         delegate!(self, list_wrapped_keys, tenant_id, user_id)
+    }
+    async fn get_any_login_derived_key(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Option<WrappedKey>, AppError> {
+        delegate!(self, get_any_login_derived_key, tenant_id)
     }
     async fn delete_wrapped_key(&self, key_id: Uuid) -> Result<(), AppError> {
         delegate!(self, delete_wrapped_key, key_id)

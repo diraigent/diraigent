@@ -15,22 +15,6 @@ use crate::git::strategy as git_strategy;
 use crate::project::paths as project_paths;
 use crate::task_id::TaskId;
 
-pub async fn poll_ready_tasks(
-    api: &ProjectsApi,
-    config: &Config,
-    active: &ActiveTasks,
-    lock_queue: &LockQueue,
-) {
-    let projects = match api.list_projects().await {
-        Ok(p) => p,
-        Err(e) => {
-            warn!("poll: failed to fetch projects: {e}");
-            return;
-        }
-    };
-    poll_ready_tasks_with_projects(api, config, active, lock_queue, &projects).await;
-}
-
 pub async fn poll_ready_tasks_with_projects(
     api: &ProjectsApi,
     config: &Config,

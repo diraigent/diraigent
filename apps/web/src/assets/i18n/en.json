@@ -20,7 +20,10 @@
     "reference": "Reference",
     "stepTemplates": "Step Templates",
     "work": "Work",
-    "pipelines": "Pipelines"
+    "pipelines": "Pipelines",
+    "noAgents": "No agents yet",
+    "noAgentsHint": "Create an agent to start automating tasks.",
+    "createAgent": "Create Agent"
   },
   "review": {
     "awaitingReview": "Awaiting Review",
@@ -88,7 +91,9 @@
     "save": "Save",
     "copy": "Copy",
     "copied": "Copied",
-    "done": "Done"
+    "done": "Done",
+    "next": "Next",
+    "skip": "Skip"
   },
   "integrations": {
     "title": "Integrations",
@@ -145,7 +150,15 @@
     "dekWarning": "The encryption key (DIRAIGENT_DEK) is shown once. Store it securely.",
     "revoke": "Revoke Agent",
     "role": "Role",
-    "roleHint": "Assigns the agent as a team member with this role."
+    "roleHint": "Assigns the agent as a team member with this role.",
+    "providerTitle": "Configure AI Provider",
+    "providerHint": "Set up the API key for the AI provider your agent will use.",
+    "providerAlreadyConfigured": "A provider is already configured. You can add another or skip this step.",
+    "provider": "Provider",
+    "apiKey": "API Key",
+    "baseUrl": "Base URL",
+    "baseUrlHint": "Optional. Override the default API endpoint for this provider.",
+    "skipProvider": "Skip for now"
   },
   "team": {
     "roles": "Roles",

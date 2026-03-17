@@ -74,15 +74,6 @@ pub trait DiraigentDb: Send + Sync {
     async fn release_task(&self, task_id: Uuid) -> Result<Task, AppError>;
     async fn delete_task(&self, task_id: Uuid) -> Result<(), AppError>;
 
-    // ── Subtasks (parent-child) ─────────────────────────────────────────────
-    async fn list_subtasks(
-        &self,
-        parent_id: Uuid,
-        limit: i64,
-        offset: i64,
-    ) -> Result<Vec<Task>, AppError>;
-    async fn count_subtasks(&self, parent_id: Uuid) -> Result<i64, AppError>;
-
     // ── Task Cost Metrics ─────────────────────────────────────────────────────
     async fn update_task_cost(
         &self,
@@ -147,7 +138,6 @@ pub trait DiraigentDb: Send + Sync {
         key_hash: &str,
     ) -> Result<Option<(Uuid, Uuid)>, AppError>;
     async fn get_agent_by_id(&self, id: Uuid) -> Result<Agent, AppError>;
-    async fn list_agents(&self, p: &Pagination) -> Result<Vec<Agent>, AppError>;
     async fn list_tenant_agents(
         &self,
         tenant_id: Uuid,
@@ -187,7 +177,6 @@ pub trait DiraigentDb: Send + Sync {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<Task>, AppError>;
-    async fn count_work_tasks(&self, work_id: Uuid) -> Result<i64, AppError>;
     async fn bulk_link_tasks(&self, work_id: Uuid, task_ids: &[Uuid]) -> Result<i64, AppError>;
     async fn get_work_stats(&self, work_id: Uuid) -> Result<WorkStats, AppError>;
     async fn compute_auto_status(&self, work_id: Uuid) -> Result<Option<String>, AppError>;
@@ -209,7 +198,6 @@ pub trait DiraigentDb: Send + Sync {
         project_id: Uuid,
         exclude_task_id: Uuid,
     ) -> Result<Vec<Uuid>, AppError>;
-    async fn list_works_for_task(&self, task_id: Uuid) -> Result<Vec<Work>, AppError>;
     async fn work_status_counts(&self, project_id: Uuid) -> Result<Vec<(String, i64)>, AppError>;
 
     // ── Work Comments ──────────────────────────────────────────────────────────
@@ -718,6 +706,10 @@ pub trait DiraigentDb: Send + Sync {
         tenant_id: Uuid,
         user_id: Uuid,
     ) -> Result<Vec<WrappedKey>, AppError>;
+    async fn get_any_login_derived_key(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Option<WrappedKey>, AppError>;
     async fn delete_wrapped_key(&self, key_id: Uuid) -> Result<(), AppError>;
 
     // ── Packages ─────────────────────────────────────────────────────────────

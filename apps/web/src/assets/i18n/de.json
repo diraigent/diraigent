@@ -19,7 +19,10 @@
     "reference": "Referenz",
     "stepTemplates": "Schrittvorlagen",
     "work": "Arbeit",
-    "pipelines": "Pipelines"
+    "pipelines": "Pipelines",
+    "noAgents": "Noch keine Agenten",
+    "noAgentsHint": "Erstelle einen Agenten, um Aufgaben zu automatisieren.",
+    "createAgent": "Agent erstellen"
   },
   "review": {
     "awaitingReview": "Wartet auf Review",
@@ -87,7 +90,9 @@
     "save": "Speichern",
     "copy": "Kopieren",
     "copied": "Kopiert",
-    "done": "Fertig"
+    "done": "Fertig",
+    "next": "Weiter",
+    "skip": "Ueberspringen"
   },
   "integrations": {
     "title": "Integrationen",
@@ -144,7 +149,15 @@
     "dekWarning": "Der Verschlüsselungsschlüssel (DIRAIGENT_DEK) wird nur einmal angezeigt. Sicher aufbewahren.",
     "revoke": "Agent widerrufen",
     "role": "Rolle",
-    "roleHint": "Weist den Agenten als Teammitglied mit dieser Rolle zu."
+    "roleHint": "Weist den Agenten als Teammitglied mit dieser Rolle zu.",
+    "providerTitle": "KI-Anbieter konfigurieren",
+    "providerHint": "Richte den API-Schluessel fuer den KI-Anbieter ein, den dein Agent verwenden wird.",
+    "providerAlreadyConfigured": "Ein Anbieter ist bereits konfiguriert. Du kannst einen weiteren hinzufuegen oder diesen Schritt ueberspringen.",
+    "provider": "Anbieter",
+    "apiKey": "API-Schluessel",
+    "baseUrl": "Basis-URL",
+    "baseUrlHint": "Optional. Ueberschreibt den Standard-API-Endpunkt fuer diesen Anbieter.",
+    "skipProvider": "Vorerst ueberspringen"
   },
   "team": {
     "roles": "Rollen",

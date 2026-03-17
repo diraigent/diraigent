@@ -8,6 +8,7 @@ import {
 } from '../../core/services/agents-api.service';
 import { SpRole, TeamApiService } from '../../core/services/team-api.service';
 import { TenantApiService } from '../../core/services/tenant-api.service';
+import { ProviderConfigsApiService, ProviderConfig } from '../../core/services/provider-configs-api.service';
 import { ModalWrapperComponent } from '../../shared/components/modal-wrapper/modal-wrapper';
 
 const CAPABILITY_PRESETS: Record<string, string[]> = {
@@ -15,6 +16,10 @@ const CAPABILITY_PRESETS: Record<string, string[]> = {
   Backend: ['rust', 'sql', 'docker'],
   Frontend: ['typescript', 'angular', 'css'],
 };
+
+type OnboardingStep = 'details' | 'provider' | 'credentials';
+
+const STEP_LIST: OnboardingStep[] = ['details', 'provider', 'credentials'];
 
 @Component({
   selector: 'app-create-agent-modal',
@@ -24,8 +29,36 @@ const CAPABILITY_PRESETS: Record<string, string[]> = {
     <ng-container *transloco="let t">
       <app-modal-wrapper (closed)="onCancel()" maxWidth="max-w-xl" [scrollable]="true">
 
-        <!-- Step 1: Create -->
-        @if (!result()) {
+        <!-- Progress bar -->
+        <div class="flex items-center gap-2 mb-6">
+          @for (s of stepList; track s; let i = $index) {
+            <div class="flex items-center gap-2" [class.flex-1]="i < stepList.length - 1">
+              <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 transition-colors"
+                [class.bg-accent]="stepIndex() >= i"
+                [class.text-bg]="stepIndex() >= i"
+                [class.bg-surface]="stepIndex() < i"
+                [class.text-text-secondary]="stepIndex() < i"
+                [class.border]="stepIndex() < i"
+                [class.border-border]="stepIndex() < i">
+                @if (stepIndex() > i) {
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                  </svg>
+                } @else {
+                  {{ i + 1 }}
+                }
+              </div>
+              @if (i < stepList.length - 1) {
+                <div class="flex-1 h-0.5 rounded transition-colors"
+                  [class.bg-accent]="stepIndex() > i"
+                  [class.bg-border]="stepIndex() <= i"></div>
+              }
+            </div>
+          }
+        </div>
+
+        <!-- Step 1: Agent Details -->
+        @if (step() === 'details') {
           <h2 class="text-lg font-semibold text-text-primary mb-5">{{ t('agents.createTitle') }}</h2>
 
           <div class="space-y-4">
@@ -58,22 +91,6 @@ const CAPABILITY_PRESETS: Record<string, string[]> = {
                        focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary" />
             </div>
 
-            @if (roles().length > 0) {
-              <label class="block">
-                <span class="block text-sm font-medium text-text-secondary mb-1">
-                  {{ t('agents.role') }}
-                </span>
-                <select [(ngModel)]="selectedRoleId"
-                  class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                         focus:outline-none focus:ring-1 focus:ring-accent">
-                  @for (role of roles(); track role.id) {
-                    <option [value]="role.id">{{ role.name }}</option>
-                  }
-                </select>
-                <span class="text-xs text-text-muted mt-1 block">{{ t('agents.roleHint') }}</span>
-              </label>
-            }
-
             @if (error()) {
               <p class="text-sm text-ctp-red">{{ error() }}</p>
             }
@@ -84,61 +101,130 @@ const CAPABILITY_PRESETS: Record<string, string[]> = {
                        rounded-lg hover:bg-surface transition-colors">
                 {{ t('common.cancel') }}
               </button>
-              <button (click)="onSubmit()" type="button" [disabled]="!name.trim() || saving()"
+              <button (click)="onSubmitDetails()" type="button" [disabled]="!name.trim() || saving()"
                 class="flex-1 px-4 py-2 text-sm font-medium bg-accent text-bg rounded-lg
                        hover:opacity-90 disabled:opacity-50 transition-opacity">
                 @if (saving()) {
                   {{ t('common.saving') }}
                 } @else {
-                  {{ t('agents.create') }}
+                  {{ t('common.next') }}
                 }
               </button>
             </div>
           </div>
         }
 
-        <!-- Step 2: Show API key -->
-        @if (result(); as r) {
-          <h2 class="text-lg font-semibold text-text-primary mb-2">{{ t('agents.created') }}</h2>
-          <p class="text-sm text-text-secondary mb-5">{{ t('agents.apiKeyWarning') }}</p>
+        <!-- Step 2: Provider Setup -->
+        @if (step() === 'provider') {
+          <h2 class="text-lg font-semibold text-text-primary mb-2">{{ t('agents.providerTitle') }}</h2>
+          <p class="text-sm text-text-secondary mb-5">{{ t('agents.providerHint') }}</p>
+
+          @if (hasExistingProvider()) {
+            <div class="bg-ctp-green/10 border border-ctp-green/30 rounded-lg p-3 mb-4">
+              <p class="text-sm text-ctp-green">{{ t('agents.providerAlreadyConfigured') }}</p>
+            </div>
+          }
 
           <div class="space-y-4">
-            <div>
-              <span class="block text-xs text-text-muted uppercase tracking-wide mb-1">Agent ID</span>
-              <code class="block bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 font-mono select-all">{{ r.id }}</code>
-            </div>
+            <label class="block">
+              <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('agents.provider') }}</span>
+              <select [(ngModel)]="providerName"
+                class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                       focus:outline-none focus:ring-1 focus:ring-accent">
+                @for (opt of providerOptions; track opt) {
+                  <option [value]="opt">{{ opt }}</option>
+                }
+              </select>
+            </label>
 
-            <div>
-              <span class="block text-xs text-text-muted uppercase tracking-wide mb-1">API Key</span>
-              <div class="flex gap-2">
-                <code class="flex-1 bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 font-mono select-all break-all">{{ r.api_key }}</code>
-                <button (click)="copyKey(r.api_key)" type="button"
-                  class="shrink-0 px-3 py-2 text-sm border border-border rounded-lg hover:bg-surface transition-colors"
-                  [class.text-ctp-green]="copied()"
-                  [class.text-text-secondary]="!copied()">
-                  {{ copied() ? t('common.copied') : t('common.copy') }}
-                </button>
+            <label class="block">
+              <span class="block text-sm font-medium text-text-secondary mb-1">
+                {{ t('agents.apiKey') }} @if (!hasExistingProvider()) { <span class="text-ctp-red">*</span> }
+              </span>
+              <input type="password" [(ngModel)]="providerApiKey" placeholder="sk-..."
+                class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                       focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary" />
+            </label>
+
+            <label class="block">
+              <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('agents.baseUrl') }}</span>
+              <input type="text" [(ngModel)]="providerBaseUrl" placeholder="https://api.openai.com"
+                class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                       focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary" />
+              <span class="text-xs text-text-muted mt-1 block">{{ t('agents.baseUrlHint') }}</span>
+            </label>
+
+            @if (providerError()) {
+              <p class="text-sm text-ctp-red">{{ providerError() }}</p>
+            }
+
+            <div class="flex gap-3 pt-2">
+              <button (click)="skipProvider()" type="button"
+                class="flex-1 px-4 py-2 text-sm text-text-secondary hover:text-text-primary border border-border
+                       rounded-lg hover:bg-surface transition-colors">
+                @if (hasExistingProvider()) {
+                  {{ t('common.skip') }}
+                } @else {
+                  {{ t('agents.skipProvider') }}
+                }
+              </button>
+              <button (click)="saveProvider()" type="button" [disabled]="!providerApiKey.trim() || savingProvider()"
+                class="flex-1 px-4 py-2 text-sm font-medium bg-accent text-bg rounded-lg
+                       hover:opacity-90 disabled:opacity-50 transition-opacity">
+                @if (savingProvider()) {
+                  {{ t('common.saving') }}
+                } @else {
+                  {{ t('common.save') }}
+                }
+              </button>
+            </div>
+          </div>
+        }
+
+        <!-- Step 3: Credentials -->
+        @if (step() === 'credentials') {
+          @if (result(); as r) {
+            <h2 class="text-lg font-semibold text-text-primary mb-2">{{ t('agents.created') }}</h2>
+            <p class="text-sm text-text-secondary mb-5">{{ t('agents.apiKeyWarning') }}</p>
+
+            <div class="space-y-4">
+              <div>
+                <span class="block text-xs text-text-muted uppercase tracking-wide mb-1">Agent ID</span>
+                <code class="block bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 font-mono select-all">{{ r.id }}</code>
               </div>
-            </div>
 
-            <div class="bg-bg-subtle rounded-lg p-3 text-sm text-text-secondary">
-              <p class="font-medium text-text-primary mb-1">{{ t('agents.envHint') }}</p>
-              <code class="block font-mono text-xs mt-1 select-all whitespace-pre">DIRAIGENT_API_URL={{ apiUrl }}
+              <div>
+                <span class="block text-xs text-text-muted uppercase tracking-wide mb-1">API Key</span>
+                <div class="flex gap-2">
+                  <code class="flex-1 bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 font-mono select-all break-all">{{ r.api_key }}</code>
+                  <button (click)="copyKey(r.api_key)" type="button"
+                    class="shrink-0 px-3 py-2 text-sm border border-border rounded-lg hover:bg-surface transition-colors"
+                    [class.text-ctp-green]="copied()"
+                    [class.text-text-secondary]="!copied()">
+                    {{ copied() ? t('common.copied') : t('common.copy') }}
+                  </button>
+                </div>
+              </div>
+
+              <div class="bg-bg-subtle rounded-lg p-3 text-sm text-text-secondary">
+                <p class="font-medium text-text-primary mb-1">{{ t('agents.envHint') }}</p>
+                <code class="block font-mono text-xs mt-1 select-all whitespace-pre">DIRAIGENT_API_URL={{ apiUrl }}
 DIRAIGENT_API_TOKEN={{ r.api_key }}
 AGENT_ID={{ r.id }}@if (dek()) {
 
 DIRAIGENT_DEK={{ dek() }}}</code>
-            </div>
-            @if (dek()) {
-              <p class="text-xs text-ctp-yellow mt-1">{{ t('agents.dekWarning') }}</p>
-            }
+              </div>
+              @if (dek()) {
+                <p class="text-xs text-ctp-yellow mt-1">{{ t('agents.dekWarning') }}</p>
+              }
 
-            <button (click)="onDone()" type="button"
-              class="w-full px-4 py-2 text-sm font-medium bg-accent text-bg rounded-lg
-                     hover:opacity-90 transition-opacity">
-              {{ t('common.done') }}
-            </button>
-          </div>
+              <button (click)="onDone()" type="button"
+                class="w-full px-4 py-2 text-sm font-medium bg-accent text-bg rounded-lg
+                       hover:opacity-90 transition-opacity">
+                {{ t('common.done') }}
+              </button>
+            </div>
+          }
         }
 
       </app-modal-wrapper>
@@ -149,14 +235,20 @@ export class CreateAgentModalComponent implements OnInit {
   private api = inject(AgentsApiService);
   private teamApi = inject(TeamApiService);
   private tenantApi = inject(TenantApiService);
+  private providerApi = inject(ProviderConfigsApiService);
 
   created = output<SpAgentRegistered>();
   cancelled = output<void>();
 
+  // Step management
+  step = signal<OnboardingStep>('details');
+  stepIndex = signal(0);
+  readonly stepList = STEP_LIST;
+
+  // Step 1: Agent details
   saving = signal(false);
   error = signal('');
   result = signal<SpAgentRegistered | null>(null);
-  copied = signal(false);
   roles = signal<SpRole[]>([]);
   dek = signal('');
 
@@ -165,6 +257,18 @@ export class CreateAgentModalComponent implements OnInit {
   activePreset = 'Full-stack';
   presetNames = Object.keys(CAPABILITY_PRESETS);
   selectedRoleId = '';
+
+  // Step 2: Provider setup
+  hasExistingProvider = signal(false);
+  savingProvider = signal(false);
+  providerError = signal('');
+  readonly providerOptions = ['anthropic', 'openai', 'ollama'];
+  providerName = 'anthropic';
+  providerApiKey = '';
+  providerBaseUrl = '';
+
+  // Step 3: Credentials
+  copied = signal(false);
 
   ngOnInit(): void {
     this.teamApi.getRoles().subscribe({
@@ -175,7 +279,13 @@ export class CreateAgentModalComponent implements OnInit {
         }
       },
     });
-    // Fetch DEK for orchestra env hint (best-effort — only works for owners with encryption enabled)
+    // Check if a provider is already configured
+    this.providerApi.listGlobal().pipe(
+      catchError(() => of([])),
+    ).subscribe(configs => {
+      this.hasExistingProvider.set(configs.length > 0);
+    });
+    // Fetch DEK for orchestra env hint
     this.tenantApi.getMyTenant().pipe(
       switchMap(tenant => tenant ? this.tenantApi.getDekForOrchestra(tenant.id) : of(null)),
       catchError(() => of(null)),
@@ -197,7 +307,8 @@ export class CreateAgentModalComponent implements OnInit {
     this.cancelled.emit();
   }
 
-  onSubmit(): void {
+  /** Step 1 → create agent, then advance to provider step */
+  onSubmitDetails(): void {
     const name = this.name.trim();
     if (!name) return;
 
@@ -209,32 +320,24 @@ export class CreateAgentModalComponent implements OnInit {
     this.saving.set(true);
     this.error.set('');
 
-    const roleId = this.selectedRoleId;
-
     this.api
       .createAgent({
         name,
         capabilities,
         metadata: { model: 'claude-opus-4-6', runtime: 'orchestra' },
       })
-      .pipe(
-        switchMap((agent) => {
-          // Auto-create membership if a role is selected
-          if (roleId) {
-            return this.teamApi
-              .createMember({ agent_id: agent.id, role_id: roleId })
-              .pipe(
-                // Return the agent regardless of membership result
-                switchMap(() => [agent]),
-              );
-          }
-          return [agent];
-        }),
-      )
       .subscribe({
         next: (agent) => {
           this.saving.set(false);
           this.result.set(agent);
+          // Advance to provider step (or skip if already configured)
+          if (this.hasExistingProvider()) {
+            this.step.set('credentials');
+            this.stepIndex.set(2);
+          } else {
+            this.step.set('provider');
+            this.stepIndex.set(1);
+          }
         },
         error: (err) => {
           this.saving.set(false);
@@ -242,6 +345,40 @@ export class CreateAgentModalComponent implements OnInit {
           this.error.set(typeof msg === 'string' ? msg : JSON.stringify(msg));
         },
       });
+  }
+
+  /** Step 2 → save provider config, then advance to credentials */
+  saveProvider(): void {
+    const apiKey = this.providerApiKey.trim();
+    if (!apiKey) return;
+
+    this.savingProvider.set(true);
+    this.providerError.set('');
+
+    this.providerApi
+      .createGlobal({
+        provider: this.providerName,
+        api_key: apiKey,
+        ...(this.providerBaseUrl.trim() && { base_url: this.providerBaseUrl.trim() }),
+      })
+      .subscribe({
+        next: () => {
+          this.savingProvider.set(false);
+          this.step.set('credentials');
+          this.stepIndex.set(2);
+        },
+        error: (err) => {
+          this.savingProvider.set(false);
+          const msg = err?.error?.message || err?.error || 'Failed to save provider';
+          this.providerError.set(typeof msg === 'string' ? msg : JSON.stringify(msg));
+        },
+      });
+  }
+
+  /** Skip provider setup */
+  skipProvider(): void {
+    this.step.set('credentials');
+    this.stepIndex.set(2);
   }
 
   copyKey(key: string): void {

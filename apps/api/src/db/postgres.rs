@@ -107,17 +107,6 @@ impl DiraigentDb for PostgresDb {
     async fn delete_task(&self, task_id: Uuid) -> Result<(), AppError> {
         repository::delete_task(&self.0, task_id).await
     }
-    async fn list_subtasks(
-        &self,
-        parent_id: Uuid,
-        limit: i64,
-        offset: i64,
-    ) -> Result<Vec<Task>, AppError> {
-        repository::list_subtasks(&self.0, parent_id, limit, offset).await
-    }
-    async fn count_subtasks(&self, parent_id: Uuid) -> Result<i64, AppError> {
-        repository::count_subtasks(&self.0, parent_id).await
-    }
     async fn update_task_cost(
         &self,
         task_id: Uuid,
@@ -212,9 +201,6 @@ impl DiraigentDb for PostgresDb {
     async fn get_agent_by_id(&self, id: Uuid) -> Result<Agent, AppError> {
         repository::get_agent_by_id(&self.0, id).await
     }
-    async fn list_agents(&self, p: &Pagination) -> Result<Vec<Agent>, AppError> {
-        repository::list_agents(&self.0, p).await
-    }
     async fn list_tenant_agents(
         &self,
         tenant_id: Uuid,
@@ -285,9 +271,6 @@ impl DiraigentDb for PostgresDb {
     ) -> Result<Vec<Task>, AppError> {
         repository::list_work_tasks(&self.0, work_id, limit, offset).await
     }
-    async fn count_work_tasks(&self, work_id: Uuid) -> Result<i64, AppError> {
-        repository::count_work_tasks(&self.0, work_id).await
-    }
     async fn bulk_link_tasks(&self, work_id: Uuid, task_ids: &[Uuid]) -> Result<i64, AppError> {
         repository::bulk_link_tasks(&self.0, work_id, task_ids).await
     }
@@ -321,9 +304,6 @@ impl DiraigentDb for PostgresDb {
     ) -> Result<Vec<Uuid>, AppError> {
         repository::get_agent_inherited_work_ids(&self.0, agent_id, project_id, exclude_task_id)
             .await
-    }
-    async fn list_works_for_task(&self, task_id: Uuid) -> Result<Vec<Work>, AppError> {
-        repository::list_works_for_task(&self.0, task_id).await
     }
     async fn work_status_counts(&self, project_id: Uuid) -> Result<Vec<(String, i64)>, AppError> {
         repository::work_status_counts(&self.0, project_id).await
@@ -1278,6 +1258,12 @@ impl DiraigentDb for PostgresDb {
         user_id: Uuid,
     ) -> Result<Vec<WrappedKey>, AppError> {
         repository::list_wrapped_keys(&self.0, tenant_id, user_id).await
+    }
+    async fn get_any_login_derived_key(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Option<WrappedKey>, AppError> {
+        repository::get_any_login_derived_key(&self.0, tenant_id).await
     }
     async fn delete_wrapped_key(&self, key_id: Uuid) -> Result<(), AppError> {
         repository::delete_wrapped_key(&self.0, key_id).await
