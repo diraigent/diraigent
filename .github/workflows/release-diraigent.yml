@@ -10,8 +10,43 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check:
+    name: Check for code changes
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.diff.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Check for Rust/build changes since last tag
+        id: diff
+        run: |
+          PREV_TAG=$(git tag --sort=-v:refname | grep '^v' | sed -n '2p')
+          if [ -z "$PREV_TAG" ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "First release — building"
+            exit 0
+          fi
+          # Check if any Rust source, Cargo files, or build config changed
+          CHANGES=$(git diff --name-only "$PREV_TAG"..HEAD -- \
+            '*.rs' 'Cargo.toml' 'Cargo.lock' '.cargo/' \
+            'apps/api/' 'apps/orchestra/' 'apps/tui/' 'apps/analyzer/' \
+            'libs/' '.github/workflows/release-diraigent.yml')
+          if [ -n "$CHANGES" ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Code changes found:"
+            echo "$CHANGES"
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No code changes since $PREV_TAG — skipping build"
+          fi
+
   build:
     name: Build (${{ matrix.artifact }})
+    needs: check
+    if: needs.check.outputs.has_changes == 'true'
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -87,7 +122,8 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: build
+    needs: [check, build]
+    if: needs.check.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
