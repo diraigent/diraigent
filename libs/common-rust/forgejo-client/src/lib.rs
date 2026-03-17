@@ -96,7 +96,8 @@ impl ForgejoClient {
 
     /// List workflow runs for a repository.
     ///
-    /// Corresponds to `GET /api/v1/repos/{owner}/{repo}/actions/runs`.
+    /// Corresponds to `GET /api/v1/repos/{owner}/{repo}/actions/tasks`.
+    /// (Forgejo uses `actions/tasks` rather than GitHub's `actions/runs`.)
     pub async fn list_runs(
         &self,
         owner: &str,
@@ -105,7 +106,7 @@ impl ForgejoClient {
         limit: u32,
     ) -> Result<WorkflowRunList> {
         let url = format!(
-            "{}/api/v1/repos/{}/{}/actions/runs?page={}&limit={}",
+            "{}/api/v1/repos/{}/{}/actions/tasks?page={}&limit={}",
             self.base_url, owner, repo, page, limit
         );
         self.get_json(&url).await
@@ -113,10 +114,10 @@ impl ForgejoClient {
 
     /// Get a single workflow run by ID.
     ///
-    /// Corresponds to `GET /api/v1/repos/{owner}/{repo}/actions/runs/{run_id}`.
+    /// Corresponds to `GET /api/v1/repos/{owner}/{repo}/actions/tasks/{run_id}`.
     pub async fn get_run(&self, owner: &str, repo: &str, run_id: i64) -> Result<WorkflowRun> {
         let url = format!(
-            "{}/api/v1/repos/{}/{}/actions/runs/{}",
+            "{}/api/v1/repos/{}/{}/actions/tasks/{}",
             self.base_url, owner, repo, run_id
         );
         self.get_json(&url).await
@@ -124,10 +125,10 @@ impl ForgejoClient {
 
     /// List jobs for a workflow run.
     ///
-    /// Corresponds to `GET /api/v1/repos/{owner}/{repo}/actions/runs/{run_id}/jobs`.
+    /// Corresponds to `GET /api/v1/repos/{owner}/{repo}/actions/tasks/{run_id}/jobs`.
     pub async fn list_jobs(&self, owner: &str, repo: &str, run_id: i64) -> Result<WorkflowJobList> {
         let url = format!(
-            "{}/api/v1/repos/{}/{}/actions/runs/{}/jobs",
+            "{}/api/v1/repos/{}/{}/actions/tasks/{}/jobs",
             self.base_url, owner, repo, run_id
         );
         self.get_json(&url).await
@@ -136,7 +137,7 @@ impl ForgejoClient {
     /// List steps for a specific job within a workflow run.
     ///
     /// Fetches the job detail (which includes steps) via
-    /// `GET /api/v1/repos/{owner}/{repo}/actions/runs/{run_id}/jobs/{job_id}`.
+    /// `GET /api/v1/repos/{owner}/{repo}/actions/tasks/{run_id}/jobs/{job_id}`.
     pub async fn list_steps(
         &self,
         owner: &str,
@@ -145,7 +146,7 @@ impl ForgejoClient {
         job_id: i64,
     ) -> Result<Vec<WorkflowStep>> {
         let url = format!(
-            "{}/api/v1/repos/{}/{}/actions/runs/{}/jobs/{}",
+            "{}/api/v1/repos/{}/{}/actions/tasks/{}/jobs/{}",
             self.base_url, owner, repo, run_id, job_id
         );
         let job: WorkflowJob = self.get_json(&url).await?;
@@ -214,7 +215,7 @@ mod tests {
             "conclusion": "success",
             "workflow_id": "ci.yml",
             "run_number": 7,
-            "html_url": "https://git.example.com/owner/repo/actions/runs/42",
+            "html_url": "https://git.example.com/owner/repo/actions/tasks/42",
             "created_at": "2026-03-15T10:00:00Z",
             "updated_at": "2026-03-15T10:05:00Z",
             "run_started_at": "2026-03-15T10:00:01Z",
@@ -268,7 +269,7 @@ mod tests {
         let server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/api/v1/repos/owner/repo/actions/runs"))
+            .and(path("/api/v1/repos/owner/repo/actions/tasks"))
             .and(query_param("page", "1"))
             .and(query_param("limit", "10"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -294,7 +295,7 @@ mod tests {
         let server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/api/v1/repos/owner/repo/actions/runs"))
+            .and(path("/api/v1/repos/owner/repo/actions/tasks"))
             .and(header("Authorization", "token my-secret-token"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "workflow_runs": [],
@@ -317,7 +318,7 @@ mod tests {
         let server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/api/v1/repos/owner/repo/actions/runs/42"))
+            .and(path("/api/v1/repos/owner/repo/actions/tasks/42"))
             .respond_with(ResponseTemplate::new(200).set_body_json(test_run()))
             .mount(&server)
             .await;
@@ -342,7 +343,7 @@ mod tests {
         let server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/api/v1/repos/owner/repo/actions/runs/42/jobs"))
+            .and(path("/api/v1/repos/owner/repo/actions/tasks/42/jobs"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "jobs": [test_job()],
                 "total_count": 1
@@ -368,7 +369,7 @@ mod tests {
         let server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/api/v1/repos/owner/repo/actions/runs/42/jobs/100"))
+            .and(path("/api/v1/repos/owner/repo/actions/tasks/42/jobs/100"))
             .respond_with(ResponseTemplate::new(200).set_body_json(test_job()))
             .mount(&server)
             .await;
@@ -390,7 +391,7 @@ mod tests {
         let server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/api/v1/repos/owner/repo/actions/runs"))
+            .and(path("/api/v1/repos/owner/repo/actions/tasks"))
             .respond_with(ResponseTemplate::new(401))
             .mount(&server)
             .await;
@@ -407,7 +408,7 @@ mod tests {
         let server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/api/v1/repos/owner/repo/actions/runs/1"))
+            .and(path("/api/v1/repos/owner/repo/actions/tasks/1"))
             .respond_with(ResponseTemplate::new(403))
             .mount(&server)
             .await;
@@ -423,7 +424,7 @@ mod tests {
         let server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/api/v1/repos/owner/repo/actions/runs/999"))
+            .and(path("/api/v1/repos/owner/repo/actions/tasks/999"))
             .respond_with(ResponseTemplate::new(404))
             .mount(&server)
             .await;
@@ -433,7 +434,7 @@ mod tests {
 
         match err {
             ForgejoError::NotFound { url } => {
-                assert!(url.contains("/actions/runs/999"));
+                assert!(url.contains("/actions/tasks/999"));
             }
             other => panic!("expected NotFound, got: {other:?}"),
         }
@@ -444,7 +445,7 @@ mod tests {
         let server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/api/v1/repos/owner/repo/actions/runs"))
+            .and(path("/api/v1/repos/owner/repo/actions/tasks"))
             .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
             .mount(&server)
             .await;
@@ -466,7 +467,7 @@ mod tests {
         let server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/api/v1/repos/owner/repo/actions/runs"))
+            .and(path("/api/v1/repos/owner/repo/actions/tasks"))
             .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
             .mount(&server)
             .await;
@@ -484,7 +485,7 @@ mod tests {
         let server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/api/v1/repos/owner/repo/actions/runs"))
+            .and(path("/api/v1/repos/owner/repo/actions/tasks"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "workflow_runs": [],
                 "total_count": 0
@@ -505,7 +506,7 @@ mod tests {
 
         // This mock requires NO Authorization header
         Mock::given(method("GET"))
-            .and(path("/api/v1/repos/owner/repo/actions/runs"))
+            .and(path("/api/v1/repos/owner/repo/actions/tasks"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "workflow_runs": [],
                 "total_count": 0
@@ -527,7 +528,7 @@ mod tests {
 
         // Forgejo may return runs with minimal fields
         Mock::given(method("GET"))
-            .and(path("/api/v1/repos/owner/repo/actions/runs/1"))
+            .and(path("/api/v1/repos/owner/repo/actions/tasks/1"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "id": 1
             })))
