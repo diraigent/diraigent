@@ -1,5 +1,12 @@
 # Changelog
 
+## v20260317-1857 (2026-03-17)
+
+### Fixed
+- **CI/CD**: Fix container image signing in release pipelines
+
+---
+
 ## v20260317-1841 (2026-03-17)
 
 ### Added
