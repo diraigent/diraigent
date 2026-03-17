@@ -12,6 +12,7 @@ concurrency:
 jobs:
   check:
     name: Check for code changes
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     outputs:
       has_changes: ${{ steps.diff.outputs.has_changes }}
