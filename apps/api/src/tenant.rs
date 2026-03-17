@@ -43,20 +43,12 @@ impl FromRequestParts<AppState> for TenantContext {
     ) -> Result<Self, Self::Rejection> {
         let AuthUser(user_id) = AuthUser::from_request_parts(parts, state).await?;
 
-        // Extract access token for auto-encryption init on new tenants
-        let access_token = parts
-            .headers
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|h| h.strip_prefix("Bearer "))
-            .map(String::from);
-
         // Look up the user's existing tenant membership.
         let tenant = match state.db.get_tenant_for_user(user_id).await? {
             Some(t) => t,
             None => {
                 // No membership yet — register the user into a tenant.
-                register_user_tenant(state, user_id, access_token.as_deref()).await?
+                register_user_tenant(state, user_id).await?
             }
         };
 
@@ -86,7 +78,6 @@ impl FromRequestParts<AppState> for TenantContext {
 async fn register_user_tenant(
     state: &AppState,
     user_id: Uuid,
-    access_token: Option<&str>,
 ) -> Result<crate::models::Tenant, AppError> {
     // 1. In dev mode only, try to join the shared default tenant.
     let dev_mode = std::env::var("DEV_USER_ID").is_ok_and(|s| !s.is_empty());
@@ -153,7 +144,7 @@ async fn register_user_tenant(
     );
 
     // Auto-initialize encryption for the new personal workspace
-    crate::routes::tenants::auto_init_encryption(state, workspace.id, user_id, access_token).await;
+    crate::routes::tenants::auto_init_encryption(state, workspace.id, user_id).await;
 
     // Re-fetch so we have the full Tenant row.
     state
