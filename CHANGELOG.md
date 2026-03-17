@@ -111,6 +111,8 @@
 ### Removed
 - **Web**: Standalone new-task and link-tasks buttons
 - **Web**: Target date field from work items
+- **Web**: Standalone new-task and link-tasks buttons
+- **Web**: Target date field from work items
 
 ---
 
