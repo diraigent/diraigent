@@ -1,5 +1,5 @@
 # ── Stage 1: build orchestra from Rust source ──────────────
-FROM --platform=linux/amd64 rust:1.93-bookworm AS builder
+FROM --platform=linux/amd64 rust:1.94-bookworm AS builder
 WORKDIR /build
 
 ARG TARGETARCH
