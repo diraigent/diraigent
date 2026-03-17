@@ -5,6 +5,7 @@ import { Router } from '@angular/router';
 import { OAuthService } from 'angular-oauth2-oidc';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { distinctUntilChanged } from 'rxjs/operators';
+import { environment } from '../../../environments/environment';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -106,6 +107,10 @@ export class AuthService {
 
   isAuthInitialized(): boolean {
     return this._authInitialized.value;
+  }
+
+  get registrationUrl(): string {
+    return environment.authEnrollmentUrl;
   }
 
   getAccessToken(): string | null {

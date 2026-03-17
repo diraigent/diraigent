@@ -297,19 +297,7 @@ struct PendingEntry {
 
 /// Determine the top-level module for a file path.
 ///
-/// `apps/api/src/main.rs`  → `apps/api`
-/// `libs/shared/src/lib.rs` → `libs/shared`
-/// `migrations/0001.sql`    → `migrations`
-fn module_of(path: &str) -> String {
-    let parts: Vec<&str> = path.split('/').collect();
-    if parts.len() >= 2 && (parts[0] == "apps" || parts[0] == "libs") {
-        format!("{}/{}", parts[0], parts[1])
-    } else if !parts.is_empty() && !parts[0].is_empty() {
-        parts[0].to_string()
-    } else {
-        "root".to_string()
-    }
-}
+use crate::graph::module_of;
 
 /// Generate one knowledge entry per top-level module.
 fn gen_module_entries(

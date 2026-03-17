@@ -6,5 +6,6 @@ export const environment = {
   authClientId: 'change-me',
   authRedirectPath: '/auth/callback',
   authRedirectUri: 'http://localhost:4200/auth/callback',
+  authEnrollmentUrl: 'http://localhost:9000/if/flow/diraigent-enrollment/',
   appVersion: '0.1.0-dev',
 };

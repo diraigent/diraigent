@@ -94,9 +94,9 @@ impl ForgejoClient {
         }
     }
 
-    /// List workflow tasks for a repository.
+    /// List workflow runs for a repository.
     ///
-    /// Corresponds to `GET /api/v1/repos/{owner}/{repo}/actions/tasks`.
+    /// Corresponds to `GET /api/v1/repos/{owner}/{repo}/actions/runs`.
     pub async fn list_runs(
         &self,
         owner: &str,
@@ -105,18 +105,18 @@ impl ForgejoClient {
         limit: u32,
     ) -> Result<WorkflowRunList> {
         let url = format!(
-            "{}/api/v1/repos/{}/{}/actions/tasks?page={}&limit={}",
+            "{}/api/v1/repos/{}/{}/actions/runs?page={}&limit={}",
             self.base_url, owner, repo, page, limit
         );
         self.get_json(&url).await
     }
 
-    /// Get a single workflow task by ID.
+    /// Get a single workflow run by ID.
     ///
-    /// Corresponds to `GET /api/v1/repos/{owner}/{repo}/actions/tasks/{task_id}`.
+    /// Corresponds to `GET /api/v1/repos/{owner}/{repo}/actions/runs/{run_id}`.
     pub async fn get_run(&self, owner: &str, repo: &str, run_id: i64) -> Result<WorkflowRun> {
         let url = format!(
-            "{}/api/v1/repos/{}/{}/actions/tasks/{}",
+            "{}/api/v1/repos/{}/{}/actions/runs/{}",
             self.base_url, owner, repo, run_id
         );
         self.get_json(&url).await
@@ -124,10 +124,10 @@ impl ForgejoClient {
 
     /// List jobs for a workflow run.
     ///
-    /// Corresponds to `GET /api/v1/repos/{owner}/{repo}/actions/tasks/{task_id}/jobs`.
+    /// Corresponds to `GET /api/v1/repos/{owner}/{repo}/actions/runs/{run_id}/jobs`.
     pub async fn list_jobs(&self, owner: &str, repo: &str, run_id: i64) -> Result<WorkflowJobList> {
         let url = format!(
-            "{}/api/v1/repos/{}/{}/actions/tasks/{}/jobs",
+            "{}/api/v1/repos/{}/{}/actions/runs/{}/jobs",
             self.base_url, owner, repo, run_id
         );
         self.get_json(&url).await
@@ -136,7 +136,7 @@ impl ForgejoClient {
     /// List steps for a specific job within a workflow run.
     ///
     /// Fetches the job detail (which includes steps) via
-    /// `GET /api/v1/repos/{owner}/{repo}/actions/tasks/{task_id}/jobs/{job_id}`.
+    /// `GET /api/v1/repos/{owner}/{repo}/actions/runs/{run_id}/jobs/{job_id}`.
     pub async fn list_steps(
         &self,
         owner: &str,
@@ -145,7 +145,7 @@ impl ForgejoClient {
         job_id: i64,
     ) -> Result<Vec<WorkflowStep>> {
         let url = format!(
-            "{}/api/v1/repos/{}/{}/actions/tasks/{}/jobs/{}",
+            "{}/api/v1/repos/{}/{}/actions/runs/{}/jobs/{}",
             self.base_url, owner, repo, run_id, job_id
         );
         let job: WorkflowJob = self.get_json(&url).await?;
