@@ -1160,26 +1160,27 @@ impl DiraigentDb for PostgresDb {
 
         let user_id = row.0;
 
-        // Best-effort: auto-join the default tenant so new users can immediately
-        // access tenant-scoped endpoints.  This is not fatal — if the default
-        // tenant does not exist yet (e.g. fresh schema before migration 029), the
-        // TenantContext extractor will create a personal workspace for the user
-        // on their first tenant-scoped request.
-        if let Err(e) = sqlx::query(
-            "INSERT INTO diraigent.tenant_member (tenant_id, user_id, role)
-             VALUES ($2, $1, 'member')
-             ON CONFLICT (tenant_id, user_id) DO NOTHING",
-        )
-        .bind(user_id)
-        .bind(crate::constants::DEFAULT_TENANT_ID)
-        .execute(&self.0)
-        .await
-        {
-            tracing::warn!(
-                user_id = %user_id,
-                error = %e,
-                "auto-join default tenant failed (will create personal workspace on next request)"
-            );
+        // In dev mode, auto-join the default tenant so all dev users share a workspace.
+        // In production, the TenantContext extractor creates a personal workspace
+        // on the user's first tenant-scoped request.
+        let dev_mode = std::env::var("DEV_USER_ID").is_ok_and(|s| !s.is_empty());
+        if dev_mode {
+            if let Err(e) = sqlx::query(
+                "INSERT INTO diraigent.tenant_member (tenant_id, user_id, role)
+                 VALUES ($2, $1, 'member')
+                 ON CONFLICT (tenant_id, user_id) DO NOTHING",
+            )
+            .bind(user_id)
+            .bind(crate::constants::DEFAULT_TENANT_ID)
+            .execute(&self.0)
+            .await
+            {
+                tracing::warn!(
+                    user_id = %user_id,
+                    error = %e,
+                    "auto-join default tenant failed"
+                );
+            }
         }
 
         Ok(user_id)
