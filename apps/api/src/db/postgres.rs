@@ -1164,8 +1164,8 @@ impl DiraigentDb for PostgresDb {
         // In production, the TenantContext extractor creates a personal workspace
         // on the user's first tenant-scoped request.
         let dev_mode = std::env::var("DEV_USER_ID").is_ok_and(|s| !s.is_empty());
-        if dev_mode {
-            if let Err(e) = sqlx::query(
+        if dev_mode
+            && let Err(e) = sqlx::query(
                 "INSERT INTO diraigent.tenant_member (tenant_id, user_id, role)
                  VALUES ($2, $1, 'member')
                  ON CONFLICT (tenant_id, user_id) DO NOTHING",
@@ -1174,13 +1174,12 @@ impl DiraigentDb for PostgresDb {
             .bind(crate::constants::DEFAULT_TENANT_ID)
             .execute(&self.0)
             .await
-            {
-                tracing::warn!(
-                    user_id = %user_id,
-                    error = %e,
-                    "auto-join default tenant failed"
-                );
-            }
+        {
+            tracing::warn!(
+                user_id = %user_id,
+                error = %e,
+                "auto-join default tenant failed"
+            );
         }
 
         Ok(user_id)
