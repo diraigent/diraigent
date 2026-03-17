@@ -102,14 +102,13 @@ export class StartupService {
    * This is fire-and-forget — encryption unlock failure doesn't block the app.
    */
   private tryUnlockEncryption(): void {
-    const token = this.auth.getAccessToken();
-    if (!token) return;
+    if (!this.auth.isLoggedIn()) return;
 
     this.tenantApi.getMyTenant().subscribe({
       next: tenant => {
         if (!tenant) return;
         if (tenant.encryption_mode === 'login_derived') {
-          this.tenantApi.unlockEncryption(tenant.id, token).subscribe({
+          this.tenantApi.unlockEncryption(tenant.id).subscribe({
             next: res => {
               if (res.status === 'unlocked') {
                 if (!environment.production) console.info('Encryption unlocked for tenant', tenant.slug);

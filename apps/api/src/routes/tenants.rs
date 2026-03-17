@@ -90,7 +90,6 @@ async fn require_member(state: &AppState, tenant_id: Uuid, user_id: Uuid) -> Res
 async fn create_tenant(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
-    headers: axum::http::HeaderMap,
     Json(req): Json<CreateTenant>,
 ) -> Result<Json<Tenant>, AppError> {
     let tenant = state.db.create_tenant(&req).await?;
@@ -106,11 +105,7 @@ async fn create_tenant(
         .await?;
 
     // Auto-initialize encryption for the new tenant
-    let token = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|h| h.strip_prefix("Bearer "));
-    auto_init_encryption(&state, tenant.id, user_id, token).await;
+    auto_init_encryption(&state, tenant.id, user_id).await;
 
     // Re-fetch to include updated encryption_mode
     let tenant = state.db.get_tenant_by_id(tenant.id).await?;
@@ -270,13 +265,6 @@ async fn delete_key(
 
 // ── Encryption Management ──
 
-/// Request body for initializing login-derived encryption on a tenant.
-#[derive(Debug, Deserialize)]
-struct InitEncryptionRequest {
-    /// The admin's access token (used to derive the initial KEK).
-    access_token: String,
-}
-
 /// Response from encryption init.
 #[derive(Debug, Serialize)]
 struct InitEncryptionResponse {
@@ -289,7 +277,7 @@ struct InitEncryptionResponse {
 /// Initialize login-derived encryption for a tenant.
 ///
 /// 1. Generate a random salt and DEK
-/// 2. Derive KEK from the admin's access token + salt
+/// 2. Derive KEK from the user's stable ID + salt
 /// 3. Wrap the DEK with the KEK
 /// 4. Store wrapped DEK + update tenant encryption_mode
 /// 5. Cache the DEK
@@ -297,7 +285,6 @@ async fn init_encryption(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
     Path(tenant_id): Path<Uuid>,
-    Json(req): Json<InitEncryptionRequest>,
 ) -> Result<Json<InitEncryptionResponse>, AppError> {
     require_owner(&state, tenant_id, user_id).await?;
     let tenant = state.db.get_tenant_by_id(tenant_id).await?;
@@ -311,8 +298,8 @@ async fn init_encryption(
     let salt = crypto::generate_salt();
     let dek = Dek::generate();
 
-    // Derive KEK from access token
-    let kek = crypto::derive_kek(&req.access_token, &salt)?;
+    // Derive KEK from stable user ID (not the ephemeral access token)
+    let kek = crypto::derive_kek(&user_id.to_string(), &salt)?;
 
     // Wrap DEK with KEK
     let wrapped_dek = dek.wrap(&kek)?;
@@ -361,30 +348,13 @@ async fn init_encryption(
 
 /// Auto-initialize login-derived encryption for a newly created tenant.
 ///
-/// Called internally during tenant creation. If the access token is unavailable
-/// (e.g. dev mode with X-Dev-User-Id), encryption is skipped — the tenant
-/// starts with `encryption_mode = "none"` and can be initialized later.
-pub(crate) async fn auto_init_encryption(
-    state: &AppState,
-    tenant_id: Uuid,
-    user_id: Uuid,
-    access_token: Option<&str>,
-) {
-    let token = match access_token {
-        Some(t) if !t.is_empty() => t,
-        _ => {
-            tracing::info!(
-                tenant_id = %tenant_id,
-                "skipping auto-encryption init — no access token available (dev mode?)"
-            );
-            return;
-        }
-    };
-
+/// Called internally during tenant creation. Uses the user's stable internal ID
+/// (not the ephemeral access token) to derive the KEK.
+pub(crate) async fn auto_init_encryption(state: &AppState, tenant_id: Uuid, user_id: Uuid) {
     let salt = crypto::generate_salt();
     let dek = Dek::generate();
 
-    let kek = match crypto::derive_kek(token, &salt) {
+    let kek = match crypto::derive_kek(&user_id.to_string(), &salt) {
         Ok(k) => k,
         Err(e) => {
             tracing::warn!(tenant_id = %tenant_id, error = %e, "auto-encryption init: KEK derivation failed");
@@ -484,21 +454,15 @@ async fn get_encryption_salt(
     }))
 }
 
-/// Request body for unlocking encryption (providing access token to derive KEK).
-#[derive(Debug, Deserialize)]
-struct UnlockEncryptionRequest {
-    access_token: String,
-}
-
 /// Unlock encryption for the current session by deriving the KEK and unwrapping the DEK.
 ///
 /// Called after login when the tenant has `login_derived` encryption.
+/// The KEK is derived from the user's stable internal ID (not the ephemeral access token).
 /// The DEK is cached in memory for subsequent requests.
 async fn unlock_encryption(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
     Path(tenant_id): Path<Uuid>,
-    Json(req): Json<UnlockEncryptionRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     // Check if already cached
     if state.dek_cache.get(&tenant_id).await.is_some() {
@@ -522,8 +486,8 @@ async fn unlock_encryption(
         .find(|k| k.key_type == "login_derived")
         .ok_or(crypto::CryptoError::NoWrappedKey)?;
 
-    // Derive KEK and unwrap DEK
-    let kek = crypto::derive_kek(&req.access_token, salt)?;
+    // Derive KEK from stable user ID and unwrap DEK
+    let kek = crypto::derive_kek(&user_id.to_string(), salt)?;
     let dek = Dek::unwrap(&wrapped.wrapped_dek, &kek)?;
 
     // Cache the DEK
@@ -533,13 +497,6 @@ async fn unlock_encryption(
 }
 
 // ── Key Rotation ──
-
-/// Request body for key rotation.
-#[derive(Debug, Deserialize)]
-struct RotateKeysRequest {
-    /// The admin's access token (used to derive KEK for re-wrapping).
-    access_token: String,
-}
 
 /// Response from key rotation.
 #[derive(Debug, Serialize)]
@@ -559,7 +516,6 @@ async fn rotate_keys(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
     Path(tenant_id): Path<Uuid>,
-    Json(req): Json<RotateKeysRequest>,
 ) -> Result<Json<RotateKeysResponse>, AppError> {
     require_owner(&state, tenant_id, user_id).await?;
     let tenant = state.db.get_tenant_by_id(tenant_id).await?;
@@ -734,11 +690,9 @@ async fn rotate_keys(
 
     let members = state.db.list_tenant_members(tenant_id).await?;
 
-    // For login-derived mode, we can re-wrap using the caller's access token
-    // (the caller must be an admin). Other members' wrapped keys will be
-    // created when they next log in and provide their access token.
-    // For now, wrap for the current user.
-    let kek = crypto::derive_kek(&req.access_token, salt)?;
+    // For login-derived mode, re-wrap using the caller's stable user ID.
+    // Other members' wrapped keys will be created when they next log in.
+    let kek = crypto::derive_kek(&user_id.to_string(), salt)?;
     let wrapped_new = new_dek.wrap(&kek)?;
 
     sqlx::query(

@@ -1,15 +1,28 @@
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::routing::delete;
+use axum::routing::{delete, get};
 use axum::{Json, Router};
 use serde::Serialize;
+use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::AuthUser;
 use crate::error::AppError;
 
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/account", delete(delete_account))
+    Router::new().route("/account", get(get_account).delete(delete_account))
+}
+
+#[derive(Serialize)]
+struct AccountResponse {
+    user_id: Uuid,
+}
+
+/// `GET /v1/account`
+///
+/// Returns the authenticated user's internal ID.
+async fn get_account(AuthUser(user_id): AuthUser) -> Json<AccountResponse> {
+    Json(AccountResponse { user_id })
 }
 
 #[derive(Serialize)]

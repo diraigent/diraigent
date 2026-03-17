@@ -143,6 +143,9 @@ async fn register_user_tenant(
         "created personal workspace for new user"
     );
 
+    // Auto-initialize encryption for the new personal workspace
+    crate::routes::tenants::auto_init_encryption(state, workspace.id, user_id).await;
+
     // Re-fetch so we have the full Tenant row.
     state
         .db

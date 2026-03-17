@@ -185,6 +185,7 @@ import { environment } from '../../../environments/environment';
                 <p class="text-sm text-ctp-red mt-2">{{ deleteError() }}</p>
               }
             }
+          </div>
         </div>
       </section>
 
@@ -333,14 +334,9 @@ export class TenantSettingsPage {
   initEncryption(): void {
     const t = this.tenant();
     if (!t) return;
-    const token = this.auth.getAccessToken();
-    if (!token) {
-      this.encryptionError.set(this.transloco.translate('tenantSettings.noAccessToken'));
-      return;
-    }
     this.initializingEncryption.set(true);
     this.encryptionError.set('');
-    this.tenantApi.initEncryption(t.id, token).subscribe({
+    this.tenantApi.initEncryption(t.id).subscribe({
       next: () => {
         this.initializingEncryption.set(false);
         this.loadTenant();
@@ -355,15 +351,10 @@ export class TenantSettingsPage {
   rotateKeys(): void {
     const t = this.tenant();
     if (!t) return;
-    const token = this.auth.getAccessToken();
-    if (!token) {
-      this.encryptionError.set(this.transloco.translate('tenantSettings.noAccessTokenShort'));
-      return;
-    }
     this.rotatingKeys.set(true);
     this.encryptionError.set('');
     this.rotationResult.set('');
-    this.tenantApi.rotateKeys(t.id, token).subscribe({
+    this.tenantApi.rotateKeys(t.id).subscribe({
       next: res => {
         this.rotatingKeys.set(false);
         this.rotationResult.set(
@@ -406,11 +397,6 @@ export class TenantSettingsPage {
   async switchToPassphraseMode(_passphrase: string): Promise<void> {
     const t = this.tenant();
     if (!t) return;
-    const token = this.auth.getAccessToken();
-    if (!token) {
-      this.encryptionError.set(this.transloco.translate('tenantSettings.noAccessTokenShort'));
-      return;
-    }
 
     try {
       this.encryptionError.set('');
@@ -420,7 +406,20 @@ export class TenantSettingsPage {
         this.encryptionError.set(this.transloco.translate('tenantSettings.noEncryptionSalt'));
         return;
       }
-      const currentKek = await this.cryptoSvc.deriveKek(token, currentSalt);
+
+      // Fetch the user's internal ID for KEK derivation
+      const token = this.auth.getAccessToken();
+      if (!token) {
+        this.encryptionError.set(this.transloco.translate('tenantSettings.noAccessTokenShort'));
+        return;
+      }
+      const accountRes = await fetch(`${environment.apiServer}/account`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!accountRes.ok) throw new Error('Failed to fetch account');
+      const { user_id: userId } = await accountRes.json();
+
+      const currentKek = await this.cryptoSvc.deriveKek(userId, currentSalt);
 
       const keys = await firstValueFrom(this.tenantApi.listKeys(t.id, 'me'));
       const loginKey = keys?.find(k => k.key_type === 'login_derived');
