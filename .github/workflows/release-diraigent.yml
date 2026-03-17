@@ -16,19 +16,52 @@ jobs:
     strategy:
       matrix:
         include:
+          # ── Orchestra ──
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
             artifact: orchestra-linux-amd64
             binary: orchestra
+            package: diraigent-orchestra
           - target: aarch64-unknown-linux-gnu
             runner: ubuntu-latest
             artifact: orchestra-linux-arm64
             binary: orchestra
+            package: diraigent-orchestra
             cross: true
           - target: aarch64-apple-darwin
             runner: macos-latest
             artifact: orchestra-macos-arm64
             binary: orchestra
+            package: diraigent-orchestra
+          # ── API ──
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            artifact: api-linux-amd64
+            binary: diraigent-api
+            package: diraigent-api
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            artifact: api-linux-arm64
+            binary: diraigent-api
+            package: diraigent-api
+            cross: true
+          # ── TUI ──
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            artifact: tui-linux-amd64
+            binary: diraigent-tui
+            package: diraigent-tui
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            artifact: tui-linux-arm64
+            binary: diraigent-tui
+            package: diraigent-tui
+            cross: true
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            artifact: tui-macos-arm64
+            binary: diraigent-tui
+            package: diraigent-tui
     steps:
       - uses: actions/checkout@v5
 
@@ -44,7 +77,7 @@ jobs:
       - name: Build
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-        run: cargo build --release --target ${{ matrix.target }} -p diraigent-orchestra --bin orchestra
+        run: cargo build --release --target ${{ matrix.target }} -p ${{ matrix.package }} --bin ${{ matrix.binary }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -70,8 +103,13 @@ jobs:
           cp artifacts/orchestra-linux-amd64/orchestra release/orchestra-linux-amd64
           cp artifacts/orchestra-linux-arm64/orchestra release/orchestra-linux-arm64
           cp artifacts/orchestra-macos-arm64/orchestra release/orchestra-macos-arm64
+          cp artifacts/api-linux-amd64/diraigent-api release/api-linux-amd64
+          cp artifacts/api-linux-arm64/diraigent-api release/api-linux-arm64
+          cp artifacts/tui-linux-amd64/diraigent-tui release/tui-linux-amd64
+          cp artifacts/tui-linux-arm64/diraigent-tui release/tui-linux-arm64
+          cp artifacts/tui-macos-arm64/diraigent-tui release/tui-macos-arm64
           cd release
-          sha256sum orchestra-* > checksums.txt
+          sha256sum * > checksums.txt
 
       - name: GPG sign checksums
         env:
@@ -91,5 +129,10 @@ jobs:
             release/orchestra-linux-amd64
             release/orchestra-linux-arm64
             release/orchestra-macos-arm64
+            release/api-linux-amd64
+            release/api-linux-arm64
+            release/tui-linux-amd64
+            release/tui-linux-arm64
+            release/tui-macos-arm64
             release/checksums.txt
             release/checksums.txt.asc
