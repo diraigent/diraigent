@@ -656,6 +656,193 @@ pub fn run(
 }
 
 // ---------------------------------------------------------------------------
+// Module-level dependency graph (coarse-grained: apps/api, libs/utils, etc.)
+// ---------------------------------------------------------------------------
+
+/// Extract the top-level module from a file path.
+///
+/// `apps/api/src/routes/tasks.rs` → `apps/api`
+/// `libs/common-rust/shared-utils/src/lib.rs` → `libs/common-rust`
+pub fn module_of(path: &str) -> String {
+    let parts: Vec<&str> = path.split('/').collect();
+    if parts.len() >= 2 && (parts[0] == "apps" || parts[0] == "libs") {
+        format!("{}/{}", parts[0], parts[1])
+    } else if !parts.is_empty() && !parts[0].is_empty() {
+        parts[0].to_string()
+    } else {
+        "root".to_string()
+    }
+}
+
+/// Try to resolve an import string to a known module in the workspace.
+fn resolve_import_target(
+    import: &str,
+    known_modules: &std::collections::BTreeSet<String>,
+    crate_to_module: &HashMap<String, String>,
+) -> Option<String> {
+    // Relative path imports (TypeScript style: ../../core/services/...)
+    // These are intra-module — skip them
+    if import.starts_with('.') {
+        return None;
+    }
+
+    // Direct module path match (e.g., "apps/api/src/...")
+    for m in known_modules {
+        if import.starts_with(m.as_str()) {
+            return Some(m.clone());
+        }
+    }
+
+    // Rust crate imports: check if first segment matches a workspace crate
+    let first_segment = import.split("::").next().unwrap_or(import);
+    if let Some(module) = crate_to_module.get(first_segment) {
+        return Some(module.clone());
+    }
+
+    // Not a workspace import (external crate or std lib)
+    None
+}
+
+/// Build a module-level adjacency map from a scan manifest.
+///
+/// For each file, maps its module to the set of modules it imports from.
+/// Only considers imports that reference another module in the workspace.
+pub fn build_module_graph(
+    manifest: &Manifest,
+) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    // First pass: collect all known modules
+    let known_modules: BTreeSet<String> =
+        manifest.files.iter().map(|f| module_of(&f.path)).collect();
+
+    // Build crate name → module mapping for Rust workspace crates
+    let mut crate_to_module: HashMap<String, String> = HashMap::new();
+    for m in &known_modules {
+        if let Some(crate_name) = m.split('/').next_back() {
+            crate_to_module.insert(crate_name.replace('-', "_"), m.clone());
+        }
+    }
+
+    let mut graph: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+
+    for file in &manifest.files {
+        let src_module = module_of(&file.path);
+        let entry = graph.entry(src_module.clone()).or_default();
+
+        for imp in &file.imports {
+            let target = resolve_import_target(imp, &known_modules, &crate_to_module);
+            if let Some(target_module) = target
+                && target_module != src_module
+            {
+                entry.insert(target_module);
+            }
+        }
+    }
+
+    graph
+}
+
+/// Detect cycles in a module dependency graph using Tarjan's SCC algorithm.
+/// Returns cycles as sorted vectors of module names (only SCCs with size > 1).
+pub fn detect_module_cycles(
+    graph: &std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+) -> Vec<Vec<String>> {
+    use std::collections::BTreeSet;
+
+    let nodes: Vec<&String> = graph.keys().collect();
+    let node_index: HashMap<&String, usize> =
+        nodes.iter().enumerate().map(|(i, n)| (*n, i)).collect();
+
+    let n = nodes.len();
+    let mut index_counter: usize = 0;
+    let mut stack: Vec<usize> = Vec::new();
+    let mut on_stack = vec![false; n];
+    let mut indices = vec![usize::MAX; n];
+    let mut lowlinks = vec![usize::MAX; n];
+    let mut sccs: Vec<Vec<String>> = Vec::new();
+
+    #[allow(clippy::too_many_arguments)]
+    fn strongconnect(
+        v: usize,
+        nodes: &[&String],
+        graph: &std::collections::BTreeMap<String, BTreeSet<String>>,
+        node_index: &HashMap<&String, usize>,
+        index_counter: &mut usize,
+        stack: &mut Vec<usize>,
+        on_stack: &mut [bool],
+        indices: &mut [usize],
+        lowlinks: &mut [usize],
+        sccs: &mut Vec<Vec<String>>,
+    ) {
+        indices[v] = *index_counter;
+        lowlinks[v] = *index_counter;
+        *index_counter += 1;
+        stack.push(v);
+        on_stack[v] = true;
+
+        if let Some(neighbors) = graph.get(nodes[v]) {
+            for neighbor in neighbors {
+                if let Some(&w) = node_index.get(neighbor) {
+                    if indices[w] == usize::MAX {
+                        strongconnect(
+                            w,
+                            nodes,
+                            graph,
+                            node_index,
+                            index_counter,
+                            stack,
+                            on_stack,
+                            indices,
+                            lowlinks,
+                            sccs,
+                        );
+                        lowlinks[v] = lowlinks[v].min(lowlinks[w]);
+                    } else if on_stack[w] {
+                        lowlinks[v] = lowlinks[v].min(indices[w]);
+                    }
+                }
+            }
+        }
+
+        if lowlinks[v] == indices[v] {
+            let mut scc = Vec::new();
+            while let Some(w) = stack.pop() {
+                on_stack[w] = false;
+                scc.push(nodes[w].clone());
+                if w == v {
+                    break;
+                }
+            }
+            if scc.len() > 1 {
+                scc.sort();
+                sccs.push(scc);
+            }
+        }
+    }
+
+    for i in 0..n {
+        if indices[i] == usize::MAX {
+            strongconnect(
+                i,
+                &nodes,
+                graph,
+                &node_index,
+                &mut index_counter,
+                &mut stack,
+                &mut on_stack,
+                &mut indices,
+                &mut lowlinks,
+                &mut sccs,
+            );
+        }
+    }
+
+    sccs.sort();
+    sccs
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
