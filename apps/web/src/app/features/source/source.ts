@@ -181,6 +181,8 @@ function getHighlightedHtml(content: string, path: string): string {
   host: { class: 'block h-full' },
   styles: [
     `
+      @import 'highlight.js/styles/atom-one-dark.css';
+
       /* Override hljs background so it uses our surface colour */
       pre code.hljs {
         background: transparent !important;
@@ -580,25 +582,40 @@ export class SourcePage {
 
   // ── Computed ──────────────────────────────────────────────────────────────
 
+  private childrenByParent = computed(() => {
+    const children = new Map<string, TreeEntry[]>();
+
+    for (const entry of this.allEntries()) {
+      const parent = entry.path.substring(0, entry.path.lastIndexOf('/')) || '';
+      const siblings = children.get(parent);
+      if (siblings) {
+        siblings.push(entry);
+      } else {
+        children.set(parent, [entry]);
+      }
+    }
+
+    for (const siblings of children.values()) {
+      siblings.sort((a, b) => {
+        if (a.kind !== b.kind) return a.kind === 'dir' ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+    }
+
+    return children;
+  });
+
   displayNodes = computed<DisplayNode[]>(() => {
-    const entries = this.allEntries();
+    const childrenByParent = this.childrenByParent();
     const expanded = this.expandedDirs();
     const result: DisplayNode[] = [];
 
     const buildVisible = (parentPath: string, depth: number) => {
-      const children = entries.filter(e => {
-        const parent = e.path.substring(0, e.path.lastIndexOf('/')) || '';
-        return parent === parentPath;
-      });
-
-      children.sort((a, b) => {
-        if (a.kind !== b.kind) return a.kind === 'dir' ? -1 : 1;
-        return a.name.localeCompare(b.name);
-      });
+      const children = childrenByParent.get(parentPath) ?? [];
 
       for (const entry of children) {
         const isExpanded = expanded.has(entry.path);
-        const hasChildren = entry.kind === 'dir';
+        const hasChildren = childrenByParent.has(entry.path);
         result.push({ entry, depth, expanded: isExpanded, hasChildren });
         if (entry.kind === 'dir' && isExpanded) {
           buildVisible(entry.path, depth + 1);
@@ -700,10 +717,7 @@ export class SourcePage {
   onNodeClick(node: DisplayNode): void {
     if (node.entry.kind === 'dir') {
       this.toggleDir(node.entry.path);
-      const hasChildren = this.allEntries().some(e => {
-        const parent = e.path.substring(0, e.path.lastIndexOf('/')) || '';
-        return parent === node.entry.path;
-      });
+      const hasChildren = this.childrenByParent().has(node.entry.path);
       if (!hasChildren) {
         this.loadTree(node.entry.path);
       }
@@ -722,10 +736,7 @@ export class SourcePage {
     if (node.entry.kind !== 'dir') return;
     if (!this.expandedDirs().has(node.entry.path)) {
       this.toggleDir(node.entry.path);
-      const hasChildren = this.allEntries().some(e => {
-        const parent = e.path.substring(0, e.path.lastIndexOf('/')) || '';
-        return parent === node.entry.path;
-      });
+      const hasChildren = this.childrenByParent().has(node.entry.path);
       if (!hasChildren) {
         this.loadTree(node.entry.path);
       }
