@@ -147,6 +147,18 @@ export interface ProjectMetrics {
   tokens_per_day: TokenDayCount[];
 }
 
+export interface DashboardProjectSummary {
+  project: DgProject;
+  task_summary: TaskSummary;
+  active_work: { id: string; title: string; status: string; work_type: string; priority: number; updated_at: string }[];
+  cost_summary: CostSummary;
+}
+
+export interface DashboardSummary {
+  projects: DashboardProjectSummary[];
+  tokens_per_day: TokenDayCount[];
+}
+
 export interface ClaudeMdResponse {
   content: string;
   exists: boolean;
@@ -200,6 +212,12 @@ export class DiraigentApiService {
   getHealth(): Observable<SpHealthResponse> {
     const base = new URL(this.baseUrl).origin;
     return this.http.get<SpHealthResponse>(`${base}/health/live`);
+  }
+
+  getDashboardSummary(days?: number): Observable<DashboardSummary> {
+    const params: Record<string, string> = {};
+    if (days != null) params['days'] = days.toString();
+    return this.http.get<DashboardSummary>(`${this.baseUrl}/dashboard/summary`, { params });
   }
 
   getProjectMetrics(projectId: string, days?: number): Observable<ProjectMetrics> {

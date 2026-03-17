@@ -12,6 +12,7 @@ import { FormsModule } from '@angular/forms';
 import { environment } from '../../../environments/environment';
 import hljs from 'highlight.js/lib/common';
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 /** A node in the file tree returned by the API. */
 export interface TreeNode {
@@ -159,7 +160,8 @@ function getHighlightedHtml(content: string, path: string): string {
   const ext = path.includes('.') ? (path.split('.').pop()?.toLowerCase() ?? '') : '';
 
   if (ext === 'md' || ext === 'markdown') {
-    return marked.parse(content, { async: false }) as string;
+    const raw = marked.parse(content, { async: false }) as string;
+    return DOMPurify.sanitize(raw);
   }
 
   const lang = EXT_TO_LANG[ext];

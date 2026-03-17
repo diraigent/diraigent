@@ -6,6 +6,7 @@ mod changed_files;
 mod chat;
 mod ci;
 mod context;
+mod dashboard;
 mod decisions;
 mod event_rules;
 mod events;
@@ -113,6 +114,7 @@ pub fn router() -> Router<AppState> {
         .merge(github_webhooks::routes())
         .merge(ci::routes())
         .merge(account::routes())
+        .merge(dashboard::routes())
         .merge(authentik_webhooks::routes())
         .merge(ws::routes())
 }
