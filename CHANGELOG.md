@@ -1,5 +1,33 @@
 # Changelog
 
+## v20260317-1917 (2026-03-17)
+
+### Added
+- **Web**: Forgejo CI onboarding wizard with webhook setup
+- **Web**: GitHub CI integration setup wizard and provider badges
+- **Web**: CI pipelines page with run detail drilldown and auto-polling
+- **API**: Multi-provider support (OpenAI, Ollama, Anthropic) with encrypted config storage
+- **API**: AI planning endpoint for automatic task generation from work items
+- **Orchestra**: Codebase static analyzer with dependency graphs and API surface mapping
+- **Orchestra**: Scheduled re-indexing via cron and git hooks
+- **Web**: Active Work dashboard section with cross-project items
+- **Web**: Execute and Plan & Execute buttons on work items
+- **API**: User registration, account deletion, and full data download
+- **TUI**: Standalone TUI and API binary builds
+- **CI/CD**: Container and binary signing with cosign and GPG
+
+### Changed
+- **All**: Renamed "Goals" to "Work" across entire stack
+- **Orchestra**: Plan and chat handlers now configurable per project
+- **API**: Task scoring uses composite model (age, priority, goal-alignment, dependencies)
+
+### Fixed
+- **Web**: Mobile horizontal scrolling across all pages
+- **Web**: Various UI fixes (dropdown clipping, menu positioning, form state)
+- **API**: Authorization gaps and encrypted token storage for integrations
+
+---
+
 ## v20260317-1857 (2026-03-17)
 
 ### Fixed
