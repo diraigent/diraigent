@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Subscription, forkJoin, of, timer, switchMap } from 'rxjs';
+import { Subscription, forkJoin, of, timer, switchMap, from, mergeMap, toArray } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 import {
   CdkDragDrop,
@@ -1160,6 +1160,8 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
   `,
 })
 export class WorkPage {
+  private static readonly GOAL_DETAIL_CONCURRENCY = 6;
+
   private api = inject(WorkApiService);
   private tasksApi = inject(TasksApiService);
   private verificationsApi = inject(VerificationsApiService);
@@ -1361,6 +1363,11 @@ export class WorkPage {
     }
     // Read deep-link query param once on init
     this.pendingWorkId = this.route.snapshot.queryParamMap.get('workId');
+    this.playbooksApi.list()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (pbs) => this.goalPlaybooks.set(pbs),
+      });
     effect(() => {
       this.ctx.projectId();
       this.selected.set(null);
@@ -1368,9 +1375,6 @@ export class WorkPage {
       this.selectedUnlinkedTask.set(null);
       this.loadGoals();
       this.loadUnlinkedTasks();
-      this.playbooksApi.list().subscribe({
-        next: (pbs) => this.goalPlaybooks.set(pbs),
-      });
       this.startGitPolling();
     });
   }
@@ -1703,45 +1707,56 @@ export class WorkPage {
   }
 
   private loadAllProgress(goals: SpWork[]): void {
-    const map = new Map<string, SpWorkProgress>();
-    let remaining = goals.length;
-    if (remaining === 0) {
-      this.progressMap.set(map);
+    if (goals.length === 0) {
+      this.progressMap.set(new Map());
+      this.loadAllStats(goals);
       return;
     }
-    for (const goal of goals) {
-      this.api.progress(goal.id).subscribe({
-        next: (prog) => {
-          map.set(goal.id, prog);
-          remaining--;
-          if (remaining === 0) this.progressMap.set(new Map(map));
-        },
-        error: () => {
-          remaining--;
-          if (remaining === 0) this.progressMap.set(new Map(map));
-        },
-      });
-    }
+
+    from(goals).pipe(
+      mergeMap(
+        goal => this.api.progress(goal.id).pipe(
+          map(prog => [goal.id, prog] as const),
+          catchError(() => of(null)),
+        ),
+        WorkPage.GOAL_DETAIL_CONCURRENCY,
+      ),
+      toArray(),
+    ).subscribe({
+      next: entries => {
+        const map = new Map<string, SpWorkProgress>();
+        for (const entry of entries) {
+          if (!entry) continue;
+          map.set(entry[0], entry[1]);
+        }
+        this.progressMap.set(map);
+      },
+    });
     this.loadAllStats(goals);
   }
 
   private loadAllStats(goals: SpWork[]): void {
-    const map = new Map<string, SpWorkStats>(this.statsMap());
-    let remaining = goals.length;
-    if (remaining === 0) return;
-    for (const goal of goals) {
-      this.api.stats(goal.id).subscribe({
-        next: (stats) => {
-          map.set(goal.id, stats);
-          remaining--;
-          if (remaining === 0) this.statsMap.set(new Map(map));
-        },
-        error: () => {
-          remaining--;
-          if (remaining === 0) this.statsMap.set(new Map(map));
-        },
-      });
-    }
+    if (goals.length === 0) return;
+
+    from(goals).pipe(
+      mergeMap(
+        goal => this.api.stats(goal.id).pipe(
+          map(stats => [goal.id, stats] as const),
+          catchError(() => of(null)),
+        ),
+        WorkPage.GOAL_DETAIL_CONCURRENCY,
+      ),
+      toArray(),
+    ).subscribe({
+      next: entries => {
+        const map = new Map<string, SpWorkStats>(this.statsMap());
+        for (const entry of entries) {
+          if (!entry) continue;
+          map.set(entry[0], entry[1]);
+        }
+        this.statsMap.set(map);
+      },
+    });
     this.loadConflictStatuses(goals);
   }
 

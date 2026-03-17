@@ -179,3 +179,24 @@ pub async fn get_tenant_for_user(pool: &PgPool, user_id: Uuid) -> Result<Option<
     .fetch_optional(pool)
     .await?)
 }
+
+/// Check if the user belongs to the same tenant as the project in a single query.
+pub async fn check_user_project_tenant(
+    pool: &PgPool,
+    user_id: Uuid,
+    project_id: Uuid,
+) -> Result<bool, AppError> {
+    let row: (bool,) = sqlx::query_as(
+        "SELECT EXISTS(
+            SELECT 1
+            FROM diraigent.project p
+            JOIN diraigent.tenant_member tm ON p.tenant_id = tm.tenant_id
+            WHERE p.id = $1 AND tm.user_id = $2
+        )",
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}

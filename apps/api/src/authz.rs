@@ -291,23 +291,26 @@ pub async fn require_any_authority(
 /// This is the fallback authorization check for human users (no `X-Agent-Id` header).
 /// Without this check, any authenticated user could access any project by omitting
 /// the agent ID header — a privilege escalation vulnerability.
+///
+/// Uses a single JOIN query instead of two separate lookups (project + user tenant).
 async fn verify_user_project_tenant(
     db: &dyn DiraigentDb,
     user_id: Uuid,
     project_id: Uuid,
 ) -> Result<(), crate::error::AppError> {
-    let project = db.get_project_by_id(project_id).await?;
-    let user_tenant = db.get_tenant_for_user(user_id).await.map_err(|_| {
-        crate::error::AppError::Unauthorized("Failed to resolve user tenant".into())
-    })?;
-    match user_tenant {
-        Some(tenant) if tenant.id == project.tenant_id => Ok(()),
-        _ => {
-            crate::metrics::record_auth_failure("tenant_mismatch");
-            Err(crate::error::AppError::Forbidden(
-                "You are not a member of this project's tenant".into(),
-            ))
-        }
+    let is_member = db
+        .check_user_project_tenant(user_id, project_id)
+        .await
+        .map_err(|_| {
+            crate::error::AppError::Unauthorized("Failed to verify tenant membership".into())
+        })?;
+    if is_member {
+        Ok(())
+    } else {
+        crate::metrics::record_auth_failure("tenant_mismatch");
+        Err(crate::error::AppError::Forbidden(
+            "You are not a member of this project's tenant".into(),
+        ))
     }
 }
 

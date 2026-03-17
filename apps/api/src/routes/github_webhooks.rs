@@ -187,9 +187,7 @@ struct WorkflowJobEvent {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 struct WorkflowJobPayload {
-    id: i64,
     run_id: i64,
     #[serde(default)]
     name: Option<String>,
@@ -205,13 +203,10 @@ struct WorkflowJobPayload {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 struct WorkflowStepPayload {
     name: String,
     status: Option<String>,
     conclusion: Option<String>,
-    #[serde(default)]
-    number: i64,
     started_at: Option<DateTime<Utc>>,
     completed_at: Option<DateTime<Utc>>,
 }

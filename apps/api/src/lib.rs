@@ -100,6 +100,9 @@ pub struct AppState {
     pub user_cache: auth::UserIdCache,
     pub webhooks: webhooks::WebhookDispatcher,
     pub repo_root: Option<PathBuf>,
+    /// Parsed once at startup from `PRODUCTION` env var. When true, dev auth
+    /// bypasses (DEV_USER_ID, X-Dev-User-Id) are disabled.
+    pub is_production: bool,
     /// Base directory for all projects. When set, project `repo_path` values are
     /// interpreted relative to this directory, enabling path resolution and
     /// "open folder" style project creation.

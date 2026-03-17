@@ -406,13 +406,10 @@ async fn get_task(
             .await
             .ok()
             .map(|d| {
-                let rationale_excerpt = d.rationale.as_deref().map(|r| {
-                    if r.len() > 300 {
-                        r[..300].to_string()
-                    } else {
-                        r.to_string()
-                    }
-                });
+                let rationale_excerpt = d
+                    .rationale
+                    .as_deref()
+                    .map(|r| crate::repository::truncate_snippet(r, 300));
                 DecisionSummary {
                     id: d.id,
                     title: d.title,

@@ -1,5 +1,30 @@
 # Changelog
 
+## v20260317-2215 (2026-03-17)
+
+### Added
+- **API**: Account deletion and full user data download
+- **API**: GitHub CI integration with webhooks and sync
+- **API**: Tenant registration support
+- **API**: Encryption for integration tokens and secrets
+
+### Changed
+- **Orchestra**: Optimized container build process
+- **Orchestra**: Scheduled re-indexing support
+- **Web**: Improved source page with lazy loading and optimizations
+- **Web**: Better work item list layout and status handling
+- **Web**: Consolidated token usage charts on dashboard
+
+### Fixed
+- **API**: Authorization and authentication handling fixes
+- **Web**: Various UI and stability fixes
+
+### Removed
+- **Orchestra**: Unused indexer code
+- **CI/CD**: Removed API from GitHub build workflow
+
+---
+
 ## v20260317-1951 (2026-03-17)
 
 ### Added

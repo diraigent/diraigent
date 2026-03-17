@@ -166,6 +166,10 @@ async fn main() -> anyhow::Result<()> {
     // Broadcast channel for agent status SSE notifications.
     let (agent_tx, _) = tokio::sync::broadcast::channel::<diraigent_api::AgentSseEvent>(64);
 
+    let is_production = env::var("PRODUCTION")
+        .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+        .unwrap_or(false);
+
     let state = AppState {
         pkg_cache: package_cache::PackageCache::new(database.clone()),
         db: database.clone(),
@@ -174,6 +178,7 @@ async fn main() -> anyhow::Result<()> {
         user_cache: auth::UserIdCache::default(),
         webhooks: webhook_dispatcher.clone(),
         repo_root,
+        is_production,
         projects_path,
         loki_url: env::var("LOKI_URL").ok(),
         dek_cache,

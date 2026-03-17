@@ -4,7 +4,7 @@ import { Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { forkJoin, timer, switchMap, of, map } from 'rxjs';
+import { forkJoin, timer, switchMap, of, map, from, mergeMap, toArray } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { TasksApiService, SpTask } from '../../core/services/tasks-api.service';
 import { DiraigentApiService, DgProject, TokenDayCount, CostSummary, ProjectMetrics } from '../../core/services/diraigent-api.service';
@@ -287,6 +287,8 @@ const isInProgress = (s: string) => IN_PROGRESS_STATES.has(s) || s.startsWith('w
   `,
 })
 export class DashboardPage {
+  private static readonly PROJECT_POLL_CONCURRENCY = 2;
+
   private tasksApi = inject(TasksApiService);
   private diraigentApi = inject(DiraigentApiService);
   private gitApi = inject(GitApiService);
@@ -442,8 +444,8 @@ export class DashboardPage {
           if (projects.length === 0) {
             return of({ projectTasks: [] as ProjectTasks[], activeWork: [] as ActiveWorkRow[], unmerged: [] as UnmergedBranchRow[], tokensPerDay: [] as TokenDayCount[], costSummaries: [] as CostSummary[] });
           }
-          return forkJoin(
-            projects.map(project => {
+          return from(projects).pipe(
+            mergeMap(project => {
               const retentionDays = (project.metadata?.['done_retention_days'] as number) ?? 1;
               const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
               const tasks$ = this.tasksApi
@@ -476,8 +478,8 @@ export class DashboardPage {
                   costSummary: (metrics.cost_summary ?? { total_input_tokens: 0, total_output_tokens: 0, total_cost_usd: 0 }) as CostSummary,
                 })),
               );
-            }),
-          ).pipe(
+            }, DashboardPage.PROJECT_POLL_CONCURRENCY),
+            toArray(),
             map(results => {
               const unmerged: UnmergedBranchRow[] = [];
               for (const r of results) {

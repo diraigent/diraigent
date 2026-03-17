@@ -4,6 +4,15 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::models::*;
 
+/// Truncate a string to at most `max_chars` characters, appending "…" if truncated.
+/// Unlike byte-index slicing (`s[..n]`), this is UTF-8 safe.
+pub fn truncate_snippet(s: &str, max_chars: usize) -> String {
+    match s.char_indices().nth(max_chars) {
+        Some((byte_idx, _)) => format!("{}…", &s[..byte_idx]),
+        None => s.to_string(),
+    }
+}
+
 /// Common English stop words to exclude from keyword extraction.
 const STOP_WORDS: &[&str] = &[
     "the", "and", "or", "is", "it", "in", "to", "for", "of", "a", "an", "on", "at", "by", "with",
@@ -98,11 +107,7 @@ async fn search_knowledge(
         }
 
         if score > 0.0 {
-            let snippet = if row.content.len() > 120 {
-                Some(format!("{}…", &row.content[..120]))
-            } else {
-                Some(row.content.clone())
-            };
+            let snippet = Some(truncate_snippet(&row.content, 120));
 
             scored.push(RelatedItem {
                 entity_type: "knowledge".to_string(),
@@ -182,11 +187,7 @@ async fn search_decisions(
         }
 
         if score > 0.0 {
-            let snippet = if row.context.len() > 120 {
-                Some(format!("{}…", &row.context[..120]))
-            } else {
-                Some(row.context.clone())
-            };
+            let snippet = Some(truncate_snippet(&row.context, 120));
 
             scored.push(RelatedItem {
                 entity_type: "decision".to_string(),
@@ -252,13 +253,7 @@ async fn search_observations(
         }
 
         if score > 0.0 {
-            let snippet = row.description.as_ref().map(|d| {
-                if d.len() > 120 {
-                    format!("{}…", &d[..120])
-                } else {
-                    d.clone()
-                }
-            });
+            let snippet = row.description.as_ref().map(|d| truncate_snippet(d, 120));
 
             scored.push(RelatedItem {
                 entity_type: "observation".to_string(),
@@ -289,26 +284,25 @@ pub async fn find_related_items(
     let keywords = extract_keywords(query_texts);
     let exclude = exclude_ids.unwrap_or_default();
 
-    let knowledge = search_knowledge(
-        pool,
-        project_id,
-        &keywords,
-        file_paths,
-        &exclude,
-        limit_per_type,
-    )
-    .await?;
-    let decisions = search_decisions(
-        pool,
-        project_id,
-        &keywords,
-        file_paths,
-        &exclude,
-        limit_per_type,
-    )
-    .await?;
-    let observations =
-        search_observations(pool, project_id, &keywords, &exclude, limit_per_type).await?;
+    let (knowledge, decisions, observations) = tokio::try_join!(
+        search_knowledge(
+            pool,
+            project_id,
+            &keywords,
+            file_paths,
+            &exclude,
+            limit_per_type
+        ),
+        search_decisions(
+            pool,
+            project_id,
+            &keywords,
+            file_paths,
+            &exclude,
+            limit_per_type
+        ),
+        search_observations(pool, project_id, &keywords, &exclude, limit_per_type),
+    )?;
 
     Ok(RelatedItems {
         knowledge,
@@ -382,11 +376,7 @@ pub async fn find_related_for_task(
         )
         .await
     {
-        let snippet = if decision.context.len() > 120 {
-            Some(format!("{}…", &decision.context[..120]))
-        } else {
-            Some(decision.context.clone())
-        };
+        let snippet = Some(truncate_snippet(&decision.context, 120));
 
         // Insert at the front with highest relevance
         result.decisions.insert(
