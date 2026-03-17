@@ -79,26 +79,6 @@ fn get_head_commit(git_root: &Path) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-/// Get the tree hash of HEAD (changes when any tracked file changes).
-fn get_head_tree_hash(git_root: &Path) -> Result<String> {
-    let output = std::process::Command::new("git")
-        .args(["rev-parse", "HEAD^{tree}"])
-        .current_dir(git_root)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .context("failed to run git rev-parse HEAD^{tree}")?;
-
-    if !output.status.success() {
-        anyhow::bail!(
-            "git rev-parse HEAD^{{tree}} failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
 /// Check if any source files changed between two commits.
 fn has_source_changes(git_root: &Path, old_commit: &str, new_commit: &str) -> Result<bool> {
     let output = std::process::Command::new("git")

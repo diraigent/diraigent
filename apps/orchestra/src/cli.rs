@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 mod config;
 mod constants;
 mod crypto;
