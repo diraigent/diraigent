@@ -332,6 +332,13 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   </button>
                 </div>
                 <div class="flex gap-2 ml-auto">
+                  <button (click)="openCreateTaskForGoal()"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-green/15 text-ctp-green hover:bg-ctp-green/25 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                    {{ t('goals.createTaskBtn') }}
+                  </button>
                   <button (click)="executeWorkItem()"
                     [disabled]="executeLoading()"
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-peach/15 text-ctp-peach hover:bg-ctp-peach/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
@@ -595,16 +602,11 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               <div class="pt-3 border-t border-border mb-3">
                 <div class="flex items-center justify-between mb-2">
                   <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider">{{ t('goals.linkedTasks') }}</h3>
-                  <div class="flex gap-2">
-                    <button (click)="openCreateTaskForGoal()" class="px-3 py-1.5 text-xs bg-ctp-green text-bg rounded hover:opacity-90">
-                      {{ t('goals.createTaskBtn') }}
+                  @if (statsMap().get(selected()!.id)?.backlog_count) {
+                    <button (click)="startAllBacklogTasks()" class="px-3 py-1.5 text-xs bg-ctp-blue text-bg rounded hover:opacity-90">
+                      {{ t('goals.startAllBtn') }}
                     </button>
-                    @if (statsMap().get(selected()!.id)?.backlog_count) {
-                      <button (click)="startAllBacklogTasks()" class="px-3 py-1.5 text-xs bg-ctp-blue text-bg rounded hover:opacity-90">
-                        {{ t('goals.startAllBtn') }}
-                      </button>
-                    }
-                  </div>
+                  }
                 </div>
                 @if (linkedTasksLoading()) {
                   <p class="text-xs text-text-secondary">{{ t('common.loading') }}</p>
