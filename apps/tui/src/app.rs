@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::client::{
     Agent, AuditEntry, BranchInfo, ChangedFile, ChatMessage, Decision, GitTaskStatus, Integration,
     IntegrationAccess, KnowledgeEntry, LogEntry, MainPushStatus, Member, Observation, Playbook,
@@ -610,6 +612,7 @@ pub struct App {
     pub playbooks: Vec<Playbook>,
     pub work_items: Vec<Work>,
     pub work_progress: Option<WorkProgress>,
+    pub work_progress_map: HashMap<Uuid, WorkProgress>,
     pub work_stats: Option<WorkStats>,
     pub work_children: Vec<Work>,
     pub observations: Vec<Observation>,
@@ -770,6 +773,7 @@ impl App {
             playbooks: vec![],
             work_items: vec![],
             work_progress: None,
+            work_progress_map: HashMap::new(),
             work_stats: None,
             work_children: vec![],
             observations: vec![],

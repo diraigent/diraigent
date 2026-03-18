@@ -45,6 +45,7 @@ enum ApiMsg {
     Playbooks(Vec<client::Playbook>),
     WorkItems(Vec<client::Work>),
     WorkProgress(client::WorkProgress),
+    AllWorkProgress(Vec<client::WorkProgress>),
     WorkStats(client::WorkStats),
     WorkChildren(Vec<client::Work>),
     Observations(Vec<client::Observation>),
@@ -402,9 +403,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "abandoned" => 3,
                         _ => 4,
                     });
+                    // Fetch progress for all work items
+                    let ids: Vec<uuid::Uuid> = g.iter().map(|w| w.id).collect();
+                    if !ids.is_empty() {
+                        let api = api.clone();
+                        let tx = tx.clone();
+                        tokio::spawn(async move {
+                            let mut all = Vec::new();
+                            for id in ids {
+                                if let Ok(p) = api.get_work_progress(id).await {
+                                    all.push(p);
+                                }
+                            }
+                            let _ = tx.send(ApiMsg::AllWorkProgress(all)).await;
+                        });
+                    }
                     app.work_items = g;
                 }
-                ApiMsg::WorkProgress(p) => app.work_progress = Some(p),
+                ApiMsg::WorkProgress(p) => {
+                    app.work_progress_map.insert(p.work_id, p.clone());
+                    app.work_progress = Some(p);
+                }
+                ApiMsg::AllWorkProgress(all) => {
+                    for p in all {
+                        app.work_progress_map.insert(p.work_id, p);
+                    }
+                }
                 ApiMsg::WorkStats(s) => app.work_stats = Some(s),
                 ApiMsg::WorkChildren(c) => app.work_children = c,
                 ApiMsg::Observations(o) => app.observations = o,
@@ -5918,6 +5942,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.decisions.clear();
                                     app.work_items.clear();
                                     app.work_progress = None;
+                                    app.work_progress_map.clear();
                                     app.work_stats = None;
                                     app.work_children.clear();
                                     app.work_comments.clear();
