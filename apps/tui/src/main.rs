@@ -5957,6 +5957,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.selected_task = None;
                                     app.task_list_state.select(None);
                                     app.selected_work = None;
+                                    app.work_list_state.select(None);
                                     app.selected_observation = None;
                                     app.selected_role = None;
                                     app.selected_member = None;

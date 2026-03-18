@@ -59,7 +59,12 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
         })
         .collect();
 
-    f.render_widget(List::new(items).block(block), chunks[0]);
+    app.work_list_state.select(app.selected_work);
+    f.render_stateful_widget(
+        List::new(items).block(block),
+        chunks[0],
+        &mut app.work_list_state,
+    );
 
     // Detail
     let detail_block = Block::default()

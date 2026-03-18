@@ -669,6 +669,7 @@ pub struct App {
     pub selected_decision: Option<usize>,
     pub selected_playbook: Option<usize>,
     pub selected_work: Option<usize>,
+    pub work_list_state: ListState,
     pub selected_observation: Option<usize>,
     pub selected_role: Option<usize>,
     pub selected_member: Option<usize>,
@@ -815,6 +816,7 @@ impl App {
             selected_decision: None,
             selected_playbook: None,
             selected_work: None,
+            work_list_state: ListState::default(),
             selected_observation: None,
             selected_role: None,
             selected_member: None,
@@ -923,7 +925,10 @@ impl App {
             View::Knowledge => self.selected_knowledge = idx,
             View::Decisions => self.selected_decision = idx,
             View::Playbooks => self.selected_playbook = idx,
-            View::Work => self.selected_work = idx,
+            View::Work => {
+                self.selected_work = idx;
+                self.work_list_state.select(idx);
+            }
             View::Observations => self.selected_observation = idx,
             View::Team => self.selected_role = idx,
             View::Integrations => self.selected_integration = idx,
