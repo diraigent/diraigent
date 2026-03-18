@@ -370,13 +370,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                     }
                     {{ t('goals.planExecuteBtn') }}
                   </button>
-                  <button (click)="saveInlineField()"
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-accent/15 text-accent hover:bg-accent/25 transition-colors">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                    {{ t('goals.save') }}
-                  </button>
                 </div>
               </div>
 
