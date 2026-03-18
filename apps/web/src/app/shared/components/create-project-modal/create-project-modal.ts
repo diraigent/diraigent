@@ -51,136 +51,163 @@ const STEP_LIST: WizardStep[] = ['project', 'playbook', 'agent', 'done'];
 
         <!-- Step 1: Project Details -->
         @if (step() === 'project') {
-          <h2 class="text-lg font-semibold text-text-primary mb-5">{{ t('projects.createTitle') }}</h2>
+          <h2 class="text-lg font-semibold text-text-primary mb-1">{{ t('projects.createTitle') }}</h2>
+          <p class="text-sm text-text-secondary mb-5">{{ t('projects.wizard.step1Hint') }}</p>
 
-          <div class="space-y-4">
-            <!-- Name (required) -->
-            <label class="block">
-              <span class="block text-sm font-medium text-text-secondary mb-1">
-                {{ t('projects.name') }} <span class="text-ctp-red">*</span>
-              </span>
-              <input #nameInput type="text" [(ngModel)]="name" [placeholder]="t('projects.namePlaceholder')"
-                class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                       focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary" />
-            </label>
+          <div class="space-y-6">
 
-            <!-- Description -->
-            <label class="block">
-              <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('projects.description') }}</span>
-              <textarea [(ngModel)]="description" [placeholder]="t('projects.descriptionPlaceholder')" rows="2"
-                class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                       focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary resize-y"></textarea>
-            </label>
+            <!-- ── Section: Basics ── -->
+            <fieldset class="space-y-4">
+              <legend class="text-xs font-semibold uppercase tracking-wide text-text-secondary mb-1">{{ t('projects.wizard.sectionBasics') }}</legend>
 
-            <!-- Package -->
-            <div class="block">
-              <label for="cp-package" class="block text-sm font-medium text-text-secondary mb-1">{{ t('projects.package') }}</label>
-              @if (loadingPackages()) {
-                <p class="text-xs text-text-secondary">{{ t('common.loading') }}</p>
-              } @else if (packageLoadError()) {
-                <p class="text-xs text-ctp-red">{{ t('projects.packageLoadError') }}</p>
-              } @else {
-                <select id="cp-package" [(ngModel)]="packageSlug"
-                  class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                         focus:outline-none focus:ring-1 focus:ring-accent">
-                  <option value="">{{ t('projects.packageDefault') }}</option>
-                  @for (pkg of packages(); track pkg.id) {
-                    <option [value]="pkg.slug">{{ pkg.name }}</option>
-                  }
-                </select>
-                @if (selectedPackage) {
-                  <p class="mt-1 text-xs text-text-secondary">{{ selectedPackage.description }}</p>
-                }
-              }
-            </div>
-
-            <!-- Parent project -->
-            @if (parentProjects().length > 0) {
+              <!-- Name (required) -->
               <label class="block">
-                <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('projects.parent') }}</span>
-                <select [(ngModel)]="parentId" (ngModelChange)="onParentChange()"
-                  class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                         focus:outline-none focus:ring-1 focus:ring-accent">
-                  <option value="">{{ t('projects.noParent') }}</option>
-                  @for (p of parentProjects(); track p.id) {
-                    <option [value]="p.id">{{ p.name }}</option>
-                  }
-                </select>
-              </label>
-            }
-
-            <!-- Repo URL (hidden when parent project is selected — inherited from parent) -->
-            @if (!parentId) {
-              <label class="block">
-                <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('projects.repoUrl') }}</span>
-                <input type="text" [(ngModel)]="repoUrl" placeholder="https://github.com/org/repo"
-                  class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                         focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary" />
-              </label>
-            }
-
-            <!-- Git Mode -->
-            <label class="block">
-              <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('projects.gitMode') }}</span>
-              <select [(ngModel)]="gitMode"
-                class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                       focus:outline-none focus:ring-1 focus:ring-accent">
-                <option value="standalone">{{ t('projects.gitModeStandalone') }}</option>
-                <option value="monorepo">{{ t('projects.gitModeMonorepo') }}</option>
-                <option value="none">{{ t('projects.gitModeNone') }}</option>
-              </select>
-            </label>
-
-            <!-- Git Root — path on disk relative to PROJECTS_PATH -->
-            @if (gitMode !== 'none') {
-              <label class="block">
-                <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('projects.gitRoot') }}</span>
-                <input type="text" [(ngModel)]="gitRoot"
-                  [placeholder]="gitMode === 'monorepo' ? t('projects.gitRootPlaceholderMonorepo', { projectsPath: projectsPath() || 'PROJECTS_PATH' }) : t('projects.gitRootPlaceholderStandalone', { projectsPath: projectsPath() || 'PROJECTS_PATH' })"
-                  class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                         focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary" />
-                <span class="block text-xs text-text-secondary mt-1">
-                  Full path: <code class="font-mono bg-surface px-1 rounded">{{ projectsPath() ?? '(PROJECTS_PATH not set)' }}/{{ gitRoot || '…' }}</code>
+                <span class="block text-sm font-medium text-text-secondary mb-1">
+                  {{ t('projects.name') }} <span class="text-ctp-red">*</span>
                 </span>
+                <input #nameInput type="text" [(ngModel)]="name" [placeholder]="t('projects.namePlaceholder')"
+                  class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                         focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary" />
               </label>
-            }
 
-            <!-- Monorepo: Project Root + Default Branch side by side -->
-            @if (gitMode === 'monorepo') {
-              <div class="grid grid-cols-2 gap-4">
+              <!-- Description -->
+              <label class="block">
+                <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('projects.description') }}</span>
+                <textarea [(ngModel)]="description" [placeholder]="t('projects.descriptionPlaceholder')" rows="2"
+                  class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                         focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary resize-y"></textarea>
+              </label>
+
+              <!-- Package -->
+              <div class="block">
+                <label for="cp-package" class="block text-sm font-medium text-text-secondary mb-1">{{ t('projects.package') }}</label>
+                <p class="text-xs text-text-secondary mb-1.5">{{ t('projects.wizard.packageHint') }}</p>
+                @if (loadingPackages()) {
+                  <p class="text-xs text-text-secondary">{{ t('common.loading') }}</p>
+                } @else if (packageLoadError()) {
+                  <p class="text-xs text-ctp-red">{{ t('projects.packageLoadError') }}</p>
+                } @else {
+                  <select id="cp-package" [(ngModel)]="packageSlug"
+                    class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                           focus:outline-none focus:ring-1 focus:ring-accent">
+                    <option value="">{{ t('projects.packageDefault') }}</option>
+                    @for (pkg of packages(); track pkg.id) {
+                      <option [value]="pkg.slug">{{ pkg.name }}</option>
+                    }
+                  </select>
+                  @if (selectedPackage) {
+                    <p class="mt-1 text-xs text-text-secondary">{{ selectedPackage.description }}</p>
+                  }
+                }
+              </div>
+
+              <!-- Parent project -->
+              @if (parentProjects().length > 0) {
                 <label class="block">
-                  <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('projects.projectRoot') }}</span>
-                  <input type="text" [(ngModel)]="projectRoot"
-                    [placeholder]="t('projects.projectRootPlaceholder')"
+                  <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('projects.parent') }}</span>
+                  <p class="text-xs text-text-secondary mb-1.5">{{ t('projects.wizard.parentHint') }}</p>
+                  <select [(ngModel)]="parentId" (ngModelChange)="onParentChange()"
+                    class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                           focus:outline-none focus:ring-1 focus:ring-accent">
+                    <option value="">{{ t('projects.noParent') }}</option>
+                    @for (p of parentProjects(); track p.id) {
+                      <option [value]="p.id">{{ p.name }}</option>
+                    }
+                  </select>
+                </label>
+              }
+            </fieldset>
+
+            <hr class="border-border" />
+
+            <!-- ── Section: Source Code ── -->
+            <fieldset class="space-y-4">
+              <legend class="text-xs font-semibold uppercase tracking-wide text-text-secondary mb-1">{{ t('projects.wizard.sectionSource') }}</legend>
+              <p class="text-xs text-text-secondary -mt-1">{{ t('projects.wizard.sectionSourceHint') }}</p>
+
+              <!-- Repo URL (hidden when parent project is selected — inherited from parent) -->
+              @if (!parentId) {
+                <label class="block">
+                  <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('projects.repoUrl') }}</span>
+                  <p class="text-xs text-text-secondary mb-1.5">{{ t('projects.wizard.repoUrlHint') }}</p>
+                  <input type="text" [(ngModel)]="repoUrl" placeholder="https://github.com/org/repo"
                     class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
                            focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary" />
-                  <span class="block text-xs text-text-secondary mt-1">{{ t('projects.projectRootHint') }}</span>
                 </label>
+              }
+
+              <!-- Git Mode — radio cards -->
+              <div>
+                <span class="block text-sm font-medium text-text-secondary mb-2">{{ t('projects.wizard.gitModeLabel') }}</span>
+                <div class="grid grid-cols-3 gap-3">
+                  @for (opt of gitModeOptions; track opt.value) {
+                    <button (click)="gitMode = opt.value" type="button"
+                      class="text-left p-3 rounded-lg border transition-colors"
+                      [class.border-accent]="gitMode === opt.value"
+                      [class.bg-accent/5]="gitMode === opt.value"
+                      [class.border-border]="gitMode !== opt.value"
+                      [class.hover:border-accent]="gitMode !== opt.value">
+                      <span class="block text-sm font-medium text-text-primary">{{ t(opt.labelKey) }}</span>
+                      <span class="block text-xs text-text-secondary mt-1">{{ t(opt.descKey) }}</span>
+                    </button>
+                  }
+                </div>
+              </div>
+
+              <!-- Git Root — path on disk relative to PROJECTS_PATH -->
+              @if (gitMode !== 'none') {
+                <label class="block">
+                  <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('projects.gitRoot') }}</span>
+                  <p class="text-xs text-text-secondary mb-1.5">{{ t('projects.wizard.gitRootHint') }}</p>
+                  <input type="text" [(ngModel)]="gitRoot"
+                    [placeholder]="gitMode === 'monorepo' ? t('projects.gitRootPlaceholderMonorepo', { projectsPath: projectsPath() || 'PROJECTS_PATH' }) : t('projects.gitRootPlaceholderStandalone', { projectsPath: projectsPath() || 'PROJECTS_PATH' })"
+                    class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                           focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary" />
+                  <span class="block text-xs text-text-secondary mt-1">
+                    Full path: <code class="font-mono bg-surface px-1 rounded">{{ projectsPath() ?? '(PROJECTS_PATH not set)' }}/{{ gitRoot || '…' }}</code>
+                  </span>
+                </label>
+              }
+
+              <!-- Default Branch -->
+              @if (gitMode !== 'none') {
                 <label class="block">
                   <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('projects.defaultBranch') }}</span>
+                  <p class="text-xs text-text-secondary mb-1.5">{{ t('projects.wizard.defaultBranchHint') }}</p>
                   <input type="text" [(ngModel)]="defaultBranch" placeholder="main"
                     class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
                            focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary" />
                 </label>
-              </div>
-            } @else if (gitMode !== 'none') {
-              <!-- Standalone: default branch full-width -->
+              }
+
+              <!-- Monorepo: Project Root -->
+              @if (gitMode === 'monorepo') {
+                <label class="block">
+                  <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('projects.projectRoot') }}</span>
+                  <p class="text-xs text-text-secondary mb-1.5">{{ t('projects.wizard.projectRootHint') }}</p>
+                  <input type="text" [(ngModel)]="projectRoot"
+                    [placeholder]="t('projects.projectRootPlaceholder')"
+                    class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                           focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary" />
+                </label>
+              }
+            </fieldset>
+
+            <hr class="border-border" />
+
+            <!-- ── Section: Integrations (optional) ── -->
+            <fieldset class="space-y-4">
+              <legend class="text-xs font-semibold uppercase tracking-wide text-text-secondary mb-1">{{ t('projects.wizard.sectionIntegrations') }}</legend>
+
+              <!-- Service Name -->
               <label class="block">
-                <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('projects.defaultBranch') }}</span>
-                <input type="text" [(ngModel)]="defaultBranch" placeholder="main"
+                <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('projects.serviceName') }}</span>
+                <p class="text-xs text-text-secondary mb-1.5">{{ t('projects.wizard.serviceNameHint') }}</p>
+                <input type="text" [(ngModel)]="serviceName" [placeholder]="t('projects.serviceNamePlaceholder')"
                   class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
                          focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary" />
               </label>
-            }
-
-            <!-- Service Name -->
-            <label class="block">
-              <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('projects.serviceName') }}</span>
-              <input type="text" [(ngModel)]="serviceName" [placeholder]="t('projects.serviceNamePlaceholder')"
-                class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                       focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary" />
-              <span class="block text-xs text-text-secondary mt-1">{{ t('projects.serviceNameHint') }}</span>
-            </label>
+            </fieldset>
 
             @if (error()) {
               <p class="text-sm text-ctp-red">{{ error() }}</p>
@@ -469,6 +496,12 @@ export class CreateProjectModalComponent implements OnInit, AfterViewInit {
   gitMode: DgGitMode = 'standalone';
   gitRoot = '';
   projectRoot = '';
+
+  readonly gitModeOptions: { value: DgGitMode; labelKey: string; descKey: string }[] = [
+    { value: 'standalone', labelKey: 'projects.wizard.gitStandaloneLabel', descKey: 'projects.wizard.gitStandaloneDesc' },
+    { value: 'monorepo', labelKey: 'projects.wizard.gitMonorepoLabel', descKey: 'projects.wizard.gitMonorepoDesc' },
+    { value: 'none', labelKey: 'projects.wizard.gitNoneLabel', descKey: 'projects.wizard.gitNoneDesc' },
+  ];
 
   // Step 2: Playbook selection
   playbooks = signal<SpPlaybook[]>([]);
