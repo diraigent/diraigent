@@ -1042,28 +1042,41 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                 @if (!editing()) {
                   <button (click)="submitFormAndExecute()"
                     [disabled]="createAndExecuteLoading()"
-                    class="px-4 py-2 bg-ctp-peach text-bg rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-peach/15 text-ctp-peach hover:bg-ctp-peach/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                     @if (createAndExecuteLoading()) {
-                      <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                      </svg>
+                    } @else {
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     }
                     {{ t('goals.createAndExecute') }}
                   </button>
                   <button (click)="submitFormAndPlanExecute()"
                     [disabled]="createAndPlanExecuteLoading()"
-                    class="px-4 py-2 bg-ctp-mauve text-bg rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-mauve/15 text-ctp-mauve hover:bg-ctp-mauve/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                     @if (createAndPlanExecuteLoading()) {
-                      <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                      </svg>
+                    } @else {
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                       </svg>
                     }
                     {{ t('goals.createAndPlanExecute') }}
                   </button>
                 }
-                <button (click)="submitForm()" class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90">
+                <button (click)="submitForm()"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-accent/15 text-accent hover:bg-accent/25 transition-colors">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
                   {{ t('goals.save') }}
                 </button>
               </div>
