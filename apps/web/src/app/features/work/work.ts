@@ -259,10 +259,17 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
           <!-- Expanded detail (inline) -->
           @if (goal.id === selected()?.id) {
             <div class="px-4 pb-4 pt-0 border-t border-border/50 mt-0">
-              <!-- Inline title edit -->
-              <div class="pt-3 mb-3">
+              <!-- Inline title edit with type dropdown -->
+              <div class="pt-3 mb-3 flex items-center gap-2">
+                <select [(ngModel)]="formWorkType" (change)="saveInlineField()"
+                  class="text-xs rounded-lg px-2 py-2 border border-border bg-surface text-text-primary
+                         focus:outline-none focus:ring-1 focus:ring-accent shrink-0">
+                  @for (gt of goalTypes; track gt) {
+                    <option [value]="gt">{{ t('goals.type.' + gt) }}</option>
+                  }
+                </select>
                 <input type="text" [(ngModel)]="formTitle" (blur)="saveInlineField()"
-                  class="w-full bg-surface text-text-primary text-sm font-medium rounded-lg px-3 py-2 border border-border
+                  class="flex-1 bg-surface text-text-primary text-sm font-medium rounded-lg px-3 py-2 border border-border
                          focus:outline-none focus:ring-1 focus:ring-accent"
                   [placeholder]="t('goals.fieldTitle')" />
               </div>
@@ -328,13 +335,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                     {{ t('goals.status.' + goal.status) }}
                   </span>
                 }
-                <select [(ngModel)]="formWorkType" (change)="saveInlineField()"
-                  class="text-xs rounded-lg px-2 py-1 border border-border bg-surface text-text-primary
-                         focus:outline-none focus:ring-1 focus:ring-accent">
-                  @for (gt of goalTypes; track gt) {
-                    <option [value]="gt">{{ t('goals.type.' + gt) }}</option>
-                  }
-                </select>
                 <div class="flex items-center gap-1">
                   <span class="text-xs text-text-secondary">{{ t('goals.fieldPriority') }}</span>
                   <input type="number" [(ngModel)]="formPriority" (blur)="saveInlineField()"
