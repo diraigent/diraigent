@@ -396,7 +396,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::Knowledge(k) => app.knowledge = k,
                 ApiMsg::Decisions(d) => app.decisions = d,
                 ApiMsg::Playbooks(p) => app.playbooks = p,
-                ApiMsg::WorkItems(g) => app.work_items = g,
+                ApiMsg::WorkItems(mut g) => {
+                    g.sort_by_key(|w| match w.status.as_deref().unwrap_or("") {
+                        "active" => 0,
+                        "paused" => 1,
+                        "achieved" => 2,
+                        "abandoned" => 3,
+                        _ => 4,
+                    });
+                    app.work_items = g;
+                }
                 ApiMsg::WorkProgress(p) => app.work_progress = Some(p),
                 ApiMsg::WorkStats(s) => app.work_stats = Some(s),
                 ApiMsg::WorkChildren(c) => app.work_children = c,
