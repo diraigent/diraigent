@@ -24,6 +24,7 @@ import {
   SpWorkCreate,
   SpWorkProgress,
   SpWorkStats,
+  SpWorkSummary,
 } from '../../core/services/work-api.service';
 import {
   TasksApiService,
@@ -1638,52 +1639,45 @@ export class WorkPage {
   private loadAllProgress(goals: SpWork[]): void {
     if (goals.length === 0) {
       this.progressMap.set(new Map());
-      this.loadAllStats(goals);
+      this.statsMap.set(new Map());
+      this.loadConflictStatuses(goals);
       return;
     }
 
-    from(goals).pipe(
-      mergeMap(
-        goal => this.api.progress(goal.id).pipe(
-          map(prog => [goal.id, prog] as const),
-          catchError(() => of(null)),
-        ),
-        WorkPage.GOAL_DETAIL_CONCURRENCY,
-      ),
-      toArray(),
+    // Single bulk request replaces 2N individual calls (progress + stats per goal)
+    this.api.summaries().pipe(
+      catchError(() => of([] as SpWorkSummary[])),
     ).subscribe({
-      next: entries => {
-        const map = new Map<string, SpWorkProgress>();
-        for (const entry of entries) {
-          if (!entry) continue;
-          map.set(entry[0], entry[1]);
+      next: summaries => {
+        const progMap = new Map<string, SpWorkProgress>();
+        const statMap = new Map<string, SpWorkStats>(this.statsMap());
+        for (const s of summaries) {
+          const total = s.total_tasks;
+          const done = s.done_tasks;
+          progMap.set(s.work_id, {
+            total_tasks: total,
+            done_tasks: done,
+            percentage: total > 0 ? Math.round((done / total) * 100) : 0,
+          });
+          statMap.set(s.work_id, {
+            work_id: s.work_id,
+            backlog_count: s.backlog_count,
+            ready_count: s.ready_count,
+            working_count: s.working_count,
+            done_count: s.done_count,
+            cancelled_count: s.cancelled_count,
+            total_count: s.total_count,
+            kind_breakdown: {},
+            total_cost_usd: s.total_cost_usd,
+            total_input_tokens: s.total_input_tokens,
+            total_output_tokens: s.total_output_tokens,
+            blocked_count: s.blocked_count,
+            avg_completion_hours: null,
+            oldest_open_task_date: null,
+          });
         }
-        this.progressMap.set(map);
-      },
-    });
-    this.loadAllStats(goals);
-  }
-
-  private loadAllStats(goals: SpWork[]): void {
-    if (goals.length === 0) return;
-
-    from(goals).pipe(
-      mergeMap(
-        goal => this.api.stats(goal.id).pipe(
-          map(stats => [goal.id, stats] as const),
-          catchError(() => of(null)),
-        ),
-        WorkPage.GOAL_DETAIL_CONCURRENCY,
-      ),
-      toArray(),
-    ).subscribe({
-      next: entries => {
-        const map = new Map<string, SpWorkStats>(this.statsMap());
-        for (const entry of entries) {
-          if (!entry) continue;
-          map.set(entry[0], entry[1]);
-        }
-        this.statsMap.set(map);
+        this.progressMap.set(progMap);
+        this.statsMap.set(statMap);
       },
     });
     this.loadConflictStatuses(goals);

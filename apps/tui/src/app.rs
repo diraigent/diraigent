@@ -612,6 +612,12 @@ pub struct App {
     pub decisions: Vec<Decision>,
     pub playbooks: Vec<Playbook>,
     pub work_items: Vec<Work>,
+    pub done_work_items: Vec<Work>,
+    pub done_work_page: usize,
+    pub done_work_has_more: bool,
+    pub work_section: usize, // 0 = active/paused, 1 = done/abandoned
+    pub selected_done_work: Option<usize>,
+    pub done_work_list_state: ListState,
     pub work_progress: Option<WorkProgress>,
     pub work_progress_map: HashMap<Uuid, WorkProgress>,
     pub work_stats: Option<WorkStats>,
@@ -774,6 +780,12 @@ impl App {
             decisions: vec![],
             playbooks: vec![],
             work_items: vec![],
+            done_work_items: vec![],
+            done_work_page: 0,
+            done_work_has_more: false,
+            work_section: 0,
+            selected_done_work: None,
+            done_work_list_state: ListState::default(),
             work_progress: None,
             work_progress_map: HashMap::new(),
             work_stats: None,
@@ -870,7 +882,13 @@ impl App {
             View::Knowledge => self.knowledge.len(),
             View::Decisions => self.decisions.len(),
             View::Playbooks => self.playbooks.len(),
-            View::Work => self.work_items.len(),
+            View::Work => {
+                if self.work_section == 0 {
+                    self.work_items.len()
+                } else {
+                    self.done_work_items.len()
+                }
+            }
             View::Observations => self.observations.len(),
             View::Team => self.roles.len(),
             View::Integrations => self.integrations.len(),
@@ -896,7 +914,13 @@ impl App {
             View::Knowledge => self.selected_knowledge,
             View::Decisions => self.selected_decision,
             View::Playbooks => self.selected_playbook,
-            View::Work => self.selected_work,
+            View::Work => {
+                if self.work_section == 0 {
+                    self.selected_work
+                } else {
+                    self.selected_done_work
+                }
+            }
             View::Observations => self.selected_observation,
             View::Team => self.selected_role,
             View::Integrations => self.selected_integration,
@@ -927,8 +951,13 @@ impl App {
             View::Decisions => self.selected_decision = idx,
             View::Playbooks => self.selected_playbook = idx,
             View::Work => {
-                self.selected_work = idx;
-                self.work_list_state.select(idx);
+                if self.work_section == 0 {
+                    self.selected_work = idx;
+                    self.work_list_state.select(idx);
+                } else {
+                    self.selected_done_work = idx;
+                    self.done_work_list_state.select(idx);
+                }
             }
             View::Observations => self.selected_observation = idx,
             View::Team => self.selected_role = idx,
@@ -949,6 +978,10 @@ impl App {
     }
 
     pub fn move_selection(&mut self, delta: i32) {
+        if self.view == View::Work {
+            self.move_work_selection(delta);
+            return;
+        }
         let len = self.list_len();
         if len == 0 {
             return;
@@ -956,6 +989,71 @@ impl App {
         let current = self.selected().unwrap_or(0) as i32;
         let next = (current + delta).clamp(0, len as i32 - 1) as usize;
         self.set_selected(Some(next));
+    }
+
+    fn move_work_selection(&mut self, delta: i32) {
+        self.detail_scroll = 0;
+        if self.work_section == 0 {
+            let len = self.work_items.len();
+            if len == 0 && !self.done_work_items.is_empty() && delta > 0 {
+                // Jump to done section
+                self.work_section = 1;
+                self.selected_done_work = Some(0);
+                self.done_work_list_state.select(Some(0));
+                return;
+            }
+            if len == 0 {
+                return;
+            }
+            let current = self.selected_work.unwrap_or(0) as i32;
+            let next = current + delta;
+            if next >= len as i32 && !self.done_work_items.is_empty() {
+                // Move to done section
+                self.work_section = 1;
+                self.selected_done_work = Some(0);
+                self.done_work_list_state.select(Some(0));
+            } else {
+                let clamped = next.clamp(0, len as i32 - 1) as usize;
+                self.selected_work = Some(clamped);
+                self.work_list_state.select(Some(clamped));
+            }
+        } else {
+            let len = self.done_work_items.len();
+            if len == 0 && !self.work_items.is_empty() && delta < 0 {
+                // Jump to active section
+                self.work_section = 0;
+                let last = self.work_items.len().saturating_sub(1);
+                self.selected_work = Some(last);
+                self.work_list_state.select(Some(last));
+                return;
+            }
+            if len == 0 {
+                return;
+            }
+            let current = self.selected_done_work.unwrap_or(0) as i32;
+            let next = current + delta;
+            if next < 0 && !self.work_items.is_empty() {
+                // Move to active section
+                self.work_section = 0;
+                let last = self.work_items.len().saturating_sub(1);
+                self.selected_work = Some(last);
+                self.work_list_state.select(Some(last));
+            } else {
+                let clamped = next.clamp(0, len as i32 - 1) as usize;
+                self.selected_done_work = Some(clamped);
+                self.done_work_list_state.select(Some(clamped));
+            }
+        }
+    }
+
+    /// Returns the currently selected work item from either section.
+    pub fn selected_work_item(&self) -> Option<&Work> {
+        if self.work_section == 0 {
+            self.selected_work.and_then(|i| self.work_items.get(i))
+        } else {
+            self.selected_done_work
+                .and_then(|i| self.done_work_items.get(i))
+        }
     }
 
     pub fn scroll_detail(&mut self, delta: i32) {

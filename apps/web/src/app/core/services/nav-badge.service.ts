@@ -10,7 +10,7 @@ import { ProjectContext } from './project-context.service';
 import { ReviewSseService } from './review-sse.service';
 
 /** How often (ms) to re-fetch badge counts while a project is active. */
-const POLL_INTERVAL_MS = 60_000;
+const POLL_INTERVAL_MS = 300_000;
 
 @Injectable({ providedIn: 'root' })
 export class NavBadgeService {

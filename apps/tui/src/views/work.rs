@@ -5,6 +5,7 @@ use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::app::App;
+use crate::client::Work;
 use crate::theme;
 
 /// Map API work status to user-friendly display name.
@@ -17,78 +18,140 @@ pub fn work_status_label(status: &str) -> &str {
     }
 }
 
+fn make_work_item(
+    app: &App,
+    g: &Work,
+    i: usize,
+    selected: Option<usize>,
+    is_focused_section: bool,
+) -> ListItem<'static> {
+    let status = g.status.as_deref().unwrap_or("active");
+    let work_type = g.work_type.as_deref().unwrap_or("epic");
+    let priority = g.priority.unwrap_or(0);
+    let color = match status {
+        "active" => theme::green(),
+        "achieved" => theme::blue(),
+        "paused" => theme::yellow(),
+        "abandoned" => theme::red(),
+        _ => theme::text(),
+    };
+    let style = if is_focused_section && Some(i) == selected {
+        Style::default().fg(theme::base()).bg(theme::green())
+    } else {
+        Style::default().fg(color)
+    };
+    let prio_str = if priority != 0 {
+        format!(" P:{}", priority)
+    } else {
+        String::new()
+    };
+    let progress_str = app
+        .work_progress_map
+        .get(&g.id)
+        .map(|p| format!(" ({}/{})", p.done_tasks, p.total_tasks))
+        .unwrap_or_default();
+    ListItem::new(Line::styled(
+        format!(
+            " [{}:{}]{} {}{}",
+            work_type,
+            work_status_label(status),
+            prio_str,
+            g.title,
+            progress_str
+        ),
+        style,
+    ))
+}
+
 pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
         .split(area);
 
-    // List
-    let block = Block::default()
-        .title(" Work ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme::green()));
+    // Split left panel into active (top) and done (bottom) sections
+    let list_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .split(chunks[0]);
 
-    let items: Vec<ListItem> = app
-        .work_items
-        .iter()
-        .enumerate()
-        .map(|(i, g)| {
-            let status = g.status.as_deref().unwrap_or("active");
-            let work_type = g.work_type.as_deref().unwrap_or("epic");
-            let priority = g.priority.unwrap_or(0);
-            let color = match status {
-                "active" => theme::green(),
-                "achieved" => theme::blue(),
-                "paused" => theme::yellow(),
-                "abandoned" => theme::red(),
-                _ => theme::text(),
-            };
-            let style = if Some(i) == app.selected_work {
-                Style::default().fg(theme::base()).bg(theme::green())
-            } else {
-                Style::default().fg(color)
-            };
-            let prio_str = if priority != 0 {
-                format!(" P:{}", priority)
-            } else {
-                String::new()
-            };
-            let progress_str = app
-                .work_progress_map
-                .get(&g.id)
-                .map(|p| format!(" ({}/{})", p.done_tasks, p.total_tasks))
-                .unwrap_or_default();
-            ListItem::new(Line::styled(
-                format!(
-                    " [{}:{}]{} {}{}",
-                    work_type,
-                    work_status_label(status),
-                    prio_str,
-                    g.title,
-                    progress_str
-                ),
-                style,
-            ))
-        })
-        .collect();
+    let active_focused = app.work_section == 0;
+    let done_focused = app.work_section == 1;
 
-    app.work_list_state.select(app.selected_work);
-    f.render_stateful_widget(
-        List::new(items).block(block),
-        chunks[0],
-        &mut app.work_list_state,
-    );
+    // Active/Paused list (top)
+    {
+        let border_color = if active_focused {
+            theme::green()
+        } else {
+            theme::surface1()
+        };
+        let block = Block::default()
+            .title(" Active ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(border_color));
 
-    // Detail
+        let items: Vec<ListItem> = app
+            .work_items
+            .iter()
+            .enumerate()
+            .map(|(i, g)| make_work_item(app, g, i, app.selected_work, active_focused))
+            .collect();
+
+        app.work_list_state.select(app.selected_work);
+        f.render_stateful_widget(
+            List::new(items).block(block),
+            list_chunks[0],
+            &mut app.work_list_state,
+        );
+    }
+
+    // Done/Abandoned list (bottom)
+    {
+        let border_color = if done_focused {
+            theme::green()
+        } else {
+            theme::surface1()
+        };
+        let title = if app.done_work_has_more || app.done_work_page > 0 {
+            format!(" Done (p{}) ", app.done_work_page + 1)
+        } else {
+            " Done ".to_string()
+        };
+        let block = Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(border_color));
+
+        let items: Vec<ListItem> = app
+            .done_work_items
+            .iter()
+            .enumerate()
+            .map(|(i, g)| make_work_item(app, g, i, app.selected_done_work, done_focused))
+            .collect();
+
+        app.done_work_list_state.select(app.selected_done_work);
+        f.render_stateful_widget(
+            List::new(items).block(block),
+            list_chunks[1],
+            &mut app.done_work_list_state,
+        );
+    }
+
+    // Detail panel (right)
     let detail_block = Block::default()
         .title(" Work Detail ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme::surface1()));
 
-    let content = app
-        .selected_work
-        .and_then(|i| app.work_items.get(i))
+    // Get selected work item from the appropriate section
+    let selected_goal = if app.work_section == 0 {
+        app.selected_work.and_then(|i| app.work_items.get(i))
+    } else {
+        app.selected_done_work
+            .and_then(|i| app.done_work_items.get(i))
+    };
+
+    let content = selected_goal
         .map(|g| {
             let status = g.status.as_deref().unwrap_or("active");
             let work_type = g.work_type.as_deref().unwrap_or("epic");
@@ -102,7 +165,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 _ => theme::text(),
             };
             let mut lines = vec![
-                Line::styled(&g.title, Style::default().fg(theme::green())),
+                Line::styled(g.title.clone(), Style::default().fg(theme::green())),
                 Line::styled(
                     format!(
                         "Type: {}  Status: {}  Priority: {}",
@@ -252,7 +315,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
 
             lines.push(Line::from(""));
             lines.push(Line::styled(
-                "[t] New task  [c] Comment",
+                "[t] New task  [c] Comment  [</> page]",
                 Style::default().fg(theme::overlay0()),
             ));
 

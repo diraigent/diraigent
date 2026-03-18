@@ -31,6 +31,8 @@ use app::{
 };
 use client::ApiClient;
 
+const DONE_WORK_PAGE_SIZE: i64 = 20;
+
 #[derive(Debug)]
 enum ApiMsg {
     Connected(bool),
@@ -44,6 +46,7 @@ enum ApiMsg {
     Decisions(Vec<client::Decision>),
     Playbooks(Vec<client::Playbook>),
     WorkItems(Vec<client::Work>),
+    DoneWorkItems(Vec<client::Work>),
     WorkProgress(client::WorkProgress),
     AllWorkProgress(Vec<client::WorkProgress>),
     WorkStats(client::WorkStats),
@@ -134,7 +137,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             playbooks,
             knowledge,
             decisions,
-            work_items,
+            active_work,
+            done_work,
             observations,
             roles,
             members,
@@ -151,7 +155,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             api.list_playbooks(pid),
             api.list_knowledge(pid),
             api.list_decisions(pid),
-            api.list_work(pid),
+            api.list_work_filtered(pid, Some("achieved,abandoned"), None, None),
+            api.list_work_filtered(
+                pid,
+                Some("active,paused"),
+                Some(DONE_WORK_PAGE_SIZE),
+                Some(0)
+            ),
             api.list_observations(pid),
             api.list_roles(),
             api.list_members(),
@@ -176,8 +186,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Ok(resp) = decisions {
             let _ = tx.send(ApiMsg::Decisions(resp)).await;
         }
-        if let Ok(resp) = work_items {
+        if let Ok(resp) = active_work {
             let _ = tx.send(ApiMsg::WorkItems(resp)).await;
+        }
+        if let Ok(resp) = done_work {
+            let _ = tx.send(ApiMsg::DoneWorkItems(resp)).await;
         }
         if let Ok(resp) = observations {
             let _ = tx.send(ApiMsg::Observations(resp)).await;
@@ -223,8 +236,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ) {
         match view {
             View::Work => {
-                if let Ok(resp) = api.list_work(pid).await {
+                let (active, done) = tokio::join!(
+                    api.list_work_filtered(pid, Some("achieved,abandoned"), None, None),
+                    api.list_work_filtered(
+                        pid,
+                        Some("active,paused"),
+                        Some(DONE_WORK_PAGE_SIZE),
+                        Some(0)
+                    ),
+                );
+                if let Ok(resp) = active {
                     let _ = tx.send(ApiMsg::WorkItems(resp)).await;
+                }
+                if let Ok(resp) = done {
+                    let _ = tx.send(ApiMsg::DoneWorkItems(resp)).await;
                 }
             }
             View::Tasks => {
@@ -329,7 +354,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         // Skip work if the active view already fetches it
         if !matches!(active_view, View::Work) {
-            if let Ok(resp) = api.list_work(pid).await {
+            if let Ok(resp) = api
+                .list_work_filtered(pid, Some("achieved,abandoned"), None, None)
+                .await
+            {
                 let _ = tx.send(ApiMsg::WorkItems(resp)).await;
             }
         }
@@ -573,11 +601,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     g.sort_by_key(|w| match w.status.as_deref().unwrap_or("") {
                         "active" => 0,
                         "paused" => 1,
-                        "achieved" => 2,
-                        "abandoned" => 3,
-                        _ => 4,
+                        _ => 2,
                     });
-                    // Fetch progress for all work items
+                    // Fetch progress for active work items
                     let ids: Vec<uuid::Uuid> = g.iter().map(|w| w.id).collect();
                     if !ids.is_empty() {
                         let api = api.clone();
@@ -593,6 +619,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         });
                     }
                     app.work_items = g;
+                }
+                ApiMsg::DoneWorkItems(g) => {
+                    app.done_work_has_more = g.len() as i64 >= DONE_WORK_PAGE_SIZE;
+                    // Fetch progress for done work items
+                    let ids: Vec<uuid::Uuid> = g.iter().map(|w| w.id).collect();
+                    if !ids.is_empty() {
+                        let api = api.clone();
+                        let tx = tx.clone();
+                        tokio::spawn(async move {
+                            let mut all = Vec::new();
+                            for id in ids {
+                                if let Ok(p) = api.get_work_progress(id).await {
+                                    all.push(p);
+                                }
+                            }
+                            let _ = tx.send(ApiMsg::AllWorkProgress(all)).await;
+                        });
+                    }
+                    app.done_work_items = g;
                 }
                 ApiMsg::WorkProgress(p) => {
                     app.work_progress_map.insert(p.work_id, p.clone());
@@ -1483,6 +1528,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let work_name = app
                         .work_items
                         .iter()
+                        .chain(app.done_work_items.iter())
                         .find(|w| w.id == wid)
                         .map(|w| w.title.as_str())
                         .unwrap_or("?");
@@ -3503,8 +3549,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                         .await;
                                                 }
                                             }
-                                            if let Ok(items) = api.list_work(pid).await {
+                                            if let Ok(items) = api
+                                                .list_work_filtered(
+                                                    pid,
+                                                    Some("achieved,abandoned"),
+                                                    None,
+                                                    None,
+                                                )
+                                                .await
+                                            {
                                                 let _ = tx.send(ApiMsg::WorkItems(items)).await;
+                                            }
+                                            if let Ok(items) = api
+                                                .list_work_filtered(
+                                                    pid,
+                                                    Some("active,paused"),
+                                                    Some(DONE_WORK_PAGE_SIZE),
+                                                    Some(0),
+                                                )
+                                                .await
+                                            {
+                                                let _ = tx.send(ApiMsg::DoneWorkItems(items)).await;
                                             }
                                         }
                                         Err(e) => {
@@ -5010,9 +5075,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             KeyCode::Enter => {
                                 if !app.input_text.is_empty() {
-                                    if let Some(goal) =
-                                        app.selected_work.and_then(|i| app.work_items.get(i))
-                                    {
+                                    if let Some(goal) = app.selected_work_item() {
                                         let gid = goal.id;
                                         let content = app.input_text.clone();
                                         let api = api.clone();
@@ -5796,10 +5859,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         } else {
                                             // WorkStatus: update work status
-                                            if let Some(gid) = app
-                                                .selected_work
-                                                .and_then(|i| app.work_items.get(i))
-                                                .map(|g| g.id)
+                                            if let Some(gid) =
+                                                app.selected_work_item().map(|g| g.id)
                                             {
                                                 let api = api.clone();
                                                 let tx = tx.clone();
@@ -5812,10 +5873,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                         )
                                                         .await;
                                                     if let Some(pid) = pid {
-                                                        if let Ok(items) = api.list_work(pid).await
+                                                        if let Ok(items) = api
+                                                            .list_work_filtered(
+                                                                pid,
+                                                                Some("achieved,abandoned"),
+                                                                None,
+                                                                None,
+                                                            )
+                                                            .await
                                                         {
                                                             let _ = tx
                                                                 .send(ApiMsg::WorkItems(items))
+                                                                .await;
+                                                        }
+                                                        if let Ok(items) = api
+                                                            .list_work_filtered(
+                                                                pid,
+                                                                Some("active,paused"),
+                                                                Some(DONE_WORK_PAGE_SIZE),
+                                                                Some(0),
+                                                            )
+                                                            .await
+                                                        {
+                                                            let _ = tx
+                                                                .send(ApiMsg::DoneWorkItems(items))
                                                                 .await;
                                                         }
                                                     }
@@ -6143,6 +6224,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.knowledge.clear();
                                     app.decisions.clear();
                                     app.work_items.clear();
+                                    app.done_work_items.clear();
+                                    app.done_work_page = 0;
+                                    app.done_work_has_more = false;
+                                    app.work_section = 0;
+                                    app.selected_done_work = None;
                                     app.work_progress = None;
                                     app.work_progress_map.clear();
                                     app.work_stats = None;
@@ -6160,6 +6246,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.task_list_state.select(None);
                                     app.selected_work = None;
                                     app.work_list_state.select(None);
+                                    app.selected_done_work = None;
+                                    app.done_work_list_state.select(None);
                                     app.selected_observation = None;
                                     app.selected_role = None;
                                     app.selected_member = None;
@@ -6429,9 +6517,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 } else if app.view == View::Work {
                                     // Create a new task linked to the selected work item
-                                    if let Some(work) =
-                                        app.selected_work.and_then(|i| app.work_items.get(i))
-                                    {
+                                    if let Some(work) = app.selected_work_item() {
                                         app.task_form = Some(app::TaskForm {
                                             playbook_index: app.default_playbook_index(),
                                             work_id: Some(work.id),
@@ -6477,7 +6563,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.modal = Modal::Comment;
                                     app.input_text.clear();
                                     app.input_cursor = 0;
-                                } else if app.view == View::Work && app.selected_work.is_some() {
+                                } else if app.view == View::Work
+                                    && app.selected_work_item().is_some()
+                                {
                                     app.modal = Modal::WorkComment;
                                     app.input_text.clear();
                                     app.input_cursor = 0;
@@ -6554,9 +6642,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // Observations view: s = status transition
                             KeyCode::Char('s') => {
                                 if app.view == View::Work {
-                                    if let Some(goal) =
-                                        app.selected_work.and_then(|i| app.work_items.get(i))
-                                    {
+                                    if let Some(goal) = app.selected_work_item() {
                                         let status = goal.status.as_deref().unwrap_or("active");
                                         let opts: Vec<String> = match status {
                                             "active" => vec![
@@ -6628,6 +6714,63 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             app.modal = Modal::VerificationStatus;
                                         }
                                     }
+                                }
+                            }
+                            // Work view: done section pagination
+                            KeyCode::Char('>') | KeyCode::Char('.') => {
+                                if app.view == View::Work
+                                    && app.work_section == 1
+                                    && app.done_work_has_more
+                                {
+                                    app.done_work_page += 1;
+                                    let page = app.done_work_page;
+                                    if let Some(pid) = app.current_project {
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            if let Ok(items) = api
+                                                .list_work_filtered(
+                                                    pid,
+                                                    Some("active,paused"),
+                                                    Some(DONE_WORK_PAGE_SIZE),
+                                                    Some(page as i64 * DONE_WORK_PAGE_SIZE),
+                                                )
+                                                .await
+                                            {
+                                                let _ = tx.send(ApiMsg::DoneWorkItems(items)).await;
+                                            }
+                                        });
+                                    }
+                                    app.selected_done_work = Some(0);
+                                    app.done_work_list_state.select(Some(0));
+                                }
+                            }
+                            KeyCode::Char('<') | KeyCode::Char(',') => {
+                                if app.view == View::Work
+                                    && app.work_section == 1
+                                    && app.done_work_page > 0
+                                {
+                                    app.done_work_page -= 1;
+                                    let page = app.done_work_page;
+                                    if let Some(pid) = app.current_project {
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            if let Ok(items) = api
+                                                .list_work_filtered(
+                                                    pid,
+                                                    Some("active,paused"),
+                                                    Some(DONE_WORK_PAGE_SIZE),
+                                                    Some(page as i64 * DONE_WORK_PAGE_SIZE),
+                                                )
+                                                .await
+                                            {
+                                                let _ = tx.send(ApiMsg::DoneWorkItems(items)).await;
+                                            }
+                                        });
+                                    }
+                                    app.selected_done_work = Some(0);
+                                    app.done_work_list_state.select(Some(0));
                                 }
                             }
                             // Events view: f = kind filter
@@ -7332,9 +7475,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         });
                                     }
                                 } else if app.view == View::Work {
-                                    if let Some(goal) =
-                                        app.selected_work.and_then(|i| app.work_items.get(i))
-                                    {
+                                    if let Some(goal) = app.selected_work_item() {
                                         let status_idx = WORK_STATUSES
                                             .iter()
                                             .position(|s| Some(*s) == goal.status.as_deref())
@@ -7800,7 +7941,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         KeyCode::Up | KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('k')
                     )
                 {
-                    if let Some(goal) = app.selected_work.and_then(|i| app.work_items.get(i)) {
+                    if let Some(goal) = app.selected_work_item() {
                         let gid = goal.id;
                         {
                             let api = api.clone();

@@ -199,6 +199,8 @@ pub trait DiraigentDb: Send + Sync {
         exclude_task_id: Uuid,
     ) -> Result<Vec<Uuid>, AppError>;
     async fn work_status_counts(&self, project_id: Uuid) -> Result<Vec<(String, i64)>, AppError>;
+    async fn get_bulk_work_summaries(&self, project_id: Uuid)
+    -> Result<Vec<WorkSummary>, AppError>;
 
     // ── Work Comments ──────────────────────────────────────────────────────────
     async fn create_work_comment(
