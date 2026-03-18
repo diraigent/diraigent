@@ -5,7 +5,6 @@ pub mod integrations;
 pub mod knowledge;
 pub mod logs;
 pub mod observations;
-pub mod playbooks;
 pub mod project_settings;
 pub mod tasks;
 pub mod team;

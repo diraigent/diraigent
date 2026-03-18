@@ -222,23 +222,6 @@ pub struct PaginatedResponse<T> {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Playbook {
-    pub id: Uuid,
-    pub title: String,
-    pub trigger_description: Option<String>,
-    #[serde(default)]
-    pub steps: serde_json::Value,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    #[serde(default)]
-    pub metadata: serde_json::Value,
-    #[serde(default)]
-    pub version: Option<i32>,
-    #[serde(default)]
-    pub parent_id: Option<Uuid>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TaskDependencyInfo {
     pub task_id: Uuid,
     pub depends_on: Uuid,
@@ -993,7 +976,6 @@ impl ApiClient {
         kind: &str,
         urgent: bool,
         spec: &str,
-        playbook_id: Option<Uuid>,
         work_id: Option<Uuid>,
     ) -> Result<Task, reqwest::Error> {
         let mut body = serde_json::json!({
@@ -1002,9 +984,6 @@ impl ApiClient {
             "urgent": urgent,
             "context": { "spec": spec }
         });
-        if let Some(pid) = playbook_id {
-            body["playbook_id"] = serde_json::json!(pid);
-        }
         if let Some(wid) = work_id {
             body["work_id"] = serde_json::json!(wid);
         }
@@ -1066,14 +1045,6 @@ impl ApiClient {
         let req = self
             .client
             .get(format!("{}/{}/decisions", self.base_url, project_id));
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn list_playbooks(&self, project_id: Uuid) -> Result<Vec<Playbook>, reqwest::Error> {
-        let req = self
-            .client
-            .get(format!("{}/{}/playbooks", self.base_url, project_id));
         let resp = self.auth(req).send().await?.error_for_status()?;
         resp.json().await
     }
@@ -1427,59 +1398,6 @@ impl ApiClient {
             "{}/tasks/{}/dependencies/{}",
             self.base_url, task_id, dep_id
         ));
-        self.auth(req).send().await?.error_for_status()?;
-        Ok(())
-    }
-
-    // ── Playbook CRUD operations ──────────────────────────────
-
-    pub async fn create_playbook(
-        &self,
-        project_id: Uuid,
-        title: &str,
-        trigger: &str,
-        steps: serde_json::Value,
-        tags: Vec<String>,
-    ) -> Result<Playbook, reqwest::Error> {
-        let body = serde_json::json!({
-            "title": title,
-            "trigger_description": trigger,
-            "steps": steps,
-            "tags": tags,
-        });
-        let req = self
-            .client
-            .post(format!("{}/{}/playbooks", self.base_url, project_id));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn update_playbook(
-        &self,
-        id: Uuid,
-        body: serde_json::Value,
-    ) -> Result<Playbook, reqwest::Error> {
-        let req = self
-            .client
-            .put(format!("{}/playbooks/{}", self.base_url, id));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn delete_playbook(&self, id: Uuid) -> Result<(), reqwest::Error> {
-        let req = self
-            .client
-            .delete(format!("{}/playbooks/{}", self.base_url, id));
         self.auth(req).send().await?.error_for_status()?;
         Ok(())
     }

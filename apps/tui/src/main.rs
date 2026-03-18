@@ -44,7 +44,6 @@ enum ApiMsg {
     Agents(Vec<client::Agent>),
     Knowledge(Vec<client::KnowledgeEntry>),
     Decisions(Vec<client::Decision>),
-    Playbooks(Vec<client::Playbook>),
     WorkItems(Vec<client::Work>),
     DoneWorkItems(Vec<client::Work>),
     WorkProgress(client::WorkProgress),
@@ -82,7 +81,6 @@ enum ApiMsg {
     SourceTree(Vec<client::TreeEntry>),
     SourceBlob { path: String, content: String },
     WorkComments(Vec<client::WorkComment>),
-    StepTemplates(Vec<client::StepTemplate>),
     AgentTasks(Vec<client::Task>),
     Subtasks(Vec<client::Task>),
     ObservationsCleanup(client::CleanupObservationsResult),
@@ -134,7 +132,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     async fn fetch_all_data(api: &ApiClient, tx: &mpsc::Sender<ApiMsg>, pid: uuid::Uuid) {
         let (
             tasks,
-            playbooks,
             knowledge,
             decisions,
             active_work,
@@ -152,7 +149,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             webhooks,
         ) = tokio::join!(
             api.list_tasks(pid),
-            api.list_playbooks(pid),
             api.list_knowledge(pid),
             api.list_decisions(pid),
             api.list_work_filtered(pid, Some("achieved,abandoned"), None, None),
@@ -176,9 +172,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         if let Ok(resp) = tasks {
             let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
-        }
-        if let Ok(resp) = playbooks {
-            let _ = tx.send(ApiMsg::Playbooks(resp)).await;
         }
         if let Ok(resp) = knowledge {
             let _ = tx.send(ApiMsg::Knowledge(resp)).await;
@@ -281,11 +274,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 if let Ok(m) = members {
                     let _ = tx.send(ApiMsg::Members(m)).await;
-                }
-            }
-            View::Playbooks | View::StepTemplates => {
-                if let Ok(resp) = api.list_playbooks(pid).await {
-                    let _ = tx.send(ApiMsg::Playbooks(resp)).await;
                 }
             }
             View::Knowledge => {
@@ -596,7 +584,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::Agents(a) => app.agents = a,
                 ApiMsg::Knowledge(k) => app.knowledge = k,
                 ApiMsg::Decisions(d) => app.decisions = d,
-                ApiMsg::Playbooks(p) => app.playbooks = p,
                 ApiMsg::WorkItems(mut g) => {
                     g.sort_by_key(|w| match w.status.as_deref().unwrap_or("") {
                         "active" => 0,
@@ -746,9 +733,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::WorkComments(comments) => {
                     app.work_comments = comments;
                 }
-                ApiMsg::StepTemplates(templates) => {
-                    app.step_templates = templates;
-                }
                 ApiMsg::AgentTasks(tasks) => {
                     app.agent_tasks = tasks;
                 }
@@ -833,7 +817,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 View::Agents => views::agents::render(f, main_layout[1], &mut app),
                 View::Knowledge => views::knowledge::render(f, main_layout[1], &mut app),
                 View::Decisions => views::decisions::render(f, main_layout[1], &mut app),
-                View::Playbooks => views::playbooks::render(f, main_layout[1], &mut app),
                 View::Work => views::work::render(f, main_layout[1], &mut app),
                 View::Observations => views::observations::render(f, main_layout[1], &mut app),
                 View::Team => views::team::render(f, main_layout[1], &mut app),
@@ -852,17 +835,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 View::Webhooks => views::webhooks::render(f, main_layout[1], &mut app),
                 View::Reports => views::reports::render(f, main_layout[1], &mut app),
                 View::Dashboard => views::dashboard::render(f, main_layout[1], &mut app),
-                View::StepTemplates => {
-                    let label = app.view.label();
-                    let block = ratatui::widgets::Block::default()
-                        .title(format!(" {} ", label))
-                        .borders(ratatui::widgets::Borders::ALL)
-                        .border_style(Style::default().fg(theme::overlay0()));
-                    let text = Paragraph::new(format!("{} view — coming soon", label))
-                        .block(block)
-                        .style(Style::default().fg(theme::subtext0()));
-                    f.render_widget(text, main_layout[1]);
-                }
             }
 
             // Footer — data-driven from View::shortcut() / View::label()
@@ -871,15 +843,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Numbered views (1-0) — the first 10 views in ALL_VIEWS
                 let footer_views: &[View] = &[
-                    View::Work, View::Tasks, View::Decisions, View::Dashboard,
-                    View::Agents, View::Playbooks, View::Observations, View::Team,
-                    View::Knowledge, View::Verifications,
+                    View::Work,
+                    View::Tasks,
+                    View::Decisions,
+                    View::Dashboard,
+                    View::Agents,
+                    View::Observations,
+                    View::Team,
+                    View::Knowledge,
+                    View::Verifications,
                 ];
                 for v in footer_views {
                     let active = app.view == *v;
                     spans.push(Span::styled(
                         format!("[{}]", v.shortcut()),
-                        Style::default().fg(if active { theme::blue() } else { theme::overlay0() }),
+                        Style::default().fg(if active {
+                            theme::blue()
+                        } else {
+                            theme::overlay0()
+                        }),
                     ));
                     // Use short labels for the footer
                     let short = match v {
@@ -888,7 +870,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         View::Knowledge => "Know",
                         _ => v.label(),
                     };
-                    spans.push(Span::styled(format!("{short} "), Style::default().fg(theme::text())));
+                    spans.push(Span::styled(
+                        format!("{short} "),
+                        Style::default().fg(theme::text()),
+                    ));
                 }
 
                 // View-specific action hints
@@ -898,7 +883,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     View::Decisions => "[n]New [a]Accept [x]Reject [X]Deprecate",
                     View::Observations => "[n]New [s]Status [d]Dismiss [p]Promote [C]Cleanup",
                     View::Agents => "[a]Tasks",
-                    View::Playbooks => "[n]New [e]Edit [T]Templates [D]Delete",
                     View::Knowledge => "[n]New [e]Edit [D]Delete",
                     View::Git => "[r]Refresh [p]Push [R]Resolve [P]PR",
                     View::Verifications => "[n]New [s]Status [K]Kind [S]Filter",
@@ -926,8 +910,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Style::default().fg(theme::text()),
                 ));
 
-                let footer = Paragraph::new(Line::from(spans))
-                    .style(Style::default().bg(theme::mantle()));
+                let footer =
+                    Paragraph::new(Line::from(spans)).style(Style::default().bg(theme::mantle()));
                 f.render_widget(footer, main_layout[2]);
             }
 
@@ -1042,10 +1026,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         count,
                         if count == 1 { "" } else { "s" }
                     );
-                    let p = Paragraph::new(Line::styled(
-                        msg,
-                        Style::default().fg(theme::red()),
-                    ));
+                    let p = Paragraph::new(Line::styled(msg, Style::default().fg(theme::red())));
                     f.render_widget(p, inner);
                 }
                 Modal::ObservationStatus
@@ -1179,7 +1160,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
-                        "                  Playbooks/Work/Obs/Team/Int/Audit)  l = Logs",
+                        "                  Work/Obs/Team/Int/Audit)  l = Logs",
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
@@ -1205,7 +1186,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
-                        "    e             Edit task (Tasks) / playbook / toggle int",
+                        "    e             Edit task (Tasks) / toggle int",
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
@@ -1284,12 +1265,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
-                        "    D             Delete entry (Decisions/Knowledge/Playbooks/Team/Int)",
+                        "    D             Delete entry (Decisions/Knowledge/Team/Int)",
                         Style::default().fg(theme::text()),
                     ),
                     Line::from(""),
                     Line::styled(
-                        "  Dependencies / Playbooks / Integrations / Audit",
+                        "  Dependencies / Integrations / Audit",
                         Style::default().fg(theme::blue()),
                     ),
                     Line::styled(
@@ -1301,11 +1282,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
-                        "    n             New playbook (Playbooks view)",
-                        Style::default().fg(theme::text()),
-                    ),
-                    Line::styled(
-                        "    e             Edit playbook / Toggle integration",
+                        "    e             Toggle integration",
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
@@ -1464,7 +1441,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Urgent toggle
                 {
-                    let val = if form.urgent { "⚡ Urgent" } else { "  Normal" };
+                    let val = if form.urgent {
+                        "⚡ Urgent"
+                    } else {
+                        "  Normal"
+                    };
                     render_field(
                         f,
                         field_chunks[2],
@@ -1550,7 +1531,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Constraint::Length(2), // Title
                         Constraint::Length(2), // Kind
                         Constraint::Length(2), // Priority
-                        Constraint::Length(2), // Playbook
                         Constraint::Min(3),    // Spec
                         Constraint::Length(1), // Footer
                     ])
@@ -1635,7 +1615,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Urgent toggle
                 {
-                    let val = if form.urgent { "⚡ Urgent" } else { "  Normal" };
+                    let val = if form.urgent {
+                        "⚡ Urgent"
+                    } else {
+                        "  Normal"
+                    };
                     render_field(
                         f,
                         field_chunks[2],
@@ -1646,28 +1630,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
 
-                // Playbook (field 3)
+                // Spec (field 3)
                 {
-                    let val = if form.playbook_index == 0 {
-                        "◀ None (manual) ▶".to_string()
-                    } else if let Some(pb) = app.playbooks.get(form.playbook_index - 1) {
-                        format!("◀ {} ▶", pb.title)
-                    } else {
-                        "◀ None (manual) ▶".to_string()
-                    };
-                    render_field(
-                        f,
-                        field_chunks[3],
-                        "Playbook:",
-                        &val,
-                        form.active_field == 3,
-                        (0, 0),
-                    );
-                }
-
-                // Spec (field 4)
-                {
-                    let cursor_text = if form.active_field == 4 {
+                    let cursor_text = if form.active_field == 3 {
                         let bp = form
                             .spec
                             .char_indices()
@@ -1682,7 +1647,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         form.spec.clone()
                     };
-                    let area = field_chunks[4];
+                    let area = field_chunks[3];
                     let avail_w = area.width as usize;
                     let chars_before = " Spec: ".len() + form.cursor;
                     let cursor_line = if avail_w > 0 {
@@ -1697,7 +1662,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         area,
                         "Spec:",
                         &cursor_text,
-                        form.active_field == 4,
+                        form.active_field == 3,
                         (scroll_y, 0),
                     );
                 }
@@ -1707,272 +1672,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     " Tab: next field | Enter: submit | Esc: cancel",
                     Style::default().fg(theme::overlay0()),
                 ));
-                f.render_widget(hint, field_chunks[5]);
-            }
-
-            // Playbook creation/edit form
-            if let Some(ref form) = app.playbook_form {
-                let form_area = widgets::popup::centered_rect(80, 80, size);
-                Clear.render(form_area, f.buffer_mut());
-                let title = if form.editing_id.is_some() {
-                    " Edit Playbook "
-                } else {
-                    " New Playbook "
-                };
-                let block = Block::default()
-                    .title(title)
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(theme::peach()))
-                    .style(Style::default().bg(theme::mantle()));
-                let inner = block.inner(form_area);
-                f.render_widget(block, form_area);
-
-                let field_chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([
-                        Constraint::Length(2), // Title
-                        Constraint::Length(2), // Trigger
-                        Constraint::Length(2), // Tags
-                        Constraint::Length(1), // Steps header
-                        Constraint::Min(4),    // Steps list / step editor
-                        Constraint::Length(1), // Footer
-                    ])
-                    .split(inner);
-
-                let render_pb_field =
-                    |f: &mut Frame, area: Rect, label: &str, value: &str, active: bool| {
-                        let style = if active {
-                            Style::default().fg(theme::blue())
-                        } else {
-                            Style::default().fg(theme::subtext0())
-                        };
-                        let val_style = if active {
-                            Style::default().fg(theme::text())
-                        } else {
-                            Style::default().fg(theme::overlay0())
-                        };
-                        let p = Paragraph::new(vec![Line::from(vec![
-                            Span::styled(format!(" {} ", label), style),
-                            Span::styled(value.to_string(), val_style),
-                        ])]);
-                        f.render_widget(p, area);
-                    };
-
-                // Helper to render text with cursor
-                let text_with_cursor = |text: &str, cursor: usize, active: bool| -> String {
-                    if active {
-                        let bp = text
-                            .char_indices()
-                            .nth(cursor)
-                            .map(|(i, _)| i)
-                            .unwrap_or(text.len());
-                        if bp < text.len() {
-                            format!("{}│{}", &text[..bp], &text[bp..])
-                        } else {
-                            format!("{}│", text)
-                        }
-                    } else {
-                        text.to_string()
-                    }
-                };
-
-                // Title
-                {
-                    let val = text_with_cursor(
-                        &form.title,
-                        form.cursor,
-                        form.active_field == 0 && !form.editing_step,
-                    );
-                    render_pb_field(
-                        f,
-                        field_chunks[0],
-                        "Title:",
-                        &val,
-                        form.active_field == 0 && !form.editing_step,
-                    );
-                }
-                // Trigger
-                {
-                    let val = text_with_cursor(
-                        &form.trigger,
-                        form.cursor,
-                        form.active_field == 1 && !form.editing_step,
-                    );
-                    render_pb_field(
-                        f,
-                        field_chunks[1],
-                        "Trigger:",
-                        &val,
-                        form.active_field == 1 && !form.editing_step,
-                    );
-                }
-                // Tags
-                {
-                    let val = text_with_cursor(
-                        &form.tags,
-                        form.cursor,
-                        form.active_field == 2 && !form.editing_step,
-                    );
-                    render_pb_field(
-                        f,
-                        field_chunks[2],
-                        "Tags:",
-                        &val,
-                        form.active_field == 2 && !form.editing_step,
-                    );
-                }
-
-                // Steps header
-                {
-                    let style = if form.active_field == 3 {
-                        Style::default().fg(theme::blue())
-                    } else {
-                        Style::default().fg(theme::subtext0())
-                    };
-                    let p = Paragraph::new(Line::styled(
-                        format!(" Steps ({}):", form.steps.len()),
-                        style,
-                    ));
-                    f.render_widget(p, field_chunks[3]);
-                }
-
-                // Steps area
-                if form.active_field == 3 && form.editing_step {
-                    // Step detail editor
-                    if let Some(step) = form.steps.get(form.selected_step) {
-                        let step_chunks = Layout::default()
-                            .direction(Direction::Vertical)
-                            .constraints([
-                                Constraint::Length(1), // Step name
-                                Constraint::Length(1), // Description
-                                Constraint::Length(1), // on_complete
-                                Constraint::Length(1), // timeout
-                                Constraint::Length(1), // model
-                                Constraint::Min(0),    // spacer
-                            ])
-                            .split(field_chunks[4]);
-
-                        let step_label = format!(" Editing step {}:", form.selected_step);
-                        let name_val =
-                            text_with_cursor(&step.name, form.cursor, form.step_field == 0);
-                        let desc_val = text_with_cursor(
-                            &step.description,
-                            form.cursor,
-                            form.step_field == 1,
-                        );
-                        let on_complete =
-                            app::ON_COMPLETE_OPTIONS[step.on_complete_index];
-                        let timeout_val = text_with_cursor(
-                            &step.timeout_minutes,
-                            form.cursor,
-                            form.step_field == 3,
-                        );
-                        let model_val = app::STEP_MODEL_OPTIONS[step.model_index];
-                        let model_display = if model_val.is_empty() {
-                            "(default)"
-                        } else {
-                            model_val
-                        };
-
-                        // Render each step field
-                        let fields: Vec<(&str, String, bool)> = vec![
-                            ("  Name:", name_val, form.step_field == 0),
-                            ("  Desc:", desc_val, form.step_field == 1),
-                            (
-                                "  OnComplete:",
-                                format!("◄ {} ►", on_complete),
-                                form.step_field == 2,
-                            ),
-                            ("  Timeout:", timeout_val, form.step_field == 3),
-                            (
-                                "  Model:",
-                                format!("◄ {} ►", model_display),
-                                form.step_field == 4,
-                            ),
-                        ];
-
-                        // Step header
-                        let header_p = Paragraph::new(Line::styled(
-                            step_label,
-                            Style::default().fg(theme::green()),
-                        ));
-                        f.render_widget(header_p, step_chunks[0]);
-
-                        for (idx, (label, val, active)) in fields.iter().enumerate() {
-                            if idx + 1 < step_chunks.len() {
-                                let style = if *active {
-                                    Style::default().fg(theme::blue())
-                                } else {
-                                    Style::default().fg(theme::subtext0())
-                                };
-                                let val_style = if *active {
-                                    Style::default().fg(theme::text())
-                                } else {
-                                    Style::default().fg(theme::overlay0())
-                                };
-                                let p = Paragraph::new(vec![Line::from(vec![
-                                    Span::styled(label.to_string(), style),
-                                    Span::raw(" "),
-                                    Span::styled(val.clone(), val_style),
-                                ])]);
-                                // step_chunks[0] = header, [1..5] = fields
-                                f.render_widget(p, step_chunks[idx + 1]);
-                            }
-                        }
-                    }
-                } else {
-                    // Step list view
-                    let mut lines: Vec<Line> = Vec::new();
-                    if form.steps.is_empty() {
-                        lines.push(Line::styled(
-                            "  (no steps — press 'a' to add)",
-                            Style::default().fg(theme::overlay0()),
-                        ));
-                    } else {
-                        for (i, step) in form.steps.iter().enumerate() {
-                            let selected = form.active_field == 3 && i == form.selected_step;
-                            let on_complete =
-                                app::ON_COMPLETE_OPTIONS[step.on_complete_index];
-                            let model_str = app::STEP_MODEL_OPTIONS[step.model_index];
-                            let model_display = if model_str.is_empty() {
-                                String::new()
-                            } else {
-                                format!(" [{}]", model_str)
-                            };
-                            let timeout_display = if step.timeout_minutes.is_empty() {
-                                String::new()
-                            } else {
-                                format!(" ({}m)", step.timeout_minutes)
-                            };
-                            let label = format!(
-                                "  {}. {}{}{} → {}",
-                                i, step.name, timeout_display, model_display, on_complete
-                            );
-                            let style = if selected {
-                                Style::default().fg(theme::base()).bg(theme::peach())
-                            } else {
-                                Style::default().fg(theme::text())
-                            };
-                            lines.push(Line::styled(label, style));
-                        }
-                    }
-                    let p = Paragraph::new(lines);
-                    f.render_widget(p, field_chunks[4]);
-                }
-
-                // Footer hint
-                let hint_text = if form.active_field == 3 && form.editing_step {
-                    " Tab: next field | ◄►: cycle option | Esc: back to list"
-                } else if form.active_field == 3 {
-                    " ↑↓: select | Enter: edit | a: add | d: del | Ctrl+↑↓: reorder | Tab: next | Esc: cancel"
-                } else {
-                    " Tab: next field | Enter: submit | Esc: cancel"
-                };
-                let hint = Paragraph::new(Line::styled(
-                    hint_text,
-                    Style::default().fg(theme::overlay0()),
-                ));
-                f.render_widget(hint, field_chunks[5]);
+                f.render_widget(hint, field_chunks[4]);
             }
 
             // Work creation/edit form
@@ -2028,7 +1728,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Status selector (field 0)
                 {
-                    let val = format!("◀ {} ▶", views::work::work_status_label(WORK_STATUSES[form.status_index]));
+                    let val = format!(
+                        "◀ {} ▶",
+                        views::work::work_status_label(WORK_STATUSES[form.status_index])
+                    );
                     render_gf(f, field_chunks[0], "Status:", &val, form.active_field == 0);
                 }
                 // Title with cursor (field 1)
@@ -2918,18 +2621,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         _ => {}
                     }
                 } else if app.task_form.is_some() {
-                    let playbook_count = app.playbooks.len();
                     let form = app.task_form.as_mut().unwrap();
                     match key.code {
                         KeyCode::Esc => {
                             app.task_form = None;
                         }
                         KeyCode::Tab => {
-                            form.active_field = (form.active_field + 1) % 5;
+                            form.active_field = (form.active_field + 1) % 4;
                             // Reset cursor to end of target text field
                             form.cursor = match form.active_field {
                                 0 => form.title.chars().count(),
-                                4 => form.spec.chars().count(),
+                                3 => form.spec.chars().count(),
                                 _ => 0,
                             };
                         }
@@ -2939,11 +2641,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let kind = TASK_KINDS[form.kind_index].to_string();
                                 let urgent = form.urgent;
                                 let spec = form.spec.clone();
-                                let playbook_id = if form.playbook_index > 0 {
-                                    app.playbooks.get(form.playbook_index - 1).map(|pb| pb.id)
-                                } else {
-                                    None
-                                };
                                 let work_id = form.work_id;
                                 let pid = app.current_project;
                                 app.task_form = None;
@@ -2952,15 +2649,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let tx = tx.clone();
                                     tokio::spawn(async move {
                                         match api
-                                            .create_task(
-                                                pid,
-                                                &title,
-                                                &kind,
-                                                urgent,
-                                                &spec,
-                                                playbook_id,
-                                                work_id,
-                                            )
+                                            .create_task(pid, &title, &kind, urgent, &spec, work_id)
                                             .await
                                         {
                                             Ok(_) => {
@@ -3001,20 +2690,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             2 => {
                                 form.urgent = !form.urgent;
                             }
-                            3 => {
-                                // Playbook selector: 0=None, 1..=N=playbooks
-                                if form.playbook_index > 0 {
-                                    form.playbook_index -= 1;
-                                } else {
-                                    form.playbook_index = playbook_count;
-                                }
-                            }
-                            0 => {
-                                if form.cursor > 0 {
-                                    form.cursor -= 1;
-                                }
-                            }
-                            4 => {
+                            0 | 3 => {
                                 if form.cursor > 0 {
                                     form.cursor -= 1;
                                 }
@@ -3028,17 +2704,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             2 => {
                                 form.urgent = !form.urgent;
                             }
-                            3 => {
-                                // Playbook selector
-                                form.playbook_index =
-                                    (form.playbook_index + 1) % (playbook_count + 1);
-                            }
                             0 => {
                                 if form.cursor < form.title.chars().count() {
                                     form.cursor += 1;
                                 }
                             }
-                            4 => {
+                            3 => {
                                 if form.cursor < form.spec.chars().count() {
                                     form.cursor += 1;
                                 }
@@ -3056,7 +2727,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     .unwrap_or(form.title.len());
                                 form.title.remove(bp);
                             }
-                            4 if form.cursor > 0 => {
+                            3 if form.cursor > 0 => {
                                 form.cursor -= 1;
                                 let bp = form
                                     .spec
@@ -3085,7 +2756,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     form.urgent = !form.urgent;
                                 }
                             }
-                            4 => {
+                            3 => {
                                 let bp = form
                                     .spec
                                     .char_indices()
@@ -3098,335 +2769,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             _ => {}
                         },
                         _ => {}
-                    }
-                } else if app.playbook_form.is_some() {
-                    let form = app.playbook_form.as_mut().unwrap();
-                    if form.active_field == 3 && form.editing_step {
-                        // Step detail editing mode
-                        match key.code {
-                            KeyCode::Esc => {
-                                form.editing_step = false;
-                                form.cursor = 0;
-                            }
-                            KeyCode::Tab => {
-                                form.step_field = (form.step_field + 1) % 5;
-                                form.cursor = if let Some(step) = form.steps.get(form.selected_step)
-                                {
-                                    match form.step_field {
-                                        0 => step.name.chars().count(),
-                                        1 => step.description.chars().count(),
-                                        3 => step.timeout_minutes.chars().count(),
-                                        _ => 0,
-                                    }
-                                } else {
-                                    0
-                                };
-                            }
-                            KeyCode::Left => {
-                                if let Some(step) = form.steps.get_mut(form.selected_step) {
-                                    match form.step_field {
-                                        2 => {
-                                            // on_complete selector
-                                            if step.on_complete_index > 0 {
-                                                step.on_complete_index -= 1;
-                                            } else {
-                                                step.on_complete_index =
-                                                    app::ON_COMPLETE_OPTIONS.len() - 1;
-                                            }
-                                        }
-                                        4 => {
-                                            // model selector
-                                            if step.model_index > 0 {
-                                                step.model_index -= 1;
-                                            } else {
-                                                step.model_index =
-                                                    app::STEP_MODEL_OPTIONS.len() - 1;
-                                            }
-                                        }
-                                        _ => {
-                                            if form.cursor > 0 {
-                                                form.cursor -= 1;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            KeyCode::Right => {
-                                if let Some(step) = form.steps.get_mut(form.selected_step) {
-                                    match form.step_field {
-                                        2 => {
-                                            step.on_complete_index = (step.on_complete_index + 1)
-                                                % app::ON_COMPLETE_OPTIONS.len();
-                                        }
-                                        4 => {
-                                            step.model_index = (step.model_index + 1)
-                                                % app::STEP_MODEL_OPTIONS.len();
-                                        }
-                                        _ => {
-                                            let len = if let Some(step) =
-                                                form.steps.get(form.selected_step)
-                                            {
-                                                match form.step_field {
-                                                    0 => step.name.chars().count(),
-                                                    1 => step.description.chars().count(),
-                                                    3 => step.timeout_minutes.chars().count(),
-                                                    _ => 0,
-                                                }
-                                            } else {
-                                                0
-                                            };
-                                            if form.cursor < len {
-                                                form.cursor += 1;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            KeyCode::Backspace => {
-                                if form.cursor > 0 {
-                                    if let Some(step) = form.steps.get_mut(form.selected_step) {
-                                        let text = match form.step_field {
-                                            0 => &mut step.name,
-                                            1 => &mut step.description,
-                                            3 => &mut step.timeout_minutes,
-                                            _ => continue,
-                                        };
-                                        form.cursor -= 1;
-                                        let bp = text
-                                            .char_indices()
-                                            .nth(form.cursor)
-                                            .map(|(i, _)| i)
-                                            .unwrap_or(text.len());
-                                        text.remove(bp);
-                                    }
-                                }
-                            }
-                            KeyCode::Char(c) => {
-                                if let Some(step) = form.steps.get_mut(form.selected_step) {
-                                    let text = match form.step_field {
-                                        0 => &mut step.name,
-                                        1 => &mut step.description,
-                                        3 => &mut step.timeout_minutes,
-                                        _ => continue,
-                                    };
-                                    // For timeout, only allow digits
-                                    if form.step_field == 3 && !c.is_ascii_digit() {
-                                        continue;
-                                    }
-                                    let bp = text
-                                        .char_indices()
-                                        .nth(form.cursor)
-                                        .map(|(i, _)| i)
-                                        .unwrap_or(text.len());
-                                    text.insert(bp, c);
-                                    form.cursor += 1;
-                                }
-                            }
-                            _ => {}
-                        }
-                    } else if form.active_field == 3 {
-                        // Steps list mode
-                        match key.code {
-                            KeyCode::Esc => {
-                                app.playbook_form = None;
-                            }
-                            KeyCode::Tab => {
-                                form.active_field = 0;
-                                form.cursor = form.title.chars().count();
-                            }
-                            KeyCode::BackTab => {
-                                form.active_field = 2;
-                                form.cursor = form.tags.chars().count();
-                            }
-                            KeyCode::Up => {
-                                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                                    // Reorder: move step up
-                                    if form.selected_step > 0 {
-                                        form.steps.swap(form.selected_step, form.selected_step - 1);
-                                        form.selected_step -= 1;
-                                    }
-                                } else if form.selected_step > 0 {
-                                    form.selected_step -= 1;
-                                }
-                            }
-                            KeyCode::Down => {
-                                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                                    // Reorder: move step down
-                                    if form.selected_step + 1 < form.steps.len() {
-                                        form.steps.swap(form.selected_step, form.selected_step + 1);
-                                        form.selected_step += 1;
-                                    }
-                                } else if form.selected_step + 1 < form.steps.len() {
-                                    form.selected_step += 1;
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if !form.steps.is_empty() {
-                                    form.editing_step = true;
-                                    form.step_field = 0;
-                                    form.cursor = form
-                                        .steps
-                                        .get(form.selected_step)
-                                        .map(|s| s.name.chars().count())
-                                        .unwrap_or(0);
-                                }
-                            }
-                            KeyCode::Char('a') => {
-                                // Add new step
-                                form.steps.push(app::PlaybookStepForm::default());
-                                form.selected_step = form.steps.len() - 1;
-                                form.editing_step = true;
-                                form.step_field = 0;
-                                form.cursor = 0;
-                            }
-                            KeyCode::Char('d') => {
-                                // Delete selected step
-                                if !form.steps.is_empty() {
-                                    form.steps.remove(form.selected_step);
-                                    if form.selected_step >= form.steps.len()
-                                        && !form.steps.is_empty()
-                                    {
-                                        form.selected_step = form.steps.len() - 1;
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-                    } else {
-                        // Header fields (title, trigger, tags)
-                        match key.code {
-                            KeyCode::Esc => {
-                                app.playbook_form = None;
-                            }
-                            KeyCode::Tab => {
-                                form.active_field = (form.active_field + 1) % 4;
-                                form.cursor = match form.active_field {
-                                    0 => form.title.chars().count(),
-                                    1 => form.trigger.chars().count(),
-                                    2 => form.tags.chars().count(),
-                                    _ => 0,
-                                };
-                            }
-                            KeyCode::BackTab => {
-                                form.active_field = if form.active_field == 0 {
-                                    3
-                                } else {
-                                    form.active_field - 1
-                                };
-                                form.cursor = match form.active_field {
-                                    0 => form.title.chars().count(),
-                                    1 => form.trigger.chars().count(),
-                                    2 => form.tags.chars().count(),
-                                    _ => 0,
-                                };
-                            }
-                            KeyCode::Enter => {
-                                // Submit form
-                                if !form.title.is_empty() {
-                                    let title = form.title.clone();
-                                    let trigger = form.trigger.clone();
-                                    let tags: Vec<String> = form
-                                        .tags
-                                        .split(',')
-                                        .map(|s| s.trim().to_string())
-                                        .filter(|s| !s.is_empty())
-                                        .collect();
-                                    let steps_json = form.steps_to_json();
-                                    let editing_id = form.editing_id;
-                                    let pid = app.current_project;
-                                    app.playbook_form = None;
-                                    if let Some(pid) = pid {
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        tokio::spawn(async move {
-                                            let result = if let Some(pb_id) = editing_id {
-                                                api.update_playbook(
-                                                    pb_id,
-                                                    serde_json::json!({
-                                                        "title": title,
-                                                        "trigger_description": trigger,
-                                                        "tags": tags,
-                                                        "steps": steps_json,
-                                                    }),
-                                                )
-                                                .await
-                                                .map(|_| ())
-                                            } else {
-                                                api.create_playbook(
-                                                    pid, &title, &trigger, steps_json, tags,
-                                                )
-                                                .await
-                                                .map(|_| ())
-                                            };
-                                            match result {
-                                                Ok(()) => {
-                                                    if let Ok(pbs) = api.list_playbooks(pid).await {
-                                                        let _ =
-                                                            tx.send(ApiMsg::Playbooks(pbs)).await;
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!(
-                                                            "Playbook: {e}"
-                                                        )))
-                                                        .await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                            }
-                            KeyCode::Left => {
-                                if form.cursor > 0 {
-                                    form.cursor -= 1;
-                                }
-                            }
-                            KeyCode::Right => {
-                                let len = match form.active_field {
-                                    0 => form.title.chars().count(),
-                                    1 => form.trigger.chars().count(),
-                                    2 => form.tags.chars().count(),
-                                    _ => 0,
-                                };
-                                if form.cursor < len {
-                                    form.cursor += 1;
-                                }
-                            }
-                            KeyCode::Backspace => {
-                                if form.cursor > 0 {
-                                    form.cursor -= 1;
-                                    let text = match form.active_field {
-                                        0 => &mut form.title,
-                                        1 => &mut form.trigger,
-                                        2 => &mut form.tags,
-                                        _ => continue,
-                                    };
-                                    let bp = text
-                                        .char_indices()
-                                        .nth(form.cursor)
-                                        .map(|(i, _)| i)
-                                        .unwrap_or(text.len());
-                                    text.remove(bp);
-                                }
-                            }
-                            KeyCode::Char(c) => {
-                                let text = match form.active_field {
-                                    0 => &mut form.title,
-                                    1 => &mut form.trigger,
-                                    2 => &mut form.tags,
-                                    _ => continue,
-                                };
-                                let bp = text
-                                    .char_indices()
-                                    .nth(form.cursor)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(text.len());
-                                text.insert(bp, c);
-                                form.cursor += 1;
-                            }
-                            _ => {}
-                        }
                     }
                 } else if app.work_form.is_some() {
                     // Detect save actions before general key match
@@ -4531,7 +3873,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 } else if app.view == View::ProjectSettings && app.settings_form.is_some() {
                     // Settings form handles its own keys
-                    let playbook_count = app.playbooks.len();
                     let form = app.settings_form.as_mut().unwrap();
                     match key.code {
                         KeyCode::Esc => {
@@ -4548,8 +3889,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 3 => form.repo_path.chars().count(),
                                 4 => form.default_branch.chars().count(),
                                 5 => form.service_name.chars().count(),
-                                7 => form.claude_md.chars().count(),
-                                _ => 0, // playbook dropdown
+                                6 => form.claude_md.chars().count(),
+                                _ => 0,
                             };
                         }
                         KeyCode::BackTab => {
@@ -4565,37 +3906,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 3 => form.repo_path.chars().count(),
                                 4 => form.default_branch.chars().count(),
                                 5 => form.service_name.chars().count(),
-                                7 => form.claude_md.chars().count(),
+                                6 => form.claude_md.chars().count(),
                                 _ => 0,
                             };
                         }
                         KeyCode::Left => {
-                            if form.active_field == 6 {
-                                // Playbook dropdown
-                                if form.playbook_index > 0 {
-                                    form.playbook_index -= 1;
-                                } else {
-                                    form.playbook_index = playbook_count;
-                                }
-                                form.dirty = true;
-                            } else if form.cursor > 0 {
+                            if form.cursor > 0 {
                                 form.cursor -= 1;
                             }
                         }
                         KeyCode::Right => {
-                            if form.active_field == 6 {
-                                form.playbook_index =
-                                    (form.playbook_index + 1) % (playbook_count + 1);
-                                form.dirty = true;
-                            } else {
-                                let len = form.field_text().chars().count();
-                                if form.cursor < len {
-                                    form.cursor += 1;
-                                }
+                            let len = form.field_text().chars().count();
+                            if form.cursor < len {
+                                form.cursor += 1;
                             }
                         }
                         KeyCode::Enter => {
-                            if form.active_field == 7 {
+                            if form.active_field == 6 {
                                 // In CLAUDE.md field, Enter inserts newline
                                 let cur = form.cursor;
                                 if let Some(text) = form.field_text_mut() {
@@ -4612,7 +3939,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // For other fields, Enter does nothing (use Ctrl+S to save)
                         }
                         KeyCode::Backspace => {
-                            if form.active_field != 6 && form.cursor > 0 {
+                            if form.cursor > 0 {
                                 form.cursor -= 1;
                                 let cur = form.cursor;
                                 if let Some(text) = form.field_text_mut() {
@@ -4635,11 +3962,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let repo_path = form.repo_path.clone();
                                 let default_branch = form.default_branch.clone();
                                 let service_name = form.service_name.clone();
-                                let playbook_id = if form.playbook_index > 0 {
-                                    app.playbooks.get(form.playbook_index - 1).map(|pb| pb.id)
-                                } else {
-                                    None
-                                };
                                 let claude_md = form.claude_md.clone();
                                 form.dirty = false;
 
@@ -4647,7 +3969,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let tx = tx.clone();
                                 tokio::spawn(async move {
                                     // Update project properties
-                                    let mut body = serde_json::json!({
+                                    let body = serde_json::json!({
                                         "name": name,
                                         "description": description,
                                         "repo_url": if repo_url.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(repo_url) },
@@ -4655,10 +3977,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         "default_branch": if default_branch.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(default_branch) },
                                         "service_name": if service_name.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(service_name) },
                                     });
-                                    body["default_playbook_id"] = match playbook_id {
-                                        Some(id) => serde_json::json!(id),
-                                        None => serde_json::Value::Null,
-                                    };
 
                                     match api.update_project(pid, body).await {
                                         Ok(proj) => {
@@ -6220,7 +5538,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         blocks: vec![],
                                     };
                                     app.search_query.clear();
-                                    app.playbooks.clear();
                                     app.knowledge.clear();
                                     app.decisions.clear();
                                     app.work_items.clear();
@@ -6299,18 +5616,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 app.detail_scroll = 0;
                             }
                             KeyCode::Char('6') => {
-                                app.view = View::Playbooks;
-                                app.detail_scroll = 0;
-                            }
-                            KeyCode::Char('7') => {
                                 app.view = View::Observations;
                                 app.detail_scroll = 0;
                             }
-                            KeyCode::Char('8') => {
+                            KeyCode::Char('7') => {
                                 app.view = View::Team;
                                 app.detail_scroll = 0;
                             }
-                            KeyCode::Char('9') => {
+                            KeyCode::Char('8') => {
                                 app.view = View::Knowledge;
                                 app.detail_scroll = 0;
                             }
@@ -6519,7 +5832,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     // Create a new task linked to the selected work item
                                     if let Some(work) = app.selected_work_item() {
                                         app.task_form = Some(app::TaskForm {
-                                            playbook_index: app.default_playbook_index(),
                                             work_id: Some(work.id),
                                             ..Default::default()
                                         });
@@ -6612,12 +5924,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             KeyCode::Char('n') => {
                                 if app.view == View::Tasks {
-                                    app.task_form = Some(app::TaskForm {
-                                        playbook_index: app.default_playbook_index(),
-                                        ..Default::default()
-                                    });
-                                } else if app.view == View::Playbooks {
-                                    app.playbook_form = Some(app::PlaybookForm::default());
+                                    app.task_form = Some(app::TaskForm::default());
                                 } else if app.view == View::Verifications {
                                     app.verification_form = Some(VerificationForm::default());
                                 } else if app.view == View::Work {
@@ -6823,15 +6130,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let project =
                                         app.projects.iter().find(|p| p.id == pid).cloned();
                                     if let Some(proj) = project {
-                                        // Find playbook index
-                                        let pb_idx = proj
-                                            .default_playbook_id
-                                            .and_then(|pb_id| {
-                                                app.playbooks.iter().position(|pb| pb.id == pb_id)
-                                            })
-                                            .map(|i| i + 1)
-                                            .unwrap_or(0);
-
                                         app.settings_form = Some(app::ProjectSettingsForm {
                                             name: proj.name.clone(),
                                             description: proj
@@ -6848,7 +6146,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 .service_name
                                                 .clone()
                                                 .unwrap_or_default(),
-                                            playbook_index: pb_idx,
                                             claude_md: String::new(),
                                             active_field: 0,
                                             cursor: proj.name.chars().count(),
@@ -7427,7 +6724,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                            // e = edit task (Tasks view), edit playbook (Playbooks view), toggle integration (Integrations view)
+                            // e = edit task (Tasks view), toggle integration (Integrations view)
                             KeyCode::Char('e') => {
                                 if app.view == View::Tasks {
                                     if let Some(task) =
@@ -7451,27 +6748,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             spec,
                                             active_field: 0,
                                             cursor: task.title.chars().count(),
-                                        });
-                                    }
-                                } else if app.view == View::Playbooks {
-                                    if let Some(pb) =
-                                        app.selected_playbook.and_then(|i| app.playbooks.get(i))
-                                    {
-                                        let steps = app::PlaybookForm::steps_from_json(&pb.steps);
-                                        app.playbook_form = Some(app::PlaybookForm {
-                                            title: pb.title.clone(),
-                                            trigger: pb
-                                                .trigger_description
-                                                .clone()
-                                                .unwrap_or_default(),
-                                            tags: pb.tags.join(", "),
-                                            steps,
-                                            active_field: 0,
-                                            cursor: pb.title.chars().count(),
-                                            editing_id: Some(pb.id),
-                                            selected_step: 0,
-                                            editing_step: false,
-                                            step_field: 0,
                                         });
                                     }
                                 } else if app.view == View::Work {
@@ -7619,7 +6895,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                            // D = delete (Decisions, Knowledge, Playbooks, Team, Integrations)
+                            // D = delete (Decisions, Knowledge, Team, Integrations)
                             KeyCode::Char('D') => {
                                 if app.view == View::Decisions {
                                     if let Some(dec) =
@@ -7659,26 +6935,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 {
                                                     let _ =
                                                         tx.send(ApiMsg::Knowledge(knowledge)).await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                } else if app.view == View::Playbooks {
-                                    if let Some(pb) =
-                                        app.selected_playbook.and_then(|i| app.playbooks.get(i))
-                                    {
-                                        let pb_id = pb.id;
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        let pid = app.current_project;
-                                        tokio::spawn(async move {
-                                            if let Err(e) = api.delete_playbook(pb_id).await {
-                                                let _ = tx
-                                                    .send(ApiMsg::Error(format!("Delete: {e}")))
-                                                    .await;
-                                            } else if let Some(pid) = pid {
-                                                if let Ok(pbs) = api.list_playbooks(pid).await {
-                                                    let _ = tx.send(ApiMsg::Playbooks(pbs)).await;
                                                 }
                                             }
                                         });
@@ -7771,30 +7027,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             // Logs view controls: T/Y = time range, N/M = limit, B = direction
-                            // Playbooks view: T = fetch step templates
                             KeyCode::Char('T') => {
-                                if app.view == View::Playbooks {
-                                    if let Some(pid) = app.current_project {
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        tokio::spawn(async move {
-                                            match api.list_step_templates(pid).await {
-                                                Ok(templates) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::StepTemplates(templates))
-                                                        .await;
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!(
-                                                            "Step templates: {e}"
-                                                        )))
-                                                        .await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                } else if app.view == View::Logs {
+                                if app.view == View::Logs {
                                     if app.log_time_range_idx > 0 {
                                         app.log_time_range_idx -= 1;
                                     } else {
