@@ -268,52 +268,58 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               </div>
 
               <!-- Status transitions -->
-              @if (availableTransitions().length > 0 || goal.status !== 'active') {
-                <div class="flex flex-wrap gap-2 mb-4">
-                  @if (goal.status !== 'active') {
-                    <button (click)="activateWork(goal)"
-                      [disabled]="activatingWork()"
-                      class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-green/15 text-ctp-green hover:bg-ctp-green/25 transition-colors disabled:opacity-50">
+              <div class="flex flex-wrap gap-2 mb-4">
+                @if (goal.status !== 'active') {
+                  <button (click)="activateWork(goal)"
+                    [disabled]="activatingWork()"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-green/15 text-ctp-green hover:bg-ctp-green/25 transition-colors disabled:opacity-50">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 3l14 9-14 9V3z" />
+                    </svg>
+                    {{ activatingWork() ? t('common.loading') : t('goals.activate') }}
+                  </button>
+                }
+                @for (s of availableTransitions(); track s) {
+                  @if (s === 'achieved') {
+                    <button (click)="transitionStatus(goal, 'achieved')"
+                      class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-blue/15 text-ctp-blue hover:bg-ctp-blue/25 transition-colors">
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 3l14 9-14 9V3z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      {{ activatingWork() ? t('common.loading') : t('goals.activate') }}
+                      {{ t('goals.status.achieved') }}
+                    </button>
+                  } @else if (s === 'paused') {
+                    <button (click)="transitionStatus(goal, 'paused')"
+                      class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-yellow/15 text-ctp-yellow hover:bg-ctp-yellow/25 transition-colors">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      {{ t('goals.status.paused') }}
+                    </button>
+                  } @else if (s === 'abandoned') {
+                    <button (click)="transitionStatus(goal, 'abandoned')"
+                      class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-overlay0/15 text-ctp-overlay0 hover:bg-ctp-overlay0/25 transition-colors">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636" />
+                      </svg>
+                      {{ t('goals.status.abandoned') }}
+                    </button>
+                  } @else {
+                    <button (click)="transitionStatus(goal, s)"
+                      class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors">
+                      {{ t('goals.status.' + s) }}
                     </button>
                   }
-                  @for (s of availableTransitions(); track s) {
-                    @if (s === 'achieved') {
-                      <button (click)="transitionStatus(goal, 'achieved')"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-blue/15 text-ctp-blue hover:bg-ctp-blue/25 transition-colors">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        {{ t('goals.status.achieved') }}
-                      </button>
-                    } @else if (s === 'paused') {
-                      <button (click)="transitionStatus(goal, 'paused')"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-yellow/15 text-ctp-yellow hover:bg-ctp-yellow/25 transition-colors">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        {{ t('goals.status.paused') }}
-                      </button>
-                    } @else if (s === 'abandoned') {
-                      <button (click)="transitionStatus(goal, 'abandoned')"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-overlay0/15 text-ctp-overlay0 hover:bg-ctp-overlay0/25 transition-colors">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636" />
-                        </svg>
-                        {{ t('goals.status.abandoned') }}
-                      </button>
-                    } @else {
-                      <button (click)="transitionStatus(goal, s)"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors">
-                        {{ t('goals.status.' + s) }}
-                      </button>
-                    }
-                  }
-                </div>
-              }
+                }
+                <button (click)="confirmDelete(goal)"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-red/15 text-ctp-red hover:bg-ctp-red/25 transition-colors"
+                  [title]="t('goals.delete')">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  {{ t('goals.delete') }}
+                </button>
+              </div>
 
               <!-- Actions row -->
               <div class="flex items-center gap-2 mb-3 flex-wrap">
@@ -340,13 +346,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                     class="rounded border-border text-accent focus:ring-accent" />
                   {{ t('goals.autoStatus') }}
                 </label>
-                <div class="flex gap-2 ml-auto">
-                  <button (click)="confirmDelete(goal)" class="p-1.5 text-text-secondary hover:text-ctp-red rounded" [title]="t('goals.delete')">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                      <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                </div>
               </div>
 
               <!-- Progress -->
