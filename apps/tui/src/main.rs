@@ -565,6 +565,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Render
         terminal.draw(|f| {
             let size = f.area();
+
+            // Fill entire frame with Catppuccin base background so no
+            // terminal-default black leaks through in light mode.
+            f.render_widget(
+                Block::default().style(Style::default().bg(theme::base()).fg(theme::text())),
+                size,
+            );
+
             let main_layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
