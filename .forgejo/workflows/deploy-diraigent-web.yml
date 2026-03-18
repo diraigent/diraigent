@@ -8,12 +8,12 @@ on:
       - '.forgejo/workflows/deploy-diraigent-web.yml'
 
 concurrency:
-  group: deploy-diraigent-web-${{ github.ref }}
+  group: deploy-diraigent-web
   cancel-in-progress: true
 
 jobs:
   deploy:
-    name: Build & Push
+    name: Build & Push (amd64)
     runs-on: docker
     container:
       image: ${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/ci-deploy:latest
@@ -22,9 +22,24 @@ jobs:
         password: ${{ secrets.FORGEJO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Login to Forgejo Container Registry
-        run: docker login ${{ vars.REGISTRY_URL }} -u ${{ github.repository_owner }} -p ${{ secrets.FORGEJO_TOKEN }}
+      - name: Login to registries
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          docker login ${{ vars.REGISTRY_URL }} -u ${{ github.repository_owner }} -p ${{ secrets.FORGEJO_TOKEN }}
+
+      - name: Detect release tag
+        id: tag
+        run: |
+          VERSION=$(git tag --points-at HEAD | grep '^v[0-9]' | head -1 || true)
+          if [ -n "$VERSION" ]; then
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build and push image
         env:
@@ -40,3 +55,112 @@ jobs:
             apps/web/
           docker push "${IMAGE}:latest"
           docker push "${IMAGE}:main-${TIMESTAMP}-${COMMIT_SHA}"
+
+      - name: Push release amd64 tags
+        if: steps.tag.outputs.is_release == 'true'
+        run: |
+          VERSION="${{ steps.tag.outputs.version }}"
+          IMAGE="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/web"
+          docker tag "${IMAGE}:latest" "diraigent/web:${VERSION}-amd64"
+          docker tag "${IMAGE}:latest" "${IMAGE}:${VERSION}-amd64"
+          docker push "diraigent/web:${VERSION}-amd64"
+          docker push "${IMAGE}:${VERSION}-amd64"
+
+    outputs:
+      is_release: ${{ steps.tag.outputs.is_release }}
+      version: ${{ steps.tag.outputs.version }}
+
+  # Release jobs — only run when the commit has a version tag
+  build-arm64:
+    name: Release (build arm64)
+    needs: [deploy]
+    if: needs.deploy.outputs.is_release == 'true'
+    runs-on: docker
+    container:
+      image: ${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/ci-deploy:latest
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.FORGEJO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create buildx builder
+        run: docker buildx create --name builder --driver docker-container --use && docker buildx inspect --bootstrap
+      - name: Login to registries
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          docker login ${{ vars.REGISTRY_URL }} -u ${{ github.repository_owner }} -p ${{ secrets.FORGEJO_TOKEN }}
+      - name: Build and push
+        run: |
+          VERSION="${{ needs.deploy.outputs.version }}"
+          FORGEJO="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/web"
+          docker buildx build \
+            --platform linux/arm64 \
+            --build-arg DIRAIGENT_VERSION="${VERSION}" \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            -f apps/web/Containerfile \
+            -t "diraigent/web:${VERSION}-arm64" \
+            -t "${FORGEJO}:${VERSION}-arm64" \
+            --push apps/web/
+
+  manifest:
+    name: Release (manifest)
+    needs: [deploy, build-arm64]
+    if: needs.deploy.outputs.is_release == 'true'
+    runs-on: docker
+    container:
+      image: ${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/ci-deploy:latest
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.FORGEJO_TOKEN }}
+    steps:
+      - name: Login to registries
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          docker login ${{ vars.REGISTRY_URL }} -u ${{ github.repository_owner }} -p ${{ secrets.FORGEJO_TOKEN }}
+      - name: Create and push manifests
+        run: |
+          VERSION="${{ needs.deploy.outputs.version }}"
+          FORGEJO="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/web"
+
+          docker buildx imagetools create \
+            -t "diraigent/web:${VERSION}" \
+            -t "diraigent/web:latest" \
+            "diraigent/web:${VERSION}-amd64" \
+            "diraigent/web:${VERSION}-arm64"
+
+          docker buildx imagetools create \
+            -t "${FORGEJO}:${VERSION}" \
+            -t "${FORGEJO}:latest" \
+            "${FORGEJO}:${VERSION}-amd64" \
+            "${FORGEJO}:${VERSION}-arm64"
+
+  sign:
+    name: Release (sign)
+    needs: [deploy, manifest]
+    if: needs.deploy.outputs.is_release == 'true'
+    runs-on: docker
+    container:
+      image: ${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/ci-deploy:latest
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.FORGEJO_TOKEN }}
+    steps:
+      - name: Login to registries
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          docker login ${{ vars.REGISTRY_URL }} -u ${{ github.repository_owner }} -p ${{ secrets.FORGEJO_TOKEN }}
+      - name: Sign images with cosign
+        env:
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          printf '%s\n' "${{ secrets.COSIGN_KEY }}" > /tmp/cosign.key
+          VERSION="${{ needs.deploy.outputs.version }}"
+          FORGEJO="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/web"
+
+          DIGEST="sha256:$(docker buildx imagetools inspect --raw "diraigent/web:${VERSION}" | sha256sum | awk '{print $1}')"
+          cosign sign --key /tmp/cosign.key --yes "diraigent/web@${DIGEST}"
+
+          DIGEST="sha256:$(docker buildx imagetools inspect --raw "${FORGEJO}:${VERSION}" | sha256sum | awk '{print $1}')"
+          cosign sign --key /tmp/cosign.key --yes "${FORGEJO}@${DIGEST}"
+
+          rm -f /tmp/cosign.key
