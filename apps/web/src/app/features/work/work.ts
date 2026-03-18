@@ -1049,7 +1049,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   </button>
                 }
                 <button (click)="submitForm()" class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90">
-                  {{ editing() ? t('goals.save') : t('goals.create') }}
+                  {{ t('goals.save') }}
                 </button>
               </div>
             </div>
