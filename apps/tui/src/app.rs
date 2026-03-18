@@ -752,7 +752,7 @@ impl App {
             event_form: None,
             webhook_form: None,
             report_form: None,
-            view: View::Tasks,
+            view: View::Work,
             modal: Modal::None,
             focus: 0,
             projects: vec![],
