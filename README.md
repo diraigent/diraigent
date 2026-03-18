@@ -41,23 +41,37 @@ Diraigent is none of these. It's a structured, self-hosted platform where:
 
 ## Quickstart
 
-Prerequisites: Docker, Docker Compose, and [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
+Prerequisites: Docker, Docker Compose, and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) authenticated (`claude login`).
 
 ```bash
 curl -LO https://raw.githubusercontent.com/diraigent/diraigent/main/startup/docker-compose.yml
 curl -LO https://raw.githubusercontent.com/diraigent/diraigent/main/startup/start.sh
 curl -LO https://raw.githubusercontent.com/diraigent/diraigent/main/startup/.env.example
-cp .env.example .env    # edit .env for your setup
+cp .env.example .env
 chmod +x start.sh
-./start.sh              # registers agent, seeds playbooks, starts everything
 ```
+
+Edit `.env` before starting:
+
+```bash
+# Required — the git repo the orchestra will clone and work on
+GIT_REPO_URL=https://github.com/your-org/your-repo.git
+```
+
+`start.sh` reads your Claude Code credentials from the macOS Keychain, registers an agent with the API, and brings up all containers:
+
+```bash
+./start.sh
+```
+
+Once running, open the dashboard at **http://localhost:4200**.
 
 Images are published on Docker Hub: [`diraigent/api`](https://hub.docker.com/r/diraigent/api), [`diraigent/web`](https://hub.docker.com/r/diraigent/web), [`diraigent/orchestra`](https://hub.docker.com/r/diraigent/orchestra).
 
 ### First steps after startup
 
-1. **Create a project** — point it at a git repo with a main branch
-2. **Chat with the assistant** — verify Claude answers
+1. **Create a project** — in the dashboard, create a new project and point it at your git repo's default branch
+2. **Chat with the assistant** — open the project chat and verify Claude responds
 3. **Clone a playbook** — pick one of the seeded defaults and clone it into your project
 4. **Create a task** — attach the playbook, fill in spec and acceptance criteria
 5. The orchestra picks it up and starts working
