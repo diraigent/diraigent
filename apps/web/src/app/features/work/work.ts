@@ -59,6 +59,13 @@ const TYPE_COLORS = WORK_TYPE_COLORS;
 
 const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
 
+/** Safely parse success_criteria into a string array, handling string, array, or nullish values. */
+function parseCriteria(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(l => l.trim().length > 0);
+  if (typeof value === 'string') return value.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  return [];
+}
+
 @Component({
   selector: 'app-work',
   standalone: true,
@@ -2122,10 +2129,7 @@ export class WorkPage {
           context['spec'] = created.description;
         }
         if (created.success_criteria) {
-          context['acceptance_criteria'] = created.success_criteria
-            .split('\n')
-            .map((l) => l.trim())
-            .filter((l) => l.length > 0);
+          context['acceptance_criteria'] = parseCriteria(created.success_criteria);
         }
         const req: CreateTaskRequest = {
           title: created.title,
@@ -2163,10 +2167,7 @@ export class WorkPage {
           context['spec'] = created.description;
         }
         if (created.success_criteria) {
-          context['acceptance_criteria'] = created.success_criteria
-            .split('\n')
-            .map((l) => l.trim())
-            .filter((l) => l.length > 0);
+          context['acceptance_criteria'] = parseCriteria(created.success_criteria);
         }
         context['decompose'] = true;
         const req: CreateTaskRequest = {
@@ -2575,10 +2576,7 @@ export class WorkPage {
       context['spec'] = sel.description;
     }
     if (sel.success_criteria) {
-      context['acceptance_criteria'] = sel.success_criteria
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0);
+      context['acceptance_criteria'] = parseCriteria(sel.success_criteria);
     }
     const req: CreateTaskRequest = {
       title: sel.title,
@@ -2607,10 +2605,7 @@ export class WorkPage {
       context['spec'] = sel.description;
     }
     if (sel.success_criteria) {
-      context['acceptance_criteria'] = sel.success_criteria
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0);
+      context['acceptance_criteria'] = parseCriteria(sel.success_criteria);
     }
     context['decompose'] = true;
     const req: CreateTaskRequest = {
