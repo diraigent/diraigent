@@ -1988,30 +1988,40 @@ impl ApiClient {
 
     // ── Chat ─────────────────────────────────────────────────
 
-    pub async fn send_chat(
+    /// Stream chat SSE response, sending each chunk to the UI channel as it arrives.
+    pub async fn send_chat_stream(
         &self,
         project_id: Uuid,
-        messages: Vec<ChatMessage>,
-    ) -> Result<String, reqwest::Error> {
+        messages: &[ChatMessage],
+        tx: &tokio::sync::mpsc::Sender<super::ApiMsg>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let req = self
             .client
             .post(format!("{}/{}/chat", self.base_url, project_id))
             .json(&serde_json::json!({"messages": messages}));
         let resp = self.auth(req).send().await?.error_for_status()?;
-        // Collect SSE stream into a single text response
-        let body = resp.text().await?;
-        // Parse SSE events to extract text content
-        let mut result = String::new();
-        for line in body.lines() {
-            if let Some(data) = line.strip_prefix("data: ") {
-                if let Ok(obj) = serde_json::from_str::<serde_json::Value>(data) {
-                    if let Some(content) = obj.get("content").and_then(|c| c.as_str()) {
-                        result.push_str(content);
+
+        // Read the body incrementally via chunk()
+        let mut buf = String::new();
+        let mut resp = resp;
+        while let Some(bytes) = resp.chunk().await? {
+            let text = String::from_utf8_lossy(&bytes);
+            buf.push_str(&text);
+
+            // Process complete SSE lines from the buffer
+            while let Some(newline_pos) = buf.find('\n') {
+                let line = buf[..newline_pos].to_string();
+                buf = buf[newline_pos + 1..].to_string();
+                if let Some(data) = line.strip_prefix("data: ") {
+                    if let Ok(obj) = serde_json::from_str::<serde_json::Value>(data) {
+                        if let Some(content) = obj.get("content").and_then(|c| c.as_str()) {
+                            let _ = tx.send(super::ApiMsg::ChatChunk(content.to_string())).await;
+                        }
                     }
                 }
             }
         }
-        Ok(result)
+        Ok(())
     }
 
     // ── Source browser ───────────────────────────────────────

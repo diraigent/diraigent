@@ -34,27 +34,34 @@ pub enum View {
     StepTemplates,
 }
 
+/// View ordering matches navigation.json — core → operations → reference → tools → system.
 pub const ALL_VIEWS: &[View] = &[
-    View::Dashboard,
-    View::Tasks,
-    View::Agents,
-    View::Knowledge,
-    View::Decisions,
-    View::Playbooks,
+    // core
     View::Work,
+    View::Tasks,
+    View::Decisions,
+    View::Dashboard,
+    // operations
+    View::Agents,
+    View::Playbooks,
     View::Observations,
     View::Team,
-    View::Integrations,
-    View::Audit,
-    View::Logs,
+    // reference
+    View::Knowledge,
     View::Verifications,
+    View::Reports,
+    // tools
     View::Git,
+    View::Source,
     View::Search,
     View::Chat,
-    View::Source,
-    View::Reports,
+    // system
+    View::Logs,
+    View::Audit,
     View::Events,
+    View::Integrations,
     View::Webhooks,
+    View::ProjectSettings,
     View::StepTemplates,
 ];
 
@@ -86,29 +93,30 @@ impl View {
         }
     }
 
+    /// Keyboard shortcut — kept in sync with navigation.json.
     pub fn shortcut(self) -> &'static str {
         match self {
-            View::Tasks => "1",
-            View::Agents => "2",
-            View::Knowledge => "3",
-            View::Decisions => "4",
-            View::Playbooks => "5",
-            View::Work => "6",
+            View::Work => "1",
+            View::Tasks => "2",
+            View::Decisions => "3",
+            View::Dashboard => "4",
+            View::Agents => "5",
+            View::Playbooks => "6",
             View::Observations => "7",
             View::Team => "8",
-            View::Integrations => "9",
-            View::Audit => "0",
-            View::Logs => "`",
-            View::ProjectSettings => "S",
-            View::Verifications => "V",
+            View::Knowledge => "9",
+            View::Verifications => "0",
+            View::Reports => "R",
             View::Git => "G",
+            View::Source => "B",
             View::Search => "F",
             View::Chat => "C",
-            View::Source => "B",
-            View::Dashboard => "D",
-            View::Reports => "R",
+            View::Logs => "`",
+            View::Audit => "A",
             View::Events => "E",
+            View::Integrations => "I",
             View::Webhooks => "W",
+            View::ProjectSettings => "S",
             View::StepTemplates => "T",
         }
     }
