@@ -37,6 +37,8 @@ export interface PushResponse {
 export interface ReleaseRequest {
   source_branch?: string;
   message?: string;
+  /** "production" (changelog + tag + push) or "staging" (push only) */
+  release_env?: string;
 }
 
 export interface ReleaseResponse {

@@ -91,6 +91,8 @@ pub struct ReleaseRequest {
     pub source_branch: Option<String>,
     /// Commit message (auto-generated from git log if not provided)
     pub message: Option<String>,
+    /// Release environment: "production" (changelog + tag + push) or "staging" (push only)
+    pub release_env: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -360,9 +362,10 @@ async fn release(
             query_type: "release",
             branch: req.source_branch,
             path: req.message,
+            remote: req.release_env,
             ..Default::default()
         },
-        60, // Longer timeout: squash merge + push to multiple remotes
+        120, // Longer timeout: squash merge + changelog generation + push to multiple remotes
     )
     .await?;
 

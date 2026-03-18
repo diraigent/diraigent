@@ -114,9 +114,24 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
             }
           }
           @if (showRelease()) {
-            <button (click)="onReleaseProject()"
+            <button (click)="onReleaseProject('staging')"
               [disabled]="releasing()"
-              title="Squash-merge dev → main, tag, and push to all remotes"
+              title="Squash-merge dev → main and push to all remotes"
+              class="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg
+                     bg-ctp-teal/15 text-ctp-teal hover:bg-ctp-teal/25 transition-colors
+                     disabled:opacity-50 disabled:cursor-not-allowed">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              @if (releasing()) {
+                {{ t('git.releasing') }}
+              } @else {
+                {{ t('git.staging') }}
+              }
+            </button>
+            <button (click)="onReleaseProject('production')"
+              [disabled]="releasing()"
+              title="Squash-merge dev → main, changelog, tag, and push to all remotes"
               class="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg
                      bg-ctp-mauve/15 text-ctp-mauve hover:bg-ctp-mauve/25 transition-colors
                      disabled:opacity-50 disabled:cursor-not-allowed">
@@ -126,7 +141,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               @if (releasing()) {
                 {{ t('git.releasing') }}
               } @else {
-                {{ t('git.release') }}
+                {{ t('git.production') }}
               }
             </button>
           }
@@ -1438,10 +1453,13 @@ export class WorkPage {
     });
   }
 
-  onReleaseProject(): void {
-    if (!confirm('Create a new release? This will squash-merge dev → main, create a version tag, and push to all remotes.')) return;
+  onReleaseProject(env: 'staging' | 'production'): void {
+    const msg = env === 'production'
+      ? 'Production release? This will squash-merge dev → main, generate a changelog, create a version tag, and push to all remotes.'
+      : 'Staging release? This will squash-merge dev → main and push to all remotes.';
+    if (!confirm(msg)) return;
     this.releasing.set(true);
-    this.git.release().subscribe({
+    this.git.release({ release_env: env }).subscribe({
       next: (res) => {
         this.releasing.set(false);
         alert(res.message);
