@@ -67,10 +67,18 @@ pub async fn update_tenant(
         .accent_color
         .as_deref()
         .unwrap_or(&existing.accent_color);
+    let plan = req.plan.as_deref().unwrap_or(&existing.plan);
+    let rate_limit_per_min = req
+        .rate_limit_per_min
+        .unwrap_or(existing.rate_limit_per_min);
+    let max_tasks = req.max_tasks.unwrap_or(existing.max_tasks);
+    let max_projects = req.max_projects.unwrap_or(existing.max_projects);
+    let max_agents = req.max_agents.unwrap_or(existing.max_agents);
 
     sqlx::query_as::<_, Tenant>(
         "UPDATE diraigent.tenant SET name = $2, encryption_mode = $3, key_salt = $4,
-         theme_preference = $5, accent_color = $6, updated_at = now()
+         theme_preference = $5, accent_color = $6, plan = $7, rate_limit_per_min = $8,
+         max_tasks = $9, max_projects = $10, max_agents = $11, updated_at = now()
          WHERE id = $1 RETURNING *",
     )
     .bind(id)
@@ -79,6 +87,11 @@ pub async fn update_tenant(
     .bind(key_salt)
     .bind(theme_preference)
     .bind(accent_color)
+    .bind(plan)
+    .bind(rate_limit_per_min)
+    .bind(max_tasks)
+    .bind(max_projects)
+    .bind(max_agents)
     .fetch_one(pool)
     .await
     .map_err(Into::into)

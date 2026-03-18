@@ -249,7 +249,10 @@ async fn main() -> anyhow::Result<()> {
                 .unwrap_or(1024 * 1024), // 1 MB default
         ))
         .layer(middleware::from_fn(csrf::csrf_check))
-        .layer(middleware::from_fn(rate_limit::rate_limit))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit::rate_limit,
+        ))
         .layer(cors)
         .layer(shared_utils::server::standard_trace())
         .with_state(state);

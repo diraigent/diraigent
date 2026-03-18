@@ -1618,6 +1618,11 @@ pub struct Tenant {
     pub key_salt: Option<String>,
     pub theme_preference: String,
     pub accent_color: String,
+    pub plan: String,
+    pub rate_limit_per_min: i32,
+    pub max_tasks: i32,
+    pub max_projects: i32,
+    pub max_agents: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -1658,6 +1663,11 @@ pub struct UpdateTenant {
     pub key_salt: Option<String>,
     pub theme_preference: Option<String>,
     pub accent_color: Option<String>,
+    pub plan: Option<String>,
+    pub rate_limit_per_min: Option<i32>,
+    pub max_tasks: Option<i32>,
+    pub max_projects: Option<i32>,
+    pub max_agents: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
