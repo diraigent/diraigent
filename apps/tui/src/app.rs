@@ -12,7 +12,6 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
-    Tasks,
     Agents,
     Knowledge,
     Decisions,
@@ -38,7 +37,6 @@ pub enum View {
 pub const ALL_VIEWS: &[View] = &[
     // core
     View::Work,
-    View::Tasks,
     View::Decisions,
     View::Dashboard,
     // operations
@@ -66,7 +64,6 @@ pub const ALL_VIEWS: &[View] = &[
 impl View {
     pub fn label(self) -> &'static str {
         match self {
-            View::Tasks => "Tasks",
             View::Agents => "Agents",
             View::Knowledge => "Knowledge",
             View::Decisions => "Decisions",
@@ -93,14 +90,13 @@ impl View {
     pub fn shortcut(self) -> &'static str {
         match self {
             View::Work => "1",
-            View::Tasks => "2",
-            View::Decisions => "3",
-            View::Dashboard => "4",
-            View::Agents => "5",
-            View::Observations => "6",
-            View::Team => "7",
-            View::Knowledge => "8",
-            View::Verifications => "0",
+            View::Decisions => "2",
+            View::Dashboard => "3",
+            View::Agents => "4",
+            View::Observations => "5",
+            View::Team => "6",
+            View::Knowledge => "7",
+            View::Verifications => "8",
             View::Reports => "R",
             View::Git => "G",
             View::Source => "B",
@@ -119,9 +115,6 @@ impl View {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Modal {
     None,
-    Transition,
-    Reply,
-    Comment,
     Search,
     WorkStatus,
     Promote,
@@ -132,10 +125,6 @@ pub enum Modal {
     DecisionSupersede,
     IntegrationAccess,
     ViewPicker,
-    ClaimTask,
-    DelegateTask,
-    BulkTransition,
-    BulkDelete,
     VerificationStatus,
     VerificationKindFilter,
     VerificationStatusFilter,
@@ -586,8 +575,7 @@ pub struct App {
     pub bulk_selected: std::collections::HashSet<uuid::Uuid>,
     pub bulk_mode: bool,
 
-    // Task hierarchy
-    pub show_hierarchy: bool,
+    // Task hierarchy (used by work view)
     pub subtasks: Vec<Task>,
 
     // Git view
@@ -728,7 +716,6 @@ impl App {
             show_changed_files: false,
             bulk_selected: std::collections::HashSet::new(),
             bulk_mode: false,
-            show_hierarchy: false,
             subtasks: vec![],
             branches: vec![],
             current_branch: String::new(),
@@ -755,7 +742,6 @@ impl App {
 
     pub fn list_len(&self) -> usize {
         match self.view {
-            View::Tasks => self.tasks.len(),
             View::Agents => self.agents.len(),
             View::Knowledge => self.knowledge.len(),
             View::Decisions => self.decisions.len(),
@@ -786,7 +772,6 @@ impl App {
 
     pub fn selected(&self) -> Option<usize> {
         match self.view {
-            View::Tasks => self.selected_task,
             View::Agents => self.selected_agent,
             View::Knowledge => self.selected_knowledge,
             View::Decisions => self.selected_decision,
@@ -818,10 +803,6 @@ impl App {
     pub fn set_selected(&mut self, idx: Option<usize>) {
         self.detail_scroll = 0;
         match self.view {
-            View::Tasks => {
-                self.selected_task = idx;
-                self.task_list_state.select(idx);
-            }
             View::Agents => self.selected_agent = idx,
             View::Knowledge => self.selected_knowledge = idx,
             View::Decisions => self.selected_decision = idx,
@@ -1046,23 +1027,5 @@ impl App {
                 true
             })
             .collect()
-    }
-
-    /// Move task selection respecting the search filter.
-    pub fn move_task_selection(&mut self, delta: i32) {
-        let visible = self.filtered_task_indices();
-        if visible.is_empty() {
-            return;
-        }
-        // Find current position in the filtered list
-        let current_pos = self
-            .selected_task
-            .and_then(|sel| visible.iter().position(|&i| i == sel))
-            .unwrap_or(0);
-        let next_pos = (current_pos as i32 + delta).clamp(0, visible.len() as i32 - 1) as usize;
-        let new_idx = visible[next_pos];
-        self.detail_scroll = 0;
-        self.selected_task = Some(new_idx);
-        self.task_list_state.select(Some(next_pos));
     }
 }

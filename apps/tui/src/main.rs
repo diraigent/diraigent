@@ -61,7 +61,6 @@ enum ApiMsg {
     ClaudeMd(String),
     ProjectUpdated(client::Project),
     GitTaskStatus(client::GitTaskStatus),
-    ChangedFiles(Vec<client::ChangedFile>),
     Verifications(Vec<client::Verification>),
     Events(Vec<client::Event>),
     DashboardMetrics(client::ProjectMetrics),
@@ -87,17 +86,6 @@ enum ApiMsg {
     Subtasks(Vec<client::Task>),
     ObservationsCleanup(client::CleanupObservationsResult),
     Error(String),
-}
-
-fn valid_transitions(state: &str) -> Vec<String> {
-    match state {
-        "backlog" => vec!["ready".into(), "cancelled".into()],
-        "ready" => vec!["cancelled".into()],
-        "done" => vec!["ready".into()],
-        "cancelled" => vec!["backlog".into()],
-        // Any active step (implement, review, merge, working, etc.)
-        _ => vec!["done".into(), "ready".into(), "cancelled".into()],
-    }
 }
 
 #[tokio::main]
@@ -247,11 +235,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let _ = tx.send(ApiMsg::DoneWorkItems(resp)).await;
                 }
             }
-            View::Tasks => {
-                if let Ok(resp) = api.list_tasks(pid).await {
-                    let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
-                }
-            }
             View::Decisions => {
                 if let Ok(resp) = api.list_decisions(pid).await {
                     let _ = tx.send(ApiMsg::Decisions(resp)).await;
@@ -336,11 +319,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         pid: uuid::Uuid,
         active_view: View,
     ) {
-        // Skip tasks if the active view already fetches them
-        if !matches!(active_view, View::Tasks) {
-            if let Ok(resp) = api.list_tasks(pid).await {
-                let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
-            }
+        // Tasks are always fetched as core data (used by work view and others)
+        if let Ok(resp) = api.list_tasks(pid).await {
+            let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
         }
         // Skip work if the active view already fetches it
         if !matches!(active_view, View::Work) {
@@ -702,7 +683,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 ApiMsg::GitTaskStatus(status) => app.git_task_status = Some(status),
-                ApiMsg::ChangedFiles(files) => app.changed_files = files,
                 ApiMsg::Branches(resp) => {
                     app.current_branch = resp.current_branch;
                     app.branches = resp.branches;
@@ -845,7 +825,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Main content
             match app.view {
-                View::Tasks => views::tasks::render(f, main_layout[1], &mut app),
                 View::Agents => views::agents::render(f, main_layout[1], &mut app),
                 View::Knowledge => views::knowledge::render(f, main_layout[1], &mut app),
                 View::Decisions => views::decisions::render(f, main_layout[1], &mut app),
@@ -876,7 +855,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Numbered views (1-0) — the first 10 views in ALL_VIEWS
                 let footer_views: &[View] = &[
                     View::Work,
-                    View::Tasks,
                     View::Decisions,
                     View::Dashboard,
                     View::Agents,
@@ -910,7 +888,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // View-specific action hints
                 let action_hint = match app.view {
-                    View::Tasks => "[n]New [t]Trans [c]Cmt [f]Flag [F]Files [a]Claim [e]Edit",
                     View::Work => "[n]New [t]Task [c]Cmt [s]Status [e]Edit [Tab]Focus",
                     View::Decisions => "[n]New [a]Accept [x]Reject [X]Deprecate",
                     View::Observations => "[n]New [s]Status [d]Dismiss [p]Promote [C]Cleanup",
@@ -949,20 +926,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Modals
             match app.modal {
-                Modal::Transition => {
-                    let states: Vec<&str> =
-                        app.transition_options.iter().map(|s| s.as_str()).collect();
-                    f.render_widget(
-                        widgets::popup::TransitionPopup {
-                            states: &states,
-                            selected: app.transition_selected,
-                        },
-                        size,
-                    );
-                }
-                Modal::Reply
-                | Modal::Comment
-                | Modal::WorkComment
+                Modal::WorkComment
                 | Modal::Search
                 | Modal::GlobalSearch
                 | Modal::LogQuery
@@ -975,18 +939,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "Search"
                     } else if app.modal == Modal::GlobalSearch {
                         "Global Search"
-                    } else if app.modal == Modal::Comment {
-                        "Comment"
-                    } else if app.modal == Modal::WorkComment {
-                        "Work Comment"
-                    } else if app
-                        .selected_task
-                        .and_then(|i| app.tasks.get(i))
-                        .is_some_and(|t| t.state == "backlog")
-                    {
-                        "Refine spec"
                     } else {
-                        "Reply"
+                        "Work Comment"
                     };
                     f.render_widget(
                         widgets::popup::InputPopup {
@@ -1007,42 +961,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         size,
                     );
                 }
-                Modal::ClaimTask | Modal::DelegateTask | Modal::BulkTransition => {
-                    let states: Vec<&str> =
-                        app.transition_options.iter().map(|s| s.as_str()).collect();
-                    let title = match app.modal {
-                        Modal::ClaimTask => " Claim Task — Select Agent ",
-                        Modal::DelegateTask => " Delegate Task — Select Agent ",
-                        Modal::BulkTransition => " Bulk Transition ",
-                        _ => "",
-                    };
-                    let popup_area = widgets::popup::centered_rect(40, 50, size);
-                    Clear.render(popup_area, f.buffer_mut());
-                    let block = Block::default()
-                        .title(title)
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(theme::peach()))
-                        .style(Style::default().bg(theme::mantle()));
-                    let inner = block.inner(popup_area);
-                    f.render_widget(block, popup_area);
-                    let items: Vec<ratatui::widgets::ListItem> = states
-                        .iter()
-                        .enumerate()
-                        .map(|(i, s)| {
-                            let style = if i == app.transition_selected {
-                                Style::default().fg(theme::base()).bg(theme::peach())
-                            } else {
-                                Style::default().fg(theme::text())
-                            };
-                            ratatui::widgets::ListItem::new(Line::styled(
-                                format!("  {}  ", s),
-                                style,
-                            ))
-                        })
-                        .collect();
-                    f.render_widget(ratatui::widgets::List::new(items), inner);
-                }
-                Modal::BulkDelete | Modal::ReportDelete => {
+                Modal::ReportDelete => {
                     let count = app.bulk_selected.len();
                     let popup_area = widgets::popup::centered_rect(50, 20, size);
                     Clear.render(popup_area, f.buffer_mut());
@@ -3909,7 +3828,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     match key.code {
                         KeyCode::Esc => {
                             app.settings_form = None;
-                            app.view = View::Tasks;
+                            app.view = View::Work;
                         }
                         KeyCode::Tab => {
                             form.active_field = (form.active_field + 1) % app::SETTINGS_FIELD_COUNT;
@@ -4226,197 +4145,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 } else {
                     match app.modal {
-                        Modal::Transition => match key.code {
-                            KeyCode::Esc => app.modal = Modal::None,
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                if app.transition_selected > 0 {
-                                    app.transition_selected -= 1;
-                                }
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.transition_selected + 1 < app.transition_options.len() {
-                                    app.transition_selected += 1;
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if let Some(state) =
-                                    app.transition_options.get(app.transition_selected).cloned()
-                                {
-                                    if let Some(tid) = app.selected_task_id() {
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        let pid = app.current_project;
-                                        tokio::spawn(async move {
-                                            let _ = api.transition_task(tid, &state).await;
-                                            if let Some(pid) = pid {
-                                                if let Ok(resp) = api.list_tasks(pid).await {
-                                                    let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                                app.modal = Modal::None;
-                            }
-                            _ => {}
-                        },
-                        Modal::Reply => match key.code {
-                            KeyCode::Esc => {
-                                app.modal = Modal::None;
-                                app.input_text.clear();
-                                app.input_cursor = 0;
-                            }
-                            KeyCode::Enter => {
-                                if !app.input_text.is_empty() {
-                                    if let Some(idx) = app.selected_task {
-                                        let task = &app.tasks[idx];
-                                        let tid = task.id;
-                                        let is_backlog = task.state == "backlog";
-                                        let content = app.input_text.clone();
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        if is_backlog {
-                                            // Append to spec so additions become part of the task description
-                                            let existing_spec = task
-                                                .context
-                                                .get("spec")
-                                                .and_then(|s| s.as_str())
-                                                .unwrap_or("");
-                                            let new_spec = if existing_spec.is_empty() {
-                                                content
-                                            } else {
-                                                format!("{}\n{}", existing_spec, content)
-                                            };
-                                            let mut new_context = task.context.clone();
-                                            new_context["spec"] =
-                                                serde_json::Value::String(new_spec);
-                                            let pid = app.current_project;
-                                            tokio::spawn(async move {
-                                                let _ = api
-                                                    .update_task(
-                                                        tid,
-                                                        serde_json::json!({ "context": new_context }),
-                                                    )
-                                                    .await;
-                                                // Refresh task list
-                                                if let Some(pid) = pid {
-                                                    if let Ok(resp) = api.list_tasks(pid).await {
-                                                        let _ =
-                                                            tx.send(ApiMsg::Tasks(resp.data)).await;
-                                                    }
-                                                }
-                                            });
-                                        } else {
-                                            tokio::spawn(async move {
-                                                let _ = api
-                                                    .post_update(tid, &content, "progress")
-                                                    .await;
-                                                if let Ok(updates) = api.get_task_updates(tid).await
-                                                {
-                                                    let _ =
-                                                        tx.send(ApiMsg::TaskUpdates(updates)).await;
-                                                }
-                                            });
-                                        }
-                                    }
-                                }
-                                app.modal = Modal::None;
-                                app.input_text.clear();
-                                app.input_cursor = 0;
-                            }
-                            KeyCode::Backspace => {
-                                if app.input_cursor > 0 {
-                                    app.input_cursor -= 1;
-                                    let byte_pos = app
-                                        .input_text
-                                        .char_indices()
-                                        .nth(app.input_cursor)
-                                        .map(|(i, _)| i)
-                                        .unwrap_or(app.input_text.len());
-                                    app.input_text.remove(byte_pos);
-                                }
-                            }
-                            KeyCode::Left => {
-                                if app.input_cursor > 0 {
-                                    app.input_cursor -= 1;
-                                }
-                            }
-                            KeyCode::Right => {
-                                if app.input_cursor < app.input_text.chars().count() {
-                                    app.input_cursor += 1;
-                                }
-                            }
-                            KeyCode::Char(c) => {
-                                let byte_pos = app
-                                    .input_text
-                                    .char_indices()
-                                    .nth(app.input_cursor)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(app.input_text.len());
-                                app.input_text.insert(byte_pos, c);
-                                app.input_cursor += 1;
-                            }
-                            _ => {}
-                        },
-                        Modal::Comment => match key.code {
-                            KeyCode::Esc => {
-                                app.modal = Modal::None;
-                                app.input_text.clear();
-                                app.input_cursor = 0;
-                            }
-                            KeyCode::Enter => {
-                                if !app.input_text.is_empty() {
-                                    if let Some(tid) = app.selected_task_id() {
-                                        let content = app.input_text.clone();
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        tokio::spawn(async move {
-                                            let _ = api.post_comment(tid, &content).await;
-                                            if let Ok(comments) = api.get_task_comments(tid).await {
-                                                let _ =
-                                                    tx.send(ApiMsg::TaskComments(comments)).await;
-                                            }
-                                        });
-                                    }
-                                }
-                                app.modal = Modal::None;
-                                app.input_text.clear();
-                                app.input_cursor = 0;
-                            }
-                            KeyCode::Backspace => {
-                                if app.input_cursor > 0 {
-                                    app.input_cursor -= 1;
-                                    let byte_pos = app
-                                        .input_text
-                                        .char_indices()
-                                        .nth(app.input_cursor)
-                                        .map(|(i, _)| i)
-                                        .unwrap_or(app.input_text.len());
-                                    app.input_text.remove(byte_pos);
-                                }
-                            }
-                            KeyCode::Left => {
-                                if app.input_cursor > 0 {
-                                    app.input_cursor -= 1;
-                                }
-                            }
-                            KeyCode::Right => {
-                                if app.input_cursor < app.input_text.chars().count() {
-                                    app.input_cursor += 1;
-                                }
-                            }
-                            KeyCode::Char(c) => {
-                                let byte_pos = app
-                                    .input_text
-                                    .char_indices()
-                                    .nth(app.input_cursor)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(app.input_text.len());
-                                app.input_text.insert(byte_pos, c);
-                                app.input_cursor += 1;
-                            }
-                            _ => {}
-                        },
                         Modal::WorkComment => match key.code {
                             KeyCode::Esc => {
                                 app.modal = Modal::None;
@@ -5341,206 +5069,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             _ => {}
                         },
-                        Modal::ClaimTask => match key.code {
-                            KeyCode::Esc => app.modal = Modal::None,
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                if app.transition_selected > 0 {
-                                    app.transition_selected -= 1;
-                                }
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.transition_selected + 1 < app.transition_options.len() {
-                                    app.transition_selected += 1;
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if let Some(agent_name) =
-                                    app.transition_options.get(app.transition_selected).cloned()
-                                {
-                                    if let Some(tid) = app.selected_task_id() {
-                                        let agent_id = app
-                                            .agents
-                                            .iter()
-                                            .find(|a| a.name == agent_name)
-                                            .map(|a| a.id);
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        let pid = app.current_project;
-                                        tokio::spawn(async move {
-                                            match api.claim_task(tid, agent_id).await {
-                                                Ok(_) => {
-                                                    if let Some(pid) = pid {
-                                                        if let Ok(resp) = api.list_tasks(pid).await
-                                                        {
-                                                            let _ = tx
-                                                                .send(ApiMsg::Tasks(resp.data))
-                                                                .await;
-                                                        }
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!("Claim: {e}")))
-                                                        .await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                                app.modal = Modal::None;
-                            }
-                            _ => {}
-                        },
-                        Modal::DelegateTask => match key.code {
-                            KeyCode::Esc => app.modal = Modal::None,
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                if app.transition_selected > 0 {
-                                    app.transition_selected -= 1;
-                                }
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.transition_selected + 1 < app.transition_options.len() {
-                                    app.transition_selected += 1;
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if let Some(selected) =
-                                    app.transition_options.get(app.transition_selected).cloned()
-                                {
-                                    if let Some(tid) = app.selected_task_id() {
-                                        // Check if it's an agent or role
-                                        let agent_id = app
-                                            .agents
-                                            .iter()
-                                            .find(|a| a.name == selected)
-                                            .map(|a| a.id);
-                                        let role_id = if agent_id.is_none() {
-                                            app.roles
-                                                .iter()
-                                                .find(|r| format!("Role: {}", r.name) == selected)
-                                                .map(|r| r.id)
-                                        } else {
-                                            None
-                                        };
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        let pid = app.current_project;
-                                        tokio::spawn(async move {
-                                            match api.delegate_task(tid, agent_id, role_id).await {
-                                                Ok(_) => {
-                                                    if let Some(pid) = pid {
-                                                        if let Ok(resp) = api.list_tasks(pid).await
-                                                        {
-                                                            let _ = tx
-                                                                .send(ApiMsg::Tasks(resp.data))
-                                                                .await;
-                                                        }
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!(
-                                                            "Delegate: {e}"
-                                                        )))
-                                                        .await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                                app.modal = Modal::None;
-                            }
-                            _ => {}
-                        },
-                        Modal::BulkTransition => match key.code {
-                            KeyCode::Esc => app.modal = Modal::None,
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                if app.transition_selected > 0 {
-                                    app.transition_selected -= 1;
-                                }
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.transition_selected + 1 < app.transition_options.len() {
-                                    app.transition_selected += 1;
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if let Some(state) =
-                                    app.transition_options.get(app.transition_selected).cloned()
-                                {
-                                    let task_ids: Vec<uuid::Uuid> =
-                                        app.bulk_selected.iter().copied().collect();
-                                    if !task_ids.is_empty() {
-                                        if let Some(pid) = app.current_project {
-                                            let api = api.clone();
-                                            let tx = tx.clone();
-                                            tokio::spawn(async move {
-                                                match api
-                                                    .bulk_transition(pid, task_ids, &state)
-                                                    .await
-                                                {
-                                                    Ok(()) => {
-                                                        if let Ok(resp) = api.list_tasks(pid).await
-                                                        {
-                                                            let _ = tx
-                                                                .send(ApiMsg::Tasks(resp.data))
-                                                                .await;
-                                                        }
-                                                    }
-                                                    Err(e) => {
-                                                        let _ = tx
-                                                            .send(ApiMsg::Error(format!(
-                                                                "Bulk: {e}"
-                                                            )))
-                                                            .await;
-                                                    }
-                                                }
-                                            });
-                                        }
-                                    }
-                                    app.bulk_selected.clear();
-                                    app.bulk_mode = false;
-                                }
-                                app.modal = Modal::None;
-                            }
-                            _ => {}
-                        },
-                        Modal::BulkDelete => match key.code {
-                            KeyCode::Esc | KeyCode::Char('n') => {
-                                app.modal = Modal::None;
-                            }
-                            KeyCode::Enter | KeyCode::Char('y') => {
-                                let task_ids: Vec<uuid::Uuid> =
-                                    app.bulk_selected.iter().copied().collect();
-                                if !task_ids.is_empty() {
-                                    if let Some(pid) = app.current_project {
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        tokio::spawn(async move {
-                                            match api.bulk_delete(pid, task_ids).await {
-                                                Ok(()) => {
-                                                    if let Ok(resp) = api.list_tasks(pid).await {
-                                                        let _ =
-                                                            tx.send(ApiMsg::Tasks(resp.data)).await;
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!(
-                                                            "Bulk delete: {e}"
-                                                        )))
-                                                        .await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                                app.bulk_selected.clear();
-                                app.bulk_mode = false;
-                                app.modal = Modal::None;
-                            }
-                            _ => {}
-                        },
                         Modal::None => match key.code {
                             KeyCode::Char('q') => break,
                             KeyCode::Char('[') | KeyCode::Char(']') => {
@@ -5622,14 +5150,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 app.detail_scroll = 0;
                             }
                             KeyCode::Char('2') => {
-                                app.view = View::Tasks;
-                                app.detail_scroll = 0;
-                            }
-                            KeyCode::Char('3') => {
                                 app.view = View::Decisions;
                                 app.detail_scroll = 0;
                             }
-                            KeyCode::Char('4') => {
+                            KeyCode::Char('3') => {
                                 app.view = View::Dashboard;
                                 app.detail_scroll = 0;
                                 if let Some(pid) = app.current_project {
@@ -5649,29 +5173,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     });
                                 }
                             }
-                            KeyCode::Char('5') => {
+                            KeyCode::Char('4') => {
                                 app.view = View::Agents;
                                 app.detail_scroll = 0;
                             }
-                            KeyCode::Char('6') => {
+                            KeyCode::Char('5') => {
                                 app.view = View::Observations;
                                 app.detail_scroll = 0;
                             }
-                            KeyCode::Char('7') => {
+                            KeyCode::Char('6') => {
                                 app.view = View::Team;
                                 app.detail_scroll = 0;
                             }
-                            KeyCode::Char('8') => {
+                            KeyCode::Char('7') => {
                                 app.view = View::Knowledge;
                                 app.detail_scroll = 0;
                             }
-                            KeyCode::Char('0') => {
+                            KeyCode::Char('8') => {
                                 app.view = View::Verifications;
                                 app.detail_scroll = 0;
                             }
-                            // 'l' — Logs view, except in views where 'l' is an action (Work, Tasks).
+                            // 'l' — Logs view, except in views where 'l' is an action (Work).
                             KeyCode::Home => {
-                                // Home key is an alias for Dashboard (primary: '4')
+                                // Home key is an alias for Dashboard (primary: '3')
                                 app.view = View::Dashboard;
                                 app.detail_scroll = 0;
                                 if let Some(pid) = app.current_project {
@@ -5738,8 +5262,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.move_work_task_selection(-1);
                                 } else if app.focus == 1 {
                                     app.scroll_detail(-1);
-                                } else if app.view == View::Tasks {
-                                    app.move_task_selection(-1);
                                 } else {
                                     app.move_selection(-1);
                                 }
@@ -5751,8 +5273,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.move_work_task_selection(1);
                                 } else if app.focus == 1 {
                                     app.scroll_detail(1);
-                                } else if app.view == View::Tasks {
-                                    app.move_task_selection(1);
                                 } else {
                                     app.move_selection(1);
                                 }
@@ -5773,24 +5293,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.modal = Modal::LogQuery;
                                     app.input_text = app.log_query.clone();
                                     app.input_cursor = app.input_text.chars().count();
-                                } else if app.view == View::Tasks {
-                                    if let Some(tid) = app.selected_task_id() {
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        tokio::spawn(async move {
-                                            let (updates, comments) = tokio::join!(
-                                                api.get_task_updates(tid),
-                                                api.get_task_comments(tid),
-                                            );
-                                            if let Ok(updates) = updates {
-                                                let _ = tx.send(ApiMsg::TaskUpdates(updates)).await;
-                                            }
-                                            if let Ok(comments) = comments {
-                                                let _ =
-                                                    tx.send(ApiMsg::TaskComments(comments)).await;
-                                            }
-                                        });
-                                    }
                                 } else if app.view == View::Source {
                                     if let Some(sel) = app.source_selected {
                                         let offset = if app.source_current_path.is_empty() {
@@ -5887,18 +5389,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             KeyCode::Char('t') => {
-                                if app.view == View::Tasks {
-                                    if let Some(task) =
-                                        app.selected_task.and_then(|i| app.tasks.get(i))
-                                    {
-                                        let opts = valid_transitions(&task.state);
-                                        if !opts.is_empty() {
-                                            app.transition_options = opts;
-                                            app.transition_selected = 0;
-                                            app.modal = Modal::Transition;
-                                        }
-                                    }
-                                } else if app.view == View::Work {
+                                if app.view == View::Work {
                                     // Create a new task linked to the selected work item
                                     if let Some(work) = app.selected_work_item() {
                                         app.task_form = Some(app::TaskForm {
@@ -5941,24 +5432,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             KeyCode::Char('c') => {
-                                if app.view == View::Tasks && app.selected_task.is_some() {
-                                    app.modal = Modal::Comment;
-                                    app.input_text.clear();
-                                    app.input_cursor = 0;
-                                } else if app.view == View::Work
-                                    && app.selected_work_item().is_some()
-                                {
+                                if app.view == View::Work && app.selected_work_item().is_some() {
                                     app.modal = Modal::WorkComment;
                                     app.input_text.clear();
                                     app.input_cursor = 0;
                                 }
                             }
                             KeyCode::Char('r') => {
-                                if app.view == View::Tasks && app.selected_task.is_some() {
-                                    app.modal = Modal::Reply;
-                                    app.input_text.clear();
-                                    app.input_cursor = 0;
-                                } else if app.view == View::Git {
+                                if app.view == View::Git {
                                     app.git_action_result = None;
                                     if let Some(pid) = app.current_project {
                                         let api = api.clone();
@@ -5993,9 +5474,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 app.show_help = true;
                             }
                             KeyCode::Char('n') => {
-                                if app.view == View::Tasks {
-                                    app.task_form = Some(app::TaskForm::default());
-                                } else if app.view == View::Verifications {
+                                if app.view == View::Verifications {
                                     app.verification_form = Some(VerificationForm::default());
                                 } else if app.view == View::Work {
                                     app.work_form = Some(app::WorkForm::default());
@@ -6271,11 +5750,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         });
                                     }
-                                } else if app.view == View::Tasks
-                                    && app.bulk_mode
-                                    && !app.bulk_selected.is_empty()
-                                {
-                                    app.modal = Modal::BulkDelete;
                                 } else if app.view == View::Observations {
                                     if let Some(obs) = app
                                         .selected_observation
@@ -6370,15 +5844,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 }
                                             }
                                         });
-                                    }
-                                } else if app.view == View::Tasks && app.selected_task.is_some() {
-                                    // Open claim modal with agent list
-                                    let opts: Vec<String> =
-                                        app.agents.iter().map(|a| a.name.clone()).collect();
-                                    if !opts.is_empty() {
-                                        app.transition_options = opts;
-                                        app.transition_selected = 0;
-                                        app.modal = Modal::ClaimTask;
                                     }
                                 } else if app.view == View::Integrations {
                                     // Open access management for selected integration
@@ -6511,42 +5976,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                            // R = release task (Tasks view)
+                            // R = resolve+push (Git view)
                             KeyCode::Char('R') => {
-                                if app.view == View::Tasks {
-                                    if let Some(task) =
-                                        app.selected_task.and_then(|i| app.tasks.get(i))
-                                    {
-                                        if task.assigned_agent_id.is_some() {
-                                            let tid = task.id;
-                                            let api = api.clone();
-                                            let tx = tx.clone();
-                                            let pid = app.current_project;
-                                            tokio::spawn(async move {
-                                                match api.release_task(tid).await {
-                                                    Ok(_) => {
-                                                        if let Some(pid) = pid {
-                                                            if let Ok(resp) =
-                                                                api.list_tasks(pid).await
-                                                            {
-                                                                let _ = tx
-                                                                    .send(ApiMsg::Tasks(resp.data))
-                                                                    .await;
-                                                            }
-                                                        }
-                                                    }
-                                                    Err(e) => {
-                                                        let _ = tx
-                                                            .send(ApiMsg::Error(format!(
-                                                                "Release: {e}"
-                                                            )))
-                                                            .await;
-                                                    }
-                                                }
-                                            });
-                                        }
-                                    }
-                                } else if app.view == View::Git {
+                                if app.view == View::Git {
                                     if let Some(pid) = app.current_project {
                                         let api = api.clone();
                                         let tx = tx.clone();
@@ -6569,91 +6001,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                            // v = toggle bulk selection / multi-select (Tasks view)
-                            KeyCode::Char('v') => {
-                                if app.view == View::Tasks {
-                                    if !app.bulk_mode {
-                                        app.bulk_mode = true;
-                                        app.bulk_selected.clear();
-                                        // Select current task
-                                        if let Some(tid) = app.selected_task_id() {
-                                            app.bulk_selected.insert(tid);
-                                        }
-                                    } else {
-                                        // Toggle current task in selection
-                                        if let Some(tid) = app.selected_task_id() {
-                                            if app.bulk_selected.contains(&tid) {
-                                                app.bulk_selected.remove(&tid);
-                                            } else {
-                                                app.bulk_selected.insert(tid);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            // Esc in bulk mode = exit bulk mode (handled in normal Esc too)
-                            KeyCode::Esc => {
-                                if app.view == View::Tasks && app.bulk_mode {
-                                    app.bulk_mode = false;
-                                    app.bulk_selected.clear();
-                                }
-                            }
-                            // b = bulk transition (Tasks view, when in bulk mode)
-                            KeyCode::Char('b') => {
-                                if app.view == View::Tasks
-                                    && app.bulk_mode
-                                    && !app.bulk_selected.is_empty()
-                                {
-                                    let opts = vec![
-                                        "ready".into(),
-                                        "backlog".into(),
-                                        "done".into(),
-                                        "cancelled".into(),
-                                    ];
-                                    app.transition_options = opts;
-                                    app.transition_selected = 0;
-                                    app.modal = Modal::BulkTransition;
-                                }
-                            }
-                            // f = toggle flagged (Tasks view)
-                            KeyCode::Char('f') => {
-                                if app.view == View::Tasks {
-                                    if let Some(task) =
-                                        app.selected_task.and_then(|i| app.tasks.get(i))
-                                    {
-                                        let tid = task.id;
-                                        let new_flagged = !task.flagged;
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        let pid = app.current_project;
-                                        tokio::spawn(async move {
-                                            match api
-                                                .update_task(
-                                                    tid,
-                                                    serde_json::json!({"flagged": new_flagged}),
-                                                )
-                                                .await
-                                            {
-                                                Ok(_) => {
-                                                    if let Some(pid) = pid {
-                                                        if let Ok(resp) = api.list_tasks(pid).await
-                                                        {
-                                                            let _ = tx
-                                                                .send(ApiMsg::Tasks(resp.data))
-                                                                .await;
-                                                        }
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!("Flag: {e}")))
-                                                        .await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                            }
+                            KeyCode::Char('v') => {}
+                            KeyCode::Char('b') => {}
+                            KeyCode::Char('f') => {}
                             // F = view changed files (Tasks view), severity filter (Events view)
                             KeyCode::Char('F') => {
                                 if app.view == View::Events {
@@ -6662,165 +6012,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.transition_options = opts;
                                     app.transition_selected = 0;
                                     app.modal = Modal::EventSeverityFilter;
-                                } else if app.view == View::Tasks {
-                                    if let Some(tid) = app.selected_task_id() {
-                                        app.show_changed_files = !app.show_changed_files;
-                                        if app.show_changed_files {
-                                            let api = api.clone();
-                                            let tx = tx.clone();
-                                            tokio::spawn(async move {
-                                                let (status, files) = tokio::join!(
-                                                    api.get_git_task_status(tid),
-                                                    api.get_changed_files(tid),
-                                                );
-                                                if let Ok(status) = status {
-                                                    let _ = tx
-                                                        .send(ApiMsg::GitTaskStatus(status))
-                                                        .await;
-                                                }
-                                                if let Ok(files) = files {
-                                                    let _ =
-                                                        tx.send(ApiMsg::ChangedFiles(files)).await;
-                                                }
-                                            });
-                                        }
-                                    }
                                 }
                             }
-                            // G = git status for task (Tasks view) or switch to Git view
+                            // G = switch to Git view
                             KeyCode::Char('G') => {
-                                if app.view == View::Tasks {
-                                    if let Some(tid) = app.selected_task_id() {
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        tokio::spawn(async move {
-                                            match api.get_git_task_status(tid).await {
-                                                Ok(status) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::GitTaskStatus(status))
-                                                        .await;
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!(
-                                                            "Git status: {e}"
-                                                        )))
-                                                        .await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                } else {
-                                    app.view = View::Git;
-                                    app.detail_scroll = 0;
-                                    app.git_action_result = None;
-                                    if let Some(pid) = app.current_project {
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        tokio::spawn(async move {
-                                            if let Ok(resp) = api.list_branches(pid, None).await {
-                                                let _ = tx.send(ApiMsg::Branches(resp)).await;
-                                            }
-                                            if let Ok(status) = api.main_status(pid).await {
-                                                let _ = tx.send(ApiMsg::MainStatus(status)).await;
-                                            }
-                                        });
-                                    }
+                                app.view = View::Git;
+                                app.detail_scroll = 0;
+                                app.git_action_result = None;
+                                if let Some(pid) = app.current_project {
+                                    let api = api.clone();
+                                    let tx = tx.clone();
+                                    tokio::spawn(async move {
+                                        if let Ok(resp) = api.list_branches(pid, None).await {
+                                            let _ = tx.send(ApiMsg::Branches(resp)).await;
+                                        }
+                                        if let Ok(status) = api.main_status(pid).await {
+                                            let _ = tx.send(ApiMsg::MainStatus(status)).await;
+                                        }
+                                    });
                                 }
                             }
-                            // i = delegate task (Tasks view)
+                            // i = chat input
                             KeyCode::Char('i') => {
-                                if app.view == View::Tasks && app.selected_task.is_some() {
-                                    // Build list of agents + roles for delegation
-                                    let mut opts: Vec<String> =
-                                        app.agents.iter().map(|a| a.name.clone()).collect();
-                                    for role in &app.roles {
-                                        opts.push(format!("Role: {}", role.name));
-                                    }
-                                    if !opts.is_empty() {
-                                        app.transition_options = opts;
-                                        app.transition_selected = 0;
-                                        app.modal = Modal::DelegateTask;
-                                    }
-                                } else if app.view == View::Chat {
+                                if app.view == View::Chat {
                                     app.modal = Modal::ChatInput;
                                 }
                             }
-                            // w = add dependency (Tasks view)
-                            KeyCode::Char('w') => {
-                                if app.view == View::Tasks && app.selected_task.is_some() {
-                                    // Show list of other tasks to pick as dependency
-                                    let opts: Vec<String> = app
-                                        .tasks
-                                        .iter()
-                                        .filter(|t| Some(t.id) != app.selected_task_id())
-                                        .map(|t| t.title.clone())
-                                        .collect();
-                                    if !opts.is_empty() {
-                                        app.transition_options = opts;
-                                        app.transition_selected = 0;
-                                        app.modal = Modal::DependencyAdd;
-                                    }
-                                }
-                            }
-                            // W = remove first dependency (Tasks view)
-                            KeyCode::Char('W') => {
-                                if app.view == View::Tasks {
-                                    if let Some(tid) = app.selected_task_id() {
-                                        // Find first dependency for this task
-                                        if let Some(dep) = app.task_dependencies.depends_on.first()
-                                        {
-                                            let dep_on = dep.depends_on;
-                                            let api = api.clone();
-                                            let tx = tx.clone();
-                                            tokio::spawn(async move {
-                                                if let Err(e) =
-                                                    api.remove_dependency(tid, dep_on).await
-                                                {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!(
-                                                            "Remove dep: {e}"
-                                                        )))
-                                                        .await;
-                                                } else if let Ok(deps) =
-                                                    api.list_task_dependencies(tid).await
-                                                {
-                                                    let _ = tx
-                                                        .send(ApiMsg::TaskDependencies(deps))
-                                                        .await;
-                                                }
-                                            });
-                                        }
-                                    }
-                                }
-                            }
-                            // e = edit task (Tasks view), toggle integration (Integrations view)
+                            KeyCode::Char('w') => {}
+                            KeyCode::Char('W') => {}
+                            // e = edit work (Work view), toggle integration (Integrations view)
                             KeyCode::Char('e') => {
-                                if app.view == View::Tasks {
-                                    if let Some(task) =
-                                        app.selected_task.and_then(|i| app.tasks.get(i))
-                                    {
-                                        let kind_index = TASK_KINDS
-                                            .iter()
-                                            .position(|&k| k == task.kind)
-                                            .unwrap_or(0);
-                                        let spec = task
-                                            .context
-                                            .get("spec")
-                                            .and_then(|s| s.as_str())
-                                            .unwrap_or("")
-                                            .to_string();
-                                        app.task_edit_form = Some(app::TaskEditForm {
-                                            task_id: task.id,
-                                            title: task.title.clone(),
-                                            kind_index,
-                                            urgent: task.urgent,
-                                            spec,
-                                            active_field: 0,
-                                            cursor: task.title.chars().count(),
-                                        });
-                                    }
-                                } else if app.view == View::Work {
+                                if app.view == View::Work {
                                     if let Some(goal) = app.selected_work_item() {
                                         let status_idx = WORK_STATUSES
                                             .iter()
@@ -6933,11 +6155,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                            // h = toggle hierarchy (Tasks view) or entity history (Audit view)
+                            // h = entity history (Audit view)
                             KeyCode::Char('h') => {
-                                if app.view == View::Tasks {
-                                    app.show_hierarchy = !app.show_hierarchy;
-                                } else if app.view == View::Audit {
+                                if app.view == View::Audit {
                                     if let Some(entry) =
                                         app.selected_audit.and_then(|i| app.audit_log.get(i))
                                     {
@@ -7229,17 +6449,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             _ => {}
                         },
                     }
-                }
-
-                // When task selection changes, mark for debounced fetch
-                if app.modal == Modal::None
-                    && app.view == View::Tasks
-                    && matches!(
-                        key.code,
-                        KeyCode::Up | KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('k')
-                    )
-                {
-                    last_nav_time = Some(Instant::now());
                 }
 
                 // Fetch work progress on selection change (work list navigation)
