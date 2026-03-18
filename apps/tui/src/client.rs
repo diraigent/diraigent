@@ -1192,32 +1192,6 @@ impl ApiClient {
         resp.json().await
     }
 
-    pub async fn link_task_to_work(
-        &self,
-        work_id: Uuid,
-        task_id: Uuid,
-    ) -> Result<(), reqwest::Error> {
-        let req = self
-            .client
-            .post(format!("{}/work/{}/tasks", self.base_url, work_id))
-            .json(&serde_json::json!({"task_id": task_id}));
-        self.auth(req).send().await?.error_for_status()?;
-        Ok(())
-    }
-
-    pub async fn unlink_task_from_work(
-        &self,
-        work_id: Uuid,
-        task_id: Uuid,
-    ) -> Result<(), reqwest::Error> {
-        let req = self.client.delete(format!(
-            "{}/work/{}/tasks/{}",
-            self.base_url, work_id, task_id
-        ));
-        self.auth(req).send().await?.error_for_status()?;
-        Ok(())
-    }
-
     pub async fn list_work_tasks(
         &self,
         work_id: Uuid,
@@ -1229,39 +1203,6 @@ impl ApiClient {
             self.base_url, work_id, limit, offset
         ));
         let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn bulk_link_tasks(
-        &self,
-        work_id: Uuid,
-        task_ids: &[Uuid],
-    ) -> Result<serde_json::Value, reqwest::Error> {
-        let body = serde_json::json!({ "task_ids": task_ids });
-        let req = self
-            .client
-            .post(format!("{}/work/{}/tasks/bulk", self.base_url, work_id));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn list_unlinked_tasks(
-        &self,
-        project_id: Uuid,
-        limit: i64,
-        offset: i64,
-    ) -> Result<Vec<Task>, reqwest::Error> {
-        let req = self.client.get(format!(
-            "{}/{}/tasks?unlinked=true&limit={}&offset={}",
-            self.base_url, project_id, limit, offset
-        ));
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        // The endpoint may return paginated or plain array; try paginated first
         resp.json().await
     }
 

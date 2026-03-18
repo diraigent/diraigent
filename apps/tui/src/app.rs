@@ -129,7 +129,6 @@ pub enum Modal {
     Reply,
     Comment,
     Search,
-    WorkLink,
     WorkStatus,
     Promote,
     DependencyAdd,
@@ -146,7 +145,6 @@ pub enum Modal {
     VerificationStatus,
     VerificationKindFilter,
     VerificationStatusFilter,
-    WorkTaskPicker,
     GlobalSearch,
     ChatInput,
     WorkComment,
@@ -642,12 +640,8 @@ pub struct App {
     // Agent tasks (queue view)
     pub agent_tasks: Vec<Task>,
 
-    // Work task picker
+    // Work tasks
     pub work_tasks: Vec<Task>,
-    pub work_unlinked_tasks: Vec<Task>,
-    pub work_picker_selected: usize,
-    pub work_picker_checked: std::collections::HashSet<usize>,
-    pub work_picker_loading: bool,
 
     // Verification filters
     pub verification_kind_filter: Option<String>,
@@ -799,10 +793,6 @@ impl App {
             step_templates: vec![],
             agent_tasks: vec![],
             work_tasks: vec![],
-            work_unlinked_tasks: vec![],
-            work_picker_selected: 0,
-            work_picker_checked: std::collections::HashSet::new(),
-            work_picker_loading: false,
             verification_kind_filter: None,
             verification_status_filter: None,
             log_entries: vec![],
