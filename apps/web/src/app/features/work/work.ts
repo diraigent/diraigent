@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Subscription, forkJoin, of, timer, switchMap, from, mergeMap, toArray } from 'rxjs';
+import { Subscription, forkJoin, of, timer, switchMap } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 import {
   CdkDragDrop,
