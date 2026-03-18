@@ -1,5 +1,27 @@
 # Changelog
 
+## v20260318-1810 (2026-03-18)
+
+### Added
+- **Web**: Global keyboard shortcuts with navigation keys and help overlay
+- **Web**: Inline title editing on work list header via double-click
+- **Web**: Editable work type badge in work item header
+- **API**: Release tag endpoint for git operations
+
+### Changed
+- **Web**: Reorganized work detail layout — action buttons moved to status transitions row
+- **Web**: Moved add task button to top action bar in work detail
+- **Web**: Moved delete button next to status transition buttons
+- **Web**: Create work modal buttons now match work detail style
+- **Web**: Achieved status button uses green styling
+- **Orchestra**: Improved release script with better tag and changelog handling
+
+### Removed
+- **Web**: Redundant title and type fields from work details
+- **Web**: Standalone save button from work detail view
+
+---
+
 ## v20260318-0719 (2026-03-18)
 
 ### Added
