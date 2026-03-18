@@ -119,10 +119,6 @@ export class WorkApiService extends BaseCrudApiService<SpWork, SpWorkCreate, SpW
     return this.http.get<SpWork[]>(`${this.baseUrl}/work/${id}/children`);
   }
 
-  linkTask(workId: string, taskId: string): Observable<void> {
-    return this.http.post<void>(`${this.baseUrl}/work/${workId}/tasks/${taskId}`, {});
-  }
-
   unlinkTask(workId: string, taskId: string): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/work/${workId}/tasks/${taskId}`);
   }
@@ -132,10 +128,6 @@ export class WorkApiService extends BaseCrudApiService<SpWork, SpWorkCreate, SpW
     if (params?.limit != null) httpParams = httpParams.set('limit', params.limit);
     if (params?.offset != null) httpParams = httpParams.set('offset', params.offset);
     return this.http.get<SpTask[]>(`${this.baseUrl}/work/${workId}/tasks`, { params: httpParams });
-  }
-
-  bulkLinkTasks(workId: string, taskIds: string[]): Observable<void> {
-    return this.http.post<void>(`${this.baseUrl}/work/${workId}/tasks/bulk`, { task_ids: taskIds });
   }
 
   listComments(workId: string): Observable<SpWorkComment[]> {

@@ -45,6 +45,7 @@ enum ApiMsg {
     Playbooks(Vec<client::Playbook>),
     WorkItems(Vec<client::Work>),
     WorkProgress(client::WorkProgress),
+    AllWorkProgress(Vec<client::WorkProgress>),
     WorkStats(client::WorkStats),
     WorkChildren(Vec<client::Work>),
     Observations(Vec<client::Observation>),
@@ -68,8 +69,6 @@ enum ApiMsg {
     WebhookDeliveries(Vec<client::WebhookDelivery>),
     WebhookTestResult(String),
     WorkTasksList(Vec<client::Task>),
-    WorkUnlinkedTasks(Vec<client::Task>),
-    WorkBulkLinked,
     Branches(client::BranchListResponse),
     MainStatus(client::MainPushStatus),
     GitActionResult(String),
@@ -396,8 +395,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::Knowledge(k) => app.knowledge = k,
                 ApiMsg::Decisions(d) => app.decisions = d,
                 ApiMsg::Playbooks(p) => app.playbooks = p,
-                ApiMsg::WorkItems(g) => app.work_items = g,
-                ApiMsg::WorkProgress(p) => app.work_progress = Some(p),
+                ApiMsg::WorkItems(mut g) => {
+                    g.sort_by_key(|w| match w.status.as_deref().unwrap_or("") {
+                        "active" => 0,
+                        "paused" => 1,
+                        "achieved" => 2,
+                        "abandoned" => 3,
+                        _ => 4,
+                    });
+                    // Fetch progress for all work items
+                    let ids: Vec<uuid::Uuid> = g.iter().map(|w| w.id).collect();
+                    if !ids.is_empty() {
+                        let api = api.clone();
+                        let tx = tx.clone();
+                        tokio::spawn(async move {
+                            let mut all = Vec::new();
+                            for id in ids {
+                                if let Ok(p) = api.get_work_progress(id).await {
+                                    all.push(p);
+                                }
+                            }
+                            let _ = tx.send(ApiMsg::AllWorkProgress(all)).await;
+                        });
+                    }
+                    app.work_items = g;
+                }
+                ApiMsg::WorkProgress(p) => {
+                    app.work_progress_map.insert(p.work_id, p.clone());
+                    app.work_progress = Some(p);
+                }
+                ApiMsg::AllWorkProgress(all) => {
+                    for p in all {
+                        app.work_progress_map.insert(p.work_id, p);
+                    }
+                }
                 ApiMsg::WorkStats(s) => app.work_stats = Some(s),
                 ApiMsg::WorkChildren(c) => app.work_children = c,
                 ApiMsg::Observations(o) => app.observations = o,
@@ -415,29 +446,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::WebhookDeliveries(d) => app.webhook_deliveries = d,
                 ApiMsg::WebhookTestResult(r) => app.webhook_test_result = Some(r),
                 ApiMsg::WorkTasksList(tasks) => app.work_tasks = tasks,
-                ApiMsg::WorkUnlinkedTasks(tasks) => {
-                    app.work_unlinked_tasks = tasks;
-                    app.work_picker_loading = false;
-                }
-                ApiMsg::WorkBulkLinked => {
-                    // Refresh work tasks + progress after linking
-                    if let Some(goal) = app.selected_work.and_then(|i| app.work_items.get(i)) {
-                        let gid = goal.id;
-                        let api = api.clone();
-                        let tx = tx.clone();
-                        tokio::spawn(async move {
-                            if let Ok(tasks) = api.list_work_tasks(gid, 50, 0).await {
-                                let _ = tx.send(ApiMsg::WorkTasksList(tasks)).await;
-                            }
-                            if let Ok(progress) = api.get_work_progress(gid).await {
-                                let _ = tx.send(ApiMsg::WorkProgress(progress)).await;
-                            }
-                            if let Ok(stats) = api.get_work_stats(gid).await {
-                                let _ = tx.send(ApiMsg::WorkStats(stats)).await;
-                            }
-                        });
-                    }
-                }
                 ApiMsg::Logs(resp) => {
                     app.log_entries = resp.entries;
                     app.log_loading = false;
@@ -556,6 +564,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Render
         terminal.draw(|f| {
             let size = f.area();
+
+            // Fill entire frame with Catppuccin base background so no
+            // terminal-default black leaks through in light mode.
+            f.render_widget(
+                Block::default().style(Style::default().bg(theme::base()).fg(theme::text())),
+                size,
+            );
+
             let main_layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
@@ -659,7 +675,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // View-specific action hints
                 let action_hint = match app.view {
                     View::Tasks => "[n]New [t]Trans [c]Cmt [f]Flag [F]Files [a]Claim [e]Edit",
-                    View::Work => "[n]New [c]Cmt [s]Status [l]Link [e]Edit",
+                    View::Work => "[n]New [t]Task [c]Cmt [s]Status [e]Edit",
                     View::Decisions => "[n]New [a]Accept [x]Reject [X]Deprecate",
                     View::Observations => "[n]New [s]Status [d]Dismiss [p]Promote [C]Cleanup",
                     View::Agents => "[a]Tasks",
@@ -862,13 +878,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .collect();
                     f.render_widget(ratatui::widgets::List::new(items), inner);
                 }
-                Modal::WorkLink | Modal::WorkStatus | Modal::DependencyAdd => {
+                Modal::WorkStatus | Modal::DependencyAdd => {
                     // Reuse transition popup pattern: show work/statuses/tasks as list
                     let states: Vec<&str> =
                         app.transition_options.iter().map(|s| s.as_str()).collect();
-                    let title = if app.modal == Modal::WorkLink {
-                        " Link to Work "
-                    } else if app.modal == Modal::DependencyAdd {
+                    let title = if app.modal == Modal::DependencyAdd {
                         " Add Dependency "
                     } else {
                         " Work Status "
@@ -891,59 +905,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             } else {
                                 Style::default().fg(theme::text())
                             };
+                            let label = if app.modal == Modal::WorkStatus {
+                                views::work::work_status_label(s)
+                            } else {
+                                s
+                            };
                             ratatui::widgets::ListItem::new(Line::styled(
-                                format!("  {}  ", s),
+                                format!("  {}  ", label),
                                 style,
                             ))
                         })
                         .collect();
                     f.render_widget(ratatui::widgets::List::new(items), inner);
-                }
-                Modal::WorkTaskPicker => {
-                    let popup_area = widgets::popup::centered_rect(60, 70, size);
-                    Clear.render(popup_area, f.buffer_mut());
-                    let title = if app.work_picker_loading {
-                        " Link Tasks to Work (loading...) "
-                    } else {
-                        " Link Tasks to Work [Space=toggle  Enter=confirm  Esc=cancel] "
-                    };
-                    let block = Block::default()
-                        .title(title)
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(theme::green()))
-                        .style(Style::default().bg(theme::mantle()));
-                    let inner = block.inner(popup_area);
-                    f.render_widget(block, popup_area);
-                    if app.work_unlinked_tasks.is_empty() && !app.work_picker_loading {
-                        let p = Paragraph::new(Line::styled(
-                            "  No unlinked tasks available.",
-                            Style::default().fg(theme::overlay0()),
-                        ));
-                        f.render_widget(p, inner);
-                    } else {
-                        let items: Vec<ratatui::widgets::ListItem> = app
-                            .work_unlinked_tasks
-                            .iter()
-                            .enumerate()
-                            .map(|(i, t)| {
-                                let checked = if app.work_picker_checked.contains(&i) {
-                                    "[x]"
-                                } else {
-                                    "[ ]"
-                                };
-                                let style = if i == app.work_picker_selected {
-                                    Style::default().fg(theme::base()).bg(theme::green())
-                                } else {
-                                    Style::default().fg(theme::text())
-                                };
-                                ratatui::widgets::ListItem::new(Line::styled(
-                                    format!("  {} #{} {} [{}]", checked, t.number, t.title, t.state),
-                                    style,
-                                ))
-                            })
-                            .collect();
-                        f.render_widget(ratatui::widgets::List::new(items), inner);
-                    }
                 }
                 Modal::Promote => {
                     f.render_widget(
@@ -1060,14 +1033,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Line::styled("  Work / Observations", Style::default().fg(theme::blue())),
                     Line::styled(
                         "    s             Change status (Work/Observations)",
-                        Style::default().fg(theme::text()),
-                    ),
-                    Line::styled(
-                        "    g             Link task to work (Tasks view)",
-                        Style::default().fg(theme::text()),
-                    ),
-                    Line::styled(
-                        "    l             Link tasks to work (Work view, multi-select)",
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
@@ -1340,8 +1305,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(ref form) = app.task_form {
                 let form_area = widgets::popup::centered_rect(60, 50, size);
                 Clear.render(form_area, f.buffer_mut());
+                let form_title = if let Some(wid) = form.work_id {
+                    let work_name = app
+                        .work_items
+                        .iter()
+                        .find(|w| w.id == wid)
+                        .map(|w| w.title.as_str())
+                        .unwrap_or("?");
+                    format!(" New Task → {} ", work_name)
+                } else {
+                    " New Task ".to_string()
+                };
                 let block = Block::default()
-                    .title(" New Task ")
+                    .title(form_title)
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(theme::mauve()))
                     .style(Style::default().bg(theme::mantle()));
@@ -1905,7 +1881,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 // Status selector
                 {
-                    let val = format!("◀ {} ▶", WORK_STATUSES[form.status_index]);
+                    let val = format!("◀ {} ▶", views::work::work_status_label(WORK_STATUSES[form.status_index]));
                     render_gf(f, field_chunks[3], "Status:", &val, form.active_field == 3);
                 }
                 // Work type selector
@@ -1950,7 +1926,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
                 let hint = Paragraph::new(Line::styled(
-                    " Tab: next | Enter: submit | Esc: cancel",
+                    " Tab: next | Enter/^S: save | ^E: execute | ^P: plan+exec | Esc: cancel",
                     Style::default().fg(theme::overlay0()),
                 ));
                 f.render_widget(hint, field_chunks[7]);
@@ -2748,6 +2724,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 } else {
                                     None
                                 };
+                                let work_id = form.work_id;
                                 let pid = app.current_project;
                                 app.task_form = None;
                                 if let Some(pid) = pid {
@@ -2762,12 +2739,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 urgent,
                                                 &spec,
                                                 playbook_id,
+                                                work_id,
                                             )
                                             .await
                                         {
                                             Ok(_) => {
                                                 if let Ok(resp) = api.list_tasks(pid).await {
                                                     let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
+                                                }
+                                                // Refresh work tasks if task was linked to a work item
+                                                if let Some(wid) = work_id {
+                                                    if let Ok(tasks) =
+                                                        api.list_work_tasks(wid, 100, 0).await
+                                                    {
+                                                        let _ = tx
+                                                            .send(ApiMsg::WorkTasksList(tasks))
+                                                            .await;
+                                                    }
                                                 }
                                             }
                                             Err(e) => {
@@ -3221,51 +3209,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 } else if app.work_form.is_some() {
+                    // Detect save actions before general key match
+                    let save_action: Option<&str> = match key.code {
+                        KeyCode::Enter => Some("save"),
+                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            Some("save")
+                        }
+                        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            Some("execute")
+                        }
+                        KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            Some("plan_execute")
+                        }
+                        _ => None,
+                    };
                     let form = app.work_form.as_mut().unwrap();
-                    match key.code {
-                        KeyCode::Esc => {
+                    if let Some(action) = save_action {
+                        if !form.title.is_empty() {
+                            let title = form.title.clone();
+                            let description = form.description.clone();
+                            let success_criteria = form.success_criteria.clone();
+                            let status = WORK_STATUSES[form.status_index].to_string();
+                            let work_type = WORK_TYPES[form.work_type_index].to_string();
+                            let priority: i32 = form.priority.parse().unwrap_or(0);
+                            let auto_status = form.auto_status;
+                            let editing_id = form.editing_id;
+                            let pid = app.current_project;
+                            let action = action.to_string();
                             app.work_form = None;
-                        }
-                        KeyCode::Tab => {
-                            form.active_field = (form.active_field + 1) % 7;
-                            form.cursor = match form.active_field {
-                                0 => form.title.chars().count(),
-                                1 => form.description.chars().count(),
-                                2 => form.success_criteria.chars().count(),
-                                5 => form.priority.chars().count(),
-                                _ => 0,
-                            };
-                        }
-                        KeyCode::Enter => {
-                            if !form.title.is_empty() {
-                                let title = form.title.clone();
-                                let description = form.description.clone();
-                                let success_criteria = form.success_criteria.clone();
-                                let status = WORK_STATUSES[form.status_index].to_string();
-                                let work_type = WORK_TYPES[form.work_type_index].to_string();
-                                let priority: i32 = form.priority.parse().unwrap_or(0);
-                                let auto_status = form.auto_status;
-                                let editing_id = form.editing_id;
-                                let pid = app.current_project;
-                                app.work_form = None;
-                                if let Some(pid) = pid {
-                                    let api = api.clone();
-                                    let tx = tx.clone();
-                                    tokio::spawn(async move {
-                                        let mut body = serde_json::json!({
-                                            "title": title,
-                                            "description": description,
-                                            "status": status,
-                                            "work_type": work_type,
-                                            "priority": priority,
-                                            "auto_status": auto_status,
-                                        });
-                                        if !success_criteria.is_empty() {
-                                            body["success_criteria"] =
-                                                serde_json::json!([success_criteria]);
-                                        }
-                                        let result = if let Some(gid) = editing_id {
-                                            api.update_work(gid, body).await.map(|_| ())
+                            if let Some(pid) = pid {
+                                let api = api.clone();
+                                let tx = tx.clone();
+                                tokio::spawn(async move {
+                                    let mut body = serde_json::json!({
+                                        "title": title,
+                                        "description": description,
+                                        "status": status,
+                                        "work_type": work_type,
+                                        "priority": priority,
+                                        "auto_status": auto_status,
+                                    });
+                                    if !success_criteria.is_empty() {
+                                        body["success_criteria"] =
+                                            serde_json::json!([success_criteria]);
+                                    }
+                                    // Save or create work item, capturing the work ID
+                                    let save_result: Result<uuid::Uuid, reqwest::Error> =
+                                        if let Some(gid) = editing_id {
+                                            api.update_work(gid, body).await.map(|_| gid)
                                         } else {
                                             match api
                                                 .create_work(
@@ -3280,6 +3271,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 .await
                                             {
                                                 Ok(g) => {
+                                                    let wid = g.id;
                                                     if !success_criteria.is_empty()
                                                         || status != "active"
                                                     {
@@ -3294,126 +3286,174 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             upd["status"] =
                                                                 serde_json::json!(status);
                                                         }
-                                                        api.update_work(g.id, upd).await.map(|_| ())
+                                                        api.update_work(wid, upd).await.map(|_| wid)
                                                     } else {
-                                                        Ok(())
+                                                        Ok(wid)
                                                     }
                                                 }
                                                 Err(e) => Err(e),
                                             }
                                         };
-                                        match result {
-                                            Ok(()) => {
-                                                if let Ok(items) = api.list_work(pid).await {
-                                                    let _ = tx.send(ApiMsg::WorkItems(items)).await;
+                                    match save_result {
+                                        Ok(work_id) => {
+                                            // Post-save: execute or plan & execute
+                                            if action == "execute" || action == "plan_execute" {
+                                                let mut ctx = serde_json::json!({});
+                                                if !description.is_empty() {
+                                                    ctx["spec"] = serde_json::json!(description);
+                                                }
+                                                if !success_criteria.is_empty() {
+                                                    let criteria: Vec<&str> = success_criteria
+                                                        .split('\n')
+                                                        .map(|l| l.trim())
+                                                        .filter(|l| !l.is_empty())
+                                                        .collect();
+                                                    ctx["acceptance_criteria"] =
+                                                        serde_json::json!(criteria);
+                                                }
+                                                if action == "plan_execute" {
+                                                    ctx["decompose"] = serde_json::json!(true);
+                                                }
+                                                let task_body = serde_json::json!({
+                                                    "title": title,
+                                                    "work_id": work_id.to_string(),
+                                                    "context": ctx,
+                                                });
+                                                if let Err(e) =
+                                                    api.create_task_with_json(pid, task_body).await
+                                                {
+                                                    let _ = tx
+                                                        .send(ApiMsg::Error(format!(
+                                                            "Execute: {e}"
+                                                        )))
+                                                        .await;
                                                 }
                                             }
-                                            Err(e) => {
-                                                let _ = tx
-                                                    .send(ApiMsg::Error(format!("Work: {e}")))
-                                                    .await;
+                                            if let Ok(items) = api.list_work(pid).await {
+                                                let _ = tx.send(ApiMsg::WorkItems(items)).await;
                                             }
                                         }
-                                    });
-                                }
+                                        Err(e) => {
+                                            let _ =
+                                                tx.send(ApiMsg::Error(format!("Work: {e}"))).await;
+                                        }
+                                    }
+                                });
                             }
                         }
-                        KeyCode::Left => match form.active_field {
-                            3 => {
-                                if form.status_index > 0 {
-                                    form.status_index -= 1;
-                                } else {
-                                    form.status_index = WORK_STATUSES.len() - 1;
-                                }
+                    } else {
+                        match key.code {
+                            KeyCode::Esc => {
+                                app.work_form = None;
                             }
-                            4 => {
-                                if form.work_type_index > 0 {
-                                    form.work_type_index -= 1;
-                                } else {
-                                    form.work_type_index = WORK_TYPES.len() - 1;
-                                }
-                            }
-                            6 => {
-                                form.auto_status = !form.auto_status;
-                            }
-                            _ => {
-                                if form.cursor > 0 {
-                                    form.cursor -= 1;
-                                }
-                            }
-                        },
-                        KeyCode::Right => match form.active_field {
-                            3 => {
-                                form.status_index = (form.status_index + 1) % WORK_STATUSES.len();
-                            }
-                            4 => {
-                                form.work_type_index =
-                                    (form.work_type_index + 1) % WORK_TYPES.len();
-                            }
-                            6 => {
-                                form.auto_status = !form.auto_status;
-                            }
-                            _ => {
-                                let len = match form.active_field {
+                            KeyCode::Tab => {
+                                form.active_field = (form.active_field + 1) % 7;
+                                form.cursor = match form.active_field {
                                     0 => form.title.chars().count(),
                                     1 => form.description.chars().count(),
                                     2 => form.success_criteria.chars().count(),
                                     5 => form.priority.chars().count(),
                                     _ => 0,
                                 };
-                                if form.cursor < len {
+                            }
+                            KeyCode::Left => match form.active_field {
+                                3 => {
+                                    if form.status_index > 0 {
+                                        form.status_index -= 1;
+                                    } else {
+                                        form.status_index = WORK_STATUSES.len() - 1;
+                                    }
+                                }
+                                4 => {
+                                    if form.work_type_index > 0 {
+                                        form.work_type_index -= 1;
+                                    } else {
+                                        form.work_type_index = WORK_TYPES.len() - 1;
+                                    }
+                                }
+                                6 => {
+                                    form.auto_status = !form.auto_status;
+                                }
+                                _ => {
+                                    if form.cursor > 0 {
+                                        form.cursor -= 1;
+                                    }
+                                }
+                            },
+                            KeyCode::Right => match form.active_field {
+                                3 => {
+                                    form.status_index =
+                                        (form.status_index + 1) % WORK_STATUSES.len();
+                                }
+                                4 => {
+                                    form.work_type_index =
+                                        (form.work_type_index + 1) % WORK_TYPES.len();
+                                }
+                                6 => {
+                                    form.auto_status = !form.auto_status;
+                                }
+                                _ => {
+                                    let len = match form.active_field {
+                                        0 => form.title.chars().count(),
+                                        1 => form.description.chars().count(),
+                                        2 => form.success_criteria.chars().count(),
+                                        5 => form.priority.chars().count(),
+                                        _ => 0,
+                                    };
+                                    if form.cursor < len {
+                                        form.cursor += 1;
+                                    }
+                                }
+                            },
+                            KeyCode::Backspace => {
+                                if form.active_field == 3
+                                    || form.active_field == 4
+                                    || form.active_field == 6
+                                {
+                                    // selectors/toggle, ignore backspace
+                                } else if form.cursor > 0 {
+                                    form.cursor -= 1;
+                                    let text = match form.active_field {
+                                        0 => &mut form.title,
+                                        1 => &mut form.description,
+                                        2 => &mut form.success_criteria,
+                                        5 => &mut form.priority,
+                                        _ => &mut form.title,
+                                    };
+                                    let bp = text
+                                        .char_indices()
+                                        .nth(form.cursor)
+                                        .map(|(i, _)| i)
+                                        .unwrap_or(text.len());
+                                    text.remove(bp);
+                                }
+                            }
+                            KeyCode::Char(c) => {
+                                if form.active_field == 3
+                                    || form.active_field == 4
+                                    || form.active_field == 6
+                                {
+                                    // selectors/toggle, ignore chars
+                                } else {
+                                    let text = match form.active_field {
+                                        0 => &mut form.title,
+                                        1 => &mut form.description,
+                                        2 => &mut form.success_criteria,
+                                        5 => &mut form.priority,
+                                        _ => &mut form.title,
+                                    };
+                                    let bp = text
+                                        .char_indices()
+                                        .nth(form.cursor)
+                                        .map(|(i, _)| i)
+                                        .unwrap_or(text.len());
+                                    text.insert(bp, c);
                                     form.cursor += 1;
                                 }
                             }
-                        },
-                        KeyCode::Backspace => {
-                            if form.active_field == 3
-                                || form.active_field == 4
-                                || form.active_field == 6
-                            {
-                                // selectors/toggle, ignore backspace
-                            } else if form.cursor > 0 {
-                                form.cursor -= 1;
-                                let text = match form.active_field {
-                                    0 => &mut form.title,
-                                    1 => &mut form.description,
-                                    2 => &mut form.success_criteria,
-                                    5 => &mut form.priority,
-                                    _ => &mut form.title,
-                                };
-                                let bp = text
-                                    .char_indices()
-                                    .nth(form.cursor)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(text.len());
-                                text.remove(bp);
-                            }
+                            _ => {}
                         }
-                        KeyCode::Char(c) => {
-                            if form.active_field == 3
-                                || form.active_field == 4
-                                || form.active_field == 6
-                            {
-                                // selectors/toggle, ignore chars
-                            } else {
-                                let text = match form.active_field {
-                                    0 => &mut form.title,
-                                    1 => &mut form.description,
-                                    2 => &mut form.success_criteria,
-                                    5 => &mut form.priority,
-                                    _ => &mut form.title,
-                                };
-                                let bp = text
-                                    .char_indices()
-                                    .nth(form.cursor)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(text.len());
-                                text.insert(bp, c);
-                                form.cursor += 1;
-                            }
-                        }
-                        _ => {}
-                    }
+                    } // close else block for non-save keys
                 } else if app.observation_form.is_some() {
                     let form = app.observation_form.as_mut().unwrap();
                     match key.code {
@@ -5533,7 +5573,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             _ => {}
                         },
-                        Modal::WorkLink | Modal::WorkStatus | Modal::DependencyAdd => {
+                        Modal::WorkStatus | Modal::DependencyAdd => {
                             match key.code {
                                 KeyCode::Esc => app.modal = Modal::None,
                                 KeyCode::Up | KeyCode::Char('k') => {
@@ -5550,32 +5590,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     if let Some(selected) =
                                         app.transition_options.get(app.transition_selected).cloned()
                                     {
-                                        if app.modal == Modal::WorkLink {
-                                            // Link selected task to the chosen work item
-                                            if let Some(tid) = app.selected_task_id() {
-                                                // Find work item by title match
-                                                if let Some(goal) = app
-                                                    .work_items
-                                                    .iter()
-                                                    .find(|g| g.title == selected)
-                                                {
-                                                    let gid = goal.id;
-                                                    let api = api.clone();
-                                                    let tx = tx.clone();
-                                                    tokio::spawn(async move {
-                                                        if let Err(e) =
-                                                            api.link_task_to_work(gid, tid).await
-                                                        {
-                                                            let _ = tx
-                                                                .send(ApiMsg::Error(format!(
-                                                                    "Link: {e}"
-                                                                )))
-                                                                .await;
-                                                        }
-                                                    });
-                                                }
-                                            }
-                                        } else if app.modal == Modal::DependencyAdd {
+                                        if app.modal == Modal::DependencyAdd {
                                             // Add dependency: find task by title match
                                             if let Some(tid) = app.selected_task_id() {
                                                 if let Some(dep_task) =
@@ -5639,71 +5654,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 _ => {}
                             }
                         }
-                        Modal::WorkTaskPicker => match key.code {
-                            KeyCode::Esc => {
-                                app.modal = Modal::None;
-                                app.work_unlinked_tasks.clear();
-                                app.work_picker_checked.clear();
-                                app.work_picker_selected = 0;
-                            }
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                if app.work_picker_selected > 0 {
-                                    app.work_picker_selected -= 1;
-                                }
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.work_picker_selected + 1 < app.work_unlinked_tasks.len() {
-                                    app.work_picker_selected += 1;
-                                }
-                            }
-                            KeyCode::Char(' ') => {
-                                let idx = app.work_picker_selected;
-                                if idx < app.work_unlinked_tasks.len() {
-                                    if app.work_picker_checked.contains(&idx) {
-                                        app.work_picker_checked.remove(&idx);
-                                    } else {
-                                        app.work_picker_checked.insert(idx);
-                                    }
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if !app.work_picker_checked.is_empty() {
-                                    let task_ids: Vec<uuid::Uuid> = app
-                                        .work_picker_checked
-                                        .iter()
-                                        .filter_map(|&i| {
-                                            app.work_unlinked_tasks.get(i).map(|t| t.id)
-                                        })
-                                        .collect();
-                                    if let Some(goal) =
-                                        app.selected_work.and_then(|i| app.work_items.get(i))
-                                    {
-                                        let gid = goal.id;
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        tokio::spawn(async move {
-                                            match api.bulk_link_tasks(gid, &task_ids).await {
-                                                Ok(_) => {
-                                                    let _ = tx.send(ApiMsg::WorkBulkLinked).await;
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!(
-                                                            "Bulk link: {e}"
-                                                        )))
-                                                        .await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                                app.modal = Modal::None;
-                                app.work_unlinked_tasks.clear();
-                                app.work_picker_checked.clear();
-                                app.work_picker_selected = 0;
-                            }
-                            _ => {}
-                        },
                         Modal::Promote => match key.code {
                             KeyCode::Esc => {
                                 app.modal = Modal::None;
@@ -6020,6 +5970,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.decisions.clear();
                                     app.work_items.clear();
                                     app.work_progress = None;
+                                    app.work_progress_map.clear();
                                     app.work_stats = None;
                                     app.work_children.clear();
                                     app.work_comments.clear();
@@ -6034,6 +5985,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.selected_task = None;
                                     app.task_list_state.select(None);
                                     app.selected_work = None;
+                                    app.work_list_state.select(None);
                                     app.selected_observation = None;
                                     app.selected_role = None;
                                     app.selected_member = None;
@@ -6300,6 +6252,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             app.transition_selected = 0;
                                             app.modal = Modal::Transition;
                                         }
+                                    }
+                                } else if app.view == View::Work {
+                                    // Create a new task linked to the selected work item
+                                    if let Some(work) =
+                                        app.selected_work.and_then(|i| app.work_items.get(i))
+                                    {
+                                        app.task_form = Some(app::TaskForm {
+                                            playbook_index: app.default_playbook_index(),
+                                            work_id: Some(work.id),
+                                            ..Default::default()
+                                        });
                                     }
                                 } else if app.view == View::Webhooks {
                                     if let Some(wh) =
@@ -6590,49 +6553,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     // Not found or error — leave empty
                                                     let _ = tx
                                                         .send(ApiMsg::ClaudeMd(String::new()))
-                                                        .await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                            }
-                            // Tasks view: g = link task to work
-                            KeyCode::Char('g') => {
-                                if app.view == View::Tasks
-                                    && app.selected_task.is_some()
-                                    && !app.work_items.is_empty()
-                                {
-                                    let opts: Vec<String> =
-                                        app.work_items.iter().map(|g| g.title.clone()).collect();
-                                    app.transition_options = opts;
-                                    app.transition_selected = 0;
-                                    app.modal = Modal::WorkLink;
-                                }
-                            }
-                            // Work view: l = link tasks (open picker)
-                            KeyCode::Char('l') => {
-                                if app.view == View::Work && app.selected_work.is_some() {
-                                    if let Some(pid) = app.current_project {
-                                        app.work_picker_selected = 0;
-                                        app.work_picker_checked.clear();
-                                        app.work_picker_loading = true;
-                                        app.work_unlinked_tasks.clear();
-                                        app.modal = Modal::WorkTaskPicker;
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        tokio::spawn(async move {
-                                            match api.list_unlinked_tasks(pid, 50, 0).await {
-                                                Ok(tasks) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::WorkUnlinkedTasks(tasks))
-                                                        .await;
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!(
-                                                            "Unlinked tasks: {e}"
-                                                        )))
                                                         .await;
                                                 }
                                             }

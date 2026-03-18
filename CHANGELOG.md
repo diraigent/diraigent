@@ -1,5 +1,31 @@
 # Changelog
 
+
+## v20260318-2000 (2026-03-18)
+
+### Added
+- **TUI**: Create-task keybinding [t] on work page
+- **TUI**: Scrolling in work list keeps selected item visible
+- **TUI**: Work progress indicator (done/total) on work items
+- **TUI**: Keybindings for execute, plan+execute, and save in work form
+- **Web**: Global keyboard shortcuts with navigation keys and help overlay
+- **Web**: Inline title editing on work list header via double-click
+
+### Changed
+- **TUI**: Default view changed from Tasks to Work
+- **TUI**: Work items sorted by status (active → paused → achieved → abandoned)
+- **Web**: Status buttons renamed to Done, Pause, Abandon
+
+### Removed
+- **TUI**: Manual link-to-work functionality
+- **Web**: Status filter dropdown from work page
+- **Web**: Dead task picker code
+
+### Fixed
+- **TUI**: Light mode background now fills frame with correct base color
+
+---
+
 ## v20260318-1810 (2026-03-18)
 
 ### Added

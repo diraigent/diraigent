@@ -295,9 +295,9 @@
       "active": "Aktiv",
       "ready": "Bereit",
       "processing": "In Bearbeitung",
-      "achieved": "Erreicht",
-      "paused": "Pausiert",
-      "abandoned": "Aufgegeben"
+      "achieved": "Erledigt",
+      "paused": "Pause",
+      "abandoned": "Verwerfen"
     },
     "allTypes": "Alle Typen",
     "fieldType": "Typ",

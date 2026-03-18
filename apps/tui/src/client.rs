@@ -985,6 +985,7 @@ impl ApiClient {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_task(
         &self,
         project_id: Uuid,
@@ -993,6 +994,7 @@ impl ApiClient {
         urgent: bool,
         spec: &str,
         playbook_id: Option<Uuid>,
+        work_id: Option<Uuid>,
     ) -> Result<Task, reqwest::Error> {
         let mut body = serde_json::json!({
             "title": title,
@@ -1002,6 +1004,9 @@ impl ApiClient {
         });
         if let Some(pid) = playbook_id {
             body["playbook_id"] = serde_json::json!(pid);
+        }
+        if let Some(wid) = work_id {
+            body["work_id"] = serde_json::json!(wid);
         }
         let req = self
             .client
@@ -1157,30 +1162,39 @@ impl ApiClient {
         resp.json().await
     }
 
-    pub async fn link_task_to_work(
+    pub async fn activate_work(
         &self,
+        project_id: Uuid,
         work_id: Uuid,
-        task_id: Uuid,
-    ) -> Result<(), reqwest::Error> {
-        let req = self
-            .client
-            .post(format!("{}/work/{}/tasks", self.base_url, work_id))
-            .json(&serde_json::json!({"task_id": task_id}));
-        self.auth(req).send().await?.error_for_status()?;
-        Ok(())
+    ) -> Result<Work, reqwest::Error> {
+        let req = self.client.post(format!(
+            "{}/{}/work/{}/activate",
+            self.base_url, project_id, work_id
+        ));
+        let resp = self
+            .auth(req)
+            .json(&serde_json::json!({}))
+            .send()
+            .await?
+            .error_for_status()?;
+        resp.json().await
     }
 
-    pub async fn unlink_task_from_work(
+    pub async fn create_task_with_json(
         &self,
-        work_id: Uuid,
-        task_id: Uuid,
-    ) -> Result<(), reqwest::Error> {
-        let req = self.client.delete(format!(
-            "{}/work/{}/tasks/{}",
-            self.base_url, work_id, task_id
-        ));
-        self.auth(req).send().await?.error_for_status()?;
-        Ok(())
+        project_id: Uuid,
+        body: serde_json::Value,
+    ) -> Result<Task, reqwest::Error> {
+        let req = self
+            .client
+            .post(format!("{}/{}/tasks", self.base_url, project_id));
+        let resp = self
+            .auth(req)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+        resp.json().await
     }
 
     pub async fn list_work_tasks(
@@ -1194,39 +1208,6 @@ impl ApiClient {
             self.base_url, work_id, limit, offset
         ));
         let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn bulk_link_tasks(
-        &self,
-        work_id: Uuid,
-        task_ids: &[Uuid],
-    ) -> Result<serde_json::Value, reqwest::Error> {
-        let body = serde_json::json!({ "task_ids": task_ids });
-        let req = self
-            .client
-            .post(format!("{}/work/{}/tasks/bulk", self.base_url, work_id));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn list_unlinked_tasks(
-        &self,
-        project_id: Uuid,
-        limit: i64,
-        offset: i64,
-    ) -> Result<Vec<Task>, reqwest::Error> {
-        let req = self.client.get(format!(
-            "{}/{}/tasks?unlinked=true&limit={}&offset={}",
-            self.base_url, project_id, limit, offset
-        ));
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        // The endpoint may return paginated or plain array; try paginated first
         resp.json().await
     }
 

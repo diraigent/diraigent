@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::client::{
     Agent, AuditEntry, BranchInfo, ChangedFile, ChatMessage, Decision, GitTaskStatus, Integration,
     IntegrationAccess, KnowledgeEntry, LogEntry, MainPushStatus, Member, Observation, Playbook,
@@ -129,7 +131,6 @@ pub enum Modal {
     Reply,
     Comment,
     Search,
-    WorkLink,
     WorkStatus,
     Promote,
     DependencyAdd,
@@ -146,7 +147,6 @@ pub enum Modal {
     VerificationStatus,
     VerificationKindFilter,
     VerificationStatusFilter,
-    WorkTaskPicker,
     GlobalSearch,
     ChatInput,
     WorkComment,
@@ -186,6 +186,7 @@ pub struct TaskForm {
     pub playbook_index: usize, // 0 = None, 1+ = playbook from list
     pub active_field: usize,   // 0=title, 1=kind, 2=urgent, 3=playbook, 4=spec
     pub cursor: usize,
+    pub work_id: Option<Uuid>, // pre-linked work item (set when creating from Work view)
 }
 
 pub struct VerificationForm {
@@ -612,6 +613,7 @@ pub struct App {
     pub playbooks: Vec<Playbook>,
     pub work_items: Vec<Work>,
     pub work_progress: Option<WorkProgress>,
+    pub work_progress_map: HashMap<Uuid, WorkProgress>,
     pub work_stats: Option<WorkStats>,
     pub work_children: Vec<Work>,
     pub observations: Vec<Observation>,
@@ -642,12 +644,8 @@ pub struct App {
     // Agent tasks (queue view)
     pub agent_tasks: Vec<Task>,
 
-    // Work task picker
+    // Work tasks
     pub work_tasks: Vec<Task>,
-    pub work_unlinked_tasks: Vec<Task>,
-    pub work_picker_selected: usize,
-    pub work_picker_checked: std::collections::HashSet<usize>,
-    pub work_picker_loading: bool,
 
     // Verification filters
     pub verification_kind_filter: Option<String>,
@@ -672,6 +670,7 @@ pub struct App {
     pub selected_decision: Option<usize>,
     pub selected_playbook: Option<usize>,
     pub selected_work: Option<usize>,
+    pub work_list_state: ListState,
     pub selected_observation: Option<usize>,
     pub selected_role: Option<usize>,
     pub selected_member: Option<usize>,
@@ -758,7 +757,7 @@ impl App {
             event_form: None,
             webhook_form: None,
             report_form: None,
-            view: View::Tasks,
+            view: View::Work,
             modal: Modal::None,
             focus: 0,
             projects: vec![],
@@ -776,6 +775,7 @@ impl App {
             playbooks: vec![],
             work_items: vec![],
             work_progress: None,
+            work_progress_map: HashMap::new(),
             work_stats: None,
             work_children: vec![],
             observations: vec![],
@@ -799,10 +799,6 @@ impl App {
             step_templates: vec![],
             agent_tasks: vec![],
             work_tasks: vec![],
-            work_unlinked_tasks: vec![],
-            work_picker_selected: 0,
-            work_picker_checked: std::collections::HashSet::new(),
-            work_picker_loading: false,
             verification_kind_filter: None,
             verification_status_filter: None,
             log_entries: vec![],
@@ -821,6 +817,7 @@ impl App {
             selected_decision: None,
             selected_playbook: None,
             selected_work: None,
+            work_list_state: ListState::default(),
             selected_observation: None,
             selected_role: None,
             selected_member: None,
@@ -929,7 +926,10 @@ impl App {
             View::Knowledge => self.selected_knowledge = idx,
             View::Decisions => self.selected_decision = idx,
             View::Playbooks => self.selected_playbook = idx,
-            View::Work => self.selected_work = idx,
+            View::Work => {
+                self.selected_work = idx;
+                self.work_list_state.select(idx);
+            }
             View::Observations => self.selected_observation = idx,
             View::Team => self.selected_role = idx,
             View::Integrations => self.selected_integration = idx,

@@ -132,7 +132,6 @@ export class KeyboardService {
         { id: 'edit', label: 'Edit', key: 'e' },
         { id: 'comment', label: 'Comment', key: 'c' },
         { id: 'status', label: 'Status', key: 's' },
-        { id: 'link_tasks', label: 'Link Tasks', key: 'l' },
       ],
     },
     {

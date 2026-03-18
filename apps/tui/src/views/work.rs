@@ -7,6 +7,16 @@ use ratatui::Frame;
 use crate::app::App;
 use crate::theme;
 
+/// Map API work status to user-friendly display name.
+pub fn work_status_label(status: &str) -> &str {
+    match status {
+        "achieved" => "Done",
+        "paused" => "Pause",
+        "abandoned" => "Abandon",
+        other => other,
+    }
+}
+
 pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -44,14 +54,31 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             } else {
                 String::new()
             };
+            let progress_str = app
+                .work_progress_map
+                .get(&g.id)
+                .map(|p| format!(" ({}/{})", p.done_tasks, p.total_tasks))
+                .unwrap_or_default();
             ListItem::new(Line::styled(
-                format!(" [{}:{}]{} {}", work_type, status, prio_str, g.title),
+                format!(
+                    " [{}:{}]{} {}{}",
+                    work_type,
+                    work_status_label(status),
+                    prio_str,
+                    g.title,
+                    progress_str
+                ),
                 style,
             ))
         })
         .collect();
 
-    f.render_widget(List::new(items).block(block), chunks[0]);
+    app.work_list_state.select(app.selected_work);
+    f.render_stateful_widget(
+        List::new(items).block(block),
+        chunks[0],
+        &mut app.work_list_state,
+    );
 
     // Detail
     let detail_block = Block::default()
@@ -79,7 +106,9 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 Line::styled(
                     format!(
                         "Type: {}  Status: {}  Priority: {}",
-                        work_type, status, priority
+                        work_type,
+                        work_status_label(status),
+                        priority
                     ),
                     Style::default().fg(status_color),
                 ),
@@ -223,7 +252,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
 
             lines.push(Line::from(""));
             lines.push(Line::styled(
-                "[l] Link tasks  [c] Comment",
+                "[t] New task  [c] Comment",
                 Style::default().fg(theme::overlay0()),
             ));
 
@@ -273,7 +302,12 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                     let work_type = child.work_type.as_deref().unwrap_or("epic");
                     let child_status = child.status.as_deref().unwrap_or("active");
                     lines.push(Line::styled(
-                        format!("  [{}:{}] {}", work_type, child_status, child.title),
+                        format!(
+                            "  [{}:{}] {}",
+                            work_type,
+                            work_status_label(child_status),
+                            child.title
+                        ),
                         Style::default().fg(theme::text()),
                     ));
                 }
