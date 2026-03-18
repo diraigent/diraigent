@@ -297,9 +297,9 @@
       "active": "Active",
       "ready": "Ready",
       "processing": "Processing",
-      "achieved": "Achieved",
-      "paused": "Paused",
-      "abandoned": "Abandoned"
+      "achieved": "Done",
+      "paused": "Pause",
+      "abandoned": "Abandon"
     },
     "markTask": "Mark for review",
     "unmarkTask": "Remove mark",

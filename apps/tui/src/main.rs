@@ -905,8 +905,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             } else {
                                 Style::default().fg(theme::text())
                             };
+                            let label = if app.modal == Modal::WorkStatus {
+                                views::work::work_status_label(s)
+                            } else {
+                                s
+                            };
                             ratatui::widgets::ListItem::new(Line::styled(
-                                format!("  {}  ", s),
+                                format!("  {}  ", label),
                                 style,
                             ))
                         })
@@ -1865,7 +1870,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 // Status selector
                 {
-                    let val = format!("◀ {} ▶", WORK_STATUSES[form.status_index]);
+                    let val = format!("◀ {} ▶", views::work::work_status_label(WORK_STATUSES[form.status_index]));
                     render_gf(f, field_chunks[3], "Status:", &val, form.active_field == 3);
                 }
                 // Work type selector
