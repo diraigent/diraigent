@@ -147,9 +147,7 @@ impl FromRequestParts<AppState> for AuthUser {
     ) -> Result<Self, Self::Rejection> {
         // Both dev bypasses are disabled when PRODUCTION=true to prevent
         // impersonation in internet-exposed deployments.
-        let is_production = env::var("PRODUCTION")
-            .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
-            .unwrap_or(false);
+        let is_production = state.is_production;
 
         // Env-var bypass: DEV_USER_ID skips JWT validation (dev/local only).
         // An empty DEV_USER_ID (e.g. docker-compose default `${DEV_USER_ID:-}`)

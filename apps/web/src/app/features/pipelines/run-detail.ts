@@ -82,6 +82,10 @@ import { CI_STATUS_COLORS } from '../../shared/ui-constants';
           <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
             <div class="flex items-center gap-3">
               <h1 class="text-xl font-semibold text-text-primary">{{ r.workflow_name }}</h1>
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide"
+                    [class]="providerBadgeClass(r.provider)">
+                {{ r.provider || 'forgejo' }}
+              </span>
               <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
                     [class]="statusColor(r.status)">
                 @if (r.status === 'running') {
@@ -350,6 +354,17 @@ export class RunDetailPage implements OnDestroy {
 
   statusColor(status: string): string {
     return CI_STATUS_COLORS[status] ?? 'bg-ctp-overlay0/20 text-ctp-overlay0';
+  }
+
+  providerBadgeClass(provider: string): string {
+    switch (provider) {
+      case 'github':
+        return 'bg-ctp-mauve/15 text-ctp-mauve border border-ctp-mauve/30';
+      case 'forgejo':
+        return 'bg-ctp-peach/15 text-ctp-peach border border-ctp-peach/30';
+      default:
+        return 'bg-ctp-overlay0/15 text-ctp-overlay0 border border-ctp-overlay0/30';
+    }
   }
 
   toggleJob(jobId: string): void {

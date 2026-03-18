@@ -10,7 +10,7 @@
 @if (mobileOpen()) {
   <div class="lg:hidden fixed inset-0 z-30 bg-black/50"
        role="button" tabindex="0" aria-label="Close sidebar"
-       (click)="closeMobile()" (keydown.enter)="closeMobile()"></div>
+       (click)="closeMobile()" (keydown.enter)="closeMobile()" (keydown.escape)="closeMobile()"></div>
 }
 
 <!-- Sidebar -->
@@ -39,6 +39,21 @@
   <div class="px-3 py-2 border-b border-border">
     <app-project-switcher />
   </div>
+
+  <!-- No agents CTA -->
+  @if (!hasAgents()) {
+    <div class="mx-3 mt-2 p-3 rounded-lg border border-accent/30 bg-accent/10" *transloco="let t">
+      <p class="text-sm font-medium text-accent mb-1">{{ t('nav.noAgents') }}</p>
+      <p class="text-xs text-text-secondary mb-2">{{ t('nav.noAgentsHint') }}</p>
+      <a routerLink="/team" (click)="closeMobile()"
+         class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-accent text-bg rounded-lg hover:opacity-90 transition-opacity">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+        </svg>
+        {{ t('nav.createAgent') }}
+      </a>
+    </div>
+  }
 
   <!-- Navigation -->
   <nav class="flex-1 overflow-y-auto py-2 px-2" *transloco="let t">

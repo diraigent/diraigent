@@ -1,7 +1,7 @@
 use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -50,6 +50,10 @@ pub fn routes() -> Router<AppState> {
             post(unlock_encryption),
         )
         .route("/tenants/{tenant_id}/encryption/rotate", post(rotate_keys))
+        .route(
+            "/tenants/{tenant_id}/encryption/dek",
+            get(get_dek_for_orchestra),
+        )
 }
 
 // ── Authorization helpers ──
@@ -99,31 +103,44 @@ async fn create_tenant(
             },
         )
         .await?;
+
+    // Auto-initialize encryption for the new tenant
+    auto_init_encryption(&state, tenant.id, user_id).await;
+
+    // Re-fetch to include updated encryption_mode
+    let tenant = state.db.get_tenant_by_id(tenant.id).await?;
     Ok(Json(tenant))
 }
 
 async fn list_tenants(
     State(state): State<AppState>,
-    AuthUser(_): AuthUser,
-    Query(filters): Query<TenantFilters>,
+    AuthUser(user_id): AuthUser,
+    Query(_filters): Query<TenantFilters>,
 ) -> Result<Json<Vec<Tenant>>, AppError> {
-    Ok(Json(state.db.list_tenants(&filters).await?))
+    // Only return the caller's own tenant — never expose other tenants.
+    let tenant = state.db.get_tenant_for_user(user_id).await?;
+    Ok(Json(tenant.into_iter().collect()))
 }
 
 async fn get_tenant(
     State(state): State<AppState>,
-    AuthUser(_): AuthUser,
+    AuthUser(user_id): AuthUser,
     Path(tenant_id): Path<Uuid>,
 ) -> Result<Json<Tenant>, AppError> {
+    // Verify the caller is a member of this tenant.
+    require_member(&state, tenant_id, user_id).await?;
     Ok(Json(state.db.get_tenant_by_id(tenant_id).await?))
 }
 
 async fn get_tenant_by_slug(
     State(state): State<AppState>,
-    AuthUser(_): AuthUser,
+    AuthUser(user_id): AuthUser,
     Path(slug): Path<String>,
 ) -> Result<Json<Tenant>, AppError> {
-    Ok(Json(state.db.get_tenant_by_slug(&slug).await?))
+    let tenant = state.db.get_tenant_by_slug(&slug).await?;
+    // Verify the caller is a member of this tenant.
+    require_member(&state, tenant.id, user_id).await?;
+    Ok(Json(tenant))
 }
 
 async fn get_my_tenant(
@@ -255,13 +272,6 @@ async fn delete_key(
 
 // ── Encryption Management ──
 
-/// Request body for initializing login-derived encryption on a tenant.
-#[derive(Debug, Deserialize)]
-struct InitEncryptionRequest {
-    /// The admin's access token (used to derive the initial KEK).
-    access_token: String,
-}
-
 /// Response from encryption init.
 #[derive(Debug, Serialize)]
 struct InitEncryptionResponse {
@@ -274,7 +284,7 @@ struct InitEncryptionResponse {
 /// Initialize login-derived encryption for a tenant.
 ///
 /// 1. Generate a random salt and DEK
-/// 2. Derive KEK from the admin's access token + salt
+/// 2. Derive KEK from the user's stable ID + salt
 /// 3. Wrap the DEK with the KEK
 /// 4. Store wrapped DEK + update tenant encryption_mode
 /// 5. Cache the DEK
@@ -282,7 +292,6 @@ async fn init_encryption(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
     Path(tenant_id): Path<Uuid>,
-    Json(req): Json<InitEncryptionRequest>,
 ) -> Result<Json<InitEncryptionResponse>, AppError> {
     require_owner(&state, tenant_id, user_id).await?;
     let tenant = state.db.get_tenant_by_id(tenant_id).await?;
@@ -296,8 +305,8 @@ async fn init_encryption(
     let salt = crypto::generate_salt();
     let dek = Dek::generate();
 
-    // Derive KEK from access token
-    let kek = crypto::derive_kek(&req.access_token, &salt)?;
+    // Derive KEK from stable user ID (not the ephemeral access token)
+    let kek = crypto::derive_kek(&user_id.to_string(), &salt)?;
 
     // Wrap DEK with KEK
     let wrapped_dek = dek.wrap(&kek)?;
@@ -313,6 +322,11 @@ async fn init_encryption(
                 key_salt: Some(salt.clone()),
                 theme_preference: None,
                 accent_color: None,
+                plan: None,
+                rate_limit_per_min: None,
+                max_tasks: None,
+                max_projects: None,
+                max_agents: None,
             },
         )
         .await?;
@@ -344,6 +358,98 @@ async fn init_encryption(
     }))
 }
 
+/// Auto-initialize login-derived encryption for a newly created tenant.
+///
+/// Called internally during tenant creation. Uses the user's stable internal ID
+/// (not the ephemeral access token) to derive the KEK.
+pub(crate) async fn auto_init_encryption(state: &AppState, tenant_id: Uuid, user_id: Uuid) {
+    let salt = crypto::generate_salt();
+    let dek = Dek::generate();
+
+    let kek = match crypto::derive_kek(&user_id.to_string(), &salt) {
+        Ok(k) => k,
+        Err(e) => {
+            tracing::warn!(tenant_id = %tenant_id, error = %e, "auto-encryption init: KEK derivation failed");
+            return;
+        }
+    };
+
+    let wrapped_dek = match dek.wrap(&kek) {
+        Ok(w) => w,
+        Err(e) => {
+            tracing::warn!(tenant_id = %tenant_id, error = %e, "auto-encryption init: DEK wrapping failed");
+            return;
+        }
+    };
+
+    if let Err(e) = state
+        .db
+        .update_tenant(
+            tenant_id,
+            &UpdateTenant {
+                name: None,
+                encryption_mode: Some("login_derived".into()),
+                key_salt: Some(salt.clone()),
+                theme_preference: None,
+                accent_color: None,
+                plan: None,
+                rate_limit_per_min: None,
+                max_tasks: None,
+                max_projects: None,
+                max_agents: None,
+            },
+        )
+        .await
+    {
+        tracing::warn!(tenant_id = %tenant_id, error = %e, "auto-encryption init: failed to update tenant");
+        return;
+    }
+
+    if let Err(e) = state
+        .db
+        .create_wrapped_key(
+            tenant_id,
+            user_id,
+            &CreateWrappedKey {
+                key_type: "login_derived".into(),
+                wrapped_dek,
+                kdf_salt: salt,
+                kdf_params: None,
+                key_version: Some(1),
+            },
+        )
+        .await
+    {
+        tracing::warn!(tenant_id = %tenant_id, error = %e, "auto-encryption init: failed to store wrapped key");
+        return;
+    }
+
+    state.dek_cache.put(tenant_id, dek).await;
+    tracing::info!(tenant_id = %tenant_id, "auto-initialized login-derived encryption for new tenant");
+}
+
+/// Export the raw DEK (base64) for orchestra configuration.
+///
+/// Requires: owner role + encryption must be unlocked (DEK in cache).
+/// This is the value for the `DIRAIGENT_DEK` environment variable.
+async fn get_dek_for_orchestra(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    Path(tenant_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_owner(&state, tenant_id, user_id).await?;
+    let tenant = state.db.get_tenant_by_id(tenant_id).await?;
+    if tenant.encryption_mode == "none" {
+        return Err(AppError::Validation(
+            "Encryption is not enabled for this tenant".into(),
+        ));
+    }
+    let dek = state.dek_cache.get(&tenant_id).await.ok_or_else(|| {
+        AppError::Conflict("Encryption is not unlocked. Log in first to unlock the DEK.".into())
+    })?;
+    Ok(Json(serde_json::json!({ "dek": dek.to_base64() })))
+}
+
 /// Response from GET encryption salt.
 #[derive(Debug, Serialize)]
 struct EncryptionSaltResponse {
@@ -365,21 +471,15 @@ async fn get_encryption_salt(
     }))
 }
 
-/// Request body for unlocking encryption (providing access token to derive KEK).
-#[derive(Debug, Deserialize)]
-struct UnlockEncryptionRequest {
-    access_token: String,
-}
-
 /// Unlock encryption for the current session by deriving the KEK and unwrapping the DEK.
 ///
 /// Called after login when the tenant has `login_derived` encryption.
+/// The KEK is derived from the user's stable internal ID (not the ephemeral access token).
 /// The DEK is cached in memory for subsequent requests.
 async fn unlock_encryption(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
     Path(tenant_id): Path<Uuid>,
-    Json(req): Json<UnlockEncryptionRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     // Check if already cached
     if state.dek_cache.get(&tenant_id).await.is_some() {
@@ -403,8 +503,8 @@ async fn unlock_encryption(
         .find(|k| k.key_type == "login_derived")
         .ok_or(crypto::CryptoError::NoWrappedKey)?;
 
-    // Derive KEK and unwrap DEK
-    let kek = crypto::derive_kek(&req.access_token, salt)?;
+    // Derive KEK from stable user ID and unwrap DEK
+    let kek = crypto::derive_kek(&user_id.to_string(), salt)?;
     let dek = Dek::unwrap(&wrapped.wrapped_dek, &kek)?;
 
     // Cache the DEK
@@ -414,13 +514,6 @@ async fn unlock_encryption(
 }
 
 // ── Key Rotation ──
-
-/// Request body for key rotation.
-#[derive(Debug, Deserialize)]
-struct RotateKeysRequest {
-    /// The admin's access token (used to derive KEK for re-wrapping).
-    access_token: String,
-}
 
 /// Response from key rotation.
 #[derive(Debug, Serialize)]
@@ -440,7 +533,6 @@ async fn rotate_keys(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
     Path(tenant_id): Path<Uuid>,
-    Json(req): Json<RotateKeysRequest>,
 ) -> Result<Json<RotateKeysResponse>, AppError> {
     require_owner(&state, tenant_id, user_id).await?;
     let tenant = state.db.get_tenant_by_id(tenant_id).await?;
@@ -615,11 +707,9 @@ async fn rotate_keys(
 
     let members = state.db.list_tenant_members(tenant_id).await?;
 
-    // For login-derived mode, we can re-wrap using the caller's access token
-    // (the caller must be an admin). Other members' wrapped keys will be
-    // created when they next log in and provide their access token.
-    // For now, wrap for the current user.
-    let kek = crypto::derive_kek(&req.access_token, salt)?;
+    // For login-derived mode, re-wrap using the caller's stable user ID.
+    // Other members' wrapped keys will be created when they next log in.
+    let kek = crypto::derive_kek(&user_id.to_string(), salt)?;
     let wrapped_new = new_dek.wrap(&kek)?;
 
     sqlx::query(

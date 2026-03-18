@@ -3,7 +3,7 @@
 # =============================================================================
 # Stage 1: Dependencies (cached layer) — pinned to amd64 (output is arch-independent)
 # =============================================================================
-FROM --platform=linux/amd64 node:25.6.0-alpine AS deps
+FROM --platform=linux/amd64 node:25.8.0-alpine AS deps
 
 WORKDIR /app
 
@@ -17,7 +17,7 @@ RUN --mount=type=cache,target=/root/.npm \
 # =============================================================================
 # Stage 2: Build — pinned to amd64 (produces static JS/CSS, no arch dependency)
 # =============================================================================
-FROM --platform=linux/amd64 node:25.6.0-alpine AS builder
+FROM --platform=linux/amd64 node:25.8.0-alpine AS builder
 
 WORKDIR /app
 

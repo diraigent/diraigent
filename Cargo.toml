@@ -22,7 +22,7 @@ async-trait = "0.1.64"
 # gRPC and protobuf
 tonic = "0.14.1"
 tonic-reflection = "0.14.2"
-tonic-tls = { version = "0.6.1", default-features = false, features = ["openssl"] }
+tonic-tls = { version = "0.6.1", default-features = false, features = ["rustls"] }
 tonic-health = "0.14.1"
 tonic-prost = "0.14.1"
 tonic-prost-build = "0.14.1"
@@ -32,6 +32,10 @@ prost-types = "0.14.1"
 # REST/HTTP
 axum = "0.8.7"
 tower-http = { version = "0.6.6", features = ["cors", "trace"] }
+
+# OpenAPI / Swagger
+utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
+utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
 # Database
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "bigdecimal", "json", "migrate", "derive", "macros"] }

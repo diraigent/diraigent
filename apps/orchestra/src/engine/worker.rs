@@ -191,6 +191,7 @@ pub async fn run_worker(
     step_config: &StepConfig,
     dek: Option<&Dek>,
     upload_logs: bool,
+    store_diffs: bool,
 ) -> Result<WorkerResult> {
     let tid = TaskId::new(task_id);
     let branch_name = tid.branch_name();
@@ -290,26 +291,28 @@ pub async fn run_worker(
         .commit_changes(&worktree_path, task_id)
         .unwrap_or(false);
 
-    // Collect and post changed files (always check branch diff, not just uncommitted changes —
-    // the agent commits its own changes during the run, so commit_changes may find nothing)
-    match worktree_mgr.collect_changed_files(task_id) {
-        Ok(files) if !files.is_empty() => {
-            info!("worker {tid}: posting {} changed files", files.len());
-            if let Err(e) = api.post_changed_files(task_id, &files).await {
-                warn!("worker {tid}: failed to post changed files: {e}");
+    // Collect and post changed files when store_diffs is enabled in project metadata.
+    if store_diffs {
+        match worktree_mgr.collect_changed_files(task_id) {
+            Ok(files) if !files.is_empty() => {
+                info!("worker {tid}: posting {} changed files", files.len());
+                if let Err(e) = api.post_changed_files(task_id, &files).await {
+                    warn!("worker {tid}: failed to post changed files: {e}");
+                }
             }
+            Ok(_) => {
+                info!("worker {tid}: no changed files found in branch diff");
+            }
+            Err(e) => warn!("worker {tid}: failed to collect changed files: {e}"),
         }
-        Ok(_) => {
-            info!("worker {tid}: no changed files found in branch diff");
-        }
-        Err(e) => warn!("worker {tid}: failed to collect changed files: {e}"),
     }
 
     // Scope violation detection: for implement steps, warn if the diff has far more
     // deletions than insertions — this typically means the agent used Write (full rewrite)
     // instead of Edit (targeted diff), causing collateral deletion of unrelated code.
     //
-    // Thresholds: deletions > 50 AND deletions > 3× insertions is a strong signal.
+    // Thresholds configurable via step JSON: scope_min_deletions (default 50),
+    // scope_deletion_ratio (default 3). Set scope_min_deletions to 0 to disable.
     let is_retriable = step_config
         .step_json
         .as_ref()
@@ -320,9 +323,22 @@ pub async fn run_worker(
                 StepProfile::Implement
             )
         });
-    if is_retriable {
+    let scope_min_deletions: usize = step_config
+        .step_json
+        .as_ref()
+        .and_then(|s| s["scope_min_deletions"].as_u64())
+        .unwrap_or(50) as usize;
+    let scope_deletion_ratio: usize = step_config
+        .step_json
+        .as_ref()
+        .and_then(|s| s["scope_deletion_ratio"].as_u64())
+        .unwrap_or(3) as usize;
+    if is_retriable && scope_min_deletions > 0 {
         match worktree_mgr.diff_insertion_deletion_stats(task_id) {
-            Ok((insertions, deletions)) if deletions > 50 && deletions > insertions * 3 => {
+            Ok((insertions, deletions))
+                if deletions > scope_min_deletions
+                    && deletions > insertions * scope_deletion_ratio =>
+            {
                 warn!(
                     "worker {tid}: scope violation suspected — {deletions} deletions vs {insertions} insertions"
                 );

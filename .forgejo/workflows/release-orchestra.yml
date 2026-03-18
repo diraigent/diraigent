@@ -126,3 +126,33 @@ jobs:
             -t "${FORGEJO}:latest" \
             "${FORGEJO}:${VERSION}-amd64" \
             "${FORGEJO}:${VERSION}-arm64"
+
+  sign:
+    name: Orchestra (sign)
+    needs: [manifest]
+    runs-on: docker
+    container:
+      image: ${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/ci-deploy:latest
+      credentials:
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.FORGEJO_TOKEN }}
+    steps:
+      - name: Login to registries
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          docker login ${{ vars.REGISTRY_URL }} -u ${{ github.repository_owner }} -p ${{ secrets.FORGEJO_TOKEN }}
+      - name: Sign images with cosign
+        env:
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          printf '%s\n' "${{ secrets.COSIGN_KEY }}" > /tmp/cosign.key
+          VERSION="${GITHUB_REF_NAME}"
+          FORGEJO="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/orchestra"
+
+          DIGEST=$(docker buildx imagetools inspect "diraigent/orchestra:${VERSION}" --format '{{.Manifest.Digest}}')
+          cosign sign --key /tmp/cosign.key --yes "diraigent/orchestra@${DIGEST}"
+
+          DIGEST=$(docker buildx imagetools inspect "${FORGEJO}:${VERSION}" --format '{{.Manifest.Digest}}')
+          cosign sign --key /tmp/cosign.key --yes "${FORGEJO}@${DIGEST}"
+
+          rm -f /tmp/cosign.key

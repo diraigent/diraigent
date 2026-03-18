@@ -4,26 +4,26 @@ use std::time::Instant;
 
 use ignore::WalkBuilder;
 use regex::Regex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
 // Output types
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Manifest {
     pub stats: Stats,
     pub files: Vec<FileEntry>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Stats {
     pub total_files: usize,
     pub by_language: HashMap<String, usize>,
     pub elapsed_ms: u128,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FileEntry {
     pub path: String,
     pub language: String,
@@ -34,13 +34,13 @@ pub struct FileEntry {
     pub docstring: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Symbol {
     pub name: String,
     pub kind: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Route {
     pub method: String,
     pub path: String,

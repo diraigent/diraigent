@@ -7,13 +7,14 @@ import {
   ForgejoIntegrationResponse,
 } from '../../core/services/ci-api.service';
 import { ProjectContext } from '../../core/services/project-context.service';
+import { ProviderIconComponent } from '../../shared/components/provider-icon/provider-icon';
 
 type SetupStep = 'form' | 'webhook' | 'sync';
 
 @Component({
   selector: 'app-forgejo-setup',
   standalone: true,
-  imports: [TranslocoModule, FormsModule],
+  imports: [TranslocoModule, FormsModule, ProviderIconComponent],
   template: `
     <div class="p-3 sm:p-6 max-w-3xl mx-auto" *transloco="let t">
       <!-- Header -->
@@ -24,7 +25,10 @@ type SetupStep = 'form' | 'webhook' | 'sync';
           </svg>
           {{ t('forgejo.backToPipelines') }}
         </button>
-        <h1 class="text-2xl font-semibold text-text-primary">{{ t('forgejo.title') }}</h1>
+        <h1 class="text-2xl font-semibold text-text-primary flex items-center gap-2">
+          <app-provider-icon provider="forgejo" size="lg" class="text-ctp-peach" />
+          {{ t('forgejo.title') }}
+        </h1>
         <p class="text-sm text-text-secondary mt-1">{{ t('forgejo.subtitle') }}</p>
       </div>
 
@@ -63,7 +67,7 @@ type SetupStep = 'form' | 'webhook' | 'sync';
             <label class="block">
               <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('forgejo.baseUrl') }}</span>
               <input type="url" [(ngModel)]="formBaseUrl"
-                placeholder="https://git.example.com"
+                placeholder="https://git.example.com/owner/repo"
                 class="w-full bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 border border-border
                        focus:outline-none focus:ring-1 focus:ring-accent" />
               <span class="block text-xs text-text-muted mt-1">{{ t('forgejo.baseUrlHint') }}</span>
@@ -73,7 +77,7 @@ type SetupStep = 'form' | 'webhook' | 'sync';
             <label class="block">
               <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('forgejo.token') }}</span>
               <input type="password" [(ngModel)]="formToken"
-                placeholder="gto_..."
+                placeholder="Forgejo access token"
                 class="w-full bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 border border-border
                        focus:outline-none focus:ring-1 focus:ring-accent" />
               <span class="block text-xs text-text-muted mt-1">{{ t('forgejo.tokenHint') }}</span>

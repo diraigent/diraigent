@@ -32,6 +32,13 @@ jobs:
       - name: Login to Forgejo Container Registry
         run: docker login ${{ vars.REGISTRY_URL }} -u ${{ github.repository_owner }} -p ${{ secrets.FORGEJO_TOKEN }}
 
+      - name: Install cosign
+        run: |
+          COSIGN_VERSION="v2.4.1"
+          curl -fsSL "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64" \
+            -o /usr/local/bin/cosign
+          chmod +x /usr/local/bin/cosign
+
       - name: Build and push
         env:
           DOCKER_BUILDKIT: "1"
@@ -40,3 +47,13 @@ jobs:
           docker build -f .forgejo/images/ci-deploy.Containerfile \
             -t "${IMAGE}:latest" .forgejo/images/
           docker push "${IMAGE}:latest"
+
+      - name: Sign image with cosign
+        env:
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          IMAGE="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/ci-deploy"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "${IMAGE}:latest")
+          echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > /tmp/cosign.key
+          cosign sign --key /tmp/cosign.key "${DIGEST}" -y
+          rm -f /tmp/cosign.key

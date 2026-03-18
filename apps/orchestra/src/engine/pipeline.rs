@@ -8,9 +8,7 @@ use anyhow::Result;
 use serde_json::Value;
 use tracing::{info, warn};
 
-use crate::constants::{
-    STATE_BACKLOG, STATE_CANCELLED, STATE_DONE, STATE_HUMAN_REVIEW, STATE_READY,
-};
+use crate::constants::TaskState;
 use crate::engine::step_profile;
 use crate::git::strategy::{self as git_strategy, GitAction, GitStrategy};
 use crate::project::api::{ProjectsApi, retry_api_call};
@@ -59,10 +57,11 @@ impl StepOutcome {
 pub async fn check_next_step(api: &ProjectsApi, task_id: &str) -> Result<StepOutcome> {
     let tid = TaskId::new(task_id);
     let task = retry_api_call("get_task", &tid, || api.get_task(task_id)).await?;
-    let state = task["state"].as_str().unwrap_or("");
+    let state_str = task["state"].as_str().unwrap_or("");
+    let state = TaskState::parse(state_str);
     let project_id = task["project_id"].as_str().unwrap_or("").to_string();
 
-    if state == STATE_READY {
+    if state == TaskState::Ready {
         // Task was sent back to ready by the current step (e.g. review rejection).
         // If the current step is a non-implement step, regress playbook_step back
         // to the previous implement step so it can apply the feedback.
@@ -134,60 +133,58 @@ pub async fn check_next_step(api: &ProjectsApi, task_id: &str) -> Result<StepOut
         return Ok(StepOutcome::Continue);
     }
 
-    if state == STATE_DONE {
-        // Resolve git strategy from playbook metadata for post-completion handling.
-        let git_mode = if let Ok(project) = api.get_project(&project_id).await {
-            project["git_mode"]
-                .as_str()
-                .unwrap_or("standalone")
-                .to_string()
-        } else {
-            "standalone".to_string()
-        };
-        let strategy = git_strategy::resolve_strategy(api, Some(&task), &git_mode).await;
-        info!(
-            "task {tid} completed all playbook steps (git_strategy={})",
-            strategy.id()
-        );
-        return Ok(StepOutcome::AllDone {
-            project_id,
-            git_strategy: strategy,
-        });
+    match state {
+        TaskState::Done => {
+            // Resolve git strategy from playbook metadata for post-completion handling.
+            let git_mode = if let Ok(project) = api.get_project(&project_id).await {
+                project["git_mode"]
+                    .as_str()
+                    .unwrap_or("standalone")
+                    .to_string()
+            } else {
+                "standalone".to_string()
+            };
+            let strategy = git_strategy::resolve_strategy(api, Some(&task), &git_mode).await;
+            info!(
+                "task {tid} completed all playbook steps (git_strategy={})",
+                strategy.id()
+            );
+            Ok(StepOutcome::AllDone {
+                project_id,
+                git_strategy: strategy,
+            })
+        }
+        TaskState::Wait(next_name) => {
+            info!("task {tid} waiting for next step: {next_name}");
+            Ok(StepOutcome::Continue)
+        }
+        TaskState::Cancelled => {
+            info!("task {tid} was cancelled — will clean up worktree");
+            Ok(StepOutcome::Cancelled { project_id })
+        }
+        TaskState::HumanReview => {
+            info!("task {tid} is in human_review — no action needed");
+            Ok(StepOutcome::AlreadyReady)
+        }
+        TaskState::Backlog => {
+            info!("task {tid} is in backlog — no action needed");
+            Ok(StepOutcome::AlreadyReady)
+        }
+        TaskState::Step(ref name) if name.is_empty() => {
+            warn!("task {tid} has empty/missing state — unexpected");
+            Ok(StepOutcome::UnexpectedState(name.clone()))
+        }
+        TaskState::Step(name) => {
+            // The task is in a step state (e.g. "review", "implement") — it was already
+            // claimed for the next pipeline step before this reap ran.  This is a normal
+            // race: the spawner picked up the ready task faster than the reaper could
+            // check.  No action needed — the new worker owns it now.
+            info!("task {tid} already in step state '{name}' — already claimed, no action needed");
+            Ok(StepOutcome::AlreadyReady)
+        }
+        // Ready was already handled above — this arm is unreachable but keeps the match exhaustive.
+        TaskState::Ready => Ok(StepOutcome::Continue),
     }
-
-    if state.starts_with("wait:") {
-        let next_name = state.strip_prefix("wait:").unwrap_or("unknown");
-        info!("task {tid} waiting for next step: {next_name}");
-        return Ok(StepOutcome::Continue);
-    }
-
-    if state == STATE_CANCELLED {
-        info!("task {tid} was cancelled — will clean up worktree");
-        return Ok(StepOutcome::Cancelled { project_id });
-    }
-
-    if state == STATE_HUMAN_REVIEW {
-        info!("task {tid} is in human_review — no action needed");
-        return Ok(StepOutcome::AlreadyReady);
-    }
-
-    if state == STATE_BACKLOG {
-        info!("task {tid} is in backlog — no action needed");
-        return Ok(StepOutcome::AlreadyReady);
-    }
-
-    // An empty or missing state is genuinely unexpected — flag it.
-    if state.is_empty() {
-        warn!("task {tid} has empty/missing state — unexpected");
-        return Ok(StepOutcome::UnexpectedState(state.to_string()));
-    }
-
-    // The task is in a step state (e.g. "review", "implement") — it was already
-    // claimed for the next pipeline step before this reap ran.  This is a normal
-    // race: the spawner picked up the ready task faster than the reaper could
-    // check.  No action needed — the new worker owns it now.
-    info!("task {tid} already in step state '{state}' — already claimed, no action needed");
-    Ok(StepOutcome::AlreadyReady)
 }
 
 /// Count the number of `blocker` updates posted on a task.

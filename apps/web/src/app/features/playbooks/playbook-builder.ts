@@ -172,7 +172,7 @@ import { ProjectContext } from '../../core/services/project-context.service';
                 Add from Template
               </button>
               @if (showTemplatePicker()) {
-                <div (click)="showTemplatePicker.set(false)" (keydown.enter)="showTemplatePicker.set(false)" tabindex="0" role="button" aria-label="Close template picker" class="fixed inset-0 z-10"></div>
+                <div (click)="showTemplatePicker.set(false)" (keydown.enter)="showTemplatePicker.set(false)" (keydown.escape)="showTemplatePicker.set(false)" tabindex="0" role="button" aria-label="Close template picker" class="fixed inset-0 z-10"></div>
                 <div class="absolute right-0 top-full mt-1 z-20 w-80 max-h-64 overflow-y-auto
                             bg-surface border border-border rounded-lg shadow-lg">
                   @if (templates().length === 0) {
@@ -455,7 +455,7 @@ import { ProjectContext } from '../../core/services/project-context.service';
                   Add from Template
                 </button>
                 @if (showTemplatePicker()) {
-                  <div (click)="showTemplatePicker.set(false)" (keydown.enter)="showTemplatePicker.set(false)" tabindex="0" role="button" aria-label="Close template picker" class="fixed inset-0 z-10"></div>
+                  <div (click)="showTemplatePicker.set(false)" (keydown.enter)="showTemplatePicker.set(false)" (keydown.escape)="showTemplatePicker.set(false)" tabindex="0" role="button" aria-label="Close template picker" class="fixed inset-0 z-10"></div>
                   <div class="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-20 w-80 max-h-64 overflow-y-auto
                               bg-surface border border-border rounded-lg shadow-lg">
                     @if (templates().length === 0) {

@@ -22,10 +22,14 @@ pub async fn create_project(
 
     let default_branch = req.default_branch.as_deref().unwrap_or("main").to_string();
 
-    // Auto-assign the "default"-tagged playbook to new projects
+    // Auto-assign the "default"-tagged playbook to new projects.
+    // Prefer a tenant-owned playbook; fall back to shared (tenant_id IS NULL).
     let default_playbook_id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM diraigent.playbook WHERE 'default' = ANY(tags) ORDER BY created_at ASC LIMIT 1",
+        "SELECT id FROM diraigent.playbook \
+         WHERE 'default' = ANY(tags) AND (tenant_id = $1 OR tenant_id IS NULL) \
+         ORDER BY tenant_id NULLS LAST, created_at ASC LIMIT 1",
     )
+    .bind(req.tenant_id)
     .fetch_optional(pool)
     .await
     .unwrap_or(None);
@@ -44,9 +48,9 @@ pub async fn create_project(
     // repo_path is kept in sync with git_root for backward compat
     let legacy_repo_path = git_root.clone().or_else(|| req.repo_path.clone());
 
-    // Default tenant for projects that don't specify one
-    let default_tenant_id: Uuid = "00000000-0000-0000-0000-000000000001".parse().unwrap();
-    let tenant_id = req.tenant_id.unwrap_or(default_tenant_id);
+    let tenant_id = req
+        .tenant_id
+        .ok_or_else(|| AppError::Validation("tenant_id is required".into()))?;
 
     let project = sqlx::query_as::<_, Project>(
         "INSERT INTO diraigent.project (name, slug, description, owner_id, parent_id, repo_url, repo_path, default_branch, service_name, metadata, default_playbook_id, package_id, git_mode, git_root, project_root, tenant_id)

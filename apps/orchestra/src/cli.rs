@@ -1,3 +1,5 @@
+// Modules are shared between the `orchestra` and `agent-cli` binaries.
+// Each binary uses a different subset, so unused items are expected.
 #![allow(dead_code)]
 
 mod config;

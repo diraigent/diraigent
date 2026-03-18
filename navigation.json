@@ -1,0 +1,337 @@
+{
+  "views": [
+    {
+      "id": "work",
+      "label": "Work",
+      "labelKey": "nav.work",
+      "path": "/work",
+      "key": "1",
+      "icon": "M13 10V3L4 14h7v7l9-11h-7z",
+      "group": "core",
+      "actions": [
+        { "id": "create",      "label": "New",           "labelKey": "action.new",          "key": "n" },
+        { "id": "edit",        "label": "Edit",          "labelKey": "action.edit",         "key": "e" },
+        { "id": "comment",     "label": "Comment",       "labelKey": "action.comment",      "key": "c" },
+        { "id": "status",      "label": "Status",        "labelKey": "action.status",       "key": "s" },
+        { "id": "link_tasks",  "label": "Link Tasks",    "labelKey": "action.linkTasks",    "key": "l" }
+      ]
+    },
+    {
+      "id": "tasks",
+      "label": "Tasks",
+      "labelKey": "nav.tasks",
+      "path": "/tasks",
+      "key": "2",
+      "icon": "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2",
+      "group": "core",
+      "actions": [
+        { "id": "create",         "label": "New",            "labelKey": "action.new",            "key": "n" },
+        { "id": "edit",           "label": "Edit",           "labelKey": "action.edit",           "key": "e" },
+        { "id": "comment",        "label": "Comment",        "labelKey": "action.comment",        "key": "c" },
+        { "id": "reply",          "label": "Reply",          "labelKey": "action.reply",          "key": "r" },
+        { "id": "transition",     "label": "Transition",     "labelKey": "action.transition",     "key": "t" },
+        { "id": "claim",          "label": "Claim/Assign",   "labelKey": "action.claim",          "key": "a" },
+        { "id": "release",        "label": "Release",        "labelKey": "action.release",        "key": "R" },
+        { "id": "flag",           "label": "Flag",           "labelKey": "action.flag",           "key": "f" },
+        { "id": "changed_files",  "label": "Changed Files",  "labelKey": "action.changedFiles",   "key": "F" },
+        { "id": "subtask",        "label": "Subtask",        "labelKey": "action.subtask",        "key": "d" },
+        { "id": "link_work",      "label": "Link to Work",   "labelKey": "action.linkWork",       "key": "g" },
+        { "id": "link_work_alt",  "label": "Link to Work",   "labelKey": "action.linkWork",       "key": "w" },
+        { "id": "inspect",        "label": "Inspect",        "labelKey": "action.inspect",        "key": "i" },
+        { "id": "hierarchy",      "label": "Hierarchy",      "labelKey": "action.hierarchy",      "key": "h" },
+        { "id": "bulk_select",    "label": "Select",         "labelKey": "action.select",         "key": "v" },
+        { "id": "bulk_transition","label": "Bulk Transition", "labelKey": "action.bulkTransition", "key": "b" },
+        { "id": "bulk_delete",    "label": "Bulk Delete",    "labelKey": "action.bulkDelete",     "key": "d", "requires": "bulk_mode" },
+        { "id": "revert",         "label": "Revert",         "labelKey": "action.revert",         "key": "R" },
+        { "id": "git_status",     "label": "Git Status",     "labelKey": "action.gitStatus",      "key": "G" },
+        { "id": "sort",           "label": "Sort/Filter",    "labelKey": "action.sort",           "key": "s" },
+        { "id": "work_view",      "label": "Jump to Work",   "labelKey": "action.jumpToWork",     "key": "W" }
+      ]
+    },
+    {
+      "id": "decisions",
+      "label": "Decisions",
+      "labelKey": "nav.decisions",
+      "path": "/decisions",
+      "key": "3",
+      "icon": "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z",
+      "group": "core",
+      "actions": [
+        { "id": "create",     "label": "New",        "labelKey": "action.new",        "key": "n" },
+        { "id": "accept",     "label": "Accept",     "labelKey": "action.accept",     "key": "a" },
+        { "id": "reject",     "label": "Reject",     "labelKey": "action.reject",     "key": "x" },
+        { "id": "deprecate",  "label": "Deprecate",  "labelKey": "action.deprecate",  "key": "X" },
+        { "id": "supersede",  "label": "Supersede",  "labelKey": "action.supersede",  "key": "S" },
+        { "id": "delete",     "label": "Delete",     "labelKey": "action.delete",     "key": "D" }
+      ]
+    },
+    {
+      "id": "dashboard",
+      "label": "Dashboard",
+      "labelKey": "nav.dashboard",
+      "path": "/dashboard",
+      "key": "4",
+      "icon": "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1",
+      "group": "core",
+      "actions": []
+    },
+    {
+      "id": "agents",
+      "label": "Agents",
+      "labelKey": "nav.agents",
+      "path": "/agents",
+      "key": "5",
+      "icon": "M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z",
+      "group": "operations",
+      "actions": [
+        { "id": "task_queue", "label": "Task Queue", "labelKey": "action.taskQueue", "key": "a" }
+      ]
+    },
+    {
+      "id": "playbooks",
+      "label": "Playbooks",
+      "labelKey": "nav.playbooks",
+      "path": "/playbooks",
+      "key": "6",
+      "icon": "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15",
+      "group": "operations",
+      "actions": [
+        { "id": "create",    "label": "New",           "labelKey": "action.new",           "key": "n" },
+        { "id": "edit",      "label": "Edit",          "labelKey": "action.edit",          "key": "e" },
+        { "id": "delete",    "label": "Delete",        "labelKey": "action.delete",        "key": "D" },
+        { "id": "templates", "label": "Step Templates", "labelKey": "action.stepTemplates", "key": "T" }
+      ]
+    },
+    {
+      "id": "observations",
+      "label": "Observations",
+      "labelKey": "nav.observations",
+      "path": "/observations",
+      "key": "7",
+      "icon": "M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z",
+      "group": "operations",
+      "actions": [
+        { "id": "create",  "label": "New",      "labelKey": "action.new",      "key": "n" },
+        { "id": "status",  "label": "Status",   "labelKey": "action.status",   "key": "s" },
+        { "id": "dismiss", "label": "Dismiss",  "labelKey": "action.dismiss",  "key": "d" },
+        { "id": "promote", "label": "Promote",  "labelKey": "action.promote",  "key": "p" }
+      ]
+    },
+    {
+      "id": "team",
+      "label": "Team",
+      "labelKey": "nav.team",
+      "path": "/team",
+      "key": "8",
+      "icon": "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z",
+      "group": "operations",
+      "actions": [
+        { "id": "delete", "label": "Delete", "labelKey": "action.delete", "key": "D" }
+      ]
+    },
+    {
+      "id": "knowledge",
+      "label": "Knowledge",
+      "labelKey": "nav.knowledge",
+      "path": "/knowledge",
+      "key": "9",
+      "icon": "M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253",
+      "group": "reference",
+      "actions": [
+        { "id": "create", "label": "New",    "labelKey": "action.new",    "key": "n" },
+        { "id": "edit",   "label": "Edit",   "labelKey": "action.edit",   "key": "e" },
+        { "id": "delete", "label": "Delete", "labelKey": "action.delete", "key": "D" }
+      ]
+    },
+    {
+      "id": "verifications",
+      "label": "Verifications",
+      "labelKey": "nav.verifications",
+      "path": "/verifications",
+      "key": "0",
+      "icon": "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
+      "group": "reference",
+      "actions": [
+        { "id": "create",        "label": "New",           "labelKey": "action.new",           "key": "n" },
+        { "id": "status",        "label": "Status",        "labelKey": "action.status",        "key": "s" },
+        { "id": "kind_filter",   "label": "Kind Filter",   "labelKey": "action.kindFilter",    "key": "K" },
+        { "id": "status_filter", "label": "Status Filter",  "labelKey": "action.statusFilter",  "key": "S" }
+      ]
+    },
+    {
+      "id": "reports",
+      "label": "Reports",
+      "labelKey": "nav.reports",
+      "path": "/reports",
+      "key": "R",
+      "icon": "M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
+      "group": "reference",
+      "actions": [
+        { "id": "create", "label": "New",    "labelKey": "action.new",    "key": "n" },
+        { "id": "delete", "label": "Delete", "labelKey": "action.delete", "key": "D" }
+      ]
+    },
+    {
+      "id": "git",
+      "label": "Git",
+      "labelKey": "nav.git",
+      "path": "/git",
+      "key": "G",
+      "icon": "M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1",
+      "group": "tools",
+      "actions": [
+        { "id": "refresh",       "label": "Refresh",       "labelKey": "action.refresh",      "key": "r" },
+        { "id": "push",          "label": "Push",          "labelKey": "action.push",         "key": "p" },
+        { "id": "resolve_push",  "label": "Resolve & Push", "labelKey": "action.resolvePush", "key": "R" },
+        { "id": "pr",            "label": "Pull Request",  "labelKey": "action.pullRequest",  "key": "P" }
+      ]
+    },
+    {
+      "id": "source",
+      "label": "Source",
+      "labelKey": "nav.source",
+      "path": "/source",
+      "key": "B",
+      "icon": "M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4",
+      "group": "tools",
+      "actions": [
+        { "id": "line_jump", "label": "Go to Line", "labelKey": "action.goToLine", "key": "L" }
+      ]
+    },
+    {
+      "id": "search",
+      "label": "Search",
+      "labelKey": "nav.search",
+      "path": "/search",
+      "key": "F",
+      "icon": "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z",
+      "group": "tools",
+      "actions": [
+        { "id": "query", "label": "Search", "labelKey": "action.search", "key": "/" }
+      ]
+    },
+    {
+      "id": "chat",
+      "label": "Chat",
+      "labelKey": "nav.chat",
+      "path": "/chat",
+      "key": "C",
+      "icon": "M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z",
+      "group": "tools",
+      "actions": [
+        { "id": "input", "label": "Type Message", "labelKey": "action.typeMessage", "key": "i" }
+      ]
+    },
+    {
+      "id": "logs",
+      "label": "Logs",
+      "labelKey": "nav.logs",
+      "path": "/logs",
+      "key": "l",
+      "icon": "M4 6h16M4 10h16M4 14h16M4 18h16",
+      "group": "system",
+      "actions": [
+        { "id": "filter",   "label": "Filter",    "labelKey": "action.filter",   "key": "/" },
+        { "id": "tail",     "label": "Tail",       "labelKey": "action.tail",     "key": "T" },
+        { "id": "yank",     "label": "Yank",       "labelKey": "action.yank",     "key": "Y" },
+        { "id": "navigate", "label": "Navigate",   "labelKey": "action.navigate", "key": "N" },
+        { "id": "mark",     "label": "Mark",       "labelKey": "action.mark",     "key": "M" },
+        { "id": "bookmark",  "label": "Bookmark",   "labelKey": "action.bookmark", "key": "B" }
+      ]
+    },
+    {
+      "id": "audit",
+      "label": "Audit",
+      "labelKey": "nav.audit",
+      "path": "/audit",
+      "key": "A",
+      "icon": "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
+      "group": "system",
+      "actions": [
+        { "id": "filter", "label": "Filter", "labelKey": "action.filter", "key": "h" }
+      ]
+    },
+    {
+      "id": "events",
+      "label": "Events",
+      "labelKey": "nav.events",
+      "path": "/events",
+      "key": "E",
+      "icon": "M13 10V3L4 14h7v7l9-11h-7z",
+      "group": "system",
+      "actions": [
+        { "id": "create",      "label": "New",         "labelKey": "action.new",        "key": "n" },
+        { "id": "kind_filter", "label": "Kind Filter",  "labelKey": "action.kindFilter", "key": "f" },
+        { "id": "full_filter", "label": "Full Filter",  "labelKey": "action.fullFilter", "key": "F" }
+      ]
+    },
+    {
+      "id": "integrations",
+      "label": "Integrations",
+      "labelKey": "nav.integrations",
+      "path": "/integrations",
+      "key": "I",
+      "icon": "M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z",
+      "group": "system",
+      "actions": [
+        { "id": "create", "label": "New",     "labelKey": "action.new",    "key": "n" },
+        { "id": "edit",   "label": "Edit",    "labelKey": "action.edit",   "key": "e" },
+        { "id": "access", "label": "Access",  "labelKey": "action.access", "key": "a" },
+        { "id": "delete", "label": "Delete",  "labelKey": "action.delete", "key": "D" }
+      ]
+    },
+    {
+      "id": "webhooks",
+      "label": "Webhooks",
+      "labelKey": "nav.webhooks",
+      "path": "/webhooks",
+      "key": "W",
+      "icon": "M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1",
+      "group": "system",
+      "actions": [
+        { "id": "create",      "label": "New",         "labelKey": "action.new",         "key": "n" },
+        { "id": "edit",        "label": "Edit",        "labelKey": "action.edit",        "key": "e" },
+        { "id": "deliveries",  "label": "Deliveries",  "labelKey": "action.deliveries",  "key": "d" },
+        { "id": "test",        "label": "Test",        "labelKey": "action.test",        "key": "t" },
+        { "id": "delete",      "label": "Delete",      "labelKey": "action.delete",      "key": "D" }
+      ]
+    },
+    {
+      "id": "settings",
+      "label": "Settings",
+      "labelKey": "nav.settings",
+      "path": "/settings",
+      "key": "S",
+      "icon": "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.573-1.066z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
+      "group": "system",
+      "actions": []
+    },
+    {
+      "id": "step_templates",
+      "label": "Step Templates",
+      "labelKey": "nav.stepTemplates",
+      "path": "/step-templates",
+      "key": "T",
+      "icon": "M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6z",
+      "group": "system",
+      "actions": []
+    }
+  ],
+  "globalActions": [
+    { "id": "search",          "label": "Search",          "labelKey": "action.search",         "key": "/" },
+    { "id": "help",            "label": "Help",            "labelKey": "action.help",           "key": "?" },
+    { "id": "quit",            "label": "Quit",            "labelKey": "action.quit",           "key": "q" },
+    { "id": "prev_project",    "label": "Prev Project",    "labelKey": "action.prevProject",    "key": "[" },
+    { "id": "next_project",    "label": "Next Project",    "labelKey": "action.nextProject",    "key": "]" },
+    { "id": "theme",           "label": "Toggle Theme",    "labelKey": "action.toggleTheme",    "key": "L" },
+    { "id": "navigate_up",     "label": "Up",              "labelKey": "action.up",             "key": "k" },
+    { "id": "navigate_down",   "label": "Down",            "labelKey": "action.down",           "key": "j" }
+  ],
+  "groups": [
+    { "id": "core",       "label": "Core",       "labelKey": "nav.groupCore" },
+    { "id": "operations", "label": "Operations", "labelKey": "nav.groupOperations" },
+    { "id": "reference",  "label": "Reference",  "labelKey": "nav.groupReference" },
+    { "id": "tools",      "label": "Tools",      "labelKey": "nav.groupTools" },
+    { "id": "system",     "label": "System",     "labelKey": "nav.groupSystem" }
+  ]
+}

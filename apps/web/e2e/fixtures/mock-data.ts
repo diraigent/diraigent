@@ -237,6 +237,76 @@ function mkTask(num: number, title: string, kind: string, state: string, urgent:
   };
 }
 
+export const knowledgeEntries = [
+  { id: 'k1', project_id: PROJECT_ID, title: 'Authentication Flow', category: 'pattern', content: 'JWT with RS256 signing. Access tokens expire after 15 minutes, refresh tokens after 7 days. Token rotation on each refresh.', tags: ['auth', 'security'], source: 'agent', source_task_id: null, created_by: AGENT_ID, created_at: '2026-03-10T10:00:00Z', updated_at: '2026-03-10T10:00:00Z' },
+  { id: 'k2', project_id: PROJECT_ID, title: 'Database Migration Convention', category: 'convention', content: 'Migrations use sequential numbering (001_, 002_). Always include a down migration. Test against a fresh database before merging.', tags: ['database', 'conventions'], source: 'agent', source_task_id: null, created_by: AGENT_ID, created_at: '2026-03-08T14:00:00Z', updated_at: '2026-03-08T14:00:00Z' },
+  { id: 'k3', project_id: PROJECT_ID, title: 'API Error Response Format', category: 'convention', content: 'All API errors return { "error": { "code": "...", "message": "...", "details": {} } }. HTTP status codes follow REST conventions.', tags: ['api', 'conventions'], source: 'agent', source_task_id: null, created_by: AGENT_ID, created_at: '2026-03-05T09:00:00Z', updated_at: '2026-03-05T09:00:00Z' },
+  { id: 'k4', project_id: PROJECT_ID, title: 'Module: apps/api', category: 'architecture', content: 'Rust/Axum API server. Routes in src/routes/, repository pattern in src/repository.rs. AppState holds DB pool and config.', tags: ['architecture'], source: 'codegen', source_task_id: null, created_by: AGENT_ID, created_at: '2026-03-01T10:00:00Z', updated_at: '2026-03-14T10:00:00Z' },
+];
+
+export const integrations = [
+  { id: 'int1', project_id: PROJECT_ID, name: 'Slack Notifications', kind: 'webhook', config: { url: 'https://hooks.slack.com/...', events: ['task.done', 'work.achieved'] }, enabled: true, created_at: '2026-03-01T10:00:00Z', updated_at: '2026-03-10T10:00:00Z' },
+  { id: 'int2', project_id: PROJECT_ID, name: 'GitHub Mirror', kind: 'git_mirror', config: { remote: 'git@github.com:acme/platform.git' }, enabled: true, created_at: '2026-02-15T10:00:00Z', updated_at: '2026-03-12T10:00:00Z' },
+];
+
+export const pipelineRuns = {
+  data: [
+    { id: 'run1', project_id: PROJECT_ID, provider: 'forgejo', branch: 'agent/task-0001', status: 'success', commit_sha: 'abc1234', commit_message: 'Add user auth flow', started_at: '2026-03-14T14:00:00Z', finished_at: '2026-03-14T14:05:00Z', duration_seconds: 300, url: null, metadata: {} },
+    { id: 'run2', project_id: PROJECT_ID, provider: 'forgejo', branch: 'agent/task-0002', status: 'failure', commit_sha: 'def5678', commit_message: 'Fix payment webhook', started_at: '2026-03-14T15:00:00Z', finished_at: '2026-03-14T15:03:00Z', duration_seconds: 180, url: null, metadata: {} },
+    { id: 'run3', project_id: PROJECT_ID, provider: 'forgejo', branch: 'main', status: 'success', commit_sha: 'ghi9012', commit_message: 'Merge: refactor db pooling', started_at: '2026-03-13T10:00:00Z', finished_at: '2026-03-13T10:08:00Z', duration_seconds: 480, url: null, metadata: {} },
+  ],
+  total: 3,
+  page: 1,
+  per_page: 20,
+};
+
+export const verifications = [
+  { id: 'ver1', task_id: 'task-0001-0000-0000-0000-000000000000', project_id: PROJECT_ID, title: 'CI Pipeline', kind: 'ci', status: 'pass', detail: 'All 47 tests passed', run_id: 'run1', created_at: '2026-03-14T14:05:00Z', updated_at: '2026-03-14T14:05:00Z' },
+  { id: 'ver2', task_id: 'task-0002-0000-0000-0000-000000000000', project_id: PROJECT_ID, title: 'CI Pipeline', kind: 'ci', status: 'fail', detail: '3 tests failed in billing module', run_id: 'run2', created_at: '2026-03-14T15:03:00Z', updated_at: '2026-03-14T15:03:00Z' },
+  { id: 'ver3', task_id: 'task-0003-0000-0000-0000-000000000000', project_id: PROJECT_ID, title: 'Code Review', kind: 'review', status: 'pass', detail: 'Approved by reviewer agent', run_id: null, created_at: '2026-03-14T12:00:00Z', updated_at: '2026-03-14T12:00:00Z' },
+];
+
+export const auditEntries = [
+  { id: 'aud1', project_id: PROJECT_ID, entity_type: 'task', entity_id: 'task-0001-0000-0000-0000-000000000000', action: 'transition', actor_id: AGENT_ID, actor_type: 'agent', detail: { from: 'ready', to: 'implement' }, created_at: '2026-03-14T10:00:00Z' },
+  { id: 'aud2', project_id: PROJECT_ID, entity_type: 'task', entity_id: 'task-0003-0000-0000-0000-000000000000', action: 'transition', actor_id: AGENT_ID, actor_type: 'agent', detail: { from: 'implement', to: 'done' }, created_at: '2026-03-14T11:30:00Z' },
+  { id: 'aud3', project_id: PROJECT_ID, entity_type: 'work', entity_id: 'w1', action: 'create', actor_id: null, actor_type: 'user', detail: { title: 'User Authentication System' }, created_at: '2026-03-13T09:00:00Z' },
+  { id: 'aud4', project_id: PROJECT_ID, entity_type: 'task', entity_id: 'task-0008-0000-0000-0000-000000000000', action: 'transition', actor_id: AGENT_ID, actor_type: 'agent', detail: { from: 'review', to: 'done' }, created_at: '2026-03-14T16:00:00Z' },
+  { id: 'aud5', project_id: PROJECT_ID, entity_type: 'playbook', entity_id: 'pb-001', action: 'update', actor_id: null, actor_type: 'user', detail: { field: 'steps' }, created_at: '2026-03-12T14:00:00Z' },
+];
+
+export const reports = [
+  { id: 'rpt1', project_id: PROJECT_ID, title: 'Weekly Sprint Report — Week 11', status: 'published', kind: 'sprint', content: '## Summary\n\n31 tasks completed, 6 in progress. Authentication system 80% complete.', metadata: {}, created_by: AGENT_ID, created_at: '2026-03-14T18:00:00Z', updated_at: '2026-03-14T18:00:00Z' },
+  { id: 'rpt2', project_id: PROJECT_ID, title: 'Architecture Review — API Layer', status: 'draft', kind: 'review', content: '## Findings\n\nThe API layer is well-structured with consistent patterns...', metadata: {}, created_by: AGENT_ID, created_at: '2026-03-13T10:00:00Z', updated_at: '2026-03-13T10:00:00Z' },
+];
+
+export const sourceTree = {
+  entries: [
+    { name: 'apps', kind: 'dir', path: 'apps' },
+    { name: 'README.md', kind: 'file', path: 'README.md' },
+    { name: 'CLAUDE.md', kind: 'file', path: 'CLAUDE.md' },
+    { name: 'docker-compose.yml', kind: 'file', path: 'docker-compose.yml' },
+  ],
+};
+
+export const roles = [
+  { id: 'role1', project_id: PROJECT_ID, name: 'developer', authorities: ['execute', 'create'], description: 'Can implement and create tasks', created_at: '2026-02-01T10:00:00Z', updated_at: '2026-02-01T10:00:00Z' },
+  { id: 'role2', project_id: PROJECT_ID, name: 'reviewer', authorities: ['review', 'decide'], description: 'Can review work and make decisions', created_at: '2026-02-01T10:00:00Z', updated_at: '2026-02-01T10:00:00Z' },
+];
+
+export const agents = [
+  { id: AGENT_ID, name: 'claude-agent-1', status: 'online', capabilities: ['implement', 'review', 'dream'], last_heartbeat: '2026-03-14T15:00:00Z', created_at: '2026-02-01T10:00:00Z', updated_at: '2026-03-14T15:00:00Z' },
+  { id: '22222222-3333-4444-5555-666666666666', name: 'claude-agent-2', status: 'online', capabilities: ['implement', 'review'], last_heartbeat: '2026-03-14T14:55:00Z', created_at: '2026-02-15T10:00:00Z', updated_at: '2026-03-14T14:55:00Z' },
+];
+
+export const tenant = {
+  id: 'tenant-001',
+  name: 'Acme Corp',
+  slug: 'acme',
+  settings: {},
+  created_at: '2026-01-01T10:00:00Z',
+  updated_at: '2026-03-01T10:00:00Z',
+};
+
 function mkWork(id: string, title: string, workType: string, status: string, total: number, done: number) {
   return {
     item: {

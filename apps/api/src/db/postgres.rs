@@ -66,6 +66,9 @@ impl DiraigentDb for PostgresDb {
     async fn get_task_by_id(&self, task_id: Uuid) -> Result<Task, AppError> {
         repository::get_task_by_id(&self.0, task_id).await
     }
+    async fn get_tasks_by_ids(&self, ids: &[Uuid]) -> Result<Vec<Task>, AppError> {
+        repository::get_tasks_by_ids(&self.0, ids).await
+    }
     async fn list_tasks(
         &self,
         project_id: Uuid,
@@ -103,17 +106,6 @@ impl DiraigentDb for PostgresDb {
     }
     async fn delete_task(&self, task_id: Uuid) -> Result<(), AppError> {
         repository::delete_task(&self.0, task_id).await
-    }
-    async fn list_subtasks(
-        &self,
-        parent_id: Uuid,
-        limit: i64,
-        offset: i64,
-    ) -> Result<Vec<Task>, AppError> {
-        repository::list_subtasks(&self.0, parent_id, limit, offset).await
-    }
-    async fn count_subtasks(&self, parent_id: Uuid) -> Result<i64, AppError> {
-        repository::count_subtasks(&self.0, parent_id).await
     }
     async fn update_task_cost(
         &self,
@@ -209,9 +201,6 @@ impl DiraigentDb for PostgresDb {
     async fn get_agent_by_id(&self, id: Uuid) -> Result<Agent, AppError> {
         repository::get_agent_by_id(&self.0, id).await
     }
-    async fn list_agents(&self, p: &Pagination) -> Result<Vec<Agent>, AppError> {
-        repository::list_agents(&self.0, p).await
-    }
     async fn list_tenant_agents(
         &self,
         tenant_id: Uuid,
@@ -282,9 +271,6 @@ impl DiraigentDb for PostgresDb {
     ) -> Result<Vec<Task>, AppError> {
         repository::list_work_tasks(&self.0, work_id, limit, offset).await
     }
-    async fn count_work_tasks(&self, work_id: Uuid) -> Result<i64, AppError> {
-        repository::count_work_tasks(&self.0, work_id).await
-    }
     async fn bulk_link_tasks(&self, work_id: Uuid, task_ids: &[Uuid]) -> Result<i64, AppError> {
         repository::bulk_link_tasks(&self.0, work_id, task_ids).await
     }
@@ -319,8 +305,8 @@ impl DiraigentDb for PostgresDb {
         repository::get_agent_inherited_work_ids(&self.0, agent_id, project_id, exclude_task_id)
             .await
     }
-    async fn list_works_for_task(&self, task_id: Uuid) -> Result<Vec<Work>, AppError> {
-        repository::list_works_for_task(&self.0, task_id).await
+    async fn work_status_counts(&self, project_id: Uuid) -> Result<Vec<(String, i64)>, AppError> {
+        repository::work_status_counts(&self.0, project_id).await
     }
 
     // Work Comments
@@ -1154,24 +1140,25 @@ impl DiraigentDb for PostgresDb {
 
         let user_id = row.0;
 
-        // Best-effort: auto-join the default tenant so new users can immediately
-        // access tenant-scoped endpoints.  This is not fatal — if the default
-        // tenant does not exist yet (e.g. fresh schema before migration 029), the
-        // TenantContext extractor will create a personal workspace for the user
-        // on their first tenant-scoped request.
-        if let Err(e) = sqlx::query(
-            "INSERT INTO diraigent.tenant_member (tenant_id, user_id, role)
-             VALUES ('00000000-0000-0000-0000-000000000001', $1, 'member')
-             ON CONFLICT (tenant_id, user_id) DO NOTHING",
-        )
-        .bind(user_id)
-        .execute(&self.0)
-        .await
+        // In dev mode, auto-join the default tenant so all dev users share a workspace.
+        // In production, the TenantContext extractor creates a personal workspace
+        // on the user's first tenant-scoped request.
+        let dev_mode = std::env::var("DEV_USER_ID").is_ok_and(|s| !s.is_empty());
+        if dev_mode
+            && let Err(e) = sqlx::query(
+                "INSERT INTO diraigent.tenant_member (tenant_id, user_id, role)
+                 VALUES ($2, $1, 'member')
+                 ON CONFLICT (tenant_id, user_id) DO NOTHING",
+            )
+            .bind(user_id)
+            .bind(crate::constants::DEFAULT_TENANT_ID)
+            .execute(&self.0)
+            .await
         {
             tracing::warn!(
                 user_id = %user_id,
                 error = %e,
-                "auto-join default tenant failed (will create personal workspace on next request)"
+                "auto-join default tenant failed"
             );
         }
 
@@ -1194,6 +1181,14 @@ impl DiraigentDb for PostgresDb {
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())
+    }
+
+    async fn delete_user_account(&self, user_id: Uuid) -> Result<(), AppError> {
+        repository::delete_user_account(&self.0, user_id).await
+    }
+
+    async fn get_user_id_by_auth_id(&self, auth_user_id: &str) -> Result<Option<Uuid>, AppError> {
+        repository::get_user_id_by_auth_id(&self.0, auth_user_id).await
     }
 
     // ── Tenants ───────────────────────────────────────────────────────────────
@@ -1247,6 +1242,13 @@ impl DiraigentDb for PostgresDb {
     async fn get_tenant_for_user(&self, user_id: Uuid) -> Result<Option<Tenant>, AppError> {
         repository::get_tenant_for_user(&self.0, user_id).await
     }
+    async fn check_user_project_tenant(
+        &self,
+        user_id: Uuid,
+        project_id: Uuid,
+    ) -> Result<bool, AppError> {
+        repository::check_user_project_tenant(&self.0, user_id, project_id).await
+    }
 
     // Wrapped Keys
     async fn create_wrapped_key(
@@ -1263,6 +1265,12 @@ impl DiraigentDb for PostgresDb {
         user_id: Uuid,
     ) -> Result<Vec<WrappedKey>, AppError> {
         repository::list_wrapped_keys(&self.0, tenant_id, user_id).await
+    }
+    async fn get_any_login_derived_key(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Option<WrappedKey>, AppError> {
+        repository::get_any_login_derived_key(&self.0, tenant_id).await
     }
     async fn delete_wrapped_key(&self, key_id: Uuid) -> Result<(), AppError> {
         repository::delete_wrapped_key(&self.0, key_id).await
@@ -1457,7 +1465,7 @@ impl DiraigentDb for PostgresDb {
     async fn upsert_ci_run(
         &self,
         project_id: Uuid,
-        forgejo_run_id: i64,
+        external_id: i64,
         workflow_name: &str,
         status: &str,
         branch: Option<&str>,
@@ -1465,11 +1473,12 @@ impl DiraigentDb for PostgresDb {
         triggered_by: Option<&str>,
         started_at: Option<chrono::DateTime<chrono::Utc>>,
         finished_at: Option<chrono::DateTime<chrono::Utc>>,
+        provider: &str,
     ) -> Result<CiRun, AppError> {
         repository::upsert_ci_run(
             &self.0,
             project_id,
-            forgejo_run_id,
+            external_id,
             workflow_name,
             status,
             branch,
@@ -1477,15 +1486,17 @@ impl DiraigentDb for PostgresDb {
             triggered_by,
             started_at,
             finished_at,
+            provider,
         )
         .await
     }
-    async fn get_ci_run_by_forgejo_id(
+    async fn get_ci_run_by_external_id(
         &self,
         project_id: Uuid,
-        forgejo_run_id: i64,
+        provider: &str,
+        external_id: i64,
     ) -> Result<Option<CiRun>, AppError> {
-        repository::get_ci_run_by_forgejo_id(&self.0, project_id, forgejo_run_id).await
+        repository::get_ci_run_by_external_id(&self.0, project_id, provider, external_id).await
     }
     async fn upsert_ci_job_by_name(
         &self,
@@ -1536,6 +1547,7 @@ impl DiraigentDb for PostgresDb {
         branch: Option<&str>,
         status: Option<&str>,
         workflow_name: Option<&str>,
+        provider: Option<&str>,
         limit: i64,
         offset: i64,
     ) -> Result<Vec<CiRun>, AppError> {
@@ -1545,6 +1557,7 @@ impl DiraigentDb for PostgresDb {
             branch,
             status,
             workflow_name,
+            provider,
             limit,
             offset,
         )
@@ -1556,8 +1569,10 @@ impl DiraigentDb for PostgresDb {
         branch: Option<&str>,
         status: Option<&str>,
         workflow_name: Option<&str>,
+        provider: Option<&str>,
     ) -> Result<i64, AppError> {
-        repository::count_ci_runs(&self.0, project_id, branch, status, workflow_name).await
+        repository::count_ci_runs(&self.0, project_id, branch, status, workflow_name, provider)
+            .await
     }
     async fn get_ci_run(&self, id: Uuid) -> Result<CiRun, AppError> {
         repository::get_ci_run(&self.0, id).await
@@ -1579,6 +1594,27 @@ impl DiraigentDb for PostgresDb {
         webhook_secret: &str,
     ) -> Result<ForgejoIntegration, AppError> {
         repository::create_forgejo_integration(&self.0, project_id, base_url, token, webhook_secret)
+            .await
+    }
+
+    // GitHub CI
+    async fn get_github_integration(&self, id: Uuid) -> Result<GitHubIntegration, AppError> {
+        repository::get_github_integration(&self.0, id).await
+    }
+    async fn get_github_integration_by_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<GitHubIntegration, AppError> {
+        repository::get_github_integration_by_project(&self.0, project_id).await
+    }
+    async fn create_github_integration(
+        &self,
+        project_id: Uuid,
+        base_url: &str,
+        token: Option<&str>,
+        webhook_secret: &str,
+    ) -> Result<GitHubIntegration, AppError> {
+        repository::create_github_integration(&self.0, project_id, base_url, token, webhook_secret)
             .await
     }
 }

@@ -37,6 +37,8 @@ export interface PushResponse {
 export interface ReleaseRequest {
   source_branch?: string;
   message?: string;
+  /** "production" (changelog + tag + push) or "staging" (push only) */
+  release_env?: string;
 }
 
 export interface ReleaseResponse {
@@ -121,6 +123,15 @@ export class GitApiService {
     return this.http.post<PushResponse>(
       `${this.baseUrl}/${this.projectId}/git/resolve-task-branch/${taskId}`,
       {},
+    );
+  }
+
+  listBranchesForProject(projectId: string, prefix?: string): Observable<BranchListResponse> {
+    const params: Record<string, string> = {};
+    if (prefix) params['prefix'] = prefix;
+    return this.http.get<BranchListResponse>(
+      `${this.baseUrl}/${projectId}/git/branches`,
+      { params },
     );
   }
 

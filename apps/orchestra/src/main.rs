@@ -1,3 +1,5 @@
+// Modules are shared between the `orchestra` and `agent-cli` binaries.
+// Each binary uses a different subset, so unused items are expected.
 #![allow(dead_code)]
 
 mod config;
@@ -171,7 +173,17 @@ async fn main() -> Result<()> {
     }
 
     // Initial poll
-    engine::spawner::poll_ready_tasks(&api, &config, &active, &lock_queue).await;
+    {
+        let projects = api.list_projects().await.unwrap_or_default();
+        engine::spawner::poll_ready_tasks_with_projects(
+            &api,
+            &config,
+            &active,
+            &lock_queue,
+            &projects,
+        )
+        .await;
+    }
 
     // Main polling loop
     let mut last_poll = std::time::Instant::now();
@@ -202,8 +214,17 @@ async fn main() -> Result<()> {
 
         // Poll on interval, or immediately when file locks were released (queue drain).
         if locks_released || last_poll.elapsed().as_secs() >= config.poll_interval {
-            engine::spawner::poll_ready_tasks(&api, &config, &active, &lock_queue).await;
-            process_ready_work_items(&api).await;
+            // Fetch projects once and share across spawner + work item processing.
+            let projects = api.list_projects().await.unwrap_or_default();
+            engine::spawner::poll_ready_tasks_with_projects(
+                &api,
+                &config,
+                &active,
+                &lock_queue,
+                &projects,
+            )
+            .await;
+            process_ready_work_items(&api, &projects).await;
             last_poll = std::time::Instant::now();
         }
 
@@ -274,19 +295,11 @@ fn find_research_playbook(playbooks: &[Value]) -> Option<String> {
 /// 4. Transitions the work item to 'active'
 ///
 /// Errors on individual work items are logged but do not stop batch processing.
-async fn process_ready_work_items(api: &ProjectsApi) {
-    let projects = match api.list_projects().await {
-        Ok(p) => p,
-        Err(e) => {
-            warn!("work: failed to fetch projects: {e}");
-            return;
-        }
-    };
-
+async fn process_ready_work_items(api: &ProjectsApi, projects: &[Value]) {
     // Cache playbooks once per poll cycle (for research playbook lookup)
     let playbooks = api.list_playbooks().await.unwrap_or_default();
 
-    for project in &projects {
+    for project in projects {
         let project_id = match project["id"].as_str() {
             Some(id) => id,
             None => continue,

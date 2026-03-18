@@ -15,25 +15,18 @@ use crate::git::strategy as git_strategy;
 use crate::project::paths as project_paths;
 use crate::task_id::TaskId;
 
-pub async fn poll_ready_tasks(
+pub async fn poll_ready_tasks_with_projects(
     api: &ProjectsApi,
     config: &Config,
     active: &ActiveTasks,
     lock_queue: &LockQueue,
+    projects: &[serde_json::Value],
 ) {
     let tasks = active.lock().await;
     if tasks.len() >= config.max_workers {
         return;
     }
     drop(tasks);
-
-    let projects = match api.list_projects().await {
-        Ok(p) => p,
-        Err(e) => {
-            warn!("poll: failed to fetch projects: {e}");
-            return;
-        }
-    };
 
     if projects.is_empty() {
         info!("poll: no projects visible to this agent");
@@ -44,7 +37,7 @@ pub async fn poll_ready_tasks(
         projects.len()
     );
 
-    for project in &projects {
+    for project in projects {
         let tasks = active.lock().await;
         if tasks.len() >= config.max_workers {
             break;
@@ -124,7 +117,13 @@ pub async fn spawn_worker(
     let tid = TaskId::new(task_id);
 
     // Fetch task for title, per-task model override, and step resolution
-    let task_data = api.get_task(task_id).await.ok();
+    let task_data = match api.get_task(task_id).await {
+        Ok(data) => Some(data),
+        Err(e) => {
+            warn!("spawn {tid}: failed to fetch task data: {e} — proceeding with defaults");
+            None
+        }
+    };
     let title = task_data
         .as_ref()
         .and_then(|t| t["title"].as_str().map(|s| s.to_string()))
@@ -239,7 +238,7 @@ pub async fn spawn_worker(
     );
 
     // Resolve per-project paths from the API.
-    let (git_mode, git_root, working_dir, auto_push, default_branch, upload_logs) =
+    let (git_mode, git_root, working_dir, auto_push, default_branch, upload_logs, store_diffs) =
         match project_paths::resolve_project_paths(api, project_id, &config.projects_path).await {
             Ok(paths) => (
                 paths.git_mode,
@@ -248,6 +247,7 @@ pub async fn spawn_worker(
                 paths.auto_push,
                 paths.default_branch,
                 paths.upload_logs,
+                paths.store_diffs,
             ),
             Err(e) => {
                 warn!("spawn {tid}: failed to resolve project paths: {e}");
@@ -257,6 +257,7 @@ pub async fn spawn_worker(
                     config.projects_path.clone(),
                     false,
                     "main".to_string(),
+                    false,
                     false,
                 )
             }
@@ -339,6 +340,7 @@ pub async fn spawn_worker(
                 &step_config,
                 dek.as_ref(),
                 upload_logs,
+                store_diffs,
             )
             .await
             {

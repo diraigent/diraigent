@@ -1,9 +1,11 @@
-import { Component, HostListener, input, output } from '@angular/core';
+import { Component, HostListener, OnInit, OnDestroy, inject, input, output } from '@angular/core';
 import { NgClass } from '@angular/common';
+import { KeyboardService } from '../../../core/services/keyboard.service';
 
 /**
  * Reusable modal backdrop wrapper.
  * Renders a fixed overlay with a centered card. Emits `closed` when the backdrop is clicked or Escape is pressed.
+ * Registers itself with KeyboardService so global shortcuts are suppressed while a modal is open.
  *
  * Usage:
  *   <app-modal-wrapper (closed)="showModal.set(false)" maxWidth="max-w-2xl" [scrollable]="true">
@@ -27,16 +29,33 @@ import { NgClass } from '@angular/common';
         role="document"
         tabindex="-1"
         (click)="$event.stopPropagation()"
-        (keydown)="$event.stopPropagation()">
+        (keydown)="onCardKeydown($event)">
         <ng-content />
       </div>
     </div>
   `,
 })
-export class ModalWrapperComponent {
+export class ModalWrapperComponent implements OnInit, OnDestroy {
+  private keyboard = inject(KeyboardService);
+
   maxWidth = input('max-w-lg');
   scrollable = input(false);
   closed = output<void>();
+
+  ngOnInit(): void {
+    this.keyboard.registerModal();
+  }
+
+  ngOnDestroy(): void {
+    this.keyboard.unregisterModal();
+  }
+
+  /** Stop propagation for all keys except Escape, so Escape can bubble to the document listener. */
+  onCardKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') {
+      event.stopPropagation();
+    }
+  }
 
   @HostListener('document:keydown.escape')
   onEscape(): void {

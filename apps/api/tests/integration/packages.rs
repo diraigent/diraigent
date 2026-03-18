@@ -45,7 +45,7 @@ async fn create_and_get_package() {
     assert_eq!(resp.status, StatusCode::OK, "create: {}", resp.json);
     let id = resp.id();
     assert_eq!(resp.json["slug"].as_str().unwrap(), "test-pkg");
-    assert_eq!(resp.json["is_builtin"].as_bool().unwrap(), false);
+    assert!(!resp.json["is_builtin"].as_bool().unwrap());
 
     // GET by id
     let resp2 = app.send(get(&format!("/v1/packages/{id}"))).await;

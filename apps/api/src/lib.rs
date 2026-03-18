@@ -9,7 +9,9 @@ pub mod error;
 pub mod event_triggers;
 pub mod metrics;
 pub mod models;
+pub mod openapi;
 pub mod package_cache;
+pub mod quota;
 pub mod rate_limit;
 pub mod repository;
 pub mod routes;
@@ -100,6 +102,9 @@ pub struct AppState {
     pub user_cache: auth::UserIdCache,
     pub webhooks: webhooks::WebhookDispatcher,
     pub repo_root: Option<PathBuf>,
+    /// Parsed once at startup from `PRODUCTION` env var. When true, dev auth
+    /// bypasses (DEV_USER_ID, X-Dev-User-Id) are disabled.
+    pub is_production: bool,
     /// Base directory for all projects. When set, project `repo_path` values are
     /// interpreted relative to this directory, enabling path resolution and
     /// "open folder" style project creation.

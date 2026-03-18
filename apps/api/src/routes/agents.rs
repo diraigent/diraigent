@@ -22,10 +22,54 @@ pub fn routes() -> Router<AppState> {
 async fn register_agent(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
+    tenant: TenantContext,
     Json(req): Json<CreateAgent>,
 ) -> Result<Json<AgentRegistered>, AppError> {
     validation::validate_create_agent(&req)?;
+    crate::quota::check_quota(
+        &state.pool,
+        tenant.tenant_id,
+        crate::quota::Resource::Agents,
+    )
+    .await?;
     let (agent, api_key) = state.db.register_agent(&req, user_id).await?;
+
+    // Auto-setup: ensure a "main" role exists and assign the new agent to it.
+    // If the tenant has no roles yet, create one with all authorities.
+    let roles = state.db.list_roles(tenant.tenant_id).await?;
+    let role_id = if roles.is_empty() {
+        let role = state
+            .db
+            .create_role(
+                tenant.tenant_id,
+                &CreateRole {
+                    name: "main".into(),
+                    description: Some("Default role with full access".into()),
+                    authorities: Some(AUTHORITIES.iter().map(|a| a.to_string()).collect()),
+                    required_capabilities: None,
+                    knowledge_scope: None,
+                    metadata: None,
+                },
+            )
+            .await?;
+        role.id
+    } else {
+        roles[0].id
+    };
+
+    // Best-effort membership creation (ignore conflicts if already assigned)
+    let _ = state
+        .db
+        .create_membership(
+            tenant.tenant_id,
+            &CreateMembership {
+                agent_id: agent.id,
+                role_id,
+                config: None,
+            },
+        )
+        .await;
+
     Ok(Json(AgentRegistered { agent, api_key }))
 }
 

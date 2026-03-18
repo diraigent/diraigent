@@ -79,30 +79,33 @@ async fn register_user_tenant(
     state: &AppState,
     user_id: Uuid,
 ) -> Result<crate::models::Tenant, AppError> {
-    // 1. Try the shared default tenant first.
-    let join_default = state
-        .db
-        .add_tenant_member(
-            DEFAULT_TENANT_ID,
-            &AddTenantMember {
-                user_id,
-                role: Some("member".into()),
-            },
-        )
-        .await;
+    // 1. In dev mode only, try to join the shared default tenant.
+    let dev_mode = std::env::var("DEV_USER_ID").is_ok_and(|s| !s.is_empty());
+    if dev_mode {
+        let join_default = state
+            .db
+            .add_tenant_member(
+                DEFAULT_TENANT_ID,
+                &AddTenantMember {
+                    user_id,
+                    role: Some("member".into()),
+                },
+            )
+            .await;
 
-    if let Err(e) = join_default {
-        tracing::warn!(
-            user_id = %user_id,
-            error = %e,
-            "default tenant join failed; creating personal workspace"
-        );
-    } else if let Some(t) = state.db.get_tenant_for_user(user_id).await? {
-        tracing::info!(user_id = %user_id, "registered user into default tenant");
-        return Ok(t);
+        if let Err(e) = join_default {
+            tracing::warn!(
+                user_id = %user_id,
+                error = %e,
+                "default tenant join failed; creating personal workspace"
+            );
+        } else if let Some(t) = state.db.get_tenant_for_user(user_id).await? {
+            tracing::info!(user_id = %user_id, "registered user into default tenant (dev mode)");
+            return Ok(t);
+        }
     }
 
-    // 2. Default tenant unavailable — create a personal workspace.
+    // 2. Create a personal workspace for the user.
     //    Slug: "workspace-<first 8 hex chars of user_id>" — unique per user.
     let slug = format!("workspace-{}", &user_id.simple().to_string()[..8]);
     let workspace = state
@@ -139,6 +142,9 @@ async fn register_user_tenant(
         slug = %slug,
         "created personal workspace for new user"
     );
+
+    // Auto-initialize encryption for the new personal workspace
+    crate::routes::tenants::auto_init_encryption(state, workspace.id, user_id).await;
 
     // Re-fetch so we have the full Tenant row.
     state

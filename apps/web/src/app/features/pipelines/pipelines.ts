@@ -7,19 +7,43 @@ import { Subscription, timer } from 'rxjs';
 import { CiApiService, CiRun, CiRunFilters, PaginatedResponse } from '../../core/services/ci-api.service';
 import { ProjectContext } from '../../core/services/project-context.service';
 import { CI_STATUS_COLORS } from '../../shared/ui-constants';
+import { ProviderIconComponent } from '../../shared/components/provider-icon/provider-icon';
 
 @Component({
   selector: 'app-pipelines',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, RouterLink],
+  imports: [TranslocoModule, FormsModule, RouterLink, ProviderIconComponent],
   template: `
     <div class="p-3 sm:p-6" *transloco="let t">
       <div class="flex items-center justify-between mb-3 sm:mb-6">
         <h1 class="text-2xl font-semibold text-text-primary">{{ t('pipelines.title') }}</h1>
-        <a routerLink="/pipelines/setup"
-           class="px-4 py-2 text-sm font-medium bg-surface border border-border text-text-primary rounded-lg hover:border-accent/50 transition-colors">
-          {{ t('pipelines.setupForgejo') }}
-        </a>
+        <div class="flex items-center gap-2">
+          <button (click)="syncAllProviders()"
+            [disabled]="syncingProvider()"
+            class="px-3 py-2 text-sm font-medium bg-surface border border-border text-text-secondary rounded-lg hover:border-accent/50 hover:text-text-primary disabled:opacity-50 transition-colors">
+            @if (syncingProvider()) {
+              <span class="flex items-center gap-1.5">
+                <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                {{ t('pipelines.syncing') }}
+              </span>
+            } @else {
+              {{ t('pipelines.syncAll') }}
+            }
+          </button>
+          <a routerLink="/pipelines/setup"
+             class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-surface border border-border text-text-primary rounded-lg hover:border-accent/50 transition-colors">
+            <app-provider-icon provider="forgejo" size="sm" />
+            {{ t('pipelines.setupForgejo') }}
+          </a>
+          <a routerLink="/pipelines/github-setup"
+             class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-surface border border-border text-text-primary rounded-lg hover:border-accent/50 transition-colors">
+            <app-provider-icon provider="github" size="sm" />
+            {{ t('pipelines.setupGitHub') }}
+          </a>
+        </div>
       </div>
 
       <!-- Filters -->
@@ -51,6 +75,22 @@ import { CI_STATUS_COLORS } from '../../shared/ui-constants';
               {{ s }}
             </button>
           }
+        </div>
+
+        <!-- Provider filter -->
+        <div class="relative">
+          <select
+            [ngModel]="providerFilter()"
+            (ngModelChange)="providerFilter.set($event); loadRuns()"
+            class="appearance-none bg-surface border border-border rounded-lg px-3 py-1.5 pr-8 text-sm text-text-primary
+                   focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer">
+            <option value="">{{ t('pipelines.allProviders') }}</option>
+            <option value="forgejo">Forgejo</option>
+            <option value="github">GitHub</option>
+          </select>
+          <svg class="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
         </div>
 
         <!-- Refresh button -->
@@ -99,14 +139,18 @@ import { CI_STATUS_COLORS } from '../../shared/ui-constants';
           </svg>
           <h3 class="text-lg font-medium text-text-primary mb-1">{{ t('pipelines.emptyTitle') }}</h3>
           <p class="text-sm text-text-muted mb-6">{{ t('pipelines.emptyDescription') }}</p>
-          <a routerLink="/pipelines/setup"
-             class="inline-flex items-center gap-2 px-5 py-2.5 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90 transition-opacity">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-            </svg>
-            {{ t('pipelines.setupForgejo') }}
-          </a>
+          <div class="flex items-center gap-3">
+            <a routerLink="/pipelines/setup"
+               class="inline-flex items-center gap-2 px-5 py-2.5 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90 transition-opacity">
+              <app-provider-icon provider="forgejo" size="sm" />
+              {{ t('pipelines.setupForgejo') }}
+            </a>
+            <a routerLink="/pipelines/github-setup"
+               class="inline-flex items-center gap-2 px-5 py-2.5 bg-surface border border-border text-text-primary rounded-lg text-sm font-medium hover:border-accent/50 transition-colors">
+              <app-provider-icon provider="github" size="sm" />
+              {{ t('pipelines.setupGitHub') }}
+            </a>
+          </div>
         </div>
       }
 
@@ -117,6 +161,7 @@ import { CI_STATUS_COLORS } from '../../shared/ui-constants';
             <thead>
               <tr class="border-b border-border text-left text-text-muted">
                 <th class="pb-2 pr-4 font-medium">{{ t('pipelines.workflow') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ t('pipelines.provider') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ t('pipelines.branch') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ t('pipelines.commit') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ t('pipelines.status') }}</th>
@@ -129,6 +174,13 @@ import { CI_STATUS_COLORS } from '../../shared/ui-constants';
                 <tr (click)="navigateToRun(run.id)" class="border-b border-border/50 hover:bg-surface/50 transition-colors cursor-pointer">
                   <td class="py-3 pr-4">
                     <span class="font-medium text-text-primary">{{ run.workflow_name }}</span>
+                  </td>
+                  <td class="py-3 pr-4">
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide"
+                          [class]="providerBadgeClass(run.provider)">
+                      <app-provider-icon [provider]="run.provider || 'forgejo'" size="xs" />
+                      {{ run.provider || 'forgejo' }}
+                    </span>
                   </td>
                   <td class="py-3 pr-4">
                     @if (run.branch) {
@@ -230,7 +282,11 @@ export class PipelinesPage implements OnDestroy {
 
   // Filters
   branchFilter = signal('');
+  providerFilter = signal('');
   activeStatuses = signal<Set<string>>(new Set());
+
+  // Sync
+  syncingProvider = signal(false);
 
   // Polling
   isPolling = signal(false);
@@ -246,6 +302,7 @@ export class PipelinesPage implements OnDestroy {
       if (pid) {
         this.currentPage.set(1);
         this.branchFilter.set('');
+        this.providerFilter.set('');
         this.activeStatuses.set(new Set());
         this.loadRuns();
       }
@@ -296,6 +353,7 @@ export class PipelinesPage implements OnDestroy {
       per_page: this.perPage,
       branch: this.branchFilter() || undefined,
       status: statusFilter,
+      provider: this.providerFilter() || undefined,
     };
 
     this.ciApi.listRuns(pid, filters)
@@ -323,6 +381,37 @@ export class PipelinesPage implements OnDestroy {
           this.stopPolling();
         },
       });
+  }
+
+  providerBadgeClass(provider: string): string {
+    switch (provider) {
+      case 'github':
+        return 'bg-ctp-mauve/15 text-ctp-mauve border border-ctp-mauve/30';
+      case 'forgejo':
+        return 'bg-ctp-peach/15 text-ctp-peach border border-ctp-peach/30';
+      default:
+        return 'bg-ctp-overlay0/15 text-ctp-overlay0 border border-ctp-overlay0/30';
+    }
+  }
+
+  syncAllProviders(): void {
+    const pid = this.ctx.projectId();
+    if (!pid) return;
+
+    this.syncingProvider.set(true);
+
+    // Sync both providers in parallel; ignore errors gracefully
+    let completed = 0;
+    const checkDone = (): void => {
+      completed++;
+      if (completed >= 2) {
+        this.syncingProvider.set(false);
+        this.loadRuns();
+      }
+    };
+
+    this.ciApi.syncForgejo(pid).subscribe({ next: checkDone, error: checkDone });
+    this.ciApi.syncGitHub(pid).subscribe({ next: checkDone, error: checkDone });
   }
 
   navigateToRun(runId: string): void {

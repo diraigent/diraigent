@@ -1,5 +1,5 @@
 # ── Stage 1: build orchestra from Rust source ──────────────
-FROM --platform=linux/amd64 rust:1.93-bookworm AS builder
+FROM --platform=linux/amd64 rust:1.94-bookworm AS builder
 WORKDIR /build
 
 ARG TARGETARCH
@@ -23,9 +23,10 @@ COPY libs/common-rust/diraigent-types/Cargo.toml libs/common-rust/diraigent-type
 COPY libs/common-rust/shared-utils/Cargo.toml libs/common-rust/shared-utils/Cargo.toml
 COPY libs/common-rust/shared-build-utils/Cargo.toml libs/common-rust/shared-build-utils/Cargo.toml
 COPY apps/orchestra/Cargo.toml apps/orchestra/Cargo.toml
+COPY apps/analyzer/Cargo.toml apps/analyzer/Cargo.toml
 
 # Rewrite workspace to only include these crates
-RUN sed -i '/^members = \[/,/^\]/c\members = ["libs/common-rust/*", "apps/orchestra"]' Cargo.toml && \
+RUN sed -i '/^members = \[/,/^\]/c\members = ["libs/common-rust/*", "apps/orchestra", "apps/analyzer"]' Cargo.toml && \
     sed -i '/^exclude = \[/,/^\]/d' Cargo.toml
 
 # Create stub source files so cargo can resolve the dependency graph
@@ -33,27 +34,31 @@ RUN mkdir -p libs/common-rust/diraigent-types/src && echo "" > libs/common-rust/
     mkdir -p libs/common-rust/shared-utils/src && echo "" > libs/common-rust/shared-utils/src/lib.rs && \
     mkdir -p libs/common-rust/shared-build-utils/src && echo "" > libs/common-rust/shared-build-utils/src/lib.rs && \
     mkdir -p apps/orchestra/src && echo "fn main(){}" > apps/orchestra/src/main.rs && \
-    echo "fn main(){}" > apps/orchestra/src/cli.rs
+    echo "fn main(){}" > apps/orchestra/src/cli.rs && \
+    mkdir -p apps/analyzer/src && echo "" > apps/analyzer/src/lib.rs && \
+    echo "fn main(){}" > apps/analyzer/src/main.rs
 
 # Build dependencies only (this layer is cached until Cargo.toml/lock change)
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
       PKG_CONFIG_ALLOW_CROSS=1 \
       PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
       CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
-      cargo build --release --target aarch64-unknown-linux-gnu -p diraigent-orchestra 2>/dev/null || true; \
+      cargo build --release --target aarch64-unknown-linux-gnu -p diraigent-orchestra; \
     else \
-      cargo build --release -p diraigent-orchestra 2>/dev/null || true; \
+      cargo build --release -p diraigent-orchestra; \
     fi
 
 # ── Layer 2: actual source code (rebuilds only app code, deps are cached) ──
 COPY libs/ libs/
 COPY apps/orchestra/ apps/orchestra/
+COPY apps/analyzer/ apps/analyzer/
 
 # Touch source files to ensure cargo rebuilds them (not the cached deps)
 RUN touch libs/common-rust/diraigent-types/src/lib.rs \
           libs/common-rust/shared-utils/src/lib.rs \
           apps/orchestra/src/main.rs \
-          apps/orchestra/src/cli.rs
+          apps/orchestra/src/cli.rs \
+          apps/analyzer/src/lib.rs
 
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
       PKG_CONFIG_ALLOW_CROSS=1 \
@@ -76,18 +81,26 @@ RUN if [ -n "$DIRAIGENT_VERSION" ]; then \
     fi
 
 # ── Stage 2: runtime ──────────────────────────────────────────
-FROM node:22-slim AS runtime
+FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash curl git ca-certificates util-linux \
     && rm -rf /var/lib/apt/lists/*
 
-# Claude Code CLI (still needed — orchestra spawns it as a worker)
-RUN npm install -g @anthropic-ai/claude-code
-
 # Security: run as non-root user
 RUN groupadd --system --gid 1001 appgroup && \
     useradd --system --uid 1001 --gid appgroup --create-home appuser
+
+# Install CLIs as appuser (standalone binaries, no Node.js needed)
+USER appuser
+
+# Claude Code CLI
+RUN curl -fsSL https://claude.ai/install.sh | bash
+
+# GitHub Copilot CLI
+RUN curl -fsSL https://gh.io/copilot-install | bash
+
+USER root
 
 WORKDIR /app
 
@@ -103,7 +116,8 @@ RUN chown appuser:appgroup /app && mkdir -p logs /repo && chown appuser:appgroup
 USER appuser
 
 # Defaults — override at runtime via env or docker-compose
-ENV DIRAIGENT_API_URL=http://api:8082/v1 \
+ENV PATH="/home/appuser/.local/bin:${PATH}" \
+    DIRAIGENT_API_URL=http://api:8082/v1 \
     MAX_WORKERS=3 \
     PROJECTS_PATH=/projects \
     SERVICE_NAME=diraigent-orchestra

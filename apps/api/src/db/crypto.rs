@@ -16,22 +16,28 @@
 //!   provider_config.api_key   → "provider_config.api_key"
 //!   forgejo_integration.token → "forgejo_integration.token"
 //!   forgejo_integration.webhook_secret → "forgejo_integration.webhook_secret"
+//!   github_integration.token  → "github_integration.token"
+//!   github_integration.webhook_secret → "github_integration.webhook_secret"
+//!   work.title                 → "work.title"
+//!   work.description           → "work.description"
+//!   work.success_criteria      → "work.success_criteria"
+//!   work.metadata              → "work.metadata"
+//!   work_comment.content       → "work_comment.content"
 
 use async_trait::async_trait;
 use std::sync::Arc;
 use uuid::Uuid;
 
 use super::DiraigentDb;
-use crate::crypto::{CryptoError, Dek, DekCache};
+use crate::crypto::{self, CryptoError, Dek, DekCache};
 use crate::error::AppError;
 use crate::models::*;
 
 /// A wrapper around a `DiraigentDb` that encrypts/decrypts sensitive fields transparently.
 ///
 /// The `dek_cache` is populated when a user authenticates with a tenant that has
-/// encryption enabled. If no DEK is cached for a tenant, operations on encrypted
-/// fields will fail with `CryptoError::NotInitialized` (for encrypted tenants)
-/// or pass through unchanged (for `encryption_mode = "none"`).
+/// encryption enabled. If no DEK is cached, auto-unlock is attempted using any
+/// stored login_derived wrapped key.
 pub struct CryptoDb {
     inner: Arc<dyn DiraigentDb>,
     dek_cache: DekCache,
@@ -43,16 +49,32 @@ impl CryptoDb {
     }
 
     /// Try to get the DEK for a tenant. Returns None if tenant has no encryption.
+    /// Auto-unlocks from a stored wrapped key if the cache is empty.
     async fn dek_for_tenant(&self, tenant_id: Uuid) -> Result<Option<Dek>, AppError> {
         let tenant = self.inner.get_tenant_by_id(tenant_id).await?;
         if tenant.encryption_mode == "none" {
             return Ok(None);
         }
-        self.dek_cache
-            .get(&tenant_id)
-            .await
-            .ok_or_else(|| CryptoError::NotInitialized.into())
-            .map(Some)
+        // Fast path: DEK already cached.
+        if let Some(dek) = self.dek_cache.get(&tenant_id).await {
+            return Ok(Some(dek));
+        }
+        // Auto-unlock: find any login_derived wrapped key and derive KEK to unwrap.
+        let salt = tenant
+            .key_salt
+            .as_deref()
+            .ok_or(CryptoError::NotInitialized)?;
+        let wrapped = self
+            .inner
+            .get_any_login_derived_key(tenant_id)
+            .await?
+            .ok_or(CryptoError::NoWrappedKey)?;
+        let user_id = wrapped.user_id.ok_or(CryptoError::NoWrappedKey)?;
+        let kek = crypto::derive_kek(&user_id.to_string(), salt)?;
+        let dek = Dek::unwrap(&wrapped.wrapped_dek, &kek)?;
+        self.dek_cache.put(tenant_id, dek.clone()).await;
+        tracing::info!(tenant_id = %tenant_id, "auto-unlocked tenant encryption from stored wrapped key");
+        Ok(Some(dek))
     }
 
     /// Get DEK for the tenant that owns a project.
@@ -131,6 +153,40 @@ impl CryptoDb {
         if let Some(ref s) = fi.webhook_secret {
             fi.webhook_secret = Some(dek.decrypt_str(s, "forgejo_integration.webhook_secret")?);
         }
+        Ok(())
+    }
+
+    fn decrypt_github_integration(
+        dek: &Dek,
+        gi: &mut GitHubIntegration,
+    ) -> Result<(), CryptoError> {
+        if let Some(ref t) = gi.token {
+            gi.token = Some(dek.decrypt_str(t, "github_integration.token")?);
+        }
+        if let Some(ref s) = gi.webhook_secret {
+            gi.webhook_secret = Some(dek.decrypt_str(s, "github_integration.webhook_secret")?);
+        }
+        Ok(())
+    }
+
+    /// Get DEK for the tenant that owns a work item (via its project).
+    async fn dek_for_work(&self, work_id: Uuid) -> Result<Option<Dek>, AppError> {
+        let work = self.inner.get_work_by_id(work_id).await?;
+        self.dek_for_project(work.project_id).await
+    }
+
+    fn decrypt_work(dek: &Dek, w: &mut Work) -> Result<(), CryptoError> {
+        w.title = dek.decrypt_str(&w.title, "work.title")?;
+        if let Some(ref d) = w.description {
+            w.description = Some(dek.decrypt_str(d, "work.description")?);
+        }
+        w.success_criteria = dek.decrypt_json(&w.success_criteria, "work.success_criteria")?;
+        w.metadata = dek.decrypt_json(&w.metadata, "work.metadata")?;
+        Ok(())
+    }
+
+    fn decrypt_work_comment(dek: &Dek, c: &mut WorkComment) -> Result<(), CryptoError> {
+        c.content = dek.decrypt_str(&c.content, "work_comment.content")?;
         Ok(())
     }
 }
@@ -223,6 +279,27 @@ impl DiraigentDb for CryptoDb {
             Self::decrypt_task(&dek, &mut task)?;
         }
         Ok(task)
+    }
+
+    async fn get_tasks_by_ids(&self, ids: &[Uuid]) -> Result<Vec<Task>, AppError> {
+        let mut tasks = self.inner.get_tasks_by_ids(ids).await?;
+        // Group by project to avoid redundant DEK lookups
+        let mut dek_cache: std::collections::HashMap<Uuid, Option<crate::crypto::Dek>> =
+            std::collections::HashMap::new();
+        for task in &mut tasks {
+            let dek = match dek_cache.entry(task.project_id) {
+                std::collections::hash_map::Entry::Occupied(e) => e.get().clone(),
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    let d = self.dek_for_project(task.project_id).await?;
+                    e.insert(d.clone());
+                    d
+                }
+            };
+            if let Some(ref dek) = dek {
+                Self::decrypt_task(dek, task)?;
+            }
+        }
+        Ok(tasks)
     }
 
     async fn list_tasks(
@@ -323,26 +400,6 @@ impl DiraigentDb for CryptoDb {
     async fn delete_task(&self, task_id: Uuid) -> Result<(), AppError> {
         delegate!(self, delete_task, task_id)
     }
-    async fn list_subtasks(
-        &self,
-        parent_id: Uuid,
-        limit: i64,
-        offset: i64,
-    ) -> Result<Vec<Task>, AppError> {
-        let mut tasks = self.inner.list_subtasks(parent_id, limit, offset).await?;
-        if let Some(first) = tasks.first()
-            && let Some(dek) = self.dek_for_project(first.project_id).await?
-        {
-            for t in &mut tasks {
-                Self::decrypt_task(&dek, t)?;
-            }
-        }
-        Ok(tasks)
-    }
-    async fn count_subtasks(&self, parent_id: Uuid) -> Result<i64, AppError> {
-        delegate!(self, count_subtasks, parent_id)
-    }
-
     async fn update_task_cost(
         &self,
         task_id: Uuid,
@@ -485,9 +542,6 @@ impl DiraigentDb for CryptoDb {
     async fn get_agent_by_id(&self, id: Uuid) -> Result<Agent, AppError> {
         delegate!(self, get_agent_by_id, id)
     }
-    async fn list_agents(&self, p: &Pagination) -> Result<Vec<Agent>, AppError> {
-        delegate!(self, list_agents, p)
-    }
     async fn list_tenant_agents(
         &self,
         tenant_id: Uuid,
@@ -520,30 +574,111 @@ impl DiraigentDb for CryptoDb {
         delegate!(self, verify_agent_owner, agent_id, user_id)
     }
 
-    // ── Work (no encrypted fields) ──
+    // ── Work (encrypt title, description, success_criteria, metadata) ──
     async fn create_work(
         &self,
         project_id: Uuid,
         req: &CreateWork,
         created_by: Uuid,
     ) -> Result<Work, AppError> {
-        delegate!(self, create_work, project_id, req, created_by)
+        if let Some(dek) = self.dek_for_project(project_id).await? {
+            let encrypted_req = CreateWork {
+                title: dek.encrypt_str(&req.title, "work.title")?,
+                description: req
+                    .description
+                    .as_ref()
+                    .map(|d| dek.encrypt_str(d, "work.description"))
+                    .transpose()?,
+                work_type: req.work_type.clone(),
+                priority: req.priority,
+                parent_work_id: req.parent_work_id,
+                auto_status: req.auto_status,
+                intent_type: req.intent_type.clone(),
+                success_criteria: req
+                    .success_criteria
+                    .as_ref()
+                    .map(|s| dek.encrypt_json(s, "work.success_criteria"))
+                    .transpose()?,
+                metadata: req
+                    .metadata
+                    .as_ref()
+                    .map(|m| dek.encrypt_json(m, "work.metadata"))
+                    .transpose()?,
+            };
+            let mut work = self
+                .inner
+                .create_work(project_id, &encrypted_req, created_by)
+                .await?;
+            Self::decrypt_work(&dek, &mut work)?;
+            Ok(work)
+        } else {
+            self.inner.create_work(project_id, req, created_by).await
+        }
     }
     async fn get_work_by_id(&self, id: Uuid) -> Result<Work, AppError> {
-        delegate!(self, get_work_by_id, id)
+        let mut work = self.inner.get_work_by_id(id).await?;
+        if let Some(dek) = self.dek_for_project(work.project_id).await? {
+            Self::decrypt_work(&dek, &mut work)?;
+        }
+        Ok(work)
     }
     async fn list_works(
         &self,
         project_id: Uuid,
         filters: &WorkFilters,
     ) -> Result<Vec<Work>, AppError> {
-        delegate!(self, list_works, project_id, filters)
+        let mut works = self.inner.list_works(project_id, filters).await?;
+        if let Some(dek) = self.dek_for_project(project_id).await? {
+            for w in &mut works {
+                Self::decrypt_work(&dek, w)?;
+            }
+        }
+        Ok(works)
     }
     async fn activate_work(&self, work_id: Uuid) -> Result<Work, AppError> {
-        delegate!(self, activate_work, work_id)
+        let mut work = self.inner.activate_work(work_id).await?;
+        if let Some(dek) = self.dek_for_project(work.project_id).await? {
+            Self::decrypt_work(&dek, &mut work)?;
+        }
+        Ok(work)
     }
     async fn update_work(&self, id: Uuid, req: &UpdateWork) -> Result<Work, AppError> {
-        delegate!(self, update_work, id, req)
+        if let Some(dek) = self.dek_for_work(id).await? {
+            let encrypted_req = UpdateWork {
+                title: req
+                    .title
+                    .as_ref()
+                    .map(|t| dek.encrypt_str(t, "work.title"))
+                    .transpose()?,
+                description: req
+                    .description
+                    .as_ref()
+                    .map(|d| dek.encrypt_str(d, "work.description"))
+                    .transpose()?,
+                status: req.status.clone(),
+                work_type: req.work_type.clone(),
+                priority: req.priority,
+                parent_work_id: req.parent_work_id,
+                auto_status: req.auto_status,
+                intent_type: req.intent_type.clone(),
+                success_criteria: req
+                    .success_criteria
+                    .as_ref()
+                    .map(|s| dek.encrypt_json(s, "work.success_criteria"))
+                    .transpose()?,
+                metadata: req
+                    .metadata
+                    .as_ref()
+                    .map(|m| dek.encrypt_json(m, "work.metadata"))
+                    .transpose()?,
+                sort_order: req.sort_order,
+            };
+            let mut work = self.inner.update_work(id, &encrypted_req).await?;
+            Self::decrypt_work(&dek, &mut work)?;
+            Ok(work)
+        } else {
+            self.inner.update_work(id, req).await
+        }
     }
     async fn delete_work(&self, id: Uuid) -> Result<(), AppError> {
         delegate!(self, delete_work, id)
@@ -563,10 +698,13 @@ impl DiraigentDb for CryptoDb {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<Task>, AppError> {
-        delegate!(self, list_work_tasks, work_id, limit, offset)
-    }
-    async fn count_work_tasks(&self, work_id: Uuid) -> Result<i64, AppError> {
-        delegate!(self, count_work_tasks, work_id)
+        let mut tasks = self.inner.list_work_tasks(work_id, limit, offset).await?;
+        if let Some(dek) = self.dek_for_work(work_id).await? {
+            for t in &mut tasks {
+                Self::decrypt_task(&dek, t)?;
+            }
+        }
+        Ok(tasks)
     }
     async fn bulk_link_tasks(&self, work_id: Uuid, task_ids: &[Uuid]) -> Result<i64, AppError> {
         delegate!(self, bulk_link_tasks, work_id, task_ids)
@@ -588,7 +726,13 @@ impl DiraigentDb for CryptoDb {
         project_id: Uuid,
         work_ids: &[Uuid],
     ) -> Result<Vec<Work>, AppError> {
-        delegate!(self, reorder_works, project_id, work_ids)
+        let mut works = self.inner.reorder_works(project_id, work_ids).await?;
+        if let Some(dek) = self.dek_for_project(project_id).await? {
+            for w in &mut works {
+                Self::decrypt_work(&dek, w)?;
+            }
+        }
+        Ok(works)
     }
     async fn get_work_ids_for_task(&self, task_id: Uuid) -> Result<Vec<Uuid>, AppError> {
         delegate!(self, get_work_ids_for_task, task_id)
@@ -607,24 +751,44 @@ impl DiraigentDb for CryptoDb {
             exclude_task_id
         )
     }
-    async fn list_works_for_task(&self, task_id: Uuid) -> Result<Vec<Work>, AppError> {
-        delegate!(self, list_works_for_task, task_id)
+    async fn work_status_counts(&self, project_id: Uuid) -> Result<Vec<(String, i64)>, AppError> {
+        delegate!(self, work_status_counts, project_id)
     }
-    // ── Work Comments ──
+    // ── Work Comments (encrypt content) ──
     async fn create_work_comment(
         &self,
         work_id: Uuid,
         req: &CreateWorkComment,
         user_id: Option<Uuid>,
     ) -> Result<WorkComment, AppError> {
-        delegate!(self, create_work_comment, work_id, req, user_id)
+        if let Some(dek) = self.dek_for_work(work_id).await? {
+            let encrypted_req = CreateWorkComment {
+                agent_id: req.agent_id,
+                content: dek.encrypt_str(&req.content, "work_comment.content")?,
+                metadata: req.metadata.clone(),
+            };
+            let mut comment = self
+                .inner
+                .create_work_comment(work_id, &encrypted_req, user_id)
+                .await?;
+            Self::decrypt_work_comment(&dek, &mut comment)?;
+            Ok(comment)
+        } else {
+            self.inner.create_work_comment(work_id, req, user_id).await
+        }
     }
     async fn list_work_comments(
         &self,
         work_id: Uuid,
         p: &Pagination,
     ) -> Result<Vec<WorkComment>, AppError> {
-        delegate!(self, list_work_comments, work_id, p)
+        let mut comments = self.inner.list_work_comments(work_id, p).await?;
+        if let Some(dek) = self.dek_for_work(work_id).await? {
+            for c in &mut comments {
+                Self::decrypt_work_comment(&dek, c)?;
+            }
+        }
+        Ok(comments)
     }
 
     // ── Knowledge (encrypt content) ──
@@ -1624,6 +1788,14 @@ impl DiraigentDb for CryptoDb {
         self.inner.ensure_dev_user(user_id).await
     }
 
+    async fn delete_user_account(&self, user_id: Uuid) -> Result<(), AppError> {
+        self.inner.delete_user_account(user_id).await
+    }
+
+    async fn get_user_id_by_auth_id(&self, auth_user_id: &str) -> Result<Option<Uuid>, AppError> {
+        self.inner.get_user_id_by_auth_id(auth_user_id).await
+    }
+
     // ── Webhook dispatch (internal) ──
     async fn list_webhooks_enabled(&self, project_id: Uuid) -> anyhow::Result<Vec<Webhook>> {
         self.inner.list_webhooks_enabled(project_id).await
@@ -1743,6 +1915,13 @@ impl DiraigentDb for CryptoDb {
     async fn get_tenant_for_user(&self, user_id: Uuid) -> Result<Option<Tenant>, AppError> {
         delegate!(self, get_tenant_for_user, user_id)
     }
+    async fn check_user_project_tenant(
+        &self,
+        user_id: Uuid,
+        project_id: Uuid,
+    ) -> Result<bool, AppError> {
+        delegate!(self, check_user_project_tenant, user_id, project_id)
+    }
     async fn create_wrapped_key(
         &self,
         tenant_id: Uuid,
@@ -1757,6 +1936,12 @@ impl DiraigentDb for CryptoDb {
         user_id: Uuid,
     ) -> Result<Vec<WrappedKey>, AppError> {
         delegate!(self, list_wrapped_keys, tenant_id, user_id)
+    }
+    async fn get_any_login_derived_key(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Option<WrappedKey>, AppError> {
+        delegate!(self, get_any_login_derived_key, tenant_id)
     }
     async fn delete_wrapped_key(&self, key_id: Uuid) -> Result<(), AppError> {
         delegate!(self, delete_wrapped_key, key_id)
@@ -1993,7 +2178,7 @@ impl DiraigentDb for CryptoDb {
     async fn upsert_ci_run(
         &self,
         project_id: Uuid,
-        forgejo_run_id: i64,
+        external_id: i64,
         workflow_name: &str,
         status: &str,
         branch: Option<&str>,
@@ -2001,27 +2186,36 @@ impl DiraigentDb for CryptoDb {
         triggered_by: Option<&str>,
         started_at: Option<chrono::DateTime<chrono::Utc>>,
         finished_at: Option<chrono::DateTime<chrono::Utc>>,
+        provider: &str,
     ) -> Result<CiRun, AppError> {
         delegate!(
             self,
             upsert_ci_run,
             project_id,
-            forgejo_run_id,
+            external_id,
             workflow_name,
             status,
             branch,
             commit_sha,
             triggered_by,
             started_at,
-            finished_at
+            finished_at,
+            provider
         )
     }
-    async fn get_ci_run_by_forgejo_id(
+    async fn get_ci_run_by_external_id(
         &self,
         project_id: Uuid,
-        forgejo_run_id: i64,
+        provider: &str,
+        external_id: i64,
     ) -> Result<Option<CiRun>, AppError> {
-        delegate!(self, get_ci_run_by_forgejo_id, project_id, forgejo_run_id)
+        delegate!(
+            self,
+            get_ci_run_by_external_id,
+            project_id,
+            provider,
+            external_id
+        )
     }
     async fn upsert_ci_job_by_name(
         &self,
@@ -2072,6 +2266,7 @@ impl DiraigentDb for CryptoDb {
         branch: Option<&str>,
         status: Option<&str>,
         workflow_name: Option<&str>,
+        provider: Option<&str>,
         limit: i64,
         offset: i64,
     ) -> Result<Vec<CiRun>, AppError> {
@@ -2082,6 +2277,7 @@ impl DiraigentDb for CryptoDb {
             branch,
             status,
             workflow_name,
+            provider,
             limit,
             offset
         )
@@ -2092,6 +2288,7 @@ impl DiraigentDb for CryptoDb {
         branch: Option<&str>,
         status: Option<&str>,
         workflow_name: Option<&str>,
+        provider: Option<&str>,
     ) -> Result<i64, AppError> {
         delegate!(
             self,
@@ -2099,7 +2296,8 @@ impl DiraigentDb for CryptoDb {
             project_id,
             branch,
             status,
-            workflow_name
+            workflow_name,
+            provider
         )
     }
     async fn get_ci_run(&self, id: Uuid) -> Result<CiRun, AppError> {
@@ -2142,6 +2340,59 @@ impl DiraigentDb for CryptoDb {
         } else {
             self.inner
                 .create_forgejo_integration(project_id, base_url, token, webhook_secret)
+                .await
+        }
+    }
+
+    // GitHub CI — encrypt token + webhook_secret
+    async fn get_github_integration(&self, id: Uuid) -> Result<GitHubIntegration, AppError> {
+        let mut gi = self.inner.get_github_integration(id).await?;
+        if let Some(dek) = self.dek_for_project(gi.project_id).await? {
+            Self::decrypt_github_integration(&dek, &mut gi)?;
+        }
+        Ok(gi)
+    }
+    async fn get_github_integration_by_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<GitHubIntegration, AppError> {
+        let mut gi = self
+            .inner
+            .get_github_integration_by_project(project_id)
+            .await?;
+        if let Some(dek) = self.dek_for_project(gi.project_id).await? {
+            Self::decrypt_github_integration(&dek, &mut gi)?;
+        }
+        Ok(gi)
+    }
+    async fn create_github_integration(
+        &self,
+        project_id: Uuid,
+        base_url: &str,
+        token: Option<&str>,
+        webhook_secret: &str,
+    ) -> Result<GitHubIntegration, AppError> {
+        let dek = self.dek_for_project(project_id).await?;
+        if let Some(ref dek) = dek {
+            let encrypted_token = token
+                .map(|t| dek.encrypt_str(t, "github_integration.token"))
+                .transpose()?;
+            let encrypted_secret =
+                dek.encrypt_str(webhook_secret, "github_integration.webhook_secret")?;
+            let mut gi = self
+                .inner
+                .create_github_integration(
+                    project_id,
+                    base_url,
+                    encrypted_token.as_deref(),
+                    &encrypted_secret,
+                )
+                .await?;
+            Self::decrypt_github_integration(dek, &mut gi)?;
+            Ok(gi)
+        } else {
+            self.inner
+                .create_github_integration(project_id, base_url, token, webhook_secret)
                 .await
         }
     }

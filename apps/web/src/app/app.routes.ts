@@ -84,6 +84,11 @@ export const routes: Routes = [
     loadComponent: () => import('./features/pipelines/forgejo-setup').then(m => m.ForgejoSetupPage),
   },
   {
+    path: 'pipelines/github-setup',
+    canActivate: [AuthGuard],
+    loadComponent: () => import('./features/pipelines/github-setup').then(m => m.GitHubSetupPage),
+  },
+  {
     path: 'pipelines/:runId',
     canActivate: [AuthGuard],
     loadComponent: () => import('./features/pipelines/run-detail').then(m => m.RunDetailPage),

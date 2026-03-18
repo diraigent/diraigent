@@ -1,0 +1,18 @@
+[package]
+name = "github-client"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+reqwest = { workspace = true, features = ["json"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+wiremock = "0.6"
+serde_json = { workspace = true }

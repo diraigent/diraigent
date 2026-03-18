@@ -15,7 +15,7 @@ import { DEFAULT_TASK_KINDS } from '../../../../shared/ui-constants';
     @if (show()) {
       <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]"
            role="button" tabindex="0" aria-label="Close modal"
-           (click)="closeForm()" (keydown.enter)="closeForm()" *transloco="let t">
+           (click)="closeForm()" (keydown.enter)="closeForm()" (keydown.escape)="closeForm()" *transloco="let t">
         <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
              tabindex="-1" (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()">
           <h2 class="text-lg font-semibold text-text-primary mb-4">
@@ -50,6 +50,13 @@ import { DEFAULT_TASK_KINDS } from '../../../../shared/ui-constants';
             <div>
               <label for="tf-spec" class="block text-sm text-text-secondary mb-1">{{ t('tasks.specField') }}</label>
               <textarea id="tf-spec" [(ngModel)]="formSpec" rows="4"
+                class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                       focus:outline-none focus:ring-1 focus:ring-accent resize-y font-mono"></textarea>
+            </div>
+            <div>
+              <label for="tf-acceptance" class="block text-sm text-text-secondary mb-1">{{ t('tasks.acceptanceCriteria') }}</label>
+              <textarea id="tf-acceptance" [(ngModel)]="formAcceptanceCriteria" rows="3"
+                [placeholder]="t('tasks.acceptanceCriteriaHint')"
                 class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
                        focus:outline-none focus:ring-1 focus:ring-accent resize-y font-mono"></textarea>
             </div>
@@ -112,6 +119,7 @@ export class TaskFormComponent implements OnChanges {
   formKind = 'feature';
   formUrgent = false;
   formSpec = '';
+  formAcceptanceCriteria = '';
   formPlaybookId = '';
   formDecompose = false;
 
@@ -122,6 +130,8 @@ export class TaskFormComponent implements OnChanges {
       this.formKind = task.kind || 'feature';
       this.formUrgent = task.urgent;
       this.formSpec = (task.context?.['spec'] as string) ?? '';
+      const criteria = task.context?.['acceptance_criteria'] as string[] | undefined;
+      this.formAcceptanceCriteria = criteria?.join('\n') ?? '';
       this.formPlaybookId = task.playbook_id ?? '';
       this.loadPlaybooks();
     } else if (this.show()) {
@@ -129,6 +139,7 @@ export class TaskFormComponent implements OnChanges {
       this.formKind = 'feature';
       this.formUrgent = false;
       this.formSpec = '';
+      this.formAcceptanceCriteria = '';
       this.formPlaybookId = this.defaultPlaybookId;
       this.formDecompose = false;
       this.loadPlaybooks();
@@ -203,6 +214,11 @@ export class TaskFormComponent implements OnChanges {
     const task = this.editing();
     const context: Record<string, unknown> = {};
     if (this.formSpec.trim()) context['spec'] = this.formSpec.trim();
+    const acLines = this.formAcceptanceCriteria
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    if (acLines.length > 0) context['acceptance_criteria'] = acLines;
 
     if (task) {
       this.submitUpdate.emit({

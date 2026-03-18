@@ -1,6 +1,7 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, inject, signal, OnInit, DestroyRef } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   IntegrationsApiService,
   Integration,
@@ -150,6 +151,7 @@ export class IntegrationDetailPage implements OnInit {
   private api = inject(IntegrationsApiService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
+  private destroyRef = inject(DestroyRef);
 
   integration = signal<Integration | null>(null);
   accessList = signal<IntegrationAccess[]>([]);
@@ -161,7 +163,7 @@ export class IntegrationDetailPage implements OnInit {
     const id = this.route.snapshot.paramMap.get('id');
     if (!id) return;
 
-    this.api.get(id).subscribe({
+    this.api.get(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this.integration.set(data);
         this.loading.set(false);
@@ -169,8 +171,9 @@ export class IntegrationDetailPage implements OnInit {
       error: () => this.loading.set(false),
     });
 
-    this.api.listAccess(id).subscribe({
+    this.api.listAccess(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => this.accessList.set(data),
+      error: () => this.accessList.set([]),
     });
   }
 
@@ -191,6 +194,7 @@ export class IntegrationDetailPage implements OnInit {
         this.accessList.update(list => [...list, access]);
         this.showGrantForm.set(false);
       },
+      error: () => { /* grant failed — form stays open so user can retry */ },
     });
   }
 
@@ -201,6 +205,7 @@ export class IntegrationDetailPage implements OnInit {
       next: () => {
         this.accessList.update(list => list.filter(a => a.agent_id !== agentId));
       },
+      error: () => { /* revoke failed — list unchanged */ },
     });
   }
 
@@ -213,6 +218,7 @@ export class IntegrationDetailPage implements OnInit {
     if (!id) return;
     this.api.delete(id).subscribe({
       next: () => this.router.navigate(['/integrations']),
+      error: () => this.showDeleteConfirm.set(false),
     });
   }
 }

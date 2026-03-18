@@ -60,7 +60,7 @@ function containsError(content: string): boolean {
       @if (loading()) {
         <p class="text-text-muted text-xs">{{ t('common.loading') }}</p>
       } @else {
-        <div class="space-y-1.5 max-h-60 overflow-y-auto">
+        <div class="space-y-1.5">
           @for (update of updates(); track update.id) {
             <div class="flex gap-2 text-xs" [class.opacity-90]="hasError(update)">
               <span class="text-text-muted shrink-0">{{ formatTime(update.created_at) }}</span>

@@ -50,6 +50,7 @@ pub trait DiraigentDb: Send + Sync {
         created_by: Uuid,
     ) -> Result<Task, AppError>;
     async fn get_task_by_id(&self, task_id: Uuid) -> Result<Task, AppError>;
+    async fn get_tasks_by_ids(&self, ids: &[Uuid]) -> Result<Vec<Task>, AppError>;
     async fn list_tasks(
         &self,
         project_id: Uuid,
@@ -72,15 +73,6 @@ pub trait DiraigentDb: Send + Sync {
     async fn resolve_claim_step_name(&self, task: &Task) -> Result<String, AppError>;
     async fn release_task(&self, task_id: Uuid) -> Result<Task, AppError>;
     async fn delete_task(&self, task_id: Uuid) -> Result<(), AppError>;
-
-    // ── Subtasks (parent-child) ─────────────────────────────────────────────
-    async fn list_subtasks(
-        &self,
-        parent_id: Uuid,
-        limit: i64,
-        offset: i64,
-    ) -> Result<Vec<Task>, AppError>;
-    async fn count_subtasks(&self, parent_id: Uuid) -> Result<i64, AppError>;
 
     // ── Task Cost Metrics ─────────────────────────────────────────────────────
     async fn update_task_cost(
@@ -146,7 +138,6 @@ pub trait DiraigentDb: Send + Sync {
         key_hash: &str,
     ) -> Result<Option<(Uuid, Uuid)>, AppError>;
     async fn get_agent_by_id(&self, id: Uuid) -> Result<Agent, AppError>;
-    async fn list_agents(&self, p: &Pagination) -> Result<Vec<Agent>, AppError>;
     async fn list_tenant_agents(
         &self,
         tenant_id: Uuid,
@@ -186,7 +177,6 @@ pub trait DiraigentDb: Send + Sync {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<Task>, AppError>;
-    async fn count_work_tasks(&self, work_id: Uuid) -> Result<i64, AppError>;
     async fn bulk_link_tasks(&self, work_id: Uuid, task_ids: &[Uuid]) -> Result<i64, AppError>;
     async fn get_work_stats(&self, work_id: Uuid) -> Result<WorkStats, AppError>;
     async fn compute_auto_status(&self, work_id: Uuid) -> Result<Option<String>, AppError>;
@@ -208,7 +198,7 @@ pub trait DiraigentDb: Send + Sync {
         project_id: Uuid,
         exclude_task_id: Uuid,
     ) -> Result<Vec<Uuid>, AppError>;
-    async fn list_works_for_task(&self, task_id: Uuid) -> Result<Vec<Work>, AppError>;
+    async fn work_status_counts(&self, project_id: Uuid) -> Result<Vec<(String, i64)>, AppError>;
 
     // ── Work Comments ──────────────────────────────────────────────────────────
     async fn create_work_comment(
@@ -638,8 +628,22 @@ pub trait DiraigentDb: Send + Sync {
     /// is older than `threshold_days`. Returns the IDs of agents that were revoked.
     async fn revoke_stale_agents(&self, threshold_days: i64) -> anyhow::Result<Vec<Uuid>>;
 
+    /// Check if the user belongs to the same tenant as the project in a single query.
+    /// Returns true if the user is a member of the project's tenant.
+    async fn check_user_project_tenant(
+        &self,
+        user_id: Uuid,
+        project_id: Uuid,
+    ) -> Result<bool, AppError>;
+
     // ── Auth User ────────────────────────────────────────────────────────────
     async fn resolve_or_create_user(&self, auth_user_id: &str) -> Result<Uuid, AppError>;
+
+    /// Delete a user account: nullify all references, then delete the auth_user row.
+    async fn delete_user_account(&self, user_id: Uuid) -> Result<(), AppError>;
+
+    /// Look up auth_user by external auth_user_id (e.g. Authentik sub claim).
+    async fn get_user_id_by_auth_id(&self, auth_user_id: &str) -> Result<Option<Uuid>, AppError>;
 
     /// Ensure an auth_user row exists for a specific user_id (used by dev auth
     /// bypasses where the user_id is known but may not have a DB record yet).
@@ -710,6 +714,10 @@ pub trait DiraigentDb: Send + Sync {
         tenant_id: Uuid,
         user_id: Uuid,
     ) -> Result<Vec<WrappedKey>, AppError>;
+    async fn get_any_login_derived_key(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Option<WrappedKey>, AppError>;
     async fn delete_wrapped_key(&self, key_id: Uuid) -> Result<(), AppError>;
 
     // ── Packages ─────────────────────────────────────────────────────────────
@@ -825,7 +833,7 @@ pub trait DiraigentDb: Send + Sync {
     async fn upsert_ci_run(
         &self,
         project_id: Uuid,
-        forgejo_run_id: i64,
+        external_id: i64,
         workflow_name: &str,
         status: &str,
         branch: Option<&str>,
@@ -833,11 +841,13 @@ pub trait DiraigentDb: Send + Sync {
         triggered_by: Option<&str>,
         started_at: Option<chrono::DateTime<chrono::Utc>>,
         finished_at: Option<chrono::DateTime<chrono::Utc>>,
+        provider: &str,
     ) -> Result<CiRun, AppError>;
-    async fn get_ci_run_by_forgejo_id(
+    async fn get_ci_run_by_external_id(
         &self,
         project_id: Uuid,
-        forgejo_run_id: i64,
+        provider: &str,
+        external_id: i64,
     ) -> Result<Option<CiRun>, AppError>;
     #[allow(clippy::too_many_arguments)]
     async fn upsert_ci_job_by_name(
@@ -867,6 +877,7 @@ pub trait DiraigentDb: Send + Sync {
         branch: Option<&str>,
         status: Option<&str>,
         workflow_name: Option<&str>,
+        provider: Option<&str>,
         limit: i64,
         offset: i64,
     ) -> Result<Vec<CiRun>, AppError>;
@@ -876,6 +887,7 @@ pub trait DiraigentDb: Send + Sync {
         branch: Option<&str>,
         status: Option<&str>,
         workflow_name: Option<&str>,
+        provider: Option<&str>,
     ) -> Result<i64, AppError>;
     async fn get_ci_run(&self, id: Uuid) -> Result<CiRun, AppError>;
     async fn list_ci_jobs_for_run(&self, ci_run_id: Uuid) -> Result<Vec<CiJob>, AppError>;
@@ -888,4 +900,18 @@ pub trait DiraigentDb: Send + Sync {
         token: Option<&str>,
         webhook_secret: &str,
     ) -> Result<ForgejoIntegration, AppError>;
+
+    // ── GitHub CI ────────────────────────────────────────────────────────────
+    async fn get_github_integration(&self, id: Uuid) -> Result<GitHubIntegration, AppError>;
+    async fn get_github_integration_by_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<GitHubIntegration, AppError>;
+    async fn create_github_integration(
+        &self,
+        project_id: Uuid,
+        base_url: &str,
+        token: Option<&str>,
+        webhook_secret: &str,
+    ) -> Result<GitHubIntegration, AppError>;
 }

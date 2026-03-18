@@ -8,5 +8,6 @@ export const environment = {
   authClientId: w['AUTH_CLIENT_ID'] || 'kvuNVJmjVOdhwSfmBDwlSMJw6XxExtjaib5wEDsu',
   authRedirectPath: w['AUTH_REDIRECT_PATH'] || '/auth/callback',
   authRedirectUri: w['AUTH_REDIRECT_URI'] || '',
+  authEnrollmentUrl: w['AUTH_ENROLLMENT_URL'] || 'https://auth.diraigent.com/if/flow/diraigent-enrollment/',
   appVersion: w['APP_VERSION'] || '0.1.0',
 };

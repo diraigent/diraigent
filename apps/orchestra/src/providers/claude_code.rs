@@ -41,14 +41,14 @@ impl StepProvider for ClaudeCodeProvider {
             .ok_or_else(|| anyhow::anyhow!("ClaudeCodeProvider requires log_file"))?;
 
         let system_prompt = step.system_prompt.as_deref().unwrap_or("");
-        let user_prompt = &task.project_context;
+        let user_prompt = task.user_prompt.as_deref().unwrap_or(&task.project_context);
 
         run_claude(system_prompt, user_prompt, worktree, log_file, step).await?;
-        let (cost, input_tokens, output_tokens, turns, stop, is_err) =
+        let (cost, input_tokens, output_tokens, turns, stop, is_err, result_text) =
             parse_result_from_log(log_file).await;
 
         Ok(StepOutput {
-            content: String::new(), // Claude Code writes to files, not stdout
+            content: result_text,
             exit_code: if is_err { 1 } else { 0 },
             artifacts: HashMap::new(),
             cost_usd: cost,
@@ -213,13 +213,17 @@ async fn run_claude(
     Ok(())
 }
 
-/// Parse the stream-json log file to extract cost, tokens, turns, and error info.
-pub(crate) async fn parse_result_from_log(log_file: &Path) -> (f64, u64, u64, u64, String, bool) {
+/// Parse the stream-json log file to extract cost, tokens, turns, result text, and error info.
+///
+/// Returns `(cost, input_tokens, output_tokens, turns, stop_reason, is_error, result_text)`.
+pub(crate) async fn parse_result_from_log(
+    log_file: &Path,
+) -> (f64, u64, u64, u64, String, bool, String) {
     let content = match tokio::fs::read_to_string(log_file).await {
         Ok(c) => c,
         Err(e) => {
             warn!("could not read log file {}: {e}", log_file.display());
-            return (0.0, 0, 0, 0, "unknown".into(), false);
+            return (0.0, 0, 0, 0, "unknown".into(), false, String::new());
         }
     };
 
@@ -231,19 +235,19 @@ pub(crate) async fn parse_result_from_log(log_file: &Path) -> (f64, u64, u64, u6
 
     let Some(line) = result_line else {
         warn!("no result line found in log {}", log_file.display());
-        return (0.0, 0, 0, 0, "unknown".into(), false);
+        return (0.0, 0, 0, 0, "unknown".into(), false, String::new());
     };
 
     // Try to parse the JSON (the line may have extra characters from script)
     let json_start = line.find('{');
     let Some(start) = json_start else {
-        return (0.0, 0, 0, 0, "unknown".into(), false);
+        return (0.0, 0, 0, 0, "unknown".into(), false, String::new());
     };
 
     let json_str = &line[start..];
     let parsed: Value = match serde_json::from_str(json_str) {
         Ok(v) => v,
-        Err(_) => return (0.0, 0, 0, 0, "unknown".into(), false),
+        Err(_) => return (0.0, 0, 0, 0, "unknown".into(), false, String::new()),
     };
 
     let cost = parsed["total_cost_usd"].as_f64().unwrap_or(0.0);
@@ -253,6 +257,7 @@ pub(crate) async fn parse_result_from_log(log_file: &Path) -> (f64, u64, u64, u6
         .unwrap_or("unknown")
         .to_string();
     let is_error = parsed["is_error"].as_bool().unwrap_or(false);
+    let result_text = parsed["result"].as_str().unwrap_or("").to_string();
 
     // Sum all input token variants (regular + cache creation + cache read).
     let usage = &parsed["usage"];
@@ -261,5 +266,13 @@ pub(crate) async fn parse_result_from_log(log_file: &Path) -> (f64, u64, u64, u6
         + usage["cache_read_input_tokens"].as_u64().unwrap_or(0);
     let output_tokens = usage["output_tokens"].as_u64().unwrap_or(0);
 
-    (cost, input_tokens, output_tokens, turns, stop, is_error)
+    (
+        cost,
+        input_tokens,
+        output_tokens,
+        turns,
+        stop,
+        is_error,
+        result_text,
+    )
 }

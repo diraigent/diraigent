@@ -120,10 +120,10 @@ export class TenantApiService {
   // ── Encryption ──
 
   /** Initialize login-derived encryption for a tenant. */
-  initEncryption(tenantId: string, accessToken: string): Observable<InitEncryptionResponse> {
+  initEncryption(tenantId: string): Observable<InitEncryptionResponse> {
     return this.http.post<InitEncryptionResponse>(
       `${this.baseUrl}/tenants/${tenantId}/encryption/init`,
-      { access_token: accessToken },
+      {},
     );
   }
 
@@ -134,19 +134,26 @@ export class TenantApiService {
     );
   }
 
-  /** Rotate the tenant's encryption key. Requires encryption to be unlocked. */
-  rotateKeys(tenantId: string, accessToken: string): Observable<{ new_key_version: number; fields_rotated: number }> {
-    return this.http.post<{ new_key_version: number; fields_rotated: number }>(
-      `${this.baseUrl}/tenants/${tenantId}/encryption/rotate`,
-      { access_token: accessToken },
+  /** Get the raw DEK (base64) for orchestra configuration. Owner-only. */
+  getDekForOrchestra(tenantId: string): Observable<{ dek: string }> {
+    return this.http.get<{ dek: string }>(
+      `${this.baseUrl}/tenants/${tenantId}/encryption/dek`,
     );
   }
 
-  /** Unlock encryption by providing the access token (login-derived mode). */
-  unlockEncryption(tenantId: string, accessToken: string): Observable<{ status: string }> {
+  /** Rotate the tenant's encryption key. Requires encryption to be unlocked. */
+  rotateKeys(tenantId: string): Observable<{ new_key_version: number; fields_rotated: number }> {
+    return this.http.post<{ new_key_version: number; fields_rotated: number }>(
+      `${this.baseUrl}/tenants/${tenantId}/encryption/rotate`,
+      {},
+    );
+  }
+
+  /** Unlock encryption (login-derived mode). KEK is derived server-side from user ID. */
+  unlockEncryption(tenantId: string): Observable<{ status: string }> {
     return this.http.post<{ status: string }>(
       `${this.baseUrl}/tenants/${tenantId}/encryption/unlock`,
-      { access_token: accessToken },
+      {},
     );
   }
 

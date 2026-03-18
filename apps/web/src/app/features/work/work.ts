@@ -1,10 +1,11 @@
 import { Component, ChangeDetectorRef, inject, signal, computed, effect, DestroyRef, PLATFORM_ID, ViewEncapsulation } from '@angular/core';
-import { NgTemplateOutlet, DatePipe, SlicePipe, isPlatformBrowser } from '@angular/common';
+import { NgTemplateOutlet, DatePipe, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Subscription, forkJoin, of, timer, switchMap } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { Subscription, forkJoin, of, timer, switchMap, from, mergeMap, toArray } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
 import {
   CdkDragDrop,
   CdkDrag,
@@ -23,7 +24,6 @@ import {
   SpWorkCreate,
   SpWorkProgress,
   SpWorkStats,
-  PlannedTask,
 } from '../../core/services/work-api.service';
 import {
   TasksApiService,
@@ -42,39 +42,31 @@ import { VerificationsApiService, SpVerification } from '../../core/services/ver
 import { PlaybooksApiService, SpPlaybook } from '../../core/services/playbooks-api.service';
 import { GitApiService, BranchInfo, MainPushStatus, TaskBranchStatus } from '../../core/services/git-api.service';
 import { ChatService } from '../../core/services/chat.service';
+import {
+  WORK_STATUS_COLORS, WORK_PROGRESS_COLORS, WORK_TYPE_COLORS,
+} from '../../shared/ui-constants';
 
-const STATUSES: WorkStatus[] = ['active', 'achieved', 'paused', 'abandoned'];
+// 'ready' and 'processing' are inferred from tasks — not manually selectable
+const MANUAL_STATUSES: WorkStatus[] = ['active', 'achieved', 'paused', 'abandoned'];
 
-const STATUS_COLORS: Record<WorkStatus, string> = {
-  active: 'bg-ctp-green/20 text-ctp-green',
-  achieved: 'bg-ctp-blue/20 text-ctp-blue',
-  paused: 'bg-ctp-yellow/20 text-ctp-yellow',
-  abandoned: 'bg-ctp-overlay0/20 text-ctp-overlay0',
-};
-
-const PROGRESS_COLORS: Record<WorkStatus, string> = {
-  active: 'bg-ctp-green',
-  achieved: 'bg-ctp-blue',
-  paused: 'bg-ctp-yellow',
-  abandoned: 'bg-ctp-overlay0',
-};
+const STATUS_COLORS = WORK_STATUS_COLORS;
+const PROGRESS_COLORS = WORK_PROGRESS_COLORS;
 
 const GOAL_TYPES: WorkType[] = ['epic', 'feature', 'milestone', 'sprint', 'initiative'];
 
-const TYPE_COLORS: Record<WorkType, string> = {
-  epic: 'bg-ctp-mauve/20 text-ctp-mauve',
-  feature: 'bg-ctp-blue/20 text-ctp-blue',
-  milestone: 'bg-ctp-peach/20 text-ctp-peach',
-  sprint: 'bg-ctp-teal/20 text-ctp-teal',
-  initiative: 'bg-ctp-lavender/20 text-ctp-lavender',
-};
+const TYPE_COLORS = WORK_TYPE_COLORS;
 
-const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
+/** Safely parse success_criteria into a string array, handling string, array, or nullish values. */
+function parseCriteria(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(l => l.trim().length > 0);
+  if (typeof value === 'string') return value.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  return [];
+}
 
 @Component({
   selector: 'app-work',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, DatePipe, SlicePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent, CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList],
+  imports: [TranslocoModule, FormsModule, DatePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent, CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList],
   encapsulation: ViewEncapsulation.None,
   styles: [`
     .cdk-drag-animating {
@@ -125,21 +117,38 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               </button>
             }
           }
-          <button (click)="onReleaseProject()"
-            [disabled]="releasing()"
-            title="Squash-merge dev → main, tag, and push to all remotes"
-            class="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg
-                   bg-ctp-mauve/15 text-ctp-mauve hover:bg-ctp-mauve/25 transition-colors
-                   disabled:opacity-50 disabled:cursor-not-allowed">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path d="M7 7h.01M7 3h5a1.99 1.99 0 011.41.59l7 7a2 2 0 010 2.82l-5 5a2 2 0 01-2.82 0l-7-7A2 2 0 013 10V5a2 2 0 012-2z" />
-            </svg>
-            @if (releasing()) {
-              {{ t('git.releasing') }}
-            } @else {
-              {{ t('git.release') }}
-            }
-          </button>
+          @if (showRelease()) {
+            <button (click)="onReleaseProject('staging')"
+              [disabled]="releasing()"
+              title="Squash-merge dev → main and push to all remotes"
+              class="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg
+                     bg-ctp-teal/15 text-ctp-teal hover:bg-ctp-teal/25 transition-colors
+                     disabled:opacity-50 disabled:cursor-not-allowed">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              @if (releasing()) {
+                {{ t('git.releasing') }}
+              } @else {
+                {{ t('git.staging') }}
+              }
+            </button>
+            <button (click)="onReleaseProject('production')"
+              [disabled]="releasing()"
+              title="Squash-merge dev → main, changelog, tag, and push to all remotes"
+              class="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg
+                     bg-ctp-mauve/15 text-ctp-mauve hover:bg-ctp-mauve/25 transition-colors
+                     disabled:opacity-50 disabled:cursor-not-allowed">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M7 7h.01M7 3h5a1.99 1.99 0 011.41.59l7 7a2 2 0 010 2.82l-5 5a2 2 0 01-2.82 0l-7-7A2 2 0 013 10V5a2 2 0 012-2z" />
+              </svg>
+              @if (releasing()) {
+                {{ t('git.releasing') }}
+              } @else {
+                {{ t('git.production') }}
+              }
+            </button>
+          }
           <button (click)="openCreate()" class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90">
             {{ t('goals.create') }}
           </button>
@@ -156,16 +165,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
           class="flex-1 min-w-[200px] bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
                  focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary" />
         <select
-          [(ngModel)]="selectedStatus"
-          (ngModelChange)="loadGoals()"
-          class="bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                 focus:outline-none focus:ring-1 focus:ring-accent">
-          <option value="">{{ t('goals.allStatuses') }}</option>
-          @for (s of statuses; track s) {
-            <option [value]="s">{{ t('goals.status.' + s) }}</option>
-          }
-        </select>
-        <select
           [(ngModel)]="selectedWorkType"
           (ngModelChange)="loadGoals()"
           class="bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
@@ -180,6 +179,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
       <!-- Goal accordion item template (reused across sections) -->
       <ng-template #goalItem let-goal>
         <div class="rounded-lg border transition-colors"
+          [attr.data-work-id]="goal.id"
           [class]="goal.id === selected()?.id
             ? 'bg-accent/10 border-accent'
             : 'bg-surface border-border hover:border-accent/50'"
@@ -195,13 +195,33 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                 fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
               </svg>
-              <span class="text-sm font-medium text-text-primary">{{ goal.title }}</span>
-              <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ typeColor(goal.work_type) }}">
-                {{ t('goals.type.' + goal.work_type) }}
-              </span>
-              <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
-                {{ t('goals.status.' + goal.status) }}
-              </span>
+              <select (click)="$event.stopPropagation()" (change)="changeWorkType(goal, $any($event.target).value)"
+                [value]="goal.work_type"
+                class="px-2 py-0.5 rounded-full text-xs font-medium border-0 cursor-pointer shrink-0
+                       appearance-none bg-transparent focus:outline-none focus:ring-1 focus:ring-accent {{ typeColor(goal.work_type) }}">
+                @for (gt of goalTypes; track gt) {
+                  <option [value]="gt" [selected]="gt === goal.work_type">{{ t('goals.type.' + gt) }}</option>
+                }
+              </select>
+              @if (editingHeaderTitleId() === goal.id) {
+                <input #headerTitleInput type="text"
+                  [value]="goal.title"
+                  (click)="$event.stopPropagation()"
+                  (blur)="saveHeaderTitle(goal, $any($event.target).value)"
+                  (keydown.enter)="$any($event.target).blur()"
+                  (keydown.escape)="cancelHeaderTitleEdit($event)"
+                  class="text-sm font-medium text-text-primary bg-transparent border-b border-accent
+                         focus:outline-none min-w-[120px] flex-1" />
+              } @else {
+                <span (dblclick)="startHeaderTitleEdit(goal.id, $event)"
+                  title="Double-click to rename"
+                  class="text-sm font-medium text-text-primary cursor-text">{{ goal.title }}</span>
+              }
+              @if (goal.status !== 'active') {
+                <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
+                  {{ t('goals.status.' + goal.status) }}
+                </span>
+              }
               @if (conflictMap().get(goal.id); as conflicts) {
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-ctp-red/20 text-ctp-red"
                   title="Tasks with merge conflicts">
@@ -209,6 +229,15 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                     <path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
                   </svg>
                   {{ conflicts.length }}
+                </span>
+              }
+              @if (unmergedMap().get(goal.id); as unmerged) {
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-ctp-yellow/20 text-ctp-yellow"
+                  title="Tasks with unmerged branches">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M6 3v12M18 9a3 3 0 100-6 3 3 0 000 6zM6 21a3 3 0 100-6 3 3 0 000 6zM18 9a9 9 0 01-9 9" />
+                  </svg>
+                  {{ unmerged.length }}
                 </span>
               }
             </div>
@@ -256,27 +285,110 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
 
           <!-- Expanded detail (inline) -->
           @if (goal.id === selected()?.id) {
-            <div class="px-4 pb-4 pt-0 border-t border-border/50 mt-0">
-              <!-- Inline title edit -->
-              <div class="pt-3 mb-3">
-                <input type="text" [(ngModel)]="formTitle" (blur)="saveInlineField()"
-                  class="w-full bg-surface text-text-primary text-sm font-medium rounded-lg px-3 py-2 border border-border
-                         focus:outline-none focus:ring-1 focus:ring-accent"
-                  [placeholder]="t('goals.fieldTitle')" />
+            <div class="px-4 pb-4 pt-3 border-t border-border/50 mt-0">
+              <!-- Status transitions + action buttons -->
+              <div class="flex flex-wrap items-center gap-2 mb-4">
+                <div class="flex flex-wrap gap-2">
+                  @if (goal.status !== 'active') {
+                    <button (click)="activateWork(goal)"
+                      [disabled]="activatingWork()"
+                      class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-green/15 text-ctp-green hover:bg-ctp-green/25 transition-colors disabled:opacity-50">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 3l14 9-14 9V3z" />
+                      </svg>
+                      {{ activatingWork() ? t('common.loading') : t('goals.activate') }}
+                    </button>
+                  }
+                  @for (s of availableTransitions(); track s) {
+                    @if (s === 'achieved') {
+                      <button (click)="transitionStatus(goal, 'achieved')"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-green/15 text-ctp-green hover:bg-ctp-green/25 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        {{ t('goals.status.achieved') }}
+                      </button>
+                    } @else if (s === 'paused') {
+                      <button (click)="transitionStatus(goal, 'paused')"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-yellow/15 text-ctp-yellow hover:bg-ctp-yellow/25 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        {{ t('goals.status.paused') }}
+                      </button>
+                    } @else if (s === 'abandoned') {
+                      <button (click)="transitionStatus(goal, 'abandoned')"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-overlay0/15 text-ctp-overlay0 hover:bg-ctp-overlay0/25 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636" />
+                        </svg>
+                        {{ t('goals.status.abandoned') }}
+                      </button>
+                    } @else {
+                      <button (click)="transitionStatus(goal, s)"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors">
+                        {{ t('goals.status.' + s) }}
+                      </button>
+                    }
+                  }
+                  <button (click)="confirmDelete(goal)"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-red/15 text-ctp-red hover:bg-ctp-red/25 transition-colors"
+                    [title]="t('goals.delete')">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    {{ t('goals.delete') }}
+                  </button>
+                </div>
+                <div class="flex gap-2 ml-auto">
+                  <button (click)="openCreateTaskForGoal()"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-green/15 text-ctp-green hover:bg-ctp-green/25 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                    {{ t('goals.createTaskBtn') }}
+                  </button>
+                  <button (click)="executeWorkItem()"
+                    [disabled]="executeLoading()"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-peach/15 text-ctp-peach hover:bg-ctp-peach/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    @if (executeLoading()) {
+                      <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                      </svg>
+                    } @else {
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    }
+                    {{ t('goals.executeBtn') }}
+                  </button>
+                  <button (click)="planExecuteWorkItem()"
+                    [disabled]="planExecuteLoading()"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-mauve/15 text-ctp-mauve hover:bg-ctp-mauve/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    @if (planExecuteLoading()) {
+                      <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                      </svg>
+                    } @else {
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                    }
+                    {{ t('goals.planExecuteBtn') }}
+                  </button>
+                </div>
               </div>
 
               <!-- Actions row -->
               <div class="flex items-center gap-2 mb-3 flex-wrap">
-                <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
-                  {{ t('goals.status.' + goal.status) }}
-                </span>
-                <select [(ngModel)]="formWorkType" (change)="saveInlineField()"
-                  class="text-xs rounded-lg px-2 py-1 border border-border bg-surface text-text-primary
-                         focus:outline-none focus:ring-1 focus:ring-accent">
-                  @for (gt of goalTypes; track gt) {
-                    <option [value]="gt">{{ t('goals.type.' + gt) }}</option>
-                  }
-                </select>
+                @if (goal.status !== 'active') {
+                  <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
+                    {{ t('goals.status.' + goal.status) }}
+                  </span>
+                }
                 <div class="flex items-center gap-1">
                   <span class="text-xs text-text-secondary">{{ t('goals.fieldPriority') }}</span>
                   <input type="number" [(ngModel)]="formPriority" (blur)="saveInlineField()"
@@ -288,33 +400,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                     class="rounded border-border text-accent focus:ring-accent" />
                   {{ t('goals.autoStatus') }}
                 </label>
-                <div class="flex gap-2 ml-auto">
-                  <button (click)="confirmDelete(goal)" class="p-1.5 text-text-secondary hover:text-ctp-red rounded" [title]="t('goals.delete')">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                      <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                </div>
               </div>
-
-              <!-- Status transitions -->
-              @if (availableTransitions().length > 0) {
-                <div class="flex flex-wrap gap-2 mb-4">
-                  @for (s of availableTransitions(); track s) {
-                    <button (click)="transitionStatus(goal, s)"
-                      class="px-3 py-1 text-xs rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 transition-colors">
-                      {{ t('goals.transitionTo') }} {{ t('goals.status.' + s) }}
-                    </button>
-                  }
-                  @if (goal.status !== 'active') {
-                    <button (click)="activateWork(goal)"
-                      [disabled]="activatingWork()"
-                      class="px-3 py-1 text-xs rounded-lg bg-ctp-green/15 text-ctp-green hover:bg-ctp-green/25 transition-colors disabled:opacity-50">
-                      {{ activatingWork() ? t('common.loading') : t('goals.activate') }}
-                    </button>
-                  }
-                </div>
-              }
 
               <!-- Progress -->
               @if (progressMap().get(goal.id); as prog) {
@@ -364,7 +450,9 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                           [class.border-l-ctp-yellow]="child.status === 'paused'"
                           [class.opacity-60]="child.status === 'achieved'">
                           <span class="text-text-primary">{{ child.title }}</span>
-                          <span class="px-1.5 py-0.5 rounded-full text-xs {{ statusColor(child.status) }}">{{ t('goals.status.' + child.status) }}</span>
+                          @if (child.status !== 'active') {
+                            <span class="px-1.5 py-0.5 rounded-full text-xs {{ statusColor(child.status) }}">{{ t('goals.status.' + child.status) }}</span>
+                          }
                         </button>
                       }
                     </div>
@@ -516,48 +604,11 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               <div class="pt-3 border-t border-border mb-3">
                 <div class="flex items-center justify-between mb-2">
                   <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider">{{ t('goals.linkedTasks') }}</h3>
-                  <div class="flex gap-2">
-                    <button (click)="planTasksForGoal()"
-                      [disabled]="planLoading()"
-                      class="px-3 py-1.5 text-xs bg-ctp-mauve text-bg rounded hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
-                      @if (planLoading()) {
-                        <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                        </svg>
-                        {{ planStatusMessage() || t('goals.planLoading') }}
-                      } @else {
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                          <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                        </svg>
-                        {{ t('goals.planTasksBtn') }}
-                      }
+                  @if (statsMap().get(selected()!.id)?.backlog_count) {
+                    <button (click)="startAllBacklogTasks()" class="px-3 py-1.5 text-xs bg-ctp-blue text-bg rounded hover:opacity-90">
+                      {{ t('goals.startAllBtn') }}
                     </button>
-                    <button (click)="executeWorkItem()"
-                      [disabled]="executeLoading()"
-                      class="px-3 py-1.5 text-xs bg-ctp-peach text-bg rounded hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
-                      @if (executeLoading()) {
-                        <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                        </svg>
-                      } @else {
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      }
-                      {{ t('goals.executeBtn') }}
-                    </button>
-                    <button (click)="openCreateTaskForGoal()" class="px-3 py-1.5 text-xs bg-ctp-green text-bg rounded hover:opacity-90">
-                      {{ t('goals.createTaskBtn') }}
-                    </button>
-                    @if (statsMap().get(selected()!.id)?.backlog_count) {
-                      <button (click)="startAllBacklogTasks()" class="px-3 py-1.5 text-xs bg-ctp-blue text-bg rounded hover:opacity-90">
-                        {{ t('goals.startAllBtn') }}
-                      </button>
-                    }
-                  </div>
+                  }
                 </div>
                 @if (linkedTasksLoading()) {
                   <p class="text-xs text-text-secondary">{{ t('common.loading') }}</p>
@@ -689,6 +740,21 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
           </div>
         }
 
+        <!-- Section: Queued Work (ready / processing) -->
+        @if (queuedGoals().length > 0) {
+          <div class="mb-6">
+            <h2 class="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-2 flex items-center gap-2">
+              {{ t('work.queuedGoals') }}
+              <span class="text-xs font-normal">({{ queuedGoals().length }})</span>
+            </h2>
+            <div class="space-y-2">
+              @for (g of queuedGoals(); track g.id) {
+                <ng-container *ngTemplateOutlet="goalItem; context: { $implicit: g }"></ng-container>
+              }
+            </div>
+          </div>
+        }
+
         <!-- Section: Active Tasks (unlinked) -->
         @if (activeUnlinkedTasks().length > 0) {
           <div class="mb-6">
@@ -784,20 +850,22 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
           </div>
         }
 
-        <!-- Section: Completed (achieved goals + done unlinked tasks) — collapsed by default -->
-        @if (achievedGoals().length > 0 || doneUnlinkedTasks().length > 0) {
-          <div class="mb-6">
-            <button (click)="toggleSection('completed')"
-              class="w-full flex items-center gap-2 mb-2 py-1.5 text-sm font-semibold text-text-secondary uppercase tracking-wider hover:text-text-primary transition-colors">
-              <svg class="w-4 h-4 shrink-0 transition-transform duration-200"
-                [class.rotate-90]="!collapsedSections().has('completed')"
-                fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-              {{ t('work.completed') }}
-              <span class="text-xs font-normal">({{ achievedGoals().length + doneUnlinkedTasks().length }})</span>
-            </button>
-            @if (!collapsedSections().has('completed')) {
+        <!-- Section: Completed (achieved goals + done unlinked tasks) — lazy loaded -->
+        <div class="mb-6">
+          <button (click)="toggleSection('completed')"
+            class="w-full flex items-center gap-2 mb-2 py-1.5 text-sm font-semibold text-text-secondary uppercase tracking-wider hover:text-text-primary transition-colors">
+            <svg class="w-4 h-4 shrink-0 transition-transform duration-200"
+              [class.rotate-90]="!collapsedSections().has('completed')"
+              fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+            {{ t('work.completed') }}
+            <span class="text-xs font-normal">({{ achievedCount() }})</span>
+          </button>
+          @if (!collapsedSections().has('completed')) {
+            @if (achievedLoading()) {
+              <p class="text-text-secondary text-sm ml-6">{{ t('common.loading') }}</p>
+            } @else {
               @if (achievedGoals().length > 0) {
                 <div class="space-y-2 mb-4">
                   @for (g of achievedGoals(); track g.id) {
@@ -840,24 +908,29 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   (detailPlaybookChange)="onUnlinkedTaskPlaybookChange($event)"
                   (detailPlaybookStepChange)="onUnlinkedTaskPlaybookStepChange($event)" />
               }
+              @if (achievedGoals().length === 0 && doneUnlinkedTasks().length === 0) {
+                <p class="text-text-secondary text-sm ml-6">{{ t('common.empty') }}</p>
+              }
             }
-          </div>
-        }
+          }
+        </div>
 
-        <!-- Section: Archived (paused/abandoned goals + cancelled unlinked tasks) — collapsed by default -->
-        @if (archivedGoals().length > 0 || cancelledUnlinkedTasks().length > 0) {
-          <div class="mb-6">
-            <button (click)="toggleSection('archived')"
-              class="w-full flex items-center gap-2 mb-2 py-1.5 text-sm font-semibold text-text-secondary uppercase tracking-wider hover:text-text-primary transition-colors">
-              <svg class="w-4 h-4 shrink-0 transition-transform duration-200"
-                [class.rotate-90]="!collapsedSections().has('archived')"
-                fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-              </svg>
-              {{ t('work.archived') }}
-              <span class="text-xs font-normal">({{ archivedGoals().length + cancelledUnlinkedTasks().length }})</span>
-            </button>
-            @if (!collapsedSections().has('archived')) {
+        <!-- Section: Archived (paused/abandoned goals + cancelled unlinked tasks) — lazy loaded -->
+        <div class="mb-6">
+          <button (click)="toggleSection('archived')"
+            class="w-full flex items-center gap-2 mb-2 py-1.5 text-sm font-semibold text-text-secondary uppercase tracking-wider hover:text-text-primary transition-colors">
+            <svg class="w-4 h-4 shrink-0 transition-transform duration-200"
+              [class.rotate-90]="!collapsedSections().has('archived')"
+              fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+            {{ t('work.archived') }}
+            <span class="text-xs font-normal">({{ archivedCount() }})</span>
+          </button>
+          @if (!collapsedSections().has('archived')) {
+            @if (archivedLoading()) {
+              <p class="text-text-secondary text-sm ml-6">{{ t('common.loading') }}</p>
+            } @else {
               @if (archivedGoals().length > 0) {
                 <div class="space-y-2 mb-4">
                   @for (g of archivedGoals(); track g.id) {
@@ -900,14 +973,16 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   (detailPlaybookChange)="onUnlinkedTaskPlaybookChange($event)"
                   (detailPlaybookStepChange)="onUnlinkedTaskPlaybookStepChange($event)" />
               }
+              @if (archivedGoals().length === 0 && cancelledUnlinkedTasks().length === 0) {
+                <p class="text-text-secondary text-sm ml-6">{{ t('common.empty') }}</p>
+              }
             }
-          </div>
-        }
+          }
+        </div>
 
         <!-- Empty state -->
-        @if (activeGoals().length === 0 && achievedGoals().length === 0 && archivedGoals().length === 0
-             && activeUnlinkedTasks().length === 0 && backlogUnlinkedTasks().length === 0
-             && doneUnlinkedTasks().length === 0 && cancelledUnlinkedTasks().length === 0) {
+        @if (activeGoals().length === 0 && queuedGoals().length === 0
+             && activeUnlinkedTasks().length === 0 && backlogUnlinkedTasks().length === 0) {
           <p class="text-text-secondary text-sm">{{ t('common.empty') }}</p>
         }
       }
@@ -916,7 +991,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
       @if (showForm()) {
         <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]"
              role="button" tabindex="0" aria-label="Close modal"
-             (click)="closeForm()" (keydown.enter)="closeForm()">
+             (click)="closeForm()" (keydown.enter)="closeForm()" (keydown.escape)="closeForm()">
           <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
                tabindex="-1" (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()">
             <h2 class="text-lg font-semibold text-text-primary mb-4">
@@ -969,241 +1044,44 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                 @if (!editing()) {
                   <button (click)="submitFormAndExecute()"
                     [disabled]="createAndExecuteLoading()"
-                    class="px-4 py-2 bg-ctp-peach text-bg rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-peach/15 text-ctp-peach hover:bg-ctp-peach/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                     @if (createAndExecuteLoading()) {
-                      <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                      </svg>
+                    } @else {
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     }
                     {{ t('goals.createAndExecute') }}
                   </button>
-                }
-                <button (click)="submitForm()" class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90">
-                  {{ editing() ? t('goals.save') : t('goals.create') }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      }
-
-      <!-- Task Picker modal -->
-      @if (showTaskPicker()) {
-        <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]"
-             role="button" tabindex="0" aria-label="Close task picker"
-             (click)="closeTaskPicker()" (keydown.enter)="closeTaskPicker()">
-          <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-2xl max-h-[90vh] flex flex-col"
-               tabindex="-1" (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()">
-            <div class="flex items-center justify-between mb-4">
-              <h2 class="text-lg font-semibold text-text-primary">{{ t('goals.pickTasks') }}</h2>
-              <button (click)="closeTaskPicker()" class="p-1.5 text-text-secondary hover:text-text-primary rounded">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <!-- Picker filters -->
-            <div class="flex flex-wrap gap-2 mb-3">
-              <input
-                type="text"
-                [placeholder]="t('goals.pickerSearchPlaceholder')"
-                [(ngModel)]="pickerSearch"
-                (ngModelChange)="loadPickerTasks()"
-                class="flex-1 min-w-[150px] bg-surface text-text-primary text-xs rounded-lg px-3 py-2 border border-border
-                       focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary" />
-              <select
-                [(ngModel)]="pickerStateFilter"
-                (ngModelChange)="loadPickerTasks()"
-                class="bg-surface text-text-primary text-xs rounded-lg px-3 py-2 border border-border
-                       focus:outline-none focus:ring-1 focus:ring-accent">
-                <option value="">{{ t('tasks.allStates') }}</option>
-                @for (s of taskStates; track s) {
-                  <option [value]="s">{{ s }}</option>
-                }
-              </select>
-              <label class="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
-                <input type="checkbox" [(ngModel)]="pickerUnlinkedOnly" (ngModelChange)="loadPickerTasks()"
-                  class="rounded border-border text-accent focus:ring-accent" />
-                {{ t('goals.unlinkedOnly') }}
-              </label>
-            </div>
-
-            <!-- Task list -->
-            <div class="flex-1 overflow-y-auto min-h-0 mb-3 border border-border rounded-lg">
-              @if (pickerLoading()) {
-                <p class="text-xs text-text-secondary p-3">{{ t('common.loading') }}</p>
-              } @else if (pickerTasks().length === 0) {
-                <p class="text-xs text-text-secondary p-3">{{ t('common.empty') }}</p>
-              } @else {
-                <div class="divide-y divide-border">
-                  @for (task of pickerTasks(); track task.id) {
-                    <label class="flex items-center gap-3 p-2.5 hover:bg-surface-hover cursor-pointer transition-colors">
-                      <input type="checkbox"
-                        [checked]="pickerSelectedIds().has(task.id)"
-                        (change)="togglePickerTask(task.id)"
-                        class="rounded border-border text-accent focus:ring-accent shrink-0" />
-                      <div class="flex-1 min-w-0">
-                        <span class="text-sm text-text-primary block truncate">{{ task.title }}</span>
-                        <div class="flex items-center gap-1.5 mt-0.5">
-                          <span class="px-1.5 py-0.5 rounded-full text-xs bg-ctp-blue/20 text-ctp-blue">{{ task.kind }}</span>
-                          <span class="px-1.5 py-0.5 rounded-full text-xs bg-ctp-green/20 text-ctp-green">{{ task.state }}</span>
-                          @if (task.urgent) {
-                            <span class="text-xs text-ctp-red font-medium">Urgent</span>
-                          }
-                        </div>
-                      </div>
-                    </label>
-                  }
-                </div>
-              }
-            </div>
-
-            <!-- Footer -->
-            <div class="flex items-center justify-between pt-2 border-t border-border">
-              <span class="text-xs text-text-secondary">
-                {{ pickerSelectedIds().size }} {{ t('goals.tasksSelected') }}
-              </span>
-              <div class="flex gap-2">
-                <button (click)="closeTaskPicker()" class="px-4 py-2 text-sm text-text-secondary hover:text-text-primary">
-                  {{ t('goals.cancel') }}
-                </button>
-                <button (click)="linkSelectedTasks()"
-                  [disabled]="pickerSelectedIds().size === 0"
-                  class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed">
-                  {{ t('goals.linkSelected') }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      }
-
-      <!-- Plan Preview Dialog -->
-      @if (showPlanDialog()) {
-        <div class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[70]"
-             role="button" tabindex="0" aria-label="Close plan dialog"
-             (click)="closePlanDialog()" (keydown.enter)="closePlanDialog()">
-          <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-2xl max-h-[90vh] flex flex-col"
-               tabindex="-1" (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()">
-            <div class="flex items-center justify-between mb-2">
-              <h2 class="text-lg font-semibold text-text-primary">{{ t('goals.planDialogTitle') }}</h2>
-              <button (click)="closePlanDialog()" class="p-1.5 text-text-secondary hover:text-text-primary rounded">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <p class="text-sm text-text-secondary mb-4">{{ t('goals.planDialogDesc') }}</p>
-
-            @if (planSuccessCriteria().length > 0) {
-              <div class="mb-4 bg-ctp-green/5 border border-ctp-green/20 rounded-lg p-3">
-                <h3 class="text-xs font-semibold text-ctp-green uppercase tracking-wider mb-2">{{ t('goals.planGeneratedCriteria') }}</h3>
-                <ul class="space-y-1">
-                  @for (criterion of planSuccessCriteria(); track $index) {
-                    <li class="flex items-start gap-1.5 text-xs text-text-primary">
-                      <span class="text-ctp-green mt-0.5 shrink-0">&#10003;</span>
-                      <span>{{ criterion }}</span>
-                    </li>
-                  }
-                </ul>
-              </div>
-            }
-
-            @if (plannedTasks().length === 0) {
-              <p class="text-sm text-text-secondary py-8 text-center">{{ t('goals.planEmpty') }}</p>
-            } @else {
-              <div class="flex-1 overflow-y-auto min-h-0 mb-4 space-y-3">
-                @for (task of plannedTasks(); track $index) {
-                  <div class="bg-surface border border-border rounded-lg p-3">
-                    <div class="flex items-center gap-2 mb-2">
-                      <input type="text" [(ngModel)]="task.title"
-                        class="flex-1 bg-bg text-text-primary text-sm font-medium rounded px-2 py-1.5 border border-border
-                               focus:outline-none focus:ring-1 focus:ring-accent" />
-                      <span class="px-2 py-0.5 rounded-full text-xs font-medium shrink-0"
-                        [class]="planKindColor(task.kind)">
-                        {{ task.kind }}
-                      </span>
-                      <button (click)="togglePlanTaskExpanded($index)"
-                        class="p-1 text-text-secondary hover:text-text-primary rounded shrink-0"
-                        [title]="planExpandedTasks().has($index) ? 'Collapse' : 'Expand'">
-                        <svg class="w-4 h-4 transition-transform duration-200"
-                          [class.rotate-90]="planExpandedTasks().has($index)"
-                          fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-                        </svg>
-                      </button>
-                      <button (click)="removePlannedTask($index)"
-                        class="p-1 text-text-secondary hover:text-ctp-red rounded shrink-0"
-                        [title]="t('goals.planRemoveTask')">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                          <path d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                    @if (planExpandedTasks().has($index)) {
-                      <div class="mt-2 space-y-2">
-                        <div>
-                          <span class="text-xs font-semibold text-text-secondary uppercase tracking-wider block">{{ t('goals.planTaskSpec') }}</span>
-                          <textarea [(ngModel)]="task.spec" rows="4"
-                            class="w-full mt-1 bg-bg text-text-primary text-xs rounded px-2 py-1.5 border border-border
-                                   focus:outline-none focus:ring-1 focus:ring-accent resize-y"></textarea>
-                        </div>
-                        @if (task.depends_on && task.depends_on.length > 0) {
-                          <div>
-                            <span class="text-xs font-semibold text-text-secondary uppercase tracking-wider block">{{ t('goals.planDependsOn') }}</span>
-                            <div class="mt-1 flex flex-wrap gap-1">
-                              @for (depIdx of task.depends_on; track depIdx) {
-                                @if (plannedTasks()[depIdx]) {
-                                  <span class="px-1.5 py-0.5 bg-ctp-overlay0/20 text-text-secondary text-xs rounded">
-                                    {{ depIdx + 1 }}. {{ plannedTasks()[depIdx].title | slice:0:40 }}
-                                  </span>
-                                }
-                              }
-                            </div>
-                          </div>
-                        }
-                        @if (task.acceptance_criteria && task.acceptance_criteria.length > 0) {
-                          <div>
-                            <span class="text-xs font-semibold text-text-secondary uppercase tracking-wider block">{{ t('goals.planTaskCriteria') }}</span>
-                            <ul class="mt-1 space-y-1">
-                              @for (criterion of task.acceptance_criteria; track $index) {
-                                <li class="flex items-start gap-1.5 text-xs text-text-primary">
-                                  <span class="text-ctp-green mt-0.5 shrink-0">✓</span>
-                                  <span>{{ criterion }}</span>
-                                </li>
-                              }
-                            </ul>
-                          </div>
-                        }
-                      </div>
+                  <button (click)="submitFormAndPlanExecute()"
+                    [disabled]="createAndPlanExecuteLoading()"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-mauve/15 text-ctp-mauve hover:bg-ctp-mauve/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    @if (createAndPlanExecuteLoading()) {
+                      <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                      </svg>
+                    } @else {
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
                     }
-                  </div>
+                    {{ t('goals.createAndPlanExecute') }}
+                  </button>
                 }
-              </div>
-            }
-
-            <!-- Footer -->
-            <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
-              <button (click)="closePlanDialog()" class="px-4 py-2 text-sm text-text-secondary hover:text-text-primary">
-                {{ t('goals.planCancel') }}
-              </button>
-              @if (plannedTasks().length > 0) {
-                <button (click)="confirmPlan()"
-                  [disabled]="planCreating()"
-                  class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
-                  @if (planCreating()) {
-                    <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                    </svg>
-                    {{ t('goals.planCreating') }}
-                  } @else {
-                    {{ t('goals.planCreateBtn', { count: plannedTasks().length }) }}
-                  }
+                <button (click)="submitForm()"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-accent/15 text-accent hover:bg-accent/25 transition-colors">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  {{ t('goals.save') }}
                 </button>
-              }
+              </div>
             </div>
           </div>
         </div>
@@ -1220,6 +1098,8 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
   `,
 })
 export class WorkPage {
+  private static readonly GOAL_DETAIL_CONCURRENCY = 6;
+
   private api = inject(WorkApiService);
   private tasksApi = inject(TasksApiService);
   private verificationsApi = inject(VerificationsApiService);
@@ -1230,25 +1110,25 @@ export class WorkPage {
   private destroyRef = inject(DestroyRef);
   private cdr = inject(ChangeDetectorRef);
   private platformId = inject(PLATFORM_ID);
+  private route = inject(ActivatedRoute);
 
   /** True on touch-primary devices — disables CDK drag to preserve mobile scrolling. */
   isTouch = signal(false);
 
-  readonly statuses = STATUSES;
   readonly goalTypes = GOAL_TYPES;
-  readonly taskStates = TASK_STATES;
 
   items = signal<SpWork[]>([]);
   loading = signal(false);
   selected = signal<SpWork | null>(null);
   searchQuery = signal('');
-  selectedStatus = '';
   selectedWorkType = '';
   progressMap = signal<Map<string, SpWorkProgress>>(new Map());
   statsMap = signal<Map<string, SpWorkStats>>(new Map());
   childrenMap = signal<Map<string, SpWork[]>>(new Map());
   conflictMap = signal<Map<string, string[]>>(new Map());
+  unmergedMap = signal<Map<string, string[]>>(new Map());
 
+  editingHeaderTitleId = signal<string | null>(null);
   showForm = signal(false);
   editing = signal<SpWork | null>(null);
   formTitle = '';
@@ -1276,6 +1156,21 @@ export class WorkPage {
   // Activate
   activatingWork = signal(false);
 
+  // Status counts (lightweight, loaded on every refresh)
+  statusCounts = signal<Record<string, number>>({});
+  achievedCount = computed(() => (this.statusCounts()['achieved'] ?? 0) + this.doneUnlinkedTasks().length);
+  archivedCount = computed(() =>
+    (this.statusCounts()['paused'] ?? 0) + (this.statusCounts()['abandoned'] ?? 0) + this.cancelledUnlinkedTasks().length,
+  );
+
+  // Lazy-loaded completed & archived work items
+  achievedItems = signal<SpWork[]>([]);
+  achievedLoaded = signal(false);
+  achievedLoading = signal(false);
+  archivedItems = signal<SpWork[]>([]);
+  archivedLoaded = signal(false);
+  archivedLoading = signal(false);
+
   // Section collapse state
   collapsedSections = signal<Set<string>>(new Set(['completed', 'archived']));
 
@@ -1284,25 +1179,6 @@ export class WorkPage {
 
   // Marked tasks (per-goal, stored in localStorage)
   markedTaskIds = signal<Set<string>>(new Set());
-
-  // Task picker
-  showTaskPicker = signal(false);
-  pickerTasks = signal<SpTask[]>([]);
-  pickerLoading = signal(false);
-  pickerSelectedIds = signal<Set<string>>(new Set());
-  pickerSearch = '';
-  pickerStateFilter = '';
-  pickerUnlinkedOnly = true;
-
-  // Plan tasks
-  planLoading = signal(false);
-  planStatusMessage = signal('');
-  plannedTasks = signal<PlannedTask[]>([]);
-  planSuccessCriteria = signal<string[]>([]);
-  showPlanDialog = signal(false);
-  planCreating = signal(false);
-  planExpandedTasks = signal<Set<number>>(new Set());
-  planWorkId = signal<string | null>(null);
 
   // Task detail data (shared between linked and unlinked task expansion)
   selectedLinkedTask = signal<SpTask | null>(null);
@@ -1320,8 +1196,13 @@ export class WorkPage {
   taskDetailResolving = signal(false);
   goalPlaybooks = signal<SpPlaybook[]>([]);
   executeLoading = signal(false);
+  planExecuteLoading = signal(false);
   createAndExecuteLoading = signal(false);
+  createAndPlanExecuteLoading = signal(false);
   editingTask = signal<SpTask | null>(null);
+
+  // Project settings
+  showRelease = computed(() => (this.ctx.project()?.metadata?.['show_release'] as boolean) ?? false);
 
   // Git status
   mainStatus = signal<MainPushStatus | null>(null);
@@ -1333,6 +1214,9 @@ export class WorkPage {
   private detailPollSub?: Subscription;
   private gitSub?: Subscription;
 
+  // Deep-link support: pending workId from query param
+  private pendingWorkId: string | null = null;
+
   // --- Computed: goal sections ---
 
   private filteredGoals = computed(() => {
@@ -1343,12 +1227,20 @@ export class WorkPage {
   });
 
   activeGoals = computed(() => this.filteredGoals().filter(g => g.status === 'active'));
-  achievedGoals = computed(() =>
-    this.filteredGoals()
-      .filter(g => g.status === 'achieved')
-      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
-  );
-  archivedGoals = computed(() => this.filteredGoals().filter(g => g.status === 'paused' || g.status === 'abandoned'));
+  queuedGoals = computed(() => this.filteredGoals().filter(g => g.status === 'ready' || g.status === 'processing'));
+  achievedGoals = computed(() => {
+    const q = this.searchQuery().toLowerCase().trim();
+    const items = q
+      ? this.achievedItems().filter(g => g.title.toLowerCase().includes(q) || g.description.toLowerCase().includes(q))
+      : this.achievedItems();
+    return [...items].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+  });
+  archivedGoals = computed(() => {
+    const q = this.searchQuery().toLowerCase().trim();
+    return q
+      ? this.archivedItems().filter(g => g.title.toLowerCase().includes(q) || g.description.toLowerCase().includes(q))
+      : this.archivedItems();
+  });
 
   // --- Computed: unlinked task sections ---
 
@@ -1366,7 +1258,7 @@ export class WorkPage {
   availableTransitions = computed(() => {
     const sel = this.selected();
     if (!sel || sel.auto_status) return [];
-    return STATUSES.filter(s => s !== sel.status);
+    return MANUAL_STATUSES.filter(s => s !== sel.status);
   });
 
   private static readonly NON_WORKING_STATES = new Set(['backlog', 'ready', 'done', 'cancelled']);
@@ -1396,6 +1288,13 @@ export class WorkPage {
     if (isPlatformBrowser(this.platformId)) {
       this.isTouch.set(window.matchMedia('(pointer: coarse)').matches);
     }
+    // Read deep-link query param once on init
+    this.pendingWorkId = this.route.snapshot.queryParamMap.get('workId');
+    this.playbooksApi.list()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (pbs) => this.goalPlaybooks.set(pbs),
+      });
     effect(() => {
       this.ctx.projectId();
       this.selected.set(null);
@@ -1403,9 +1302,6 @@ export class WorkPage {
       this.selectedUnlinkedTask.set(null);
       this.loadGoals();
       this.loadUnlinkedTasks();
-      this.playbooksApi.list().subscribe({
-        next: (pbs) => this.goalPlaybooks.set(pbs),
-      });
       this.startGitPolling();
     });
   }
@@ -1447,10 +1343,13 @@ export class WorkPage {
     });
   }
 
-  onReleaseProject(): void {
-    if (!confirm('Create a new release? This will squash-merge dev → main, create a version tag, and push to all remotes.')) return;
+  onReleaseProject(env: 'staging' | 'production'): void {
+    const msg = env === 'production'
+      ? 'Production release? This will squash-merge dev → main, generate a changelog, create a version tag, and push to all remotes.'
+      : 'Staging release? This will squash-merge dev → main and push to all remotes.';
+    if (!confirm(msg)) return;
     this.releasing.set(true);
-    this.git.release().subscribe({
+    this.git.release({ release_env: env }).subscribe({
       next: (res) => {
         this.releasing.set(false);
         alert(res.message);
@@ -1605,6 +1504,13 @@ export class WorkPage {
     const current = new Set(this.collapsedSections());
     if (current.has(section)) {
       current.delete(section);
+      // Lazy-load on first expand
+      if (section === 'completed' && !this.achievedLoaded()) {
+        this.loadAchievedGoals();
+      }
+      if (section === 'archived' && !this.archivedLoaded()) {
+        this.loadArchivedGoals();
+      }
     } else {
       current.add(section);
     }
@@ -1657,9 +1563,10 @@ export class WorkPage {
 
   loadGoals(): void {
     this.loading.set(true);
-    const status = this.selectedStatus as WorkStatus | '';
     const goalType = this.selectedWorkType as WorkType | '';
-    this.api.list(status || undefined, goalType || undefined).subscribe({
+    // Exclude completed/archived statuses from the main load — they are lazy-loaded on expand
+    const statusNot = 'achieved,paused,abandoned';
+    this.api.list({ statusNot, workType: goalType || undefined }).subscribe({
       next: (items) => {
         this.items.set(items);
         this.loading.set(false);
@@ -1668,104 +1575,169 @@ export class WorkPage {
           this.selected.set(still ?? null);
         }
         this.loadAllProgress(items);
+        // Handle deep-link query param after items load
+        if (this.pendingWorkId) {
+          this.handleDeepLink(items);
+        }
       },
       error: () => this.loading.set(false),
+    });
+    // Fetch status counts for section headers
+    this.api.statusCounts().subscribe({
+      next: (counts) => this.statusCounts.set(counts),
+    });
+    // Reset lazy-loaded sections so they re-fetch on next expand
+    this.achievedLoaded.set(false);
+    this.achievedItems.set([]);
+    this.archivedLoaded.set(false);
+    this.archivedItems.set([]);
+    // If sections are already expanded, reload them
+    if (!this.collapsedSections().has('completed')) {
+      this.loadAchievedGoals();
+    }
+    if (!this.collapsedSections().has('archived')) {
+      this.loadArchivedGoals();
+    }
+  }
+
+  private loadAchievedGoals(): void {
+    this.achievedLoading.set(true);
+    const goalType = this.selectedWorkType as WorkType | '';
+    this.api.list({ status: 'achieved', workType: goalType || undefined }).subscribe({
+      next: (items) => {
+        this.achievedItems.set(items);
+        this.achievedLoaded.set(true);
+        this.achievedLoading.set(false);
+        if (this.selected()) {
+          const still = items.find(i => i.id === this.selected()!.id);
+          if (still) this.selected.set(still);
+        }
+        this.loadAllProgress(items);
+      },
+      error: () => this.achievedLoading.set(false),
+    });
+  }
+
+  private loadArchivedGoals(): void {
+    this.archivedLoading.set(true);
+    const goalType = this.selectedWorkType as WorkType | '';
+    this.api.list({ statusNot: 'active,ready,processing,achieved', workType: goalType || undefined }).subscribe({
+      next: (items) => {
+        this.archivedItems.set(items);
+        this.archivedLoaded.set(true);
+        this.archivedLoading.set(false);
+        if (this.selected()) {
+          const still = items.find(i => i.id === this.selected()!.id);
+          if (still) this.selected.set(still);
+        }
+      },
+      error: () => this.archivedLoading.set(false),
     });
   }
 
   private loadAllProgress(goals: SpWork[]): void {
-    const map = new Map<string, SpWorkProgress>();
-    let remaining = goals.length;
-    if (remaining === 0) {
-      this.progressMap.set(map);
+    if (goals.length === 0) {
+      this.progressMap.set(new Map());
+      this.loadAllStats(goals);
       return;
     }
-    for (const goal of goals) {
-      this.api.progress(goal.id).subscribe({
-        next: (prog) => {
-          map.set(goal.id, prog);
-          remaining--;
-          if (remaining === 0) this.progressMap.set(new Map(map));
-        },
-        error: () => {
-          remaining--;
-          if (remaining === 0) this.progressMap.set(new Map(map));
-        },
-      });
-    }
+
+    from(goals).pipe(
+      mergeMap(
+        goal => this.api.progress(goal.id).pipe(
+          map(prog => [goal.id, prog] as const),
+          catchError(() => of(null)),
+        ),
+        WorkPage.GOAL_DETAIL_CONCURRENCY,
+      ),
+      toArray(),
+    ).subscribe({
+      next: entries => {
+        const map = new Map<string, SpWorkProgress>();
+        for (const entry of entries) {
+          if (!entry) continue;
+          map.set(entry[0], entry[1]);
+        }
+        this.progressMap.set(map);
+      },
+    });
     this.loadAllStats(goals);
   }
 
   private loadAllStats(goals: SpWork[]): void {
-    const map = new Map<string, SpWorkStats>(this.statsMap());
-    let remaining = goals.length;
-    if (remaining === 0) return;
-    for (const goal of goals) {
-      this.api.stats(goal.id).subscribe({
-        next: (stats) => {
-          map.set(goal.id, stats);
-          remaining--;
-          if (remaining === 0) this.statsMap.set(new Map(map));
-        },
-        error: () => {
-          remaining--;
-          if (remaining === 0) this.statsMap.set(new Map(map));
-        },
-      });
-    }
+    if (goals.length === 0) return;
+
+    from(goals).pipe(
+      mergeMap(
+        goal => this.api.stats(goal.id).pipe(
+          map(stats => [goal.id, stats] as const),
+          catchError(() => of(null)),
+        ),
+        WorkPage.GOAL_DETAIL_CONCURRENCY,
+      ),
+      toArray(),
+    ).subscribe({
+      next: entries => {
+        const map = new Map<string, SpWorkStats>(this.statsMap());
+        for (const entry of entries) {
+          if (!entry) continue;
+          map.set(entry[0], entry[1]);
+        }
+        this.statsMap.set(map);
+      },
+    });
     this.loadConflictStatuses(goals);
   }
 
   private loadConflictStatuses(goals: SpWork[]): void {
-    const relevantGoals = goals.filter(g => g.status === 'active' || g.status === 'paused');
+    const relevantGoals = goals.filter(g => g.status !== 'achieved' && g.status !== 'abandoned');
     if (relevantGoals.length === 0) {
       this.conflictMap.set(new Map());
+      this.unmergedMap.set(new Map());
       return;
     }
 
-    const newConflictMap = new Map<string, string[]>();
-    let goalsRemaining = relevantGoals.length;
-
-    for (const goal of relevantGoals) {
+    // For each relevant goal: fetch linked tasks, then check branch status for each
+    const goal$ = relevantGoals.map(goal =>
       this.api.listTasks(goal.id, { limit: 100 }).pipe(
         catchError(() => of([] as SpTask[])),
-      ).subscribe({
-        next: (tasks) => {
+        switchMap(tasks => {
           const activeTasks = tasks.filter(t =>
-            t.state !== 'done' && t.state !== 'cancelled' && t.state !== 'backlog'
+            t.state !== 'cancelled'
           );
-
           if (activeTasks.length === 0) {
-            goalsRemaining--;
-            if (goalsRemaining === 0) this.conflictMap.set(new Map(newConflictMap));
-            return;
+            return of({ goalId: goal.id, conflicts: [] as string[], unmerged: [] as string[] });
           }
-
-          let taskRemaining = activeTasks.length;
-          const conflicts: string[] = [];
-
-          for (const task of activeTasks) {
-            this.git.taskBranchStatus(task.id).pipe(
+          // Use project-scoped variant to avoid EMPTY when localStorage projectId is missing
+          const branchChecks$ = activeTasks.map(task =>
+            this.git.taskBranchStatusForProject(goal.project_id, task.id).pipe(
               catchError(() => of(null as TaskBranchStatus | null)),
-            ).subscribe({
-              next: (status) => {
-                if (status?.has_conflict) {
-                  conflicts.push(task.id);
-                }
-                taskRemaining--;
-                if (taskRemaining === 0) {
-                  if (conflicts.length > 0) {
-                    newConflictMap.set(goal.id, conflicts);
-                  }
-                  goalsRemaining--;
-                  if (goalsRemaining === 0) this.conflictMap.set(new Map(newConflictMap));
-                }
-              },
-            });
-          }
-        },
-      });
-    }
+              map(status => ({ taskId: task.id, status })),
+            )
+          );
+          return forkJoin(branchChecks$).pipe(
+            map(results => {
+              const conflicts = results.filter(r => r.status?.has_conflict).map(r => r.taskId);
+              const unmerged = results.filter(r => r.status?.exists).map(r => r.taskId);
+              return { goalId: goal.id, conflicts, unmerged };
+            }),
+          );
+        }),
+      )
+    );
+
+    forkJoin(goal$).subscribe({
+      next: (results) => {
+        const newConflictMap = new Map<string, string[]>();
+        const newUnmergedMap = new Map<string, string[]>();
+        for (const { goalId, conflicts, unmerged } of results) {
+          if (conflicts.length > 0) newConflictMap.set(goalId, conflicts);
+          if (unmerged.length > 0) newUnmergedMap.set(goalId, unmerged);
+        }
+        this.conflictMap.set(newConflictMap);
+        this.unmergedMap.set(newUnmergedMap);
+      },
+    });
   }
 
   selectItem(goal: SpWork): void {
@@ -1785,6 +1757,46 @@ export class WorkPage {
       this.loadMarkedTasks(goal.id);
     } else {
       this.markedTaskIds.set(new Set());
+    }
+  }
+
+  /** Handle deep-link: find the work item by pendingWorkId and select + scroll to it. */
+  private handleDeepLink(loadedItems: SpWork[]): void {
+    const workId = this.pendingWorkId;
+    if (!workId) return;
+
+    const found = loadedItems.find(i => i.id === workId);
+    if (found) {
+      this.pendingWorkId = null;
+      this.selectItem(found);
+      setTimeout(() => this.scrollToWork(workId), 150);
+    } else {
+      // Item might be in achieved/archived section or a different project — fetch by ID
+      this.api.get(workId).subscribe({
+        next: (work) => {
+          if (work.project_id !== this.ctx.projectId()) {
+            // Switch project context — the effect will re-trigger loadGoals
+            this.ctx.select(work.project_id);
+          } else {
+            // Same project but in a different status section (achieved/archived)
+            this.pendingWorkId = null;
+            this.selectItem(work);
+            setTimeout(() => this.scrollToWork(workId), 150);
+          }
+        },
+        error: () => {
+          // Invalid workId — silently ignore
+          this.pendingWorkId = null;
+        },
+      });
+    }
+  }
+
+  /** Scroll the work item with the given ID into the viewport. */
+  private scrollToWork(workId: string): void {
+    const el = document.querySelector(`[data-work-id="${workId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }
 
@@ -1837,6 +1849,53 @@ export class WorkPage {
 
   clearStatsFilter(): void {
     this.statsFilter.set('');
+  }
+
+  startHeaderTitleEdit(goalId: string, event: Event): void {
+    event.stopPropagation();
+    this.editingHeaderTitleId.set(goalId);
+    // Auto-focus the input after Angular renders it
+    setTimeout(() => {
+      const input = document.querySelector(`[data-work-id="${goalId}"] input[type="text"]`) as HTMLInputElement;
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    });
+  }
+
+  saveHeaderTitle(goal: SpWork, newTitle: string): void {
+    this.editingHeaderTitleId.set(null);
+    const trimmed = newTitle.trim();
+    if (!trimmed || trimmed === goal.title) return;
+    this.api.update(goal.id, { title: trimmed }).subscribe({
+      next: () => {
+        // Also update formTitle if this is the currently selected/expanded item
+        if (this.selected()?.id === goal.id) {
+          this.formTitle = trimmed;
+        }
+        this.loadGoals();
+      },
+    });
+  }
+
+  cancelHeaderTitleEdit(event: Event): void {
+    event.preventDefault();
+    (event.target as HTMLInputElement).value = ''; // reset to prevent save
+    this.editingHeaderTitleId.set(null);
+  }
+
+  changeWorkType(goal: SpWork, newType: WorkType): void {
+    if (goal.work_type === newType) return;
+    this.api.update(goal.id, { work_type: newType }).subscribe({
+      next: () => {
+        // Also update formWorkType if this is the selected item
+        if (this.selected()?.id === goal.id) {
+          this.formWorkType = newType;
+        }
+        this.loadGoals();
+      },
+    });
   }
 
   transitionStatus(goal: SpWork, newStatus: WorkStatus): void {
@@ -1952,10 +2011,7 @@ export class WorkPage {
           context['spec'] = created.description;
         }
         if (created.success_criteria) {
-          context['acceptance_criteria'] = created.success_criteria
-            .split('\n')
-            .map((l) => l.trim())
-            .filter((l) => l.length > 0);
+          context['acceptance_criteria'] = parseCriteria(created.success_criteria);
         }
         const req: CreateTaskRequest = {
           title: created.title,
@@ -1972,6 +2028,45 @@ export class WorkPage {
       },
       error: () => {
         this.createAndExecuteLoading.set(false);
+      },
+    });
+  }
+
+  submitFormAndPlanExecute(): void {
+    const data: SpWorkCreate = {
+      title: this.formTitle,
+      description: this.formDescription,
+      success_criteria: this.formCriteria,
+      work_type: this.formWorkType,
+      priority: this.formPriority,
+      auto_status: this.formAutoStatus,
+    };
+    this.createAndPlanExecuteLoading.set(true);
+    this.api.create(data).pipe(
+      switchMap((created: SpWork) => {
+        const context: Record<string, unknown> = {};
+        if (created.description) {
+          context['spec'] = created.description;
+        }
+        if (created.success_criteria) {
+          context['acceptance_criteria'] = parseCriteria(created.success_criteria);
+        }
+        context['decompose'] = true;
+        const req: CreateTaskRequest = {
+          title: created.title,
+          work_id: created.id,
+          context,
+        };
+        return this.tasksApi.create(req);
+      }),
+    ).subscribe({
+      next: () => {
+        this.createAndPlanExecuteLoading.set(false);
+        this.closeForm();
+        this.loadGoals();
+      },
+      error: () => {
+        this.createAndPlanExecuteLoading.set(false);
       },
     });
   }
@@ -2363,10 +2458,7 @@ export class WorkPage {
       context['spec'] = sel.description;
     }
     if (sel.success_criteria) {
-      context['acceptance_criteria'] = sel.success_criteria
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0);
+      context['acceptance_criteria'] = parseCriteria(sel.success_criteria);
     }
     const req: CreateTaskRequest = {
       title: sel.title,
@@ -2386,6 +2478,36 @@ export class WorkPage {
     });
   }
 
+  planExecuteWorkItem(): void {
+    const sel = this.selected();
+    if (!sel) return;
+    this.planExecuteLoading.set(true);
+    const context: Record<string, unknown> = {};
+    if (sel.description) {
+      context['spec'] = sel.description;
+    }
+    if (sel.success_criteria) {
+      context['acceptance_criteria'] = parseCriteria(sel.success_criteria);
+    }
+    context['decompose'] = true;
+    const req: CreateTaskRequest = {
+      title: sel.title,
+      work_id: sel.id,
+      context,
+    };
+    this.tasksApi.create(req).subscribe({
+      next: () => {
+        this.planExecuteLoading.set(false);
+        this.loadLinkedTasks(sel.id);
+        this.loadAllProgress([sel]);
+        this.loadStatsAndChildren(sel.id);
+      },
+      error: () => {
+        this.planExecuteLoading.set(false);
+      },
+    });
+  }
+
   onUpdateTaskForGoal(event: { id: string; data: UpdateTaskRequest }): void {
     this.tasksApi.update(event.id, event.data).subscribe({
       next: () => {
@@ -2396,177 +2518,6 @@ export class WorkPage {
         }
       },
     });
-  }
-
-  // --- Task Picker ---
-
-  openTaskPicker(): void {
-    this.pickerSelectedIds.set(new Set());
-    this.pickerSearch = '';
-    this.pickerStateFilter = '';
-    this.pickerUnlinkedOnly = true;
-    this.showTaskPicker.set(true);
-    this.loadPickerTasks();
-  }
-
-  closeTaskPicker(): void {
-    this.showTaskPicker.set(false);
-  }
-
-  loadPickerTasks(): void {
-    this.pickerLoading.set(true);
-    this.tasksApi.list({
-      search: this.pickerSearch || undefined,
-      state: this.pickerStateFilter || undefined,
-      unlinked: this.pickerUnlinkedOnly || undefined,
-      limit: 50,
-    }).subscribe({
-      next: (res) => {
-        this.pickerTasks.set(res.data);
-        this.pickerLoading.set(false);
-      },
-      error: () => {
-        this.pickerTasks.set([]);
-        this.pickerLoading.set(false);
-      },
-    });
-  }
-
-  togglePickerTask(taskId: string): void {
-    const current = new Set(this.pickerSelectedIds());
-    if (current.has(taskId)) {
-      current.delete(taskId);
-    } else {
-      current.add(taskId);
-    }
-    this.pickerSelectedIds.set(current);
-  }
-
-  linkSelectedTasks(): void {
-    const sel = this.selected();
-    const ids = Array.from(this.pickerSelectedIds());
-    if (!sel || ids.length === 0) return;
-    this.api.bulkLinkTasks(sel.id, ids).subscribe({
-      next: () => {
-        this.closeTaskPicker();
-        this.loadLinkedTasks(sel.id);
-        this.loadAllProgress([sel]);
-        this.loadStatsAndChildren(sel.id);
-      },
-    });
-  }
-
-  // --- Plan tasks ---
-
-  planTasksForGoal(): void {
-    const sel = this.selected();
-    if (!sel) return;
-    this.planWorkId.set(sel.id);
-    this.planLoading.set(true);
-    this.planStatusMessage.set('');
-    this.api.planTasksStream(sel.id).subscribe({
-      next: (event) => {
-        if (event.type === 'status') {
-          this.planStatusMessage.set(event.message);
-        } else if (event.type === 'done') {
-          this.plannedTasks.set(event.tasks);
-          this.planSuccessCriteria.set(event.success_criteria ?? []);
-          this.planExpandedTasks.set(new Set());
-          this.showPlanDialog.set(true);
-          this.planLoading.set(false);
-          this.planStatusMessage.set('');
-        }
-      },
-      error: () => {
-        this.planLoading.set(false);
-        this.planStatusMessage.set('');
-        alert(this.planErrorMessage);
-      },
-    });
-  }
-
-  private readonly planErrorMessage = 'Failed to generate task plan. Please try again.';
-
-  closePlanDialog(): void {
-    this.showPlanDialog.set(false);
-    this.plannedTasks.set([]);
-    this.planSuccessCriteria.set([]);
-    this.planCreating.set(false);
-    this.planExpandedTasks.set(new Set());
-    this.planWorkId.set(null);
-  }
-
-  removePlannedTask(index: number): void {
-    const tasks = [...this.plannedTasks()];
-    tasks.splice(index, 1);
-    // Update depends_on indices: shift references down and remove stale ones
-    for (const task of tasks) {
-      if (!task.depends_on) continue;
-      task.depends_on = task.depends_on
-        .filter(dep => dep !== index) // remove refs to the deleted task
-        .map(dep => (dep > index ? dep - 1 : dep)); // shift indices above the removed one
-    }
-    this.plannedTasks.set(tasks);
-    // Clean up expanded state
-    const expanded = new Set<number>();
-    for (const i of this.planExpandedTasks()) {
-      if (i < index) expanded.add(i);
-      else if (i > index) expanded.add(i - 1);
-    }
-    this.planExpandedTasks.set(expanded);
-  }
-
-  togglePlanTaskExpanded(index: number): void {
-    const current = new Set(this.planExpandedTasks());
-    if (current.has(index)) {
-      current.delete(index);
-    } else {
-      current.add(index);
-    }
-    this.planExpandedTasks.set(current);
-  }
-
-  planKindColor(kind: string): string {
-    const colors: Record<string, string> = {
-      feature: 'bg-ctp-blue/20 text-ctp-blue',
-      bug: 'bg-ctp-red/20 text-ctp-red',
-      refactor: 'bg-ctp-peach/20 text-ctp-peach',
-      test: 'bg-ctp-green/20 text-ctp-green',
-      docs: 'bg-ctp-lavender/20 text-ctp-lavender',
-    };
-    return colors[kind] ?? 'bg-ctp-overlay0/20 text-ctp-overlay0';
-  }
-
-  confirmPlan(): void {
-    const sel = this.selected();
-    if (!sel) return;
-    const tasks = this.plannedTasks();
-    if (tasks.length === 0) return;
-
-    this.planCreating.set(true);
-
-    // Use the batch apply-plan endpoint which creates all tasks and
-    // dependencies atomically in a single DB transaction. This prevents
-    // race conditions where the orchestra picks up dependent tasks
-    // before their dependency edges are registered.
-    this.api.applyPlan(sel.id, tasks).subscribe({
-      next: () => {
-        this.finishPlanCreation(sel);
-      },
-      error: () => {
-        this.planCreating.set(false);
-        alert(this.planErrorMessage);
-      },
-    });
-  }
-
-  private finishPlanCreation(sel: SpWork): void {
-    this.planCreating.set(false);
-    this.closePlanDialog();
-    this.loadLinkedTasks(sel.id);
-    this.loadAllProgress([sel]);
-    this.loadStatsAndChildren(sel.id);
-    this.loadGoals();
   }
 
   // --- Marked tasks ---

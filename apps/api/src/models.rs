@@ -159,7 +159,7 @@ pub fn can_transition(current: &str, target: &str) -> bool {
 
 // ── Domain Models ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Agent {
     pub id: Uuid,
     pub name: String,
@@ -178,7 +178,7 @@ pub struct Agent {
 
 /// Response returned when registering a new agent.
 /// Includes the plaintext API key (shown only once).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct AgentRegistered {
     #[serde(flatten)]
     pub agent: Agent,
@@ -189,7 +189,7 @@ pub struct AgentRegistered {
 // ── Package ──
 
 /// A package defines the allowed domain taxonomy for a project.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Package {
     pub id: Uuid,
     pub slug: String,
@@ -207,7 +207,7 @@ pub struct Package {
 }
 
 /// Slim package representation embedded in project responses.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct PackageInfo {
     pub id: Uuid,
     pub slug: String,
@@ -224,7 +224,7 @@ impl From<Package> for PackageInfo {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreatePackage {
     pub slug: String,
     pub name: String,
@@ -237,7 +237,7 @@ pub struct CreatePackage {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdatePackage {
     /// New slug — only permitted for non-built-in packages.
     pub slug: Option<String>,
@@ -251,7 +251,7 @@ pub struct UpdatePackage {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Project {
     pub id: Uuid,
     pub name: String,
@@ -296,7 +296,7 @@ pub struct Project {
 /// fields are null (backward compatibility).
 /// - `git_root` = git repo root directory (required for all git modes)
 /// - `project_root` = subpath within git_root (monorepo only)
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct ProjectResponse {
     #[serde(flatten)]
     pub project: Project,
@@ -381,7 +381,7 @@ impl ProjectResponse {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Task {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -425,7 +425,7 @@ pub struct Task {
 }
 
 /// Task with an attached composite score, returned by the ready-tasks endpoint.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ScoredTask {
     #[serde(flatten)]
     pub task: Task,
@@ -437,7 +437,7 @@ pub struct ScoredTask {
 }
 
 /// Lightweight decision summary embedded in task responses.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct DecisionSummary {
     pub id: Uuid,
     pub title: String,
@@ -447,7 +447,7 @@ pub struct DecisionSummary {
 }
 
 /// Task response enriched with optional originating-decision summary.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct TaskWithDecision {
     #[serde(flatten)]
     pub task: Task,
@@ -455,7 +455,7 @@ pub struct TaskWithDecision {
 }
 
 /// Task summary used in decision detail lists (avoids circular nesting).
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct TaskSummaryForDecision {
     pub id: Uuid,
     pub number: i64,
@@ -466,14 +466,14 @@ pub struct TaskSummaryForDecision {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct TaskDependency {
     pub task_id: Uuid,
     pub depends_on: Uuid,
 }
 
 /// Enriched dependency with title and state of the referenced task.
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct TaskDependencyInfo {
     pub task_id: Uuid,
     pub depends_on: Uuid,
@@ -481,13 +481,13 @@ pub struct TaskDependencyInfo {
     pub state: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct TaskDependencies {
     pub depends_on: Vec<TaskDependencyInfo>,
     pub blocks: Vec<TaskDependencyInfo>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct TaskUpdate {
     pub id: Uuid,
     pub task_id: Uuid,
@@ -501,7 +501,7 @@ pub struct TaskUpdate {
 
 // ── Task Comments ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct TaskComment {
     pub id: Uuid,
     pub task_id: Uuid,
@@ -515,7 +515,7 @@ pub struct TaskComment {
 
 // ── Request DTOs ──
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateProject {
     pub name: String,
     pub slug: Option<String>,
@@ -541,7 +541,7 @@ pub struct CreateProject {
     pub project_root: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateProject {
     pub name: Option<String>,
     pub description: Option<String>,
@@ -562,7 +562,7 @@ pub struct UpdateProject {
     pub project_root: Option<Option<String>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateTask {
     pub title: String,
     pub kind: Option<String>,
@@ -580,7 +580,7 @@ pub struct CreateTask {
     pub parent_id: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateTask {
     pub title: Option<String>,
     pub kind: Option<String>,
@@ -600,7 +600,7 @@ pub struct UpdateTask {
     pub parent_id: Option<Option<Uuid>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct TransitionTask {
     pub state: String,
     /// Optional playbook step index to set atomically with the state change.
@@ -608,19 +608,19 @@ pub struct TransitionTask {
     pub playbook_step: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct ClaimTask {
     pub agent_id: Uuid,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateAgent {
     pub name: String,
     pub capabilities: Option<Vec<String>>,
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateAgent {
     pub name: Option<String>,
     pub status: Option<String>,
@@ -628,7 +628,7 @@ pub struct UpdateAgent {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateTaskUpdate {
     pub agent_id: Option<Uuid>,
     pub kind: Option<String>,
@@ -636,26 +636,26 @@ pub struct CreateTaskUpdate {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateTaskComment {
     pub agent_id: Option<Uuid>,
     pub content: String,
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct AddDependency {
     pub depends_on: Uuid,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct HeartbeatRequest {
     pub status: Option<String>,
 }
 
 // ── Domain Models ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Work {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -675,7 +675,7 @@ pub struct Work {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct TaskWork {
     pub task_id: Uuid,
     pub work_id: Uuid,
@@ -684,7 +684,7 @@ pub struct TaskWork {
 
 // ── Work Comments ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct WorkComment {
     pub id: Uuid,
     pub work_id: Uuid,
@@ -696,62 +696,7 @@ pub struct WorkComment {
     pub updated_at: DateTime<Utc>,
 }
 
-// ── AI Planning ──
-
-/// A planned task generated by the AI from a work item's context.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlannedTask {
-    pub title: String,
-    pub kind: String,
-    pub spec: String,
-    pub acceptance_criteria: Vec<String>,
-    /// Zero-based indices into the tasks array indicating which earlier tasks
-    /// must complete before this one can start.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub depends_on: Option<Vec<usize>>,
-}
-
-/// Request body for the batch apply-plan endpoint.
-/// Creates all tasks and their dependencies atomically in a single transaction.
-#[derive(Debug, Deserialize)]
-pub struct ApplyPlanRequest {
-    pub tasks: Vec<PlannedTask>,
-}
-
-/// Response from the batch apply-plan endpoint.
-#[derive(Debug, Serialize)]
-pub struct ApplyPlanResponse {
-    pub tasks: Vec<Task>,
-    pub dependencies: Vec<TaskDependency>,
-}
-
-/// Response wrapper for the AI planning endpoint (used by non-SSE callers).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlanWorkResponse {
-    pub tasks: Vec<PlannedTask>,
-    /// Generated success criteria for the work item (only present when
-    /// the work item had no criteria and the AI generated them).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub success_criteria: Option<Vec<String>>,
-}
-
-/// Server-sent events for the streaming plan endpoint.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum PlanSseEvent {
-    #[serde(rename = "status")]
-    Status { message: String },
-    #[serde(rename = "done")]
-    Done {
-        tasks: Vec<PlannedTask>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        success_criteria: Option<Vec<String>>,
-    },
-    #[serde(rename = "error")]
-    Error { message: String },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Knowledge {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -770,7 +715,7 @@ pub struct Knowledge {
 }
 
 /// A single alternative considered in a decision.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct DecisionAlternative {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -779,7 +724,7 @@ pub struct DecisionAlternative {
     pub cons: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Decision {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -799,7 +744,7 @@ pub struct Decision {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Observation {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -818,7 +763,7 @@ pub struct Observation {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Playbook {
     pub id: Uuid,
     /// Tenant that owns this playbook. NULL means shared / visible to all tenants.
@@ -843,7 +788,7 @@ pub struct Playbook {
     pub parent_version: Option<i32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Event {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -860,7 +805,7 @@ pub struct Event {
 
 // ── New Request DTOs ──
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateWork {
     pub title: String,
     pub description: Option<String>,
@@ -873,7 +818,7 @@ pub struct CreateWork {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateWork {
     pub title: Option<String>,
     pub description: Option<String>,
@@ -890,35 +835,35 @@ pub struct UpdateWork {
     pub sort_order: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct ReorderWorks {
     pub work_ids: Vec<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct LinkTaskWork {
     pub task_id: Uuid,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct BulkLinkTasks {
     pub task_ids: Vec<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateWorkComment {
     pub agent_id: Option<Uuid>,
     pub content: String,
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct ReorderWorkTasks {
     /// Ordered list of task IDs — position in the array becomes the order within the work item.
     pub task_ids: Vec<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateKnowledge {
     pub title: String,
     pub category: Option<String>,
@@ -927,7 +872,7 @@ pub struct CreateKnowledge {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateKnowledge {
     pub title: Option<String>,
     pub category: Option<String>,
@@ -936,7 +881,7 @@ pub struct UpdateKnowledge {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateDecision {
     pub title: String,
     pub context: String,
@@ -947,7 +892,7 @@ pub struct CreateDecision {
     pub tags: Option<Vec<String>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateDecision {
     pub title: Option<String>,
     pub status: Option<String>,
@@ -961,7 +906,7 @@ pub struct UpdateDecision {
     pub tags: Option<Vec<String>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateObservation {
     pub agent_id: Option<Uuid>,
     pub kind: Option<String>,
@@ -974,7 +919,7 @@ pub struct CreateObservation {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateObservation {
     pub title: Option<String>,
     pub description: Option<String>,
@@ -985,7 +930,7 @@ pub struct UpdateObservation {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreatePlaybook {
     pub title: String,
     pub trigger_description: Option<String>,
@@ -996,7 +941,7 @@ pub struct CreatePlaybook {
     pub initial_state: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdatePlaybook {
     pub title: Option<String>,
     pub trigger_description: Option<String>,
@@ -1007,7 +952,7 @@ pub struct UpdatePlaybook {
     pub initial_state: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateEvent {
     pub kind: String,
     pub source: String,
@@ -1019,9 +964,11 @@ pub struct CreateEvent {
     pub agent_id: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, utoipa::ToSchema)]
 pub struct WorkFilters {
     pub status: Option<String>,
+    /// Comma-separated statuses to exclude (e.g. "achieved,paused,abandoned").
+    pub status_not: Option<String>,
     pub work_type: Option<String>,
     pub parent_work_id: Option<Uuid>,
     pub top_level: Option<bool>,
@@ -1029,7 +976,7 @@ pub struct WorkFilters {
     pub offset: Option<i64>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, utoipa::ToSchema)]
 pub struct KnowledgeFilters {
     pub category: Option<String>,
     pub tag: Option<String>,
@@ -1037,14 +984,14 @@ pub struct KnowledgeFilters {
     pub offset: Option<i64>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, utoipa::ToSchema)]
 pub struct DecisionFilters {
     pub status: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, utoipa::ToSchema)]
 pub struct ObservationFilters {
     pub kind: Option<String>,
     pub severity: Option<String>,
@@ -1053,14 +1000,14 @@ pub struct ObservationFilters {
     pub offset: Option<i64>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, utoipa::ToSchema)]
 pub struct PlaybookFilters {
     pub tag: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, utoipa::ToSchema)]
 pub struct EventFilters {
     pub kind: Option<String>,
     pub severity: Option<String>,
@@ -1069,14 +1016,14 @@ pub struct EventFilters {
     pub offset: Option<i64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct WorkProgress {
     pub work_id: Uuid,
     pub total_tasks: i64,
     pub done_tasks: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct WorkStats {
     pub work_id: Uuid,
     pub backlog_count: i64,
@@ -1094,7 +1041,7 @@ pub struct WorkStats {
     pub oldest_open_task_date: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct PromoteObservation {
     pub title: Option<String>,
     pub kind: Option<String>,
@@ -1102,7 +1049,7 @@ pub struct PromoteObservation {
     pub playbook_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct CleanupObservationsResult {
     pub deleted_dismissed: i64,
     pub deleted_acknowledged: i64,
@@ -1115,7 +1062,7 @@ pub struct CleanupObservationsResult {
 
 // ── Integration Models ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Integration {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -1132,7 +1079,7 @@ pub struct Integration {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct AgentIntegration {
     pub agent_id: Uuid,
     pub integration_id: Uuid,
@@ -1142,7 +1089,7 @@ pub struct AgentIntegration {
     pub granted_by: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateIntegration {
     pub name: String,
     pub kind: String,
@@ -1154,7 +1101,7 @@ pub struct CreateIntegration {
     pub capabilities: Option<Vec<String>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateIntegration {
     pub name: Option<String>,
     pub kind: Option<String>,
@@ -1166,13 +1113,13 @@ pub struct UpdateIntegration {
     pub enabled: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct GrantAccess {
     pub agent_id: Uuid,
     pub permissions: Option<Vec<String>>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, utoipa::ToSchema)]
 pub struct IntegrationFilters {
     pub kind: Option<String>,
     pub provider: Option<String>,
@@ -1183,7 +1130,7 @@ pub struct IntegrationFilters {
 
 // ── Roles & Membership ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Role {
     pub id: Uuid,
     /// Tenant that owns this role.
@@ -1198,7 +1145,7 @@ pub struct Role {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Membership {
     pub id: Uuid,
     /// Tenant this membership belongs to.
@@ -1211,7 +1158,7 @@ pub struct Membership {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateRole {
     pub name: String,
     pub description: Option<String>,
@@ -1221,7 +1168,7 @@ pub struct CreateRole {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateRole {
     pub name: Option<String>,
     pub description: Option<String>,
@@ -1231,20 +1178,20 @@ pub struct UpdateRole {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateMembership {
     pub agent_id: Uuid,
     pub role_id: Uuid,
     pub config: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateMembership {
     pub status: Option<String>,
     pub config: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct DelegateTask {
     pub agent_id: Uuid,
     pub role_id: Option<Uuid>,
@@ -1252,7 +1199,7 @@ pub struct DelegateTask {
 
 // ── Bulk Actions ──
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct BulkTransition {
     pub task_ids: Vec<Uuid>,
     pub state: String,
@@ -1260,25 +1207,25 @@ pub struct BulkTransition {
     pub playbook_step: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct BulkDelegate {
     pub task_ids: Vec<Uuid>,
     pub agent_id: Uuid,
     pub role_id: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct BulkDelete {
     pub task_ids: Vec<Uuid>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct BulkResult {
     pub succeeded: Vec<Uuid>,
     pub failed: Vec<BulkFailure>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct BulkFailure {
     pub task_id: Uuid,
     pub error: String,
@@ -1286,7 +1233,7 @@ pub struct BulkFailure {
 
 // ── Audit Log ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct AuditEntry {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -1302,7 +1249,7 @@ pub struct AuditEntry {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, utoipa::ToSchema)]
 pub struct AuditFilters {
     pub action: Option<String>,
     pub entity_type: Option<String>,
@@ -1315,7 +1262,7 @@ pub struct AuditFilters {
 
 // ── Agent Context (single-call operating context) ──
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct AgentContext {
     pub agent: Agent,
     pub membership: Membership,
@@ -1333,7 +1280,7 @@ pub struct AgentContext {
 
 // ── File Locks ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct FileLock {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -1343,7 +1290,7 @@ pub struct FileLock {
     pub locked_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct AcquireLocks {
     pub task_id: Uuid,
     pub paths: Vec<String>,
@@ -1360,7 +1307,7 @@ pub struct PaginatedResponse<T: Serialize> {
     pub has_more: bool,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, utoipa::ToSchema)]
 pub struct Pagination {
     pub limit: Option<i64>,
     pub offset: Option<i64>,
@@ -1368,7 +1315,7 @@ pub struct Pagination {
 
 // ── Webhook Models ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Webhook {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -1382,7 +1329,7 @@ pub struct Webhook {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct WebhookDelivery {
     pub id: Uuid,
     pub webhook_id: Uuid,
@@ -1395,7 +1342,7 @@ pub struct WebhookDelivery {
     pub attempt_number: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct WebhookDeadLetter {
     pub id: Uuid,
     pub webhook_id: Uuid,
@@ -1407,7 +1354,7 @@ pub struct WebhookDeadLetter {
     pub failed_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateWebhook {
     pub name: String,
     pub url: String,
@@ -1416,7 +1363,7 @@ pub struct CreateWebhook {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateWebhook {
     pub name: Option<String>,
     pub url: Option<String>,
@@ -1428,7 +1375,7 @@ pub struct UpdateWebhook {
 
 // ── Search ──
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct SearchQuery {
     pub q: String,
     pub entity_types: Option<String>,
@@ -1436,7 +1383,7 @@ pub struct SearchQuery {
     pub offset: Option<i64>,
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct SearchResult {
     pub entity_type: String,
     pub id: Uuid,
@@ -1446,14 +1393,14 @@ pub struct SearchResult {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct SearchResponse {
     pub results: Vec<SearchResult>,
     pub total: i64,
     pub query: String,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, utoipa::ToSchema)]
 pub struct TaskFilters {
     pub state: Option<String>,
     pub kind: Option<String>,
@@ -1478,13 +1425,13 @@ pub struct TaskFilters {
 
 // ── Metrics ──
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct MetricsQuery {
     /// Number of days to look back (default 30)
     pub days: Option<i32>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ProjectMetrics {
     pub project_id: Uuid,
     pub range_days: i32,
@@ -1502,7 +1449,7 @@ pub struct ProjectMetrics {
 }
 
 /// Aggregated LLM token usage and cost for a project.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct CostSummary {
     pub total_input_tokens: i64,
     pub total_output_tokens: i64,
@@ -1510,7 +1457,7 @@ pub struct CostSummary {
 }
 
 /// Per-task cost row returned in the metrics response.
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct TaskCostRow {
     pub task_id: Uuid,
     pub task_number: i64,
@@ -1522,14 +1469,14 @@ pub struct TaskCostRow {
 }
 
 /// Request body for recording LLM usage after a completed step.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct TaskCostUpdate {
     pub input_tokens: i64,
     pub output_tokens: i64,
     pub cost_usd: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct TaskSummary {
     pub total: i64,
     pub done: i64,
@@ -1540,14 +1487,14 @@ pub struct TaskSummary {
     pub human_review: i64,
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct DayCount {
     pub day: chrono::NaiveDate,
     pub count: i64,
 }
 
 /// Token usage per day for time-series graphing.
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct TokenDayCount {
     pub day: chrono::NaiveDate,
     pub input_tokens: i64,
@@ -1555,13 +1502,13 @@ pub struct TokenDayCount {
     pub cost_usd: f64,
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct StateAvg {
     pub state: String,
     pub avg_hours: Option<f64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct AgentMetrics {
     pub agent_id: Uuid,
     pub agent_name: String,
@@ -1570,7 +1517,7 @@ pub struct AgentMetrics {
     pub avg_completion_hours: Option<f64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct PlaybookMetrics {
     pub playbook_id: Uuid,
     pub playbook_title: String,
@@ -1581,7 +1528,7 @@ pub struct PlaybookMetrics {
 
 // ── Verification ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Verification {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -1597,7 +1544,7 @@ pub struct Verification {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateVerification {
     pub task_id: Option<Uuid>,
     pub kind: String,
@@ -1607,14 +1554,14 @@ pub struct CreateVerification {
     pub evidence: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateVerification {
     pub status: Option<String>,
     pub detail: Option<String>,
     pub evidence: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct VerificationFilters {
     pub task_id: Option<Uuid>,
     pub kind: Option<String>,
@@ -1625,7 +1572,7 @@ pub struct VerificationFilters {
 
 // ── Changed Files ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct ChangedFile {
     pub id: Uuid,
     pub task_id: Uuid,
@@ -1636,7 +1583,7 @@ pub struct ChangedFile {
 }
 
 /// Summary version without the diff content (for list responses)
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct ChangedFileSummary {
     pub id: Uuid,
     pub task_id: Uuid,
@@ -1645,14 +1592,14 @@ pub struct ChangedFileSummary {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateChangedFile {
     pub path: String,
     pub change_type: String,
     pub diff: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateChangedFiles {
     pub files: Vec<CreateChangedFile>,
 }
@@ -1662,7 +1609,7 @@ pub struct CreateChangedFiles {
 pub const TENANT_ROLES: &[&str] = &["owner", "admin", "member"];
 pub const ENCRYPTION_MODES: &[&str] = &["none", "login_derived", "passphrase"];
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Tenant {
     pub id: Uuid,
     pub name: String,
@@ -1671,11 +1618,16 @@ pub struct Tenant {
     pub key_salt: Option<String>,
     pub theme_preference: String,
     pub accent_color: String,
+    pub plan: String,
+    pub rate_limit_per_min: i32,
+    pub max_tasks: i32,
+    pub max_projects: i32,
+    pub max_agents: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct TenantMember {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -1685,7 +1637,7 @@ pub struct TenantMember {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct WrappedKey {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -1698,33 +1650,38 @@ pub struct WrappedKey {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateTenant {
     pub name: String,
     pub slug: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateTenant {
     pub name: Option<String>,
     pub encryption_mode: Option<String>,
     pub key_salt: Option<String>,
     pub theme_preference: Option<String>,
     pub accent_color: Option<String>,
+    pub plan: Option<String>,
+    pub rate_limit_per_min: Option<i32>,
+    pub max_tasks: Option<i32>,
+    pub max_projects: Option<i32>,
+    pub max_agents: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct AddTenantMember {
     pub user_id: Uuid,
     pub role: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateTenantMember {
     pub role: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateWrappedKey {
     pub key_type: String,
     pub wrapped_dek: String,
@@ -1733,7 +1690,7 @@ pub struct CreateWrappedKey {
     pub key_version: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct TenantFilters {
     pub limit: Option<i64>,
     pub offset: Option<i64>,
@@ -1741,7 +1698,7 @@ pub struct TenantFilters {
 
 // ── Reports ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Report {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -1757,7 +1714,7 @@ pub struct Report {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateReport {
     pub title: String,
     pub kind: String,
@@ -1765,7 +1722,7 @@ pub struct CreateReport {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateReport {
     pub title: Option<String>,
     pub status: Option<String>,
@@ -1774,7 +1731,7 @@ pub struct UpdateReport {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, utoipa::ToSchema)]
 pub struct ReportFilters {
     pub status: Option<String>,
     pub kind: Option<String>,
@@ -1783,7 +1740,7 @@ pub struct ReportFilters {
 }
 
 /// Request body for `POST /{project_id}/reports/{id}/complete`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CompleteReport {
     pub result: String,
     pub status: Option<String>,
@@ -1791,7 +1748,7 @@ pub struct CompleteReport {
 
 // ── Task Logs ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct TaskLog {
     pub id: Uuid,
     pub task_id: Uuid,
@@ -1804,7 +1761,7 @@ pub struct TaskLog {
 }
 
 /// Summary view returned by list endpoints (excludes large `content` field).
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct TaskLogSummary {
     pub id: Uuid,
     pub task_id: Uuid,
@@ -1815,7 +1772,7 @@ pub struct TaskLogSummary {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateTaskLog {
     pub task_id: Uuid,
     pub step_name: Option<String>,
@@ -1823,7 +1780,7 @@ pub struct CreateTaskLog {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct TaskLogFilters {
     pub task_id: Option<Uuid>,
     pub step_name: Option<String>,
@@ -1833,7 +1790,7 @@ pub struct TaskLogFilters {
 
 // ── Step Templates ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct StepTemplate {
     pub id: Uuid,
     /// Tenant that owns this template. NULL means global / visible to all tenants.
@@ -1865,7 +1822,7 @@ pub struct StepTemplate {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateStepTemplate {
     pub name: String,
     pub description: Option<String>,
@@ -1889,7 +1846,7 @@ pub struct CreateStepTemplate {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, utoipa::ToSchema)]
 pub struct UpdateStepTemplate {
     pub name: Option<String>,
     pub description: Option<String>,
@@ -1913,7 +1870,7 @@ pub struct UpdateStepTemplate {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, utoipa::ToSchema)]
 pub struct StepTemplateFilters {
     pub name: Option<String>,
     pub tag: Option<String>,
@@ -1923,7 +1880,7 @@ pub struct StepTemplateFilters {
 
 // ── Event Observation Rule Models ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct EventObservationRule {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -1940,7 +1897,7 @@ pub struct EventObservationRule {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateEventObservationRule {
     pub name: String,
     pub enabled: Option<bool>,
@@ -1953,7 +1910,7 @@ pub struct CreateEventObservationRule {
     pub description_template: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateEventObservationRule {
     pub name: Option<String>,
     pub enabled: Option<bool>,
@@ -1966,7 +1923,7 @@ pub struct UpdateEventObservationRule {
     pub description_template: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, utoipa::ToSchema)]
 pub struct EventObservationRuleFilters {
     pub enabled: Option<bool>,
     pub limit: Option<i64>,
@@ -1976,7 +1933,7 @@ pub struct EventObservationRuleFilters {
 // ── Related Items ──
 
 /// A single related item (knowledge, decision, or observation) with a relevance score.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct RelatedItem {
     pub entity_type: String,
     pub id: Uuid,
@@ -1988,7 +1945,7 @@ pub struct RelatedItem {
 }
 
 /// Grouped related items by entity type.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct RelatedItems {
     pub knowledge: Vec<RelatedItem>,
     pub decisions: Vec<RelatedItem>,
@@ -2011,7 +1968,7 @@ pub struct StaleTaskInfo {
 
 // ── Provider Config Models ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct ProviderConfig {
     pub id: Uuid,
     pub tenant_id: Uuid,
@@ -2024,7 +1981,7 @@ pub struct ProviderConfig {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateProviderConfig {
     pub provider: String,
     pub api_key: Option<String>,
@@ -2032,14 +1989,14 @@ pub struct CreateProviderConfig {
     pub default_model: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateProviderConfig {
     pub api_key: Option<String>,
     pub base_url: Option<String>,
     pub default_model: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, utoipa::ToSchema)]
 pub struct ProviderConfigFilters {
     pub provider: Option<String>,
     pub limit: Option<i64>,
@@ -2048,7 +2005,7 @@ pub struct ProviderConfigFilters {
 
 /// Merged provider config produced by the resolution function.
 /// Project-level overrides global, with api_key falling back to global if absent.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct ResolvedProviderConfig {
     pub provider: String,
     pub api_key: Option<String>,
@@ -2060,7 +2017,7 @@ pub struct ResolvedProviderConfig {
 
 // ── Forgejo CI ──
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct ForgejoIntegration {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -2072,11 +2029,12 @@ pub struct ForgejoIntegration {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct CiRun {
     pub id: Uuid,
     pub project_id: Uuid,
-    pub forgejo_run_id: i64,
+    pub external_id: i64,
+    pub provider: String,
     pub workflow_name: String,
     pub status: String,
     pub branch: Option<String>,
@@ -2087,7 +2045,7 @@ pub struct CiRun {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct CiJob {
     pub id: Uuid,
     pub ci_run_id: Uuid,
@@ -2098,7 +2056,7 @@ pub struct CiJob {
     pub finished_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct CiStep {
     pub id: Uuid,
     pub ci_job_id: Uuid,
@@ -2111,36 +2069,37 @@ pub struct CiStep {
 
 // ── CI REST API DTOs ──
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CiRunFilters {
     pub branch: Option<String>,
     pub status: Option<String>,
     pub workflow_name: Option<String>,
+    pub provider: Option<String>,
     pub page: Option<i64>,
     pub per_page: Option<i64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct CiRunWithJobs {
     #[serde(flatten)]
     pub run: CiRun,
     pub jobs: Vec<CiJob>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct CiJobWithSteps {
     #[serde(flatten)]
     pub job: CiJob,
     pub steps: Vec<CiStep>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateForgejoIntegration {
     pub base_url: String,
     pub token: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ForgejoIntegrationResponse {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -2150,4 +2109,60 @@ pub struct ForgejoIntegrationResponse {
     pub enabled: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+// ── GitHub CI ──
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
+pub struct GitHubIntegration {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub base_url: String,
+    pub token: Option<String>,
+    pub webhook_secret: Option<String>,
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct CreateGitHubIntegration {
+    pub base_url: String,
+    pub token: Option<String>,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct GitHubIntegrationResponse {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub base_url: String,
+    pub webhook_url: String,
+    pub webhook_secret: String,
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+// ── Dashboard Summary ──
+
+/// Aggregated dashboard data across all projects the user has access to.
+/// Returned by `GET /dashboard/summary` to replace N*4 per-project polling.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct DashboardSummary {
+    pub projects: Vec<DashboardProjectSummary>,
+    pub tokens_per_day: Vec<TokenDayCount>,
+}
+
+/// Per-project summary for the dashboard.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct DashboardProjectSummary {
+    pub project: Project,
+    pub task_summary: TaskSummary,
+    pub active_work: Vec<Work>,
+    pub cost_summary: CostSummary,
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct DashboardQuery {
+    pub days: Option<i32>,
 }

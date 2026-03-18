@@ -4,7 +4,7 @@
 //! posts observations when new dependency cycles are detected.  The last
 //! indexed commit hash is persisted so unchanged codebases are skipped.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::Stdio;
 
@@ -56,205 +56,6 @@ impl IndexerState {
 }
 
 // ---------------------------------------------------------------------------
-// Scan manifest (minimal — just what we need for cycle detection)
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-struct ScanManifest {
-    files: Vec<ScanFile>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ScanFile {
-    path: String,
-    #[allow(dead_code)]
-    language: String,
-    imports: Vec<String>,
-}
-
-// ---------------------------------------------------------------------------
-// Cycle detection (Tarjan SCC)
-// ---------------------------------------------------------------------------
-
-/// Determine the top-level module for a file path.
-/// Mirrors the logic in `apps/analyzer/src/sync.rs::module_of`.
-fn module_of(path: &str) -> String {
-    let parts: Vec<&str> = path.split('/').collect();
-    if parts.len() >= 2 && (parts[0] == "apps" || parts[0] == "libs") {
-        format!("{}/{}", parts[0], parts[1])
-    } else if !parts.is_empty() && !parts[0].is_empty() {
-        parts[0].to_string()
-    } else {
-        "root".to_string()
-    }
-}
-
-/// Build a module-level adjacency map from the scan manifest.
-///
-/// For each file, maps its module to the set of modules it imports from.
-/// Only considers imports that look like they reference another module in the
-/// workspace (heuristic: starts with a known module prefix or is a relative
-/// path).
-fn build_module_graph(scan: &ScanManifest) -> BTreeMap<String, BTreeSet<String>> {
-    // First pass: collect all known modules
-    let known_modules: BTreeSet<String> = scan.files.iter().map(|f| module_of(&f.path)).collect();
-
-    // Build a set of crate names → module for Rust workspace crates
-    // e.g. "shared_utils" → "libs/common-rust/shared-utils"
-    let mut crate_to_module: HashMap<String, String> = HashMap::new();
-    for m in &known_modules {
-        // Extract the crate name from the module path (last segment, with hyphens → underscores)
-        if let Some(crate_name) = m.split('/').next_back() {
-            crate_to_module.insert(crate_name.replace('-', "_"), m.clone());
-        }
-    }
-
-    let mut graph: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-
-    for file in &scan.files {
-        let src_module = module_of(&file.path);
-        let entry = graph.entry(src_module.clone()).or_default();
-
-        for imp in &file.imports {
-            // Try to resolve the import to a known module
-            let target = resolve_import_target(imp, &known_modules, &crate_to_module);
-            if let Some(target_module) = target
-                && target_module != src_module
-            {
-                entry.insert(target_module);
-            }
-        }
-    }
-
-    graph
-}
-
-/// Try to resolve an import string to a known module in the workspace.
-fn resolve_import_target(
-    import: &str,
-    known_modules: &BTreeSet<String>,
-    crate_to_module: &HashMap<String, String>,
-) -> Option<String> {
-    // Relative path imports (TypeScript style: ../../core/services/...)
-    // These are intra-module — skip them
-    if import.starts_with('.') {
-        return None;
-    }
-
-    // Direct module path match (e.g., "apps/api/src/...")
-    for m in known_modules {
-        if import.starts_with(m.as_str()) {
-            return Some(m.clone());
-        }
-    }
-
-    // Rust crate imports: check if first segment matches a workspace crate
-    let first_segment = import.split("::").next().unwrap_or(import);
-    if let Some(module) = crate_to_module.get(first_segment) {
-        return Some(module.clone());
-    }
-
-    // Not a workspace import (external crate or std lib)
-    None
-}
-
-/// Detect cycles in the module dependency graph using Tarjan's SCC algorithm.
-/// Returns cycles as sorted vectors of module names (only SCCs with size > 1).
-fn detect_cycles(graph: &BTreeMap<String, BTreeSet<String>>) -> Vec<Vec<String>> {
-    // Collect all nodes
-    let nodes: Vec<&String> = graph.keys().collect();
-    let node_index: HashMap<&String, usize> =
-        nodes.iter().enumerate().map(|(i, n)| (*n, i)).collect();
-
-    let n = nodes.len();
-    let mut index_counter: usize = 0;
-    let mut stack: Vec<usize> = Vec::new();
-    let mut on_stack = vec![false; n];
-    let mut indices = vec![usize::MAX; n];
-    let mut lowlinks = vec![usize::MAX; n];
-    let mut sccs: Vec<Vec<String>> = Vec::new();
-
-    #[allow(clippy::too_many_arguments)]
-    fn strongconnect(
-        v: usize,
-        nodes: &[&String],
-        graph: &BTreeMap<String, BTreeSet<String>>,
-        node_index: &HashMap<&String, usize>,
-        index_counter: &mut usize,
-        stack: &mut Vec<usize>,
-        on_stack: &mut [bool],
-        indices: &mut [usize],
-        lowlinks: &mut [usize],
-        sccs: &mut Vec<Vec<String>>,
-    ) {
-        indices[v] = *index_counter;
-        lowlinks[v] = *index_counter;
-        *index_counter += 1;
-        stack.push(v);
-        on_stack[v] = true;
-
-        if let Some(neighbors) = graph.get(nodes[v]) {
-            for neighbor in neighbors {
-                if let Some(&w) = node_index.get(neighbor) {
-                    if indices[w] == usize::MAX {
-                        strongconnect(
-                            w,
-                            nodes,
-                            graph,
-                            node_index,
-                            index_counter,
-                            stack,
-                            on_stack,
-                            indices,
-                            lowlinks,
-                            sccs,
-                        );
-                        lowlinks[v] = lowlinks[v].min(lowlinks[w]);
-                    } else if on_stack[w] {
-                        lowlinks[v] = lowlinks[v].min(indices[w]);
-                    }
-                }
-            }
-        }
-
-        if lowlinks[v] == indices[v] {
-            let mut scc = Vec::new();
-            while let Some(w) = stack.pop() {
-                on_stack[w] = false;
-                scc.push(nodes[w].clone());
-                if w == v {
-                    break;
-                }
-            }
-            if scc.len() > 1 {
-                scc.sort();
-                sccs.push(scc);
-            }
-        }
-    }
-
-    for i in 0..n {
-        if indices[i] == usize::MAX {
-            strongconnect(
-                i,
-                &nodes,
-                graph,
-                &node_index,
-                &mut index_counter,
-                &mut stack,
-                &mut on_stack,
-                &mut indices,
-                &mut lowlinks,
-                &mut sccs,
-            );
-        }
-    }
-
-    sccs.sort();
-    sccs
-}
-
-// ---------------------------------------------------------------------------
 // Pipeline runner
 // ---------------------------------------------------------------------------
 
@@ -271,26 +72,6 @@ fn get_head_commit(git_root: &Path) -> Result<String> {
     if !output.status.success() {
         anyhow::bail!(
             "git rev-parse HEAD failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
-/// Get the tree hash of HEAD (changes when any tracked file changes).
-fn get_head_tree_hash(git_root: &Path) -> Result<String> {
-    let output = std::process::Command::new("git")
-        .args(["rev-parse", "HEAD^{tree}"])
-        .current_dir(git_root)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .context("failed to run git rev-parse HEAD^{tree}")?;
-
-    if !output.status.success() {
-        anyhow::bail!(
-            "git rev-parse HEAD^{{tree}} failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
     }
@@ -327,32 +108,23 @@ fn has_source_changes(git_root: &Path, old_commit: &str, new_commit: &str) -> Re
     Ok(!diff.trim().is_empty())
 }
 
-/// Run the analyzer binary with the given arguments.
-fn run_analyzer(git_root: &Path, args: &[&str]) -> Result<()> {
-    // Look for diraigent-analyzer as sibling of current exe, then in PATH
-    let analyzer_bin = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join("diraigent-analyzer")))
-        .filter(|p| p.exists())
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| "diraigent-analyzer".to_string());
+/// Run the analyzer scan step, writing output to the given path.
+fn run_scan(git_root: &Path, output_path: &Path) {
+    diraigent_analyzer::scan::run(
+        git_root.to_path_buf(),
+        Some(output_path.to_path_buf()),
+        false,
+    );
+}
 
-    debug!("Running: {} {}", analyzer_bin, args.join(" "));
-
-    let output = std::process::Command::new(&analyzer_bin)
-        .args(args)
-        .current_dir(git_root)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .with_context(|| format!("failed to run {analyzer_bin}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("analyzer command failed: {stderr}");
-    }
-
-    Ok(())
+/// Run the analyzer api-surface step, writing output to the given path.
+fn run_api_surface(git_root: &Path, output_path: &Path) {
+    diraigent_analyzer::api_surface::run(
+        git_root.to_path_buf(),
+        Some(output_path.to_path_buf()),
+        "json",
+        false,
+    );
 }
 
 /// Run the full indexing pipeline for a single project.
@@ -410,35 +182,14 @@ async fn run_pipeline(
     let api_surface_path = tmp_dir.join("api-surface.json");
 
     // Step 1: Scan
-    run_analyzer(
-        git_root,
-        &[
-            "scan",
-            &git_root.to_string_lossy(),
-            "-o",
-            &scan_path.to_string_lossy(),
-        ],
-    )?;
+    run_scan(git_root, &scan_path);
     info!("project {project_id}: scan complete");
 
     // Step 2: API Surface
-    run_analyzer(
-        git_root,
-        &[
-            "api-surface",
-            &git_root.to_string_lossy(),
-            "-o",
-            &api_surface_path.to_string_lossy(),
-            "--format",
-            "json",
-        ],
-    )?;
+    run_api_surface(git_root, &api_surface_path);
     info!("project {project_id}: api-surface complete");
 
     // Step 3: Sync to knowledge store
-    let api_url = api.base_url();
-    let api_token = api.api_token();
-    let agent_id = api.agent_id();
     let cache_path = tmp_dir.join(".analyzer-sync-cache.json");
 
     // Copy the persistent sync cache into temp dir if it exists
@@ -447,26 +198,20 @@ async fn run_pipeline(
         std::fs::copy(&persistent_cache, &cache_path).ok();
     }
 
-    run_analyzer(
-        git_root,
-        &[
-            "sync",
-            "-m",
-            &scan_path.to_string_lossy(),
-            "-a",
-            &api_surface_path.to_string_lossy(),
-            "--project-id",
-            project_id,
-            "--api-url",
-            api_url,
-            "--api-token",
-            api_token,
-            "--agent-id",
-            agent_id,
-            "-c",
-            &cache_path.to_string_lossy(),
-        ],
-    )?;
+    let sync_config = diraigent_analyzer::sync::SyncConfig {
+        manifest_path: scan_path.clone(),
+        summaries_path: None,
+        api_surface_path: api_surface_path.clone(),
+        cache_path: cache_path.clone(),
+        api_url: api.base_url().to_string(),
+        api_token: api.api_token().to_string(),
+        project_id: project_id.to_string(),
+        agent_id: Some(api.agent_id().to_string()),
+        dry_run: false,
+    };
+    if let Err(e) = diraigent_analyzer::sync::run(sync_config).await {
+        anyhow::bail!("analyzer sync failed: {e}");
+    }
     info!("project {project_id}: sync complete");
 
     // Copy sync cache back to persistent location
@@ -476,9 +221,9 @@ async fn run_pipeline(
 
     // Step 4: Detect cycles
     let scan_data = std::fs::read_to_string(&scan_path)?;
-    let scan: ScanManifest = serde_json::from_str(&scan_data)?;
-    let graph = build_module_graph(&scan);
-    let current_cycles = detect_cycles(&graph);
+    let manifest: diraigent_analyzer::scan::Manifest = serde_json::from_str(&scan_data)?;
+    let graph = diraigent_analyzer::graph::build_module_graph(&manifest);
+    let current_cycles = diraigent_analyzer::graph::detect_module_cycles(&graph);
 
     // Find NEW cycles (not previously known)
     let prev_cycles: HashSet<Vec<String>> = state
@@ -619,25 +364,30 @@ pub async fn tick(api: &ProjectsApi, projects_path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use diraigent_analyzer::graph::{build_module_graph, detect_module_cycles};
+    use diraigent_analyzer::scan::{FileEntry, Manifest, Stats};
+    use std::collections::{BTreeMap, BTreeSet};
 
-    #[test]
-    fn test_module_of_apps() {
-        assert_eq!(module_of("apps/api/src/main.rs"), "apps/api");
-        assert_eq!(module_of("apps/orchestra/src/lib.rs"), "apps/orchestra");
+    fn make_file(path: &str, language: &str, imports: Vec<&str>) -> FileEntry {
+        FileEntry {
+            path: path.to_string(),
+            language: language.to_string(),
+            imports: imports.into_iter().map(String::from).collect(),
+            exports: Vec::new(),
+            routes: Vec::new(),
+            docstring: None,
+        }
     }
 
-    #[test]
-    fn test_module_of_libs() {
-        assert_eq!(
-            module_of("libs/common-rust/shared-utils/src/lib.rs"),
-            "libs/common-rust"
-        );
-    }
-
-    #[test]
-    fn test_module_of_top_level() {
-        assert_eq!(module_of("Cargo.toml"), "Cargo.toml");
-        assert_eq!(module_of("migrations/0001.sql"), "migrations");
+    fn make_manifest(files: Vec<FileEntry>) -> Manifest {
+        Manifest {
+            stats: Stats {
+                total_files: files.len(),
+                by_language: std::collections::HashMap::new(),
+                elapsed_ms: 0,
+            },
+            files,
+        }
     }
 
     #[test]
@@ -647,7 +397,7 @@ mod tests {
         graph.insert("B".to_string(), BTreeSet::from(["C".to_string()]));
         graph.insert("C".to_string(), BTreeSet::new());
 
-        let cycles = detect_cycles(&graph);
+        let cycles = detect_module_cycles(&graph);
         assert!(cycles.is_empty());
     }
 
@@ -657,7 +407,7 @@ mod tests {
         graph.insert("A".to_string(), BTreeSet::from(["B".to_string()]));
         graph.insert("B".to_string(), BTreeSet::from(["A".to_string()]));
 
-        let cycles = detect_cycles(&graph);
+        let cycles = detect_module_cycles(&graph);
         assert_eq!(cycles.len(), 1);
         assert!(cycles[0].contains(&"A".to_string()));
         assert!(cycles[0].contains(&"B".to_string()));
@@ -670,7 +420,7 @@ mod tests {
         graph.insert("B".to_string(), BTreeSet::from(["C".to_string()]));
         graph.insert("C".to_string(), BTreeSet::from(["A".to_string()]));
 
-        let cycles = detect_cycles(&graph);
+        let cycles = detect_module_cycles(&graph);
         assert_eq!(cycles.len(), 1);
         assert_eq!(cycles[0].len(), 3);
     }
@@ -683,7 +433,7 @@ mod tests {
         graph.insert("C".to_string(), BTreeSet::from(["D".to_string()]));
         graph.insert("D".to_string(), BTreeSet::from(["C".to_string()]));
 
-        let cycles = detect_cycles(&graph);
+        let cycles = detect_module_cycles(&graph);
         assert_eq!(cycles.len(), 2);
     }
 
@@ -693,29 +443,23 @@ mod tests {
         graph.insert("X".to_string(), BTreeSet::from(["Y".to_string()]));
         graph.insert("Y".to_string(), BTreeSet::from(["X".to_string()]));
 
-        let c1 = detect_cycles(&graph);
-        let c2 = detect_cycles(&graph);
+        let c1 = detect_module_cycles(&graph);
+        let c2 = detect_module_cycles(&graph);
         assert_eq!(c1, c2);
     }
 
     #[test]
     fn test_build_module_graph() {
-        let scan = ScanManifest {
-            files: vec![
-                ScanFile {
-                    path: "apps/api/src/main.rs".to_string(),
-                    language: "rust".to_string(),
-                    imports: vec!["shared_utils::config".to_string()],
-                },
-                ScanFile {
-                    path: "libs/common-rust/shared-utils/src/config.rs".to_string(),
-                    language: "rust".to_string(),
-                    imports: vec![],
-                },
-            ],
-        };
+        let manifest = make_manifest(vec![
+            make_file("apps/api/src/main.rs", "rust", vec!["shared_utils::config"]),
+            make_file(
+                "libs/common-rust/shared-utils/src/config.rs",
+                "rust",
+                vec![],
+            ),
+        ]);
 
-        let graph = build_module_graph(&scan);
+        let graph = build_module_graph(&manifest);
         // apps/api should depend on libs/common-rust (via shared_utils)
         assert!(graph.contains_key("apps/api"));
     }

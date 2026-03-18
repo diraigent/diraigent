@@ -5,8 +5,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router, extract::State};
 use diraigent_api::{
-    AppState, auth, crypto, csrf, db, metrics, package_cache, rate_limit, routes, services,
-    stale_detector, webhooks, ws_registry,
+    AppState, auth, crypto, csrf, db, metrics, openapi, package_cache, rate_limit, routes,
+    services, stale_detector, webhooks, ws_registry,
 };
 use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
@@ -15,6 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
+use utoipa::OpenApi;
 
 async fn readiness_check(State(state): State<AppState>) -> impl IntoResponse {
     let db_ok = state.db.health_check().await;
@@ -63,12 +64,16 @@ async fn main() -> anyhow::Result<()> {
     let connect_opts = db_url
         .parse::<sqlx::postgres::PgConnectOptions>()?
         .options([("search_path", "public,diraigent")]);
+    let max_connections: u32 = env::var("DB_MAX_CONNECTIONS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10);
     let pool = {
         const MAX_RETRIES: u32 = 5;
         let mut attempt = 0u32;
         loop {
             match PgPoolOptions::new()
-                .max_connections(10)
+                .max_connections(max_connections)
                 .acquire_timeout(Duration::from_secs(30))
                 .connect_with(connect_opts.clone())
                 .await
@@ -162,6 +167,10 @@ async fn main() -> anyhow::Result<()> {
     // Broadcast channel for agent status SSE notifications.
     let (agent_tx, _) = tokio::sync::broadcast::channel::<diraigent_api::AgentSseEvent>(64);
 
+    let is_production = env::var("PRODUCTION")
+        .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+        .unwrap_or(false);
+
     let state = AppState {
         pkg_cache: package_cache::PackageCache::new(database.clone()),
         db: database.clone(),
@@ -170,6 +179,7 @@ async fn main() -> anyhow::Result<()> {
         user_cache: auth::UserIdCache::default(),
         webhooks: webhook_dispatcher.clone(),
         repo_root,
+        is_production,
         projects_path,
         loki_url: env::var("LOKI_URL").ok(),
         dek_cache,
@@ -231,11 +241,23 @@ async fn main() -> anyhow::Result<()> {
             }),
         )
         .nest("/v1", routes::router())
+        .merge(
+            utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
+                .url("/api-docs/openapi.json", openapi::ApiDoc::openapi()),
+        )
         .layer(middleware::from_fn(add_request_id))
         .layer(middleware::from_fn(metrics::record_metrics))
-        .layer(DefaultBodyLimit::max(1024 * 1024))
+        .layer(DefaultBodyLimit::max(
+            env::var("MAX_BODY_SIZE")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1024 * 1024), // 1 MB default
+        ))
         .layer(middleware::from_fn(csrf::csrf_check))
-        .layer(middleware::from_fn(rate_limit::rate_limit))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit::rate_limit,
+        ))
         .layer(cors)
         .layer(shared_utils::server::standard_trace())
         .with_state(state);
