@@ -522,6 +522,13 @@ pub struct App {
 
     // Work tasks
     pub work_tasks: Vec<Task>,
+    pub work_task_selected: Option<usize>,
+    pub work_task_list_state: ListState,
+    pub work_task_updates: Vec<TaskUpdate>,
+    pub work_task_comments: Vec<TaskComment>,
+    pub work_task_detail_scroll: u16,
+    /// Focus within Work view: 0=work list, 1=task list
+    pub work_focus: usize,
 
     // Verification filters
     pub verification_kind_filter: Option<String>,
@@ -677,6 +684,12 @@ impl App {
             work_comments: vec![],
             agent_tasks: vec![],
             work_tasks: vec![],
+            work_task_selected: None,
+            work_task_list_state: ListState::default(),
+            work_task_updates: vec![],
+            work_task_comments: vec![],
+            work_task_detail_scroll: 0,
+            work_focus: 0,
             verification_kind_filter: None,
             verification_status_filter: None,
             log_entries: vec![],
@@ -906,6 +919,19 @@ impl App {
                 self.done_work_list_state.select(Some(clamped));
             }
         }
+    }
+
+    /// Move the task selection within the work task list.
+    pub fn move_work_task_selection(&mut self, delta: i32) {
+        let len = self.work_tasks.len();
+        if len == 0 {
+            return;
+        }
+        let current = self.work_task_selected.unwrap_or(0) as i32;
+        let next = (current + delta).clamp(0, len as i32 - 1) as usize;
+        self.work_task_selected = Some(next);
+        self.work_task_list_state.select(Some(next));
+        self.work_task_detail_scroll = 0;
     }
 
     /// Returns the currently selected work item from either section.

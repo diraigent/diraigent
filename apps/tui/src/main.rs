@@ -71,6 +71,8 @@ enum ApiMsg {
     WebhookDeliveries(Vec<client::WebhookDelivery>),
     WebhookTestResult(String),
     WorkTasksList(Vec<client::Task>),
+    WorkTaskUpdates(Vec<client::TaskUpdate>),
+    WorkTaskComments(Vec<client::TaskComment>),
     Branches(client::BranchListResponse),
     MainStatus(client::MainPushStatus),
     GitActionResult(String),
@@ -651,7 +653,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::Webhooks(w) => app.webhooks = w,
                 ApiMsg::WebhookDeliveries(d) => app.webhook_deliveries = d,
                 ApiMsg::WebhookTestResult(r) => app.webhook_test_result = Some(r),
-                ApiMsg::WorkTasksList(tasks) => app.work_tasks = tasks,
+                ApiMsg::WorkTasksList(tasks) => {
+                    // Auto-select first task if none selected
+                    if !tasks.is_empty() && app.work_task_selected.is_none() {
+                        app.work_task_selected = Some(0);
+                        app.work_task_list_state.select(Some(0));
+                        // Fetch updates/comments for the first task
+                        let tid = tasks[0].id;
+                        let api = api.clone();
+                        let tx = tx.clone();
+                        tokio::spawn(async move {
+                            let (updates, comments) = tokio::join!(
+                                api.get_task_updates(tid),
+                                api.get_task_comments(tid),
+                            );
+                            if let Ok(updates) = updates {
+                                let _ = tx.send(ApiMsg::WorkTaskUpdates(updates)).await;
+                            }
+                            if let Ok(comments) = comments {
+                                let _ = tx.send(ApiMsg::WorkTaskComments(comments)).await;
+                            }
+                        });
+                    } else if tasks.is_empty() {
+                        app.work_task_selected = None;
+                        app.work_task_list_state.select(None);
+                        app.work_task_updates.clear();
+                        app.work_task_comments.clear();
+                    }
+                    app.work_tasks = tasks;
+                }
+                ApiMsg::WorkTaskUpdates(updates) => app.work_task_updates = updates,
+                ApiMsg::WorkTaskComments(comments) => app.work_task_comments = comments,
                 ApiMsg::Logs(resp) => {
                     app.log_entries = resp.entries;
                     app.log_loading = false;
@@ -879,7 +911,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // View-specific action hints
                 let action_hint = match app.view {
                     View::Tasks => "[n]New [t]Trans [c]Cmt [f]Flag [F]Files [a]Claim [e]Edit",
-                    View::Work => "[n]New [t]Task [c]Cmt [s]Status [e]Edit",
+                    View::Work => "[n]New [t]Task [c]Cmt [s]Status [e]Edit [Tab]Focus",
                     View::Decisions => "[n]New [a]Accept [x]Reject [X]Deprecate",
                     View::Observations => "[n]New [s]Status [d]Dismiss [p]Promote [C]Cleanup",
                     View::Agents => "[a]Tasks",
@@ -5551,6 +5583,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.work_stats = None;
                                     app.work_children.clear();
                                     app.work_comments.clear();
+                                    app.work_focus = 0;
+                                    app.work_task_selected = None;
+                                    app.work_task_list_state.select(None);
+                                    app.work_task_updates.clear();
+                                    app.work_task_comments.clear();
+                                    app.work_task_detail_scroll = 0;
                                     app.observations.clear();
                                     app.roles.clear();
                                     app.members.clear();
@@ -5696,6 +5734,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             KeyCode::Up | KeyCode::Char('k') => {
                                 if app.view == View::Logs {
                                     app.scroll_logs(-1);
+                                } else if app.view == View::Work && app.work_focus == 1 {
+                                    app.move_work_task_selection(-1);
                                 } else if app.focus == 1 {
                                     app.scroll_detail(-1);
                                 } else if app.view == View::Tasks {
@@ -5707,6 +5747,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             KeyCode::Down | KeyCode::Char('j') => {
                                 if app.view == View::Logs {
                                     app.scroll_logs(1);
+                                } else if app.view == View::Work && app.work_focus == 1 {
+                                    app.move_work_task_selection(1);
                                 } else if app.focus == 1 {
                                     app.scroll_detail(1);
                                 } else if app.view == View::Tasks {
@@ -5718,6 +5760,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             KeyCode::Tab => {
                                 if app.view == View::Team {
                                     app.team_focus = (app.team_focus + 1) % 3;
+                                } else if app.view == View::Work {
+                                    // Cycle: 0=work list, 1=task list
+                                    app.work_focus = (app.work_focus + 1) % 2;
                                 } else {
                                     app.focus = (app.focus + 1) % 2;
                                 }
@@ -5813,6 +5858,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 }
                                             }
                                         }
+                                    }
+                                } else if app.view == View::Work && app.work_focus == 1 {
+                                    // Load task details for the selected work task
+                                    if let Some(tid) = app
+                                        .work_task_selected
+                                        .and_then(|i| app.work_tasks.get(i))
+                                        .map(|t| t.id)
+                                    {
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            let (updates, comments) = tokio::join!(
+                                                api.get_task_updates(tid),
+                                                api.get_task_comments(tid),
+                                            );
+                                            if let Ok(updates) = updates {
+                                                let _ =
+                                                    tx.send(ApiMsg::WorkTaskUpdates(updates)).await;
+                                            }
+                                            if let Ok(comments) = comments {
+                                                let _ = tx
+                                                    .send(ApiMsg::WorkTaskComments(comments))
+                                                    .await;
+                                            }
+                                        });
                                     }
                                 }
                             }
@@ -7083,11 +7153,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             KeyCode::PageUp => {
                                 if app.view == View::Logs {
                                     app.scroll_logs(-20);
+                                } else if app.view == View::Work && app.work_focus == 1 {
+                                    let new = app.work_task_detail_scroll as i32 - 10;
+                                    app.work_task_detail_scroll = new.max(0) as u16;
                                 }
                             }
                             KeyCode::PageDown => {
                                 if app.view == View::Logs {
                                     app.scroll_logs(20);
+                                } else if app.view == View::Work && app.work_focus == 1 {
+                                    app.work_task_detail_scroll += 10;
                                 }
                             }
                             // ` = view picker (navigation expansion)
@@ -7167,14 +7242,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     last_nav_time = Some(Instant::now());
                 }
 
-                // Fetch work progress on selection change
+                // Fetch work progress on selection change (work list navigation)
                 if app.modal == Modal::None
                     && app.view == View::Work
+                    && app.work_focus == 0
                     && matches!(
                         key.code,
                         KeyCode::Up | KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('k')
                     )
                 {
+                    // Reset task selection when changing work items
+                    app.work_task_selected = None;
+                    app.work_task_list_state.select(None);
+                    app.work_task_updates.clear();
+                    app.work_task_comments.clear();
+                    app.work_task_detail_scroll = 0;
+
                     if let Some(goal) = app.selected_work_item() {
                         let gid = goal.id;
                         {
@@ -7216,6 +7299,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             });
                         }
+                    }
+                }
+
+                // Fetch task updates/comments on work task selection change
+                if app.modal == Modal::None
+                    && app.view == View::Work
+                    && app.work_focus == 1
+                    && matches!(
+                        key.code,
+                        KeyCode::Up | KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('k')
+                    )
+                {
+                    if let Some(tid) = app
+                        .work_task_selected
+                        .and_then(|i| app.work_tasks.get(i))
+                        .map(|t| t.id)
+                    {
+                        let api = api.clone();
+                        let tx = tx.clone();
+                        tokio::spawn(async move {
+                            let (updates, comments) = tokio::join!(
+                                api.get_task_updates(tid),
+                                api.get_task_comments(tid),
+                            );
+                            if let Ok(updates) = updates {
+                                let _ = tx.send(ApiMsg::WorkTaskUpdates(updates)).await;
+                            }
+                            if let Ok(comments) = comments {
+                                let _ = tx.send(ApiMsg::WorkTaskComments(comments)).await;
+                            }
+                        });
                     }
                 }
             }
