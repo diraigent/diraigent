@@ -33,6 +33,8 @@ zeroize = { version = "1", features = ["derive"] }
 base64 = "0.22"
 
 diraigent-types.workspace = true
+utoipa.workspace = true
+utoipa-swagger-ui.workspace = true
 
 [dependencies.shared-utils]
 path = "../../libs/common-rust/shared-utils"
