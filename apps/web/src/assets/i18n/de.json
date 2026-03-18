@@ -672,7 +672,28 @@
     "gitRootHint": "Pfad zum Git-Repository-Stamm (wo .git liegt), relativ zu {{projectsPath}}.",
     "projectRoot": "Projektwurzel",
     "projectRootPlaceholder": "z.B. apps/mein-service (relativ zum Git-Stamm)",
-    "projectRootHint": "Unterpfad innerhalb des Git-Stamms für dieses Projekt (nur Monorepo)."
+    "projectRootHint": "Unterpfad innerhalb des Git-Stamms für dieses Projekt (nur Monorepo).",
+    "wizard": {
+      "playbookTitle": "Standard-Playbook auswählen",
+      "playbookHint": "Wähle ein Playbook als Standard für neue Aufgaben in diesem Projekt.",
+      "defaultPlaybooks": "Standard-Playbooks",
+      "yourPlaybooks": "Deine Playbooks",
+      "noPlaybooks": "Noch keine Playbooks verfügbar. Du kannst später eines im Playbooks-Bereich erstellen.",
+      "setPlaybook": "Playbook festlegen",
+      "agentTitle": "Agent zuweisen",
+      "agentHint": "Füge einen Agenten zum Team dieses Projekts hinzu, damit er an Aufgaben arbeiten kann.",
+      "agent": "Agent",
+      "selectAgent": "Agent auswählen…",
+      "role": "Rolle",
+      "selectRole": "Rolle auswählen…",
+      "noAgentsOrRoles": "Noch keine Agenten oder Rollen verfügbar. Du kannst dies später im Team-Bereich einrichten.",
+      "assignAgent": "Agent zuweisen",
+      "doneTitle": "Projekt bereit",
+      "summaryProject": "Projekt",
+      "summaryPlaybook": "Standard-Playbook",
+      "summaryAgent": "Teammitglied",
+      "skipped": "Übersprungen"
+    }
   },
   "shortcuts": {
     "newTask": "Neue Aufgabe",

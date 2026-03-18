@@ -674,7 +674,28 @@
     "gitRootHint": "Path to the git repository root (where .git lives), relative to {{projectsPath}}.",
     "projectRoot": "Project Root",
     "projectRootPlaceholder": "e.g. apps/my-service (relative to git root)",
-    "projectRootHint": "Subpath within the git root for this project (monorepo only)."
+    "projectRootHint": "Subpath within the git root for this project (monorepo only).",
+    "wizard": {
+      "playbookTitle": "Select Default Playbook",
+      "playbookHint": "Choose a playbook to use as the default for new tasks in this project.",
+      "defaultPlaybooks": "Default Playbooks",
+      "yourPlaybooks": "Your Playbooks",
+      "noPlaybooks": "No playbooks available yet. You can create one later in the Playbooks section.",
+      "setPlaybook": "Set Playbook",
+      "agentTitle": "Assign Agent",
+      "agentHint": "Add an agent to this project's team so it can start working on tasks.",
+      "agent": "Agent",
+      "selectAgent": "Select an agent…",
+      "role": "Role",
+      "selectRole": "Select a role…",
+      "noAgentsOrRoles": "No agents or roles available yet. You can set this up later in the Team section.",
+      "assignAgent": "Assign Agent",
+      "doneTitle": "Project Ready",
+      "summaryProject": "Project",
+      "summaryPlaybook": "Default Playbook",
+      "summaryAgent": "Team Member",
+      "skipped": "Skipped"
+    }
   },
   "shortcuts": {
     "newTask": "New task",
