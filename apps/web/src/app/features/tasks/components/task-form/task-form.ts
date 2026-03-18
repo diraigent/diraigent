@@ -15,7 +15,7 @@ import { DEFAULT_TASK_KINDS } from '../../../../shared/ui-constants';
     @if (show()) {
       <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]"
            role="button" tabindex="0" aria-label="Close modal"
-           (click)="closeForm()" (keydown.enter)="closeForm()" *transloco="let t">
+           (click)="closeForm()" (keydown.enter)="closeForm()" (keydown.escape)="closeForm()" *transloco="let t">
         <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
              tabindex="-1" (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()">
           <h2 class="text-lg font-semibold text-text-primary mb-4">

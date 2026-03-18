@@ -982,7 +982,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
       @if (showForm()) {
         <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]"
              role="button" tabindex="0" aria-label="Close modal"
-             (click)="closeForm()" (keydown.enter)="closeForm()">
+             (click)="closeForm()" (keydown.enter)="closeForm()" (keydown.escape)="closeForm()">
           <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
                tabindex="-1" (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()">
             <h2 class="text-lg font-semibold text-text-primary mb-4">
@@ -1082,7 +1082,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
       @if (showTaskPicker()) {
         <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]"
              role="button" tabindex="0" aria-label="Close task picker"
-             (click)="closeTaskPicker()" (keydown.enter)="closeTaskPicker()">
+             (click)="closeTaskPicker()" (keydown.enter)="closeTaskPicker()" (keydown.escape)="closeTaskPicker()">
           <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-2xl max-h-[90vh] flex flex-col"
                tabindex="-1" (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()">
             <div class="flex items-center justify-between mb-4">
