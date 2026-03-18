@@ -53,6 +53,12 @@ async fn create_project(
     if let Some(parent_id) = req.parent_id {
         require_authority(state.db.as_ref(), agent_id, user_id, parent_id, "manage").await?;
     }
+    crate::quota::check_quota(
+        &state.pool,
+        tenant.tenant_id,
+        crate::quota::Resource::Projects,
+    )
+    .await?;
     // Set tenant_id from the caller's tenant context
     req.tenant_id = Some(tenant.tenant_id);
     let project = state.db.create_project(&req, user_id).await?;

@@ -81,6 +81,8 @@ async fn create_task(
     let pkg = state.pkg_cache.get_for_project(project_id).await?;
     validation::validate_create_task(&req, pkg.as_ref())?;
     require_authority(state.db.as_ref(), agent_id, user_id, project_id, "create").await?;
+    crate::quota::check_quota_for_project(&state.pool, project_id, crate::quota::Resource::Tasks)
+        .await?;
 
     // If playbook_id provided, verify it exists
     if let Some(playbook_id) = req.playbook_id {

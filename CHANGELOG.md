@@ -1,19 +1,20 @@
 # Changelog
 
-
-## v20260317-2357 (2026-03-17)
+## v20260318-0719 (2026-03-18)
 
 ### Added
-- **API**: Active work dashboard endpoint with cross-project work items
-- **Web**: Dashboard now shows active work section powered by API
+- **API**: OpenAPI/Swagger UI for interactive API documentation
+- **API**: Tenant quota system with configurable resource limits
+- **CI/CD**: Additional CI image build targets
 
 ### Changed
-- **Orchestra**: Restructured git operations into dedicated merge, query, release, and worktree modules
-- **Web**: Dashboard loads data from API instead of client-side computation
+- **API**: Rate limiting now integrates with tenant quotas
+- **API**: Route annotations updated for OpenAPI spec generation
 
 ### Fixed
-- **Analyzer**: Deterministic output in dependency graph cycle detection
-- **Web**: Various UI and stability fixes
+- **API**: Deterministic output in dependency graph cycle detection
+- **Web**: Remove unused imports causing dashboard warnings
+- **API**: Various stability and model fixes
 
 ---
 
@@ -126,6 +127,8 @@
 - **Web**: Git push errors displaying as `[object Object]`
 
 ### Removed
+- **Web**: Standalone new-task and link-tasks buttons
+- **Web**: Target date field from work items
 - **Web**: Standalone new-task and link-tasks buttons
 - **Web**: Target date field from work items
 

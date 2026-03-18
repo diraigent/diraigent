@@ -114,26 +114,33 @@ async fn create_tenant(
 
 async fn list_tenants(
     State(state): State<AppState>,
-    AuthUser(_): AuthUser,
-    Query(filters): Query<TenantFilters>,
+    AuthUser(user_id): AuthUser,
+    Query(_filters): Query<TenantFilters>,
 ) -> Result<Json<Vec<Tenant>>, AppError> {
-    Ok(Json(state.db.list_tenants(&filters).await?))
+    // Only return the caller's own tenant — never expose other tenants.
+    let tenant = state.db.get_tenant_for_user(user_id).await?;
+    Ok(Json(tenant.into_iter().collect()))
 }
 
 async fn get_tenant(
     State(state): State<AppState>,
-    AuthUser(_): AuthUser,
+    AuthUser(user_id): AuthUser,
     Path(tenant_id): Path<Uuid>,
 ) -> Result<Json<Tenant>, AppError> {
+    // Verify the caller is a member of this tenant.
+    require_member(&state, tenant_id, user_id).await?;
     Ok(Json(state.db.get_tenant_by_id(tenant_id).await?))
 }
 
 async fn get_tenant_by_slug(
     State(state): State<AppState>,
-    AuthUser(_): AuthUser,
+    AuthUser(user_id): AuthUser,
     Path(slug): Path<String>,
 ) -> Result<Json<Tenant>, AppError> {
-    Ok(Json(state.db.get_tenant_by_slug(&slug).await?))
+    let tenant = state.db.get_tenant_by_slug(&slug).await?;
+    // Verify the caller is a member of this tenant.
+    require_member(&state, tenant.id, user_id).await?;
+    Ok(Json(tenant))
 }
 
 async fn get_my_tenant(
@@ -315,6 +322,11 @@ async fn init_encryption(
                 key_salt: Some(salt.clone()),
                 theme_preference: None,
                 accent_color: None,
+                plan: None,
+                rate_limit_per_min: None,
+                max_tasks: None,
+                max_projects: None,
+                max_agents: None,
             },
         )
         .await?;
@@ -380,6 +392,11 @@ pub(crate) async fn auto_init_encryption(state: &AppState, tenant_id: Uuid, user
                 key_salt: Some(salt.clone()),
                 theme_preference: None,
                 accent_color: None,
+                plan: None,
+                rate_limit_per_min: None,
+                max_tasks: None,
+                max_projects: None,
+                max_agents: None,
             },
         )
         .await

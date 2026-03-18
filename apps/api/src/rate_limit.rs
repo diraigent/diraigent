@@ -1,11 +1,14 @@
 use axum::{
     body::Body,
+    extract::State,
     http::{Request, Response, StatusCode},
     middleware::Next,
 };
 use dashmap::DashMap;
 use std::{net::IpAddr, sync::LazyLock, time::Instant};
 use uuid::Uuid;
+
+use crate::AppState;
 
 struct Entry {
     count: u32,
@@ -20,6 +23,22 @@ static AGENT_MAP: LazyLock<DashMap<Uuid, Entry>> = LazyLock::new(DashMap::new);
 
 // ── Per-project limit ─────────────────────────────────────────────────────────
 static PROJECT_MAP: LazyLock<DashMap<Uuid, Entry>> = LazyLock::new(DashMap::new);
+
+// ── Per-tenant limit ──────────────────────────────────────────────────────────
+static TENANT_MAP: LazyLock<DashMap<Uuid, Entry>> = LazyLock::new(DashMap::new);
+
+/// Cached project_id → (tenant_id, rate_limit_per_min) mapping.
+/// Entries are refreshed every 5 minutes to pick up limit changes.
+struct TenantInfo {
+    tenant_id: Uuid,
+    rate_limit: u32,
+    fetched_at: Instant,
+}
+
+static PROJECT_TENANT_CACHE: LazyLock<DashMap<Uuid, TenantInfo>> = LazyLock::new(DashMap::new);
+
+/// TTL for project→tenant cache entries (seconds).
+const TENANT_CACHE_TTL_SECS: u64 = 300;
 
 const WINDOW_SECS: u64 = 60;
 
@@ -123,6 +142,45 @@ fn check<K: std::hash::Hash + Eq + Copy>(
     }
 }
 
+/// Resolve project_id → (tenant_id, rate_limit_per_min), with caching.
+/// Returns None if the project doesn't exist (skip tenant limit).
+async fn resolve_tenant(state: &AppState, project_id: Uuid) -> Option<(Uuid, u32)> {
+    let now = Instant::now();
+
+    // Check cache
+    if let Some(entry) = PROJECT_TENANT_CACHE.get(&project_id)
+        && now.duration_since(entry.fetched_at).as_secs() < TENANT_CACHE_TTL_SECS
+    {
+        return Some((entry.tenant_id, entry.rate_limit));
+    }
+
+    // Cache miss — single lightweight query
+    let row: Option<(Uuid, i32)> = sqlx::query_as(
+        "SELECT p.tenant_id, t.rate_limit_per_min
+         FROM diraigent.project p
+         JOIN diraigent.tenant t ON p.tenant_id = t.id
+         WHERE p.id = $1",
+    )
+    .bind(project_id)
+    .fetch_optional(&state.pool)
+    .await
+    .ok()?;
+
+    let (tenant_id, limit) = row?;
+    let rate_limit = limit.max(0) as u32;
+
+    PROJECT_TENANT_CACHE.insert(
+        project_id,
+        TenantInfo {
+            tenant_id,
+            rate_limit,
+            fetched_at: now,
+        },
+    );
+
+    Some((tenant_id, rate_limit))
+}
+
 fn rate_limited_response() -> Response<Body> {
     Response::builder()
         .status(StatusCode::TOO_MANY_REQUESTS)
@@ -134,7 +192,11 @@ fn rate_limited_response() -> Response<Body> {
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 
-pub async fn rate_limit(request: Request<Body>, next: Next) -> Response<Body> {
+pub async fn rate_limit(
+    State(state): State<AppState>,
+    request: Request<Body>,
+    next: Next,
+) -> Response<Body> {
     let now = Instant::now();
 
     // 1. IP-based limit
@@ -153,8 +215,19 @@ pub async fn rate_limit(request: Request<Body>, next: Next) -> Response<Body> {
     }
 
     // 3. Per-project-ID limit (derived from URL path)
-    if let Some(project_id) = extract_project_id(&request)
-        && !check(&PROJECT_MAP, project_id, LIMITS.project, now)
+    let project_id = extract_project_id(&request);
+    if let Some(pid) = project_id
+        && !check(&PROJECT_MAP, pid, LIMITS.project, now)
+    {
+        crate::metrics::record_rate_limit();
+        return rate_limited_response();
+    }
+
+    // 4. Per-tenant limit (resolved from project → tenant, with per-tenant rate)
+    if let Some(pid) = project_id
+        && let Some((tenant_id, tenant_limit)) = resolve_tenant(&state, pid).await
+        && tenant_limit > 0
+        && !check(&TENANT_MAP, tenant_id, tenant_limit, now)
     {
         crate::metrics::record_rate_limit();
         return rate_limited_response();

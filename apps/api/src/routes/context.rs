@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::AuthUser;
+use crate::authz::OptionalAgentId;
 use crate::error::AppError;
 use crate::models::AgentContext;
 use crate::services::embeddings::{cosine_similarity, top_k_from_env};
@@ -30,10 +31,15 @@ pub struct ContextQuery {
 /// task has no spec or no embedding provider is configured.
 async fn get_context(
     State(state): State<AppState>,
-    AuthUser(_user_id): AuthUser,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id_header): OptionalAgentId,
     Path((agent_id, project_id)): Path<(Uuid, Uuid)>,
     Query(query): Query<ContextQuery>,
 ) -> Result<Json<AgentContext>, AppError> {
+    // Verify the caller has access to this project (tenant isolation).
+    crate::authz::require_membership(state.db.as_ref(), agent_id_header, user_id, project_id)
+        .await?;
+
     let mut ctx = state
         .db
         .get_agent_context(agent_id, project_id)

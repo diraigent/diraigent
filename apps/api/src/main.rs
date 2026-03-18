@@ -5,8 +5,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router, extract::State};
 use diraigent_api::{
-    AppState, auth, crypto, csrf, db, metrics, package_cache, rate_limit, routes, services,
-    stale_detector, webhooks, ws_registry,
+    AppState, auth, crypto, csrf, db, metrics, openapi, package_cache, rate_limit, routes,
+    services, stale_detector, webhooks, ws_registry,
 };
 use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
@@ -15,6 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
+use utoipa::OpenApi;
 
 async fn readiness_check(State(state): State<AppState>) -> impl IntoResponse {
     let db_ok = state.db.health_check().await;
@@ -240,6 +241,10 @@ async fn main() -> anyhow::Result<()> {
             }),
         )
         .nest("/v1", routes::router())
+        .merge(
+            utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
+                .url("/api-docs/openapi.json", openapi::ApiDoc::openapi()),
+        )
         .layer(middleware::from_fn(add_request_id))
         .layer(middleware::from_fn(metrics::record_metrics))
         .layer(DefaultBodyLimit::max(
@@ -249,7 +254,10 @@ async fn main() -> anyhow::Result<()> {
                 .unwrap_or(1024 * 1024), // 1 MB default
         ))
         .layer(middleware::from_fn(csrf::csrf_check))
-        .layer(middleware::from_fn(rate_limit::rate_limit))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit::rate_limit,
+        ))
         .layer(cors)
         .layer(shared_utils::server::standard_trace())
         .with_state(state);

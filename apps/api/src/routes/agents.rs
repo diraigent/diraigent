@@ -26,6 +26,12 @@ async fn register_agent(
     Json(req): Json<CreateAgent>,
 ) -> Result<Json<AgentRegistered>, AppError> {
     validation::validate_create_agent(&req)?;
+    crate::quota::check_quota(
+        &state.pool,
+        tenant.tenant_id,
+        crate::quota::Resource::Agents,
+    )
+    .await?;
     let (agent, api_key) = state.db.register_agent(&req, user_id).await?;
 
     // Auto-setup: ensure a "main" role exists and assign the new agent to it.

@@ -44,9 +44,9 @@ Diraigent is none of these. It's a structured, self-hosted platform where:
 Prerequisites: Docker, Docker Compose, and [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
 ```bash
-curl -LO https://github.com/diraigent/diraigent/blob/main/startup/docker-compose.yml
-curl -LO https://github.com/diraigent/diraigent/blob/main/startup/start.sh
-curl -LO https://github.com/diraigent/diraigent/blob/main/startup/.env.example
+curl -LO https://raw.githubusercontent.com/diraigent/diraigent/main/startup/docker-compose.yml
+curl -LO https://raw.githubusercontent.com/diraigent/diraigent/main/startup/start.sh
+curl -LO https://raw.githubusercontent.com/diraigent/diraigent/main/startup/.env.example
 cp .env.example .env    # edit .env for your setup
 chmod +x start.sh
 ./start.sh              # registers agent, seeds playbooks, starts everything
@@ -169,4 +169,4 @@ DATABASE_URL=postgres://diraigent:diraigent@localhost:5433/diraigent cargo run -
 
 ## License
 
-SSPL. See [LICENSE](LICENSE) for terms.
+SSPL. See [LICENSE](LICENSE.md) for terms.
