@@ -7,6 +7,16 @@ use ratatui::Frame;
 use crate::app::App;
 use crate::theme;
 
+/// Map API work status to user-friendly display name.
+pub fn work_status_label(status: &str) -> &str {
+    match status {
+        "achieved" => "Done",
+        "paused" => "Pause",
+        "abandoned" => "Abandon",
+        other => other,
+    }
+}
+
 pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -52,7 +62,11 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             ListItem::new(Line::styled(
                 format!(
                     " [{}:{}]{} {}{}",
-                    work_type, status, prio_str, g.title, progress_str
+                    work_type,
+                    work_status_label(status),
+                    prio_str,
+                    g.title,
+                    progress_str
                 ),
                 style,
             ))
@@ -92,7 +106,9 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 Line::styled(
                     format!(
                         "Type: {}  Status: {}  Priority: {}",
-                        work_type, status, priority
+                        work_type,
+                        work_status_label(status),
+                        priority
                     ),
                     Style::default().fg(status_color),
                 ),
@@ -286,7 +302,12 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                     let work_type = child.work_type.as_deref().unwrap_or("epic");
                     let child_status = child.status.as_deref().unwrap_or("active");
                     lines.push(Line::styled(
-                        format!("  [{}:{}] {}", work_type, child_status, child.title),
+                        format!(
+                            "  [{}:{}] {}",
+                            work_type,
+                            work_status_label(child_status),
+                            child.title
+                        ),
                         Style::default().fg(theme::text()),
                     ));
                 }
