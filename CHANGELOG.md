@@ -1,5 +1,34 @@
 # Changelog
 
+## v20260318-2117 (2026-03-18)
+
+### Added
+- **API**: OpenAPI/Swagger UI for browsing the API interactively
+- **API**: Work status counts endpoint for section header aggregation
+- **Web**: Inline title editing on work list via double-click
+- **Web**: Editable work type badge in work item header
+- **Web**: Status counts shown in work list section headers
+- **TUI**: Create-task keybinding [t] on work page
+- **TUI**: Work progress indicators (done/total) in work list
+- **TUI**: Keybindings for execute, plan+execute, and save in work form
+- **TUI**: API token management in account settings for onboarding
+
+### Changed
+- **Web**: Rename work status buttons to Done, Pause, Abandon
+- **TUI**: Default view changed from Tasks to Work
+- **TUI**: Work items sorted by status (active → paused → achieved → abandoned)
+- **Orchestra**: Improved chat handler with better model routing
+
+### Fixed
+- **TUI**: Light mode background now fills frame with correct base color
+- **TUI**: Work list scrolling keeps selected item visible
+
+### Removed
+- **Web**: Status filter dropdown from work page
+- **Web**: Unused agents, scratchpad, and status-badge components
+
+---
+
 
 ## v20260318-2000 (2026-03-18)
 
