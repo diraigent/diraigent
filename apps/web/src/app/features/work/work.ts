@@ -194,7 +194,20 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   <option [value]="gt" [selected]="gt === goal.work_type">{{ t('goals.type.' + gt) }}</option>
                 }
               </select>
-              <span class="text-sm font-medium text-text-primary">{{ goal.title }}</span>
+              @if (editingHeaderTitleId() === goal.id) {
+                <input #headerTitleInput type="text"
+                  [value]="goal.title"
+                  (click)="$event.stopPropagation()"
+                  (blur)="saveHeaderTitle(goal, $any($event.target).value)"
+                  (keydown.enter)="$any($event.target).blur()"
+                  (keydown.escape)="cancelHeaderTitleEdit($event)"
+                  class="text-sm font-medium text-text-primary bg-transparent border-b border-accent
+                         focus:outline-none min-w-[120px] flex-1" />
+              } @else {
+                <span (dblclick)="startHeaderTitleEdit(goal.id, $event)"
+                  title="Double-click to rename"
+                  class="text-sm font-medium text-text-primary cursor-text">{{ goal.title }}</span>
+              }
               @if (goal.status !== 'active') {
                 <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
                   {{ t('goals.status.' + goal.status) }}
@@ -1197,6 +1210,7 @@ export class WorkPage {
   conflictMap = signal<Map<string, string[]>>(new Map());
   unmergedMap = signal<Map<string, string[]>>(new Map());
 
+  editingHeaderTitleId = signal<string | null>(null);
   showForm = signal(false);
   editing = signal<SpWork | null>(null);
   formTitle = '';
@@ -1924,6 +1938,40 @@ export class WorkPage {
 
   clearStatsFilter(): void {
     this.statsFilter.set('');
+  }
+
+  startHeaderTitleEdit(goalId: string, event: Event): void {
+    event.stopPropagation();
+    this.editingHeaderTitleId.set(goalId);
+    // Auto-focus the input after Angular renders it
+    setTimeout(() => {
+      const input = document.querySelector(`[data-work-id="${goalId}"] input[type="text"]`) as HTMLInputElement;
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    });
+  }
+
+  saveHeaderTitle(goal: SpWork, newTitle: string): void {
+    this.editingHeaderTitleId.set(null);
+    const trimmed = newTitle.trim();
+    if (!trimmed || trimmed === goal.title) return;
+    this.api.update(goal.id, { title: trimmed }).subscribe({
+      next: () => {
+        // Also update formTitle if this is the currently selected/expanded item
+        if (this.selected()?.id === goal.id) {
+          this.formTitle = trimmed;
+        }
+        this.loadGoals();
+      },
+    });
+  }
+
+  cancelHeaderTitleEdit(event: Event): void {
+    event.preventDefault();
+    (event.target as HTMLInputElement).value = ''; // reset to prevent save
+    this.editingHeaderTitleId.set(null);
   }
 
   changeWorkType(goal: SpWork, newType: WorkType): void {
