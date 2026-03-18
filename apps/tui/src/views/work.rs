@@ -44,8 +44,16 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             } else {
                 String::new()
             };
+            let progress_str = app
+                .work_progress_map
+                .get(&g.id)
+                .map(|p| format!(" ({}/{})", p.done_tasks, p.total_tasks))
+                .unwrap_or_default();
             ListItem::new(Line::styled(
-                format!(" [{}:{}]{} {}", work_type, status, prio_str, g.title),
+                format!(
+                    " [{}:{}]{} {}{}",
+                    work_type, status, prio_str, g.title, progress_str
+                ),
                 style,
             ))
         })
