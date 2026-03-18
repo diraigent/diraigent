@@ -104,3 +104,4 @@ done
 # Merge target back into source so changelog is present in both branches
 git checkout "$SOURCE"
 git merge "$TARGET" --no-edit
+git push
