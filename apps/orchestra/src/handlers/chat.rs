@@ -523,9 +523,11 @@ async fn summarize_via_provider(
     // Limit the text we send for summarization to avoid huge requests.
     let max_summary_input = 60_000usize; // chars, ~15K tokens
     let truncated = if conversation_text.len() > max_summary_input {
-        let start = conversation_text.len() - max_summary_input;
-        let safe_start = conversation_text.ceil_char_boundary(start);
-        &conversation_text[safe_start..]
+        let mut start = conversation_text.len() - max_summary_input;
+        while start < conversation_text.len() && !conversation_text.is_char_boundary(start) {
+            start += 1;
+        }
+        &conversation_text[start..]
     } else {
         &conversation_text
     };

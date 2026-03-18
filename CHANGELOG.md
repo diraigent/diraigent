@@ -1,5 +1,17 @@
 # Changelog
 
+
+## v20260318-2155 (2026-03-18)
+
+### Changed
+- **API**: Improved related-item query handling
+- **Orchestra**: Refined chat handler response logic
+
+### Fixed
+- **Web**: Minor cleanup in work module
+
+---
+
 ## v20260318-2146 (2026-03-18)
 
 ### Changed

@@ -61,12 +61,13 @@ async fn search_knowledge(
         return Ok(Vec::new());
     }
 
-    // Fetch all knowledge for this project (small cardinality per spec)
-    let rows =
-        sqlx::query_as::<_, Knowledge>("SELECT * FROM diraigent.knowledge WHERE project_id = $1")
-            .bind(project_id)
-            .fetch_all(pool)
-            .await?;
+    // Fetch knowledge for this project, capped to avoid unbounded memory use.
+    let rows = sqlx::query_as::<_, Knowledge>(
+        "SELECT * FROM diraigent.knowledge WHERE project_id = $1 ORDER BY updated_at DESC LIMIT 500",
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await?;
 
     let mut scored: Vec<RelatedItem> = Vec::new();
 
@@ -120,7 +121,11 @@ async fn search_knowledge(
         }
     }
 
-    scored.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap());
+    scored.sort_by(|a, b| {
+        b.relevance_score
+            .partial_cmp(&a.relevance_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     scored.truncate(limit as usize);
     Ok(scored)
 }
@@ -138,11 +143,12 @@ async fn search_decisions(
         return Ok(Vec::new());
     }
 
-    let rows =
-        sqlx::query_as::<_, Decision>("SELECT * FROM diraigent.decision WHERE project_id = $1")
-            .bind(project_id)
-            .fetch_all(pool)
-            .await?;
+    let rows = sqlx::query_as::<_, Decision>(
+        "SELECT * FROM diraigent.decision WHERE project_id = $1 ORDER BY updated_at DESC LIMIT 500",
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await?;
 
     let mut scored: Vec<RelatedItem> = Vec::new();
 
@@ -200,7 +206,11 @@ async fn search_decisions(
         }
     }
 
-    scored.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap());
+    scored.sort_by(|a, b| {
+        b.relevance_score
+            .partial_cmp(&a.relevance_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     scored.truncate(limit as usize);
     Ok(scored)
 }
@@ -219,7 +229,7 @@ async fn search_observations(
     }
 
     let rows = sqlx::query_as::<_, Observation>(
-        "SELECT * FROM diraigent.observation WHERE project_id = $1 AND status IN ('open', 'acknowledged')",
+        "SELECT * FROM diraigent.observation WHERE project_id = $1 AND status IN ('open', 'acknowledged') ORDER BY updated_at DESC LIMIT 500",
     )
     .bind(project_id)
     .fetch_all(pool)
@@ -266,7 +276,11 @@ async fn search_observations(
         }
     }
 
-    scored.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap());
+    scored.sort_by(|a, b| {
+        b.relevance_score
+            .partial_cmp(&a.relevance_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     scored.truncate(limit as usize);
     Ok(scored)
 }

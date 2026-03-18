@@ -1099,7 +1099,6 @@ function parseCriteria(value: unknown): string[] {
   `,
 })
 export class WorkPage {
-  private static readonly GOAL_DETAIL_CONCURRENCY = 6;
 
   private api = inject(WorkApiService);
   private tasksApi = inject(TasksApiService);
