@@ -6,11 +6,13 @@ import { AuthService } from './core/services/auth.service';
 import { CreateProjectModalComponent } from './shared/components/create-project-modal/create-project-modal';
 import { CreateProjectService } from './shared/services/create-project.service';
 import { ChatService } from './core/services/chat.service';
+import { KeyboardService } from './core/services/keyboard.service';
+import { KeyboardHelpComponent } from './shared/components/keyboard-help/keyboard-help';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, SidebarComponent, ChatDrawerComponent, CreateProjectModalComponent],
+  imports: [RouterOutlet, SidebarComponent, ChatDrawerComponent, CreateProjectModalComponent, KeyboardHelpComponent],
   template: `
     @if (auth.isLoggedIn()) {
       <app-sidebar [class.hidden]="chat.fullscreen()" />
@@ -47,6 +49,9 @@ import { ChatService } from './core/services/chat.service';
           (created)="createProject.notifyCreated($event)"
           (cancelled)="createProject.close()" />
       }
+      @if (keyboard.helpOpen()) {
+        <app-keyboard-help />
+      }
     } @else if (!auth.isAuthInitialized()) {
       <div class="min-h-screen flex items-center justify-center bg-bg-subtle">
         <div class="text-center space-y-6">
@@ -79,6 +84,7 @@ export class App implements AfterViewInit, OnDestroy {
   auth = inject(AuthService);
   createProject = inject(CreateProjectService);
   chat = inject(ChatService);
+  keyboard = inject(KeyboardService);
 
   /** Whether the floating chat button should be visible (mobile only, chat out of viewport). */
   showChatFab = signal(false);
@@ -88,8 +94,12 @@ export class App implements AfterViewInit, OnDestroy {
   private onDesktopChange = (e: MediaQueryListEvent) => {
     if (e.matches) this.showChatFab.set(false);
   };
+  private detachKeyboard: (() => void) | null = null;
 
   constructor() {
+    // Attach global keyboard shortcuts
+    this.detachKeyboard = this.keyboard.attach();
+
     // React to scrollToChat signal from ChatService (e.g. openWithMessage from goals/tasks)
     effect(() => {
       if (this.chat.scrollToChat()) {
@@ -107,6 +117,7 @@ export class App implements AfterViewInit, OnDestroy {
     this.observer?.disconnect();
     this.observer = null;
     this.desktopQuery.removeEventListener('change', this.onDesktopChange);
+    this.detachKeyboard?.();
   }
 
   /** Smooth-scroll the chat panel into view. */

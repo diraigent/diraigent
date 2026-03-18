@@ -1,4 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TranslocoModule, TranslocoService } from '@jsverse/transloco';
 import { firstValueFrom } from 'rxjs';
@@ -6,7 +7,7 @@ import { TenantApiService, Tenant } from '../../core/services/tenant-api.service
 import { AuthService } from '../../core/services/auth.service';
 import { CryptoService } from '../../core/services/crypto.service';
 import { ThemeService } from '../../core/services/theme.service';
-import { AgentsApiService, SpAgent } from '../../core/services/agents-api.service';
+import { AgentsApiService, SpAgent, SpAgentRegistered } from '../../core/services/agents-api.service';
 import { PassphrasePromptComponent } from '../../shared/components/passphrase-prompt/passphrase-prompt';
 import { AppearanceSettingsComponent } from '../../shared/components/appearance-settings/appearance-settings';
 import { environment } from '../../../environments/environment';
@@ -14,7 +15,7 @@ import { environment } from '../../../environments/environment';
 @Component({
   selector: 'app-tenant-settings',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, PassphrasePromptComponent, AppearanceSettingsComponent],
+  imports: [TranslocoModule, FormsModule, DatePipe, PassphrasePromptComponent, AppearanceSettingsComponent],
   template: `
     <div class="p-6 max-w-4xl" *transloco="let t">
       <h1 class="text-2xl font-semibold text-text-primary mb-6">{{ t('tenantSettings.title') }}</h1>
@@ -190,6 +191,95 @@ import { environment } from '../../../environments/environment';
         </div>
       </section>
 
+      <!-- API Tokens -->
+      <section class="mb-8">
+        <h2 class="text-lg font-medium text-text-primary mb-4">{{ t('tenantSettings.apiTokens') }}</h2>
+        <div class="bg-surface rounded-lg border border-border p-6 space-y-4">
+          <p class="text-sm text-text-secondary">{{ t('tenantSettings.apiTokensHint') }}</p>
+
+          <!-- Create Token -->
+          @if (!newToken()) {
+            <div class="flex items-center gap-3">
+              <input type="text" [(ngModel)]="tokenName" [placeholder]="t('tenantSettings.tokenNamePlaceholder')"
+                class="bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                       focus:outline-none focus:ring-1 focus:ring-accent" />
+              <button (click)="createToken()"
+                [disabled]="creatingToken() || !tokenName.trim()"
+                class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
+                @if (creatingToken()) { {{ t('tenantSettings.creatingToken') }} } @else { {{ t('tenantSettings.createToken') }} }
+              </button>
+            </div>
+            @if (tokenError()) {
+              <p class="text-sm text-ctp-red">{{ tokenError() }}</p>
+            }
+          } @else {
+            <!-- Show newly created token -->
+            <div class="bg-ctp-yellow/10 border border-ctp-yellow/30 rounded-lg p-4 space-y-3">
+              <div class="flex items-center gap-2">
+                <svg class="w-5 h-5 text-ctp-yellow shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <p class="text-sm font-medium text-ctp-yellow">{{ t('tenantSettings.tokenWarning') }}</p>
+              </div>
+              <div>
+                <span class="block text-xs text-text-muted uppercase tracking-wide mb-1">{{ t('tenantSettings.tokenLabel') }}</span>
+                <div class="flex gap-2">
+                  <code class="flex-1 bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 font-mono select-all break-all">{{ newToken() }}</code>
+                  <button (click)="copyToken()" type="button"
+                    class="shrink-0 px-3 py-2 text-sm border border-border rounded-lg hover:bg-surface transition-colors"
+                    [class.text-ctp-green]="tokenCopied()"
+                    [class.text-text-secondary]="!tokenCopied()">
+                    {{ tokenCopied() ? t('common.copied') : t('common.copy') }}
+                  </button>
+                </div>
+              </div>
+              <div class="bg-bg-subtle rounded-lg p-3 text-sm text-text-secondary">
+                <p class="font-medium text-text-primary mb-1">{{ t('tenantSettings.envSetup') }}</p>
+                <code class="block font-mono text-xs mt-1 select-all whitespace-pre">DIRAIGENT_API_URL={{ apiServerUrl }}
+DIRAIGENT_API_TOKEN={{ newToken() }}</code>
+              </div>
+              <button (click)="dismissNewToken()"
+                class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90">
+                {{ t('common.done') }}
+              </button>
+            </div>
+          }
+
+          <!-- Existing Tokens -->
+          @if (personalTokens().length > 0) {
+            <div class="pt-4 border-t border-border">
+              <span class="text-sm font-medium text-text-primary mb-3 block">{{ t('tenantSettings.existingTokens') }}</span>
+              <div class="space-y-2">
+                @for (tok of personalTokens(); track tok.id) {
+                  <div class="flex items-center justify-between bg-bg-subtle rounded-lg px-4 py-3">
+                    <div class="flex items-center gap-3">
+                      <svg class="w-4 h-4 text-text-secondary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                      </svg>
+                      <div>
+                        <span class="text-sm text-text-primary">{{ tok.name }}</span>
+                        <span class="text-xs text-text-muted ml-2">{{ t('tenantSettings.tokenCreated') }} {{ tok.created_at | date:'mediumDate' }}</span>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      @if (tok.status === 'revoked') {
+                        <span class="text-xs px-2 py-0.5 rounded bg-ctp-red/10 text-ctp-red">{{ t('tenantSettings.tokenRevoked') }}</span>
+                      } @else {
+                        <span class="w-2 h-2 rounded-full" [class]="tok.status === 'idle' || tok.status === 'working' ? 'bg-ctp-green' : 'bg-ctp-overlay1'"></span>
+                        <button (click)="revokeToken(tok.id)"
+                          class="text-xs px-2 py-1 text-ctp-red border border-ctp-red/30 rounded hover:bg-ctp-red/10 transition-colors">
+                          {{ t('tenantSettings.revokeToken') }}
+                        </button>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      </section>
+
       <!-- Version Info -->
       <section class="mb-8">
         <h2 class="text-lg font-medium text-text-primary mb-4">{{ t('tenantSettings.versionInfo') }}</h2>
@@ -262,6 +352,15 @@ export class TenantSettingsPage {
   deletingAccount = signal(false);
   deleteError = signal('');
 
+  // API Tokens
+  personalTokens = signal<SpAgent[]>([]);
+  tokenName = '';
+  creatingToken = signal(false);
+  tokenError = signal('');
+  newToken = signal('');
+  tokenCopied = signal(false);
+  apiServerUrl = environment.apiServer;
+
   // Version Info
   webVersion = environment.appVersion;
   apiVersion = signal('');
@@ -279,6 +378,7 @@ export class TenantSettingsPage {
   constructor() {
     this.loadTenant();
     this.loadVersionInfo();
+    this.loadPersonalTokens();
   }
 
   private loadVersionInfo(): void {
@@ -422,6 +522,61 @@ export class TenantSettingsPage {
         this.deletingAccount.set(false);
         this.deleteError.set(err.message || this.transloco.translate('tenantSettings.deleteAccountFailed'));
       });
+  }
+
+  // --- API Token management ---
+
+  private loadPersonalTokens(): void {
+    this.agentsApi.getAgents().subscribe({
+      next: agents => {
+        const tokens = agents.filter(a => a.metadata?.['runtime'] === 'personal-token');
+        this.personalTokens.set(tokens);
+      },
+      error: () => { /* ignore */ },
+    });
+  }
+
+  createToken(): void {
+    const name = this.tokenName.trim();
+    if (!name) return;
+    this.creatingToken.set(true);
+    this.tokenError.set('');
+    this.agentsApi.createAgent({
+      name,
+      capabilities: [],
+      metadata: { runtime: 'personal-token' },
+    }).subscribe({
+      next: (result: SpAgentRegistered) => {
+        this.creatingToken.set(false);
+        this.newToken.set(result.api_key);
+        this.tokenName = '';
+        this.loadPersonalTokens();
+      },
+      error: err => {
+        this.creatingToken.set(false);
+        const msg = err?.error?.message || err?.error || 'Failed to create token';
+        this.tokenError.set(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      },
+    });
+  }
+
+  copyToken(): void {
+    const token = this.newToken();
+    if (!token) return;
+    navigator.clipboard.writeText(token);
+    this.tokenCopied.set(true);
+    setTimeout(() => this.tokenCopied.set(false), 2000);
+  }
+
+  dismissNewToken(): void {
+    this.newToken.set('');
+  }
+
+  revokeToken(agentId: string): void {
+    this.agentsApi.updateAgent(agentId, { status: 'revoked' }).subscribe({
+      next: () => this.loadPersonalTokens(),
+      error: () => { /* ignore */ },
+    });
   }
 
   async switchToPassphraseMode(_passphrase: string): Promise<void> {
