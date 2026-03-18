@@ -56,8 +56,6 @@ const GOAL_TYPES: WorkType[] = ['epic', 'feature', 'milestone', 'sprint', 'initi
 
 const TYPE_COLORS = WORK_TYPE_COLORS;
 
-const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
-
 /** Safely parse success_criteria into a string array, handling string, array, or nullish values. */
 function parseCriteria(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String).filter(l => l.trim().length > 0);
@@ -1089,98 +1087,6 @@ function parseCriteria(value: unknown): string[] {
         </div>
       }
 
-      <!-- Task Picker modal -->
-      @if (showTaskPicker()) {
-        <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]"
-             role="button" tabindex="0" aria-label="Close task picker"
-             (click)="closeTaskPicker()" (keydown.enter)="closeTaskPicker()" (keydown.escape)="closeTaskPicker()">
-          <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-2xl max-h-[90vh] flex flex-col"
-               tabindex="-1" (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()">
-            <div class="flex items-center justify-between mb-4">
-              <h2 class="text-lg font-semibold text-text-primary">{{ t('goals.pickTasks') }}</h2>
-              <button (click)="closeTaskPicker()" class="p-1.5 text-text-secondary hover:text-text-primary rounded">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <!-- Picker filters -->
-            <div class="flex flex-wrap gap-2 mb-3">
-              <input
-                type="text"
-                [placeholder]="t('goals.pickerSearchPlaceholder')"
-                [(ngModel)]="pickerSearch"
-                (ngModelChange)="loadPickerTasks()"
-                class="flex-1 min-w-[150px] bg-surface text-text-primary text-xs rounded-lg px-3 py-2 border border-border
-                       focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary" />
-              <select
-                [(ngModel)]="pickerStateFilter"
-                (ngModelChange)="loadPickerTasks()"
-                class="bg-surface text-text-primary text-xs rounded-lg px-3 py-2 border border-border
-                       focus:outline-none focus:ring-1 focus:ring-accent">
-                <option value="">{{ t('tasks.allStates') }}</option>
-                @for (s of taskStates; track s) {
-                  <option [value]="s">{{ s }}</option>
-                }
-              </select>
-              <label class="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
-                <input type="checkbox" [(ngModel)]="pickerUnlinkedOnly" (ngModelChange)="loadPickerTasks()"
-                  class="rounded border-border text-accent focus:ring-accent" />
-                {{ t('goals.unlinkedOnly') }}
-              </label>
-            </div>
-
-            <!-- Task list -->
-            <div class="flex-1 overflow-y-auto min-h-0 mb-3 border border-border rounded-lg">
-              @if (pickerLoading()) {
-                <p class="text-xs text-text-secondary p-3">{{ t('common.loading') }}</p>
-              } @else if (pickerTasks().length === 0) {
-                <p class="text-xs text-text-secondary p-3">{{ t('common.empty') }}</p>
-              } @else {
-                <div class="divide-y divide-border">
-                  @for (task of pickerTasks(); track task.id) {
-                    <label class="flex items-center gap-3 p-2.5 hover:bg-surface-hover cursor-pointer transition-colors">
-                      <input type="checkbox"
-                        [checked]="pickerSelectedIds().has(task.id)"
-                        (change)="togglePickerTask(task.id)"
-                        class="rounded border-border text-accent focus:ring-accent shrink-0" />
-                      <div class="flex-1 min-w-0">
-                        <span class="text-sm text-text-primary block truncate">{{ task.title }}</span>
-                        <div class="flex items-center gap-1.5 mt-0.5">
-                          <span class="px-1.5 py-0.5 rounded-full text-xs bg-ctp-blue/20 text-ctp-blue">{{ task.kind }}</span>
-                          <span class="px-1.5 py-0.5 rounded-full text-xs bg-ctp-green/20 text-ctp-green">{{ task.state }}</span>
-                          @if (task.urgent) {
-                            <span class="text-xs text-ctp-red font-medium">Urgent</span>
-                          }
-                        </div>
-                      </div>
-                    </label>
-                  }
-                </div>
-              }
-            </div>
-
-            <!-- Footer -->
-            <div class="flex items-center justify-between pt-2 border-t border-border">
-              <span class="text-xs text-text-secondary">
-                {{ pickerSelectedIds().size }} {{ t('goals.tasksSelected') }}
-              </span>
-              <div class="flex gap-2">
-                <button (click)="closeTaskPicker()" class="px-4 py-2 text-sm text-text-secondary hover:text-text-primary">
-                  {{ t('goals.cancel') }}
-                </button>
-                <button (click)="linkSelectedTasks()"
-                  [disabled]="pickerSelectedIds().size === 0"
-                  class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed">
-                  {{ t('goals.linkSelected') }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      }
-
       <!-- Task Create form (reuse TaskFormComponent) -->
       <app-task-form
         [show]="showTaskForm()"
@@ -1210,7 +1116,6 @@ export class WorkPage {
   isTouch = signal(false);
 
   readonly goalTypes = GOAL_TYPES;
-  readonly taskStates = TASK_STATES;
 
   items = signal<SpWork[]>([]);
   loading = signal(false);
@@ -1274,15 +1179,6 @@ export class WorkPage {
 
   // Marked tasks (per-goal, stored in localStorage)
   markedTaskIds = signal<Set<string>>(new Set());
-
-  // Task picker
-  showTaskPicker = signal(false);
-  pickerTasks = signal<SpTask[]>([]);
-  pickerLoading = signal(false);
-  pickerSelectedIds = signal<Set<string>>(new Set());
-  pickerSearch = '';
-  pickerStateFilter = '';
-  pickerUnlinkedOnly = true;
 
   // Task detail data (shared between linked and unlinked task expansion)
   selectedLinkedTask = signal<SpTask | null>(null);
@@ -2620,64 +2516,6 @@ export class WorkPage {
         if (sel) {
           this.loadLinkedTasks(sel.id);
         }
-      },
-    });
-  }
-
-  // --- Task Picker ---
-
-  openTaskPicker(): void {
-    this.pickerSelectedIds.set(new Set());
-    this.pickerSearch = '';
-    this.pickerStateFilter = '';
-    this.pickerUnlinkedOnly = true;
-    this.showTaskPicker.set(true);
-    this.loadPickerTasks();
-  }
-
-  closeTaskPicker(): void {
-    this.showTaskPicker.set(false);
-  }
-
-  loadPickerTasks(): void {
-    this.pickerLoading.set(true);
-    this.tasksApi.list({
-      search: this.pickerSearch || undefined,
-      state: this.pickerStateFilter || undefined,
-      unlinked: this.pickerUnlinkedOnly || undefined,
-      limit: 50,
-    }).subscribe({
-      next: (res) => {
-        this.pickerTasks.set(res.data);
-        this.pickerLoading.set(false);
-      },
-      error: () => {
-        this.pickerTasks.set([]);
-        this.pickerLoading.set(false);
-      },
-    });
-  }
-
-  togglePickerTask(taskId: string): void {
-    const current = new Set(this.pickerSelectedIds());
-    if (current.has(taskId)) {
-      current.delete(taskId);
-    } else {
-      current.add(taskId);
-    }
-    this.pickerSelectedIds.set(current);
-  }
-
-  linkSelectedTasks(): void {
-    const sel = this.selected();
-    const ids = Array.from(this.pickerSelectedIds());
-    if (!sel || ids.length === 0) return;
-    this.api.bulkLinkTasks(sel.id, ids).subscribe({
-      next: () => {
-        this.closeTaskPicker();
-        this.loadLinkedTasks(sel.id);
-        this.loadAllProgress([sel]);
-        this.loadStatsAndChildren(sel.id);
       },
     });
   }
