@@ -48,6 +48,23 @@ export interface SpWorkStats {
   oldest_open_task_date: string | null;
 }
 
+/** Bulk progress+stats for all work items in a project (single API call). */
+export interface SpWorkSummary {
+  work_id: string;
+  total_tasks: number;
+  done_tasks: number;
+  backlog_count: number;
+  ready_count: number;
+  working_count: number;
+  done_count: number;
+  cancelled_count: number;
+  total_count: number;
+  blocked_count: number;
+  total_cost_usd: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+}
+
 export interface SpWorkComment {
   id: string;
   work_id: string;
@@ -146,6 +163,12 @@ export class WorkApiService extends BaseCrudApiService<SpWork, SpWorkCreate, SpW
   reorder(workIds: string[]): Observable<SpWork[]> {
     if (!this.projectId) return EMPTY as Observable<SpWork[]>;
     return this.http.post<SpWork[]>(`${this.baseUrl}/${this.projectId}/work/reorder`, { work_ids: workIds });
+  }
+
+  /** Bulk progress+stats for all work items in the project (1 request instead of 2N). */
+  summaries(): Observable<SpWorkSummary[]> {
+    if (!this.projectId) return EMPTY as Observable<SpWorkSummary[]>;
+    return this.http.get<SpWorkSummary[]>(`${this.baseUrl}/${this.projectId}/work/summaries`);
   }
 
 }

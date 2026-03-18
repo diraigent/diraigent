@@ -314,7 +314,7 @@ export class DashboardPage {
   }
 
   private startPolling(): void {
-    timer(0, 30_000)
+    timer(0, 90_000)
       .pipe(
         switchMap(() => this.diraigentApi.getDashboardSummary(30)),
         switchMap(summary => {

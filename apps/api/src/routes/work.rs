@@ -17,6 +17,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/{project_id}/work", post(create_work).get(list_works))
         .route("/{project_id}/work/counts", get(work_status_counts))
+        .route("/{project_id}/work/summaries", get(get_bulk_summaries))
         .route("/{project_id}/work/reorder", post(reorder_works))
         .route(
             "/work/{work_id}",
@@ -77,6 +78,17 @@ async fn work_status_counts(
     let rows = state.db.work_status_counts(project_id).await?;
     let map: std::collections::HashMap<String, i64> = rows.into_iter().collect();
     Ok(Json(map))
+}
+
+async fn get_bulk_summaries(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
+    Path(project_id): Path<Uuid>,
+) -> Result<Json<Vec<WorkSummary>>, AppError> {
+    require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
+    let summaries = state.db.get_bulk_work_summaries(project_id).await?;
+    Ok(Json(summaries))
 }
 
 async fn reorder_works(

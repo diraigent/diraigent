@@ -334,6 +334,70 @@ pub async fn get_work_stats(pool: &PgPool, work_id: Uuid) -> Result<WorkStats, A
     })
 }
 
+pub async fn get_bulk_work_summaries(
+    pool: &PgPool,
+    project_id: Uuid,
+) -> Result<Vec<WorkSummary>, AppError> {
+    let rows = sqlx::query_as::<_, (
+        Uuid, i64, i64, i64, i64, i64, i64, i64, i64, i64, Option<f64>, i64, i64,
+    )>(
+        "WITH work_tasks AS (
+            SELECT tw.work_id, t.*
+            FROM diraigent.task_work tw
+            JOIN diraigent.task t ON t.id = tw.task_id
+            JOIN diraigent.work w ON w.id = tw.work_id
+            WHERE w.project_id = $1
+        ),
+        blocked AS (
+            SELECT DISTINCT td.task_id, wt.work_id
+            FROM diraigent.task_dependency td
+            JOIN work_tasks wt ON td.task_id = wt.id
+            JOIN diraigent.task blocker ON td.depends_on = blocker.id
+            WHERE blocker.state != 'done'
+        )
+        SELECT
+            wt.work_id,
+            COUNT(*)::bigint AS total_tasks,
+            COUNT(*) FILTER (WHERE wt.state = 'done')::bigint AS done_tasks,
+            COUNT(*) FILTER (WHERE wt.state = 'backlog')::bigint AS backlog_count,
+            COUNT(*) FILTER (WHERE wt.state = 'ready')::bigint AS ready_count,
+            COUNT(*) FILTER (WHERE wt.state NOT IN ('backlog','ready','done','cancelled'))::bigint AS working_count,
+            COUNT(*) FILTER (WHERE wt.state = 'done')::bigint AS done_count,
+            COUNT(*) FILTER (WHERE wt.state = 'cancelled')::bigint AS cancelled_count,
+            COUNT(*)::bigint AS total_count,
+            (SELECT COUNT(*) FROM blocked b WHERE b.work_id = wt.work_id)::bigint AS blocked_count,
+            SUM(wt.cost_usd)::double precision AS total_cost_usd,
+            COALESCE(SUM(wt.input_tokens)::bigint, 0) AS total_input_tokens,
+            COALESCE(SUM(wt.output_tokens)::bigint, 0) AS total_output_tokens
+        FROM work_tasks wt
+        GROUP BY wt.work_id",
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await?;
+
+    let summaries = rows
+        .into_iter()
+        .map(|r| WorkSummary {
+            work_id: r.0,
+            total_tasks: r.1,
+            done_tasks: r.2,
+            backlog_count: r.3,
+            ready_count: r.4,
+            working_count: r.5,
+            done_count: r.6,
+            cancelled_count: r.7,
+            total_count: r.8,
+            blocked_count: r.9,
+            total_cost_usd: r.10.unwrap_or(0.0),
+            total_input_tokens: r.11,
+            total_output_tokens: r.12,
+        })
+        .collect();
+
+    Ok(summaries)
+}
+
 pub async fn compute_auto_status(pool: &PgPool, work_id: Uuid) -> Result<Option<String>, AppError> {
     let row = sqlx::query_as::<_, (i64, i64, i64, i64)>(
         "SELECT

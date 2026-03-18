@@ -754,6 +754,12 @@ impl DiraigentDb for CryptoDb {
     async fn work_status_counts(&self, project_id: Uuid) -> Result<Vec<(String, i64)>, AppError> {
         delegate!(self, work_status_counts, project_id)
     }
+    async fn get_bulk_work_summaries(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<WorkSummary>, AppError> {
+        delegate!(self, get_bulk_work_summaries, project_id)
+    }
     // ── Work Comments (encrypt content) ──
     async fn create_work_comment(
         &self,

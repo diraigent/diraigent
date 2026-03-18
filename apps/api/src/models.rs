@@ -1041,6 +1041,25 @@ pub struct WorkStats {
     pub oldest_open_task_date: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct WorkSummary {
+    pub work_id: Uuid,
+    // progress
+    pub total_tasks: i64,
+    pub done_tasks: i64,
+    // stats
+    pub backlog_count: i64,
+    pub ready_count: i64,
+    pub working_count: i64,
+    pub done_count: i64,
+    pub cancelled_count: i64,
+    pub total_count: i64,
+    pub blocked_count: i64,
+    pub total_cost_usd: f64,
+    pub total_input_tokens: i64,
+    pub total_output_tokens: i64,
+}
+
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct PromoteObservation {
     pub title: Option<String>,

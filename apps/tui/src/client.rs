@@ -1088,6 +1088,33 @@ impl ApiClient {
         resp.json().await
     }
 
+    pub async fn list_work_filtered(
+        &self,
+        project_id: Uuid,
+        status_not: Option<&str>,
+        limit: Option<i64>,
+        offset: Option<i64>,
+    ) -> Result<Vec<Work>, reqwest::Error> {
+        let mut url = format!("{}/{}/work", self.base_url, project_id);
+        let mut params = Vec::new();
+        if let Some(sn) = status_not {
+            params.push(format!("status_not={}", sn));
+        }
+        if let Some(l) = limit {
+            params.push(format!("limit={}", l));
+        }
+        if let Some(o) = offset {
+            params.push(format!("offset={}", o));
+        }
+        if !params.is_empty() {
+            url.push('?');
+            url.push_str(&params.join("&"));
+        }
+        let req = self.client.get(&url);
+        let resp = self.auth(req).send().await?.error_for_status()?;
+        resp.json().await
+    }
+
     pub async fn get_work_progress(&self, work_id: Uuid) -> Result<WorkProgress, reqwest::Error> {
         let req = self
             .client
