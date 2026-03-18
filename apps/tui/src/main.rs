@@ -1950,7 +1950,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
                 let hint = Paragraph::new(Line::styled(
-                    " Tab: next | Enter: submit | Esc: cancel",
+                    " Tab: next | Enter/^S: save | ^E: execute | ^P: plan+exec | Esc: cancel",
                     Style::default().fg(theme::overlay0()),
                 ));
                 f.render_widget(hint, field_chunks[7]);
@@ -3221,51 +3221,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 } else if app.work_form.is_some() {
+                    // Detect save actions before general key match
+                    let save_action: Option<&str> = match key.code {
+                        KeyCode::Enter => Some("save"),
+                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            Some("save")
+                        }
+                        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            Some("execute")
+                        }
+                        KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            Some("plan_execute")
+                        }
+                        _ => None,
+                    };
                     let form = app.work_form.as_mut().unwrap();
-                    match key.code {
-                        KeyCode::Esc => {
+                    if let Some(action) = save_action {
+                        if !form.title.is_empty() {
+                            let title = form.title.clone();
+                            let description = form.description.clone();
+                            let success_criteria = form.success_criteria.clone();
+                            let status = WORK_STATUSES[form.status_index].to_string();
+                            let work_type = WORK_TYPES[form.work_type_index].to_string();
+                            let priority: i32 = form.priority.parse().unwrap_or(0);
+                            let auto_status = form.auto_status;
+                            let editing_id = form.editing_id;
+                            let pid = app.current_project;
+                            let action = action.to_string();
                             app.work_form = None;
-                        }
-                        KeyCode::Tab => {
-                            form.active_field = (form.active_field + 1) % 7;
-                            form.cursor = match form.active_field {
-                                0 => form.title.chars().count(),
-                                1 => form.description.chars().count(),
-                                2 => form.success_criteria.chars().count(),
-                                5 => form.priority.chars().count(),
-                                _ => 0,
-                            };
-                        }
-                        KeyCode::Enter => {
-                            if !form.title.is_empty() {
-                                let title = form.title.clone();
-                                let description = form.description.clone();
-                                let success_criteria = form.success_criteria.clone();
-                                let status = WORK_STATUSES[form.status_index].to_string();
-                                let work_type = WORK_TYPES[form.work_type_index].to_string();
-                                let priority: i32 = form.priority.parse().unwrap_or(0);
-                                let auto_status = form.auto_status;
-                                let editing_id = form.editing_id;
-                                let pid = app.current_project;
-                                app.work_form = None;
-                                if let Some(pid) = pid {
-                                    let api = api.clone();
-                                    let tx = tx.clone();
-                                    tokio::spawn(async move {
-                                        let mut body = serde_json::json!({
-                                            "title": title,
-                                            "description": description,
-                                            "status": status,
-                                            "work_type": work_type,
-                                            "priority": priority,
-                                            "auto_status": auto_status,
-                                        });
-                                        if !success_criteria.is_empty() {
-                                            body["success_criteria"] =
-                                                serde_json::json!([success_criteria]);
-                                        }
-                                        let result = if let Some(gid) = editing_id {
-                                            api.update_work(gid, body).await.map(|_| ())
+                            if let Some(pid) = pid {
+                                let api = api.clone();
+                                let tx = tx.clone();
+                                tokio::spawn(async move {
+                                    let mut body = serde_json::json!({
+                                        "title": title,
+                                        "description": description,
+                                        "status": status,
+                                        "work_type": work_type,
+                                        "priority": priority,
+                                        "auto_status": auto_status,
+                                    });
+                                    if !success_criteria.is_empty() {
+                                        body["success_criteria"] =
+                                            serde_json::json!([success_criteria]);
+                                    }
+                                    // Save or create work item, capturing the work ID
+                                    let save_result: Result<uuid::Uuid, reqwest::Error> =
+                                        if let Some(gid) = editing_id {
+                                            api.update_work(gid, body).await.map(|_| gid)
                                         } else {
                                             match api
                                                 .create_work(
@@ -3280,6 +3283,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 .await
                                             {
                                                 Ok(g) => {
+                                                    let wid = g.id;
                                                     if !success_criteria.is_empty()
                                                         || status != "active"
                                                     {
@@ -3294,126 +3298,174 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                             upd["status"] =
                                                                 serde_json::json!(status);
                                                         }
-                                                        api.update_work(g.id, upd).await.map(|_| ())
+                                                        api.update_work(wid, upd).await.map(|_| wid)
                                                     } else {
-                                                        Ok(())
+                                                        Ok(wid)
                                                     }
                                                 }
                                                 Err(e) => Err(e),
                                             }
                                         };
-                                        match result {
-                                            Ok(()) => {
-                                                if let Ok(items) = api.list_work(pid).await {
-                                                    let _ = tx.send(ApiMsg::WorkItems(items)).await;
+                                    match save_result {
+                                        Ok(work_id) => {
+                                            // Post-save: execute or plan & execute
+                                            if action == "execute" || action == "plan_execute" {
+                                                let mut ctx = serde_json::json!({});
+                                                if !description.is_empty() {
+                                                    ctx["spec"] = serde_json::json!(description);
+                                                }
+                                                if !success_criteria.is_empty() {
+                                                    let criteria: Vec<&str> = success_criteria
+                                                        .split('\n')
+                                                        .map(|l| l.trim())
+                                                        .filter(|l| !l.is_empty())
+                                                        .collect();
+                                                    ctx["acceptance_criteria"] =
+                                                        serde_json::json!(criteria);
+                                                }
+                                                if action == "plan_execute" {
+                                                    ctx["decompose"] = serde_json::json!(true);
+                                                }
+                                                let task_body = serde_json::json!({
+                                                    "title": title,
+                                                    "work_id": work_id.to_string(),
+                                                    "context": ctx,
+                                                });
+                                                if let Err(e) =
+                                                    api.create_task_with_json(pid, task_body).await
+                                                {
+                                                    let _ = tx
+                                                        .send(ApiMsg::Error(format!(
+                                                            "Execute: {e}"
+                                                        )))
+                                                        .await;
                                                 }
                                             }
-                                            Err(e) => {
-                                                let _ = tx
-                                                    .send(ApiMsg::Error(format!("Work: {e}")))
-                                                    .await;
+                                            if let Ok(items) = api.list_work(pid).await {
+                                                let _ = tx.send(ApiMsg::WorkItems(items)).await;
                                             }
                                         }
-                                    });
-                                }
+                                        Err(e) => {
+                                            let _ =
+                                                tx.send(ApiMsg::Error(format!("Work: {e}"))).await;
+                                        }
+                                    }
+                                });
                             }
                         }
-                        KeyCode::Left => match form.active_field {
-                            3 => {
-                                if form.status_index > 0 {
-                                    form.status_index -= 1;
-                                } else {
-                                    form.status_index = WORK_STATUSES.len() - 1;
-                                }
+                    } else {
+                        match key.code {
+                            KeyCode::Esc => {
+                                app.work_form = None;
                             }
-                            4 => {
-                                if form.work_type_index > 0 {
-                                    form.work_type_index -= 1;
-                                } else {
-                                    form.work_type_index = WORK_TYPES.len() - 1;
-                                }
-                            }
-                            6 => {
-                                form.auto_status = !form.auto_status;
-                            }
-                            _ => {
-                                if form.cursor > 0 {
-                                    form.cursor -= 1;
-                                }
-                            }
-                        },
-                        KeyCode::Right => match form.active_field {
-                            3 => {
-                                form.status_index = (form.status_index + 1) % WORK_STATUSES.len();
-                            }
-                            4 => {
-                                form.work_type_index =
-                                    (form.work_type_index + 1) % WORK_TYPES.len();
-                            }
-                            6 => {
-                                form.auto_status = !form.auto_status;
-                            }
-                            _ => {
-                                let len = match form.active_field {
+                            KeyCode::Tab => {
+                                form.active_field = (form.active_field + 1) % 7;
+                                form.cursor = match form.active_field {
                                     0 => form.title.chars().count(),
                                     1 => form.description.chars().count(),
                                     2 => form.success_criteria.chars().count(),
                                     5 => form.priority.chars().count(),
                                     _ => 0,
                                 };
-                                if form.cursor < len {
+                            }
+                            KeyCode::Left => match form.active_field {
+                                3 => {
+                                    if form.status_index > 0 {
+                                        form.status_index -= 1;
+                                    } else {
+                                        form.status_index = WORK_STATUSES.len() - 1;
+                                    }
+                                }
+                                4 => {
+                                    if form.work_type_index > 0 {
+                                        form.work_type_index -= 1;
+                                    } else {
+                                        form.work_type_index = WORK_TYPES.len() - 1;
+                                    }
+                                }
+                                6 => {
+                                    form.auto_status = !form.auto_status;
+                                }
+                                _ => {
+                                    if form.cursor > 0 {
+                                        form.cursor -= 1;
+                                    }
+                                }
+                            },
+                            KeyCode::Right => match form.active_field {
+                                3 => {
+                                    form.status_index =
+                                        (form.status_index + 1) % WORK_STATUSES.len();
+                                }
+                                4 => {
+                                    form.work_type_index =
+                                        (form.work_type_index + 1) % WORK_TYPES.len();
+                                }
+                                6 => {
+                                    form.auto_status = !form.auto_status;
+                                }
+                                _ => {
+                                    let len = match form.active_field {
+                                        0 => form.title.chars().count(),
+                                        1 => form.description.chars().count(),
+                                        2 => form.success_criteria.chars().count(),
+                                        5 => form.priority.chars().count(),
+                                        _ => 0,
+                                    };
+                                    if form.cursor < len {
+                                        form.cursor += 1;
+                                    }
+                                }
+                            },
+                            KeyCode::Backspace => {
+                                if form.active_field == 3
+                                    || form.active_field == 4
+                                    || form.active_field == 6
+                                {
+                                    // selectors/toggle, ignore backspace
+                                } else if form.cursor > 0 {
+                                    form.cursor -= 1;
+                                    let text = match form.active_field {
+                                        0 => &mut form.title,
+                                        1 => &mut form.description,
+                                        2 => &mut form.success_criteria,
+                                        5 => &mut form.priority,
+                                        _ => &mut form.title,
+                                    };
+                                    let bp = text
+                                        .char_indices()
+                                        .nth(form.cursor)
+                                        .map(|(i, _)| i)
+                                        .unwrap_or(text.len());
+                                    text.remove(bp);
+                                }
+                            }
+                            KeyCode::Char(c) => {
+                                if form.active_field == 3
+                                    || form.active_field == 4
+                                    || form.active_field == 6
+                                {
+                                    // selectors/toggle, ignore chars
+                                } else {
+                                    let text = match form.active_field {
+                                        0 => &mut form.title,
+                                        1 => &mut form.description,
+                                        2 => &mut form.success_criteria,
+                                        5 => &mut form.priority,
+                                        _ => &mut form.title,
+                                    };
+                                    let bp = text
+                                        .char_indices()
+                                        .nth(form.cursor)
+                                        .map(|(i, _)| i)
+                                        .unwrap_or(text.len());
+                                    text.insert(bp, c);
                                     form.cursor += 1;
                                 }
                             }
-                        },
-                        KeyCode::Backspace => {
-                            if form.active_field == 3
-                                || form.active_field == 4
-                                || form.active_field == 6
-                            {
-                                // selectors/toggle, ignore backspace
-                            } else if form.cursor > 0 {
-                                form.cursor -= 1;
-                                let text = match form.active_field {
-                                    0 => &mut form.title,
-                                    1 => &mut form.description,
-                                    2 => &mut form.success_criteria,
-                                    5 => &mut form.priority,
-                                    _ => &mut form.title,
-                                };
-                                let bp = text
-                                    .char_indices()
-                                    .nth(form.cursor)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(text.len());
-                                text.remove(bp);
-                            }
+                            _ => {}
                         }
-                        KeyCode::Char(c) => {
-                            if form.active_field == 3
-                                || form.active_field == 4
-                                || form.active_field == 6
-                            {
-                                // selectors/toggle, ignore chars
-                            } else {
-                                let text = match form.active_field {
-                                    0 => &mut form.title,
-                                    1 => &mut form.description,
-                                    2 => &mut form.success_criteria,
-                                    5 => &mut form.priority,
-                                    _ => &mut form.title,
-                                };
-                                let bp = text
-                                    .char_indices()
-                                    .nth(form.cursor)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(text.len());
-                                text.insert(bp, c);
-                                form.cursor += 1;
-                            }
-                        }
-                        _ => {}
-                    }
+                    } // close else block for non-save keys
                 } else if app.observation_form.is_some() {
                     let form = app.observation_form.as_mut().unwrap();
                     match key.code {

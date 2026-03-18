@@ -1157,6 +1157,41 @@ impl ApiClient {
         resp.json().await
     }
 
+    pub async fn activate_work(
+        &self,
+        project_id: Uuid,
+        work_id: Uuid,
+    ) -> Result<Work, reqwest::Error> {
+        let req = self.client.post(format!(
+            "{}/{}/work/{}/activate",
+            self.base_url, project_id, work_id
+        ));
+        let resp = self
+            .auth(req)
+            .json(&serde_json::json!({}))
+            .send()
+            .await?
+            .error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn create_task_with_json(
+        &self,
+        project_id: Uuid,
+        body: serde_json::Value,
+    ) -> Result<Task, reqwest::Error> {
+        let req = self
+            .client
+            .post(format!("{}/{}/tasks", self.base_url, project_id));
+        let resp = self
+            .auth(req)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+        resp.json().await
+    }
+
     pub async fn link_task_to_work(
         &self,
         work_id: Uuid,
