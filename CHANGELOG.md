@@ -1,5 +1,15 @@
 # Changelog
 
+## v20260318-2146 (2026-03-18)
+
+### Changed
+- **CI/CD**: Unified deploy and release pipelines into single workflow per service
+
+### Fixed
+- **Web**: Fix minor build issue on work page
+
+---
+
 ## v20260318-2117 (2026-03-18)
 
 ### Added
