@@ -276,22 +276,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
 
           <!-- Expanded detail (inline) -->
           @if (goal.id === selected()?.id) {
-            <div class="px-4 pb-4 pt-0 border-t border-border/50 mt-0">
-              <!-- Inline title edit with type dropdown -->
-              <div class="pt-3 mb-3 flex items-center gap-2">
-                <select [(ngModel)]="formWorkType" (change)="saveInlineField()"
-                  class="text-xs rounded-lg px-2 py-2 border border-border bg-surface text-text-primary
-                         focus:outline-none focus:ring-1 focus:ring-accent shrink-0">
-                  @for (gt of goalTypes; track gt) {
-                    <option [value]="gt">{{ t('goals.type.' + gt) }}</option>
-                  }
-                </select>
-                <input type="text" [(ngModel)]="formTitle" (blur)="saveInlineField()"
-                  class="flex-1 bg-surface text-text-primary text-sm font-medium rounded-lg px-3 py-2 border border-border
-                         focus:outline-none focus:ring-1 focus:ring-accent"
-                  [placeholder]="t('goals.fieldTitle')" />
-              </div>
-
+            <div class="px-4 pb-4 pt-3 border-t border-border/50 mt-0">
               <!-- Status transitions -->
               <div class="flex flex-wrap gap-2 mb-4">
                 @if (goal.status !== 'active') {
