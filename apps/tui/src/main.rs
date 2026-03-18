@@ -68,8 +68,6 @@ enum ApiMsg {
     WebhookDeliveries(Vec<client::WebhookDelivery>),
     WebhookTestResult(String),
     WorkTasksList(Vec<client::Task>),
-    WorkUnlinkedTasks(Vec<client::Task>),
-    WorkBulkLinked,
     Branches(client::BranchListResponse),
     MainStatus(client::MainPushStatus),
     GitActionResult(String),
@@ -415,29 +413,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::WebhookDeliveries(d) => app.webhook_deliveries = d,
                 ApiMsg::WebhookTestResult(r) => app.webhook_test_result = Some(r),
                 ApiMsg::WorkTasksList(tasks) => app.work_tasks = tasks,
-                ApiMsg::WorkUnlinkedTasks(tasks) => {
-                    app.work_unlinked_tasks = tasks;
-                    app.work_picker_loading = false;
-                }
-                ApiMsg::WorkBulkLinked => {
-                    // Refresh work tasks + progress after linking
-                    if let Some(goal) = app.selected_work.and_then(|i| app.work_items.get(i)) {
-                        let gid = goal.id;
-                        let api = api.clone();
-                        let tx = tx.clone();
-                        tokio::spawn(async move {
-                            if let Ok(tasks) = api.list_work_tasks(gid, 50, 0).await {
-                                let _ = tx.send(ApiMsg::WorkTasksList(tasks)).await;
-                            }
-                            if let Ok(progress) = api.get_work_progress(gid).await {
-                                let _ = tx.send(ApiMsg::WorkProgress(progress)).await;
-                            }
-                            if let Ok(stats) = api.get_work_stats(gid).await {
-                                let _ = tx.send(ApiMsg::WorkStats(stats)).await;
-                            }
-                        });
-                    }
-                }
                 ApiMsg::Logs(resp) => {
                     app.log_entries = resp.entries;
                     app.log_loading = false;
@@ -862,13 +837,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .collect();
                     f.render_widget(ratatui::widgets::List::new(items), inner);
                 }
-                Modal::WorkLink | Modal::WorkStatus | Modal::DependencyAdd => {
+                Modal::WorkStatus | Modal::DependencyAdd => {
                     // Reuse transition popup pattern: show work/statuses/tasks as list
                     let states: Vec<&str> =
                         app.transition_options.iter().map(|s| s.as_str()).collect();
-                    let title = if app.modal == Modal::WorkLink {
-                        " Link to Work "
-                    } else if app.modal == Modal::DependencyAdd {
+                    let title = if app.modal == Modal::DependencyAdd {
                         " Add Dependency "
                     } else {
                         " Work Status "
@@ -898,52 +871,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         })
                         .collect();
                     f.render_widget(ratatui::widgets::List::new(items), inner);
-                }
-                Modal::WorkTaskPicker => {
-                    let popup_area = widgets::popup::centered_rect(60, 70, size);
-                    Clear.render(popup_area, f.buffer_mut());
-                    let title = if app.work_picker_loading {
-                        " Link Tasks to Work (loading...) "
-                    } else {
-                        " Link Tasks to Work [Space=toggle  Enter=confirm  Esc=cancel] "
-                    };
-                    let block = Block::default()
-                        .title(title)
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(theme::green()))
-                        .style(Style::default().bg(theme::mantle()));
-                    let inner = block.inner(popup_area);
-                    f.render_widget(block, popup_area);
-                    if app.work_unlinked_tasks.is_empty() && !app.work_picker_loading {
-                        let p = Paragraph::new(Line::styled(
-                            "  No unlinked tasks available.",
-                            Style::default().fg(theme::overlay0()),
-                        ));
-                        f.render_widget(p, inner);
-                    } else {
-                        let items: Vec<ratatui::widgets::ListItem> = app
-                            .work_unlinked_tasks
-                            .iter()
-                            .enumerate()
-                            .map(|(i, t)| {
-                                let checked = if app.work_picker_checked.contains(&i) {
-                                    "[x]"
-                                } else {
-                                    "[ ]"
-                                };
-                                let style = if i == app.work_picker_selected {
-                                    Style::default().fg(theme::base()).bg(theme::green())
-                                } else {
-                                    Style::default().fg(theme::text())
-                                };
-                                ratatui::widgets::ListItem::new(Line::styled(
-                                    format!("  {} #{} {} [{}]", checked, t.number, t.title, t.state),
-                                    style,
-                                ))
-                            })
-                            .collect();
-                        f.render_widget(ratatui::widgets::List::new(items), inner);
-                    }
                 }
                 Modal::Promote => {
                     f.render_widget(
@@ -1060,14 +987,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Line::styled("  Work / Observations", Style::default().fg(theme::blue())),
                     Line::styled(
                         "    s             Change status (Work/Observations)",
-                        Style::default().fg(theme::text()),
-                    ),
-                    Line::styled(
-                        "    g             Link task to work (Tasks view)",
-                        Style::default().fg(theme::text()),
-                    ),
-                    Line::styled(
-                        "    l             Link tasks to work (Work view, multi-select)",
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
@@ -5585,7 +5504,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             _ => {}
                         },
-                        Modal::WorkLink | Modal::WorkStatus | Modal::DependencyAdd => {
+                        Modal::WorkStatus | Modal::DependencyAdd => {
                             match key.code {
                                 KeyCode::Esc => app.modal = Modal::None,
                                 KeyCode::Up | KeyCode::Char('k') => {
@@ -5602,32 +5521,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     if let Some(selected) =
                                         app.transition_options.get(app.transition_selected).cloned()
                                     {
-                                        if app.modal == Modal::WorkLink {
-                                            // Link selected task to the chosen work item
-                                            if let Some(tid) = app.selected_task_id() {
-                                                // Find work item by title match
-                                                if let Some(goal) = app
-                                                    .work_items
-                                                    .iter()
-                                                    .find(|g| g.title == selected)
-                                                {
-                                                    let gid = goal.id;
-                                                    let api = api.clone();
-                                                    let tx = tx.clone();
-                                                    tokio::spawn(async move {
-                                                        if let Err(e) =
-                                                            api.link_task_to_work(gid, tid).await
-                                                        {
-                                                            let _ = tx
-                                                                .send(ApiMsg::Error(format!(
-                                                                    "Link: {e}"
-                                                                )))
-                                                                .await;
-                                                        }
-                                                    });
-                                                }
-                                            }
-                                        } else if app.modal == Modal::DependencyAdd {
+                                        if app.modal == Modal::DependencyAdd {
                                             // Add dependency: find task by title match
                                             if let Some(tid) = app.selected_task_id() {
                                                 if let Some(dep_task) =
@@ -5691,71 +5585,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 _ => {}
                             }
                         }
-                        Modal::WorkTaskPicker => match key.code {
-                            KeyCode::Esc => {
-                                app.modal = Modal::None;
-                                app.work_unlinked_tasks.clear();
-                                app.work_picker_checked.clear();
-                                app.work_picker_selected = 0;
-                            }
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                if app.work_picker_selected > 0 {
-                                    app.work_picker_selected -= 1;
-                                }
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.work_picker_selected + 1 < app.work_unlinked_tasks.len() {
-                                    app.work_picker_selected += 1;
-                                }
-                            }
-                            KeyCode::Char(' ') => {
-                                let idx = app.work_picker_selected;
-                                if idx < app.work_unlinked_tasks.len() {
-                                    if app.work_picker_checked.contains(&idx) {
-                                        app.work_picker_checked.remove(&idx);
-                                    } else {
-                                        app.work_picker_checked.insert(idx);
-                                    }
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if !app.work_picker_checked.is_empty() {
-                                    let task_ids: Vec<uuid::Uuid> = app
-                                        .work_picker_checked
-                                        .iter()
-                                        .filter_map(|&i| {
-                                            app.work_unlinked_tasks.get(i).map(|t| t.id)
-                                        })
-                                        .collect();
-                                    if let Some(goal) =
-                                        app.selected_work.and_then(|i| app.work_items.get(i))
-                                    {
-                                        let gid = goal.id;
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        tokio::spawn(async move {
-                                            match api.bulk_link_tasks(gid, &task_ids).await {
-                                                Ok(_) => {
-                                                    let _ = tx.send(ApiMsg::WorkBulkLinked).await;
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!(
-                                                            "Bulk link: {e}"
-                                                        )))
-                                                        .await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                                app.modal = Modal::None;
-                                app.work_unlinked_tasks.clear();
-                                app.work_picker_checked.clear();
-                                app.work_picker_selected = 0;
-                            }
-                            _ => {}
-                        },
                         Modal::Promote => match key.code {
                             KeyCode::Esc => {
                                 app.modal = Modal::None;
@@ -6642,49 +6471,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     // Not found or error — leave empty
                                                     let _ = tx
                                                         .send(ApiMsg::ClaudeMd(String::new()))
-                                                        .await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                            }
-                            // Tasks view: g = link task to work
-                            KeyCode::Char('g') => {
-                                if app.view == View::Tasks
-                                    && app.selected_task.is_some()
-                                    && !app.work_items.is_empty()
-                                {
-                                    let opts: Vec<String> =
-                                        app.work_items.iter().map(|g| g.title.clone()).collect();
-                                    app.transition_options = opts;
-                                    app.transition_selected = 0;
-                                    app.modal = Modal::WorkLink;
-                                }
-                            }
-                            // Work view: l = link tasks (open picker)
-                            KeyCode::Char('l') => {
-                                if app.view == View::Work && app.selected_work.is_some() {
-                                    if let Some(pid) = app.current_project {
-                                        app.work_picker_selected = 0;
-                                        app.work_picker_checked.clear();
-                                        app.work_picker_loading = true;
-                                        app.work_unlinked_tasks.clear();
-                                        app.modal = Modal::WorkTaskPicker;
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        tokio::spawn(async move {
-                                            match api.list_unlinked_tasks(pid, 50, 0).await {
-                                                Ok(tasks) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::WorkUnlinkedTasks(tasks))
-                                                        .await;
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!(
-                                                            "Unlinked tasks: {e}"
-                                                        )))
                                                         .await;
                                                 }
                                             }
