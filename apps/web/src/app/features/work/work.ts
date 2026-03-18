@@ -46,7 +46,6 @@ import {
   WORK_STATUS_COLORS, WORK_PROGRESS_COLORS, WORK_TYPE_COLORS,
 } from '../../shared/ui-constants';
 
-const STATUSES: WorkStatus[] = ['active', 'ready', 'processing', 'achieved', 'paused', 'abandoned'];
 // 'ready' and 'processing' are inferred from tasks — not manually selectable
 const MANUAL_STATUSES: WorkStatus[] = ['active', 'achieved', 'paused', 'abandoned'];
 
@@ -167,16 +166,6 @@ function parseCriteria(value: unknown): string[] {
           (ngModelChange)="searchQuery.set($event)"
           class="flex-1 min-w-[200px] bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
                  focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-text-secondary" />
-        <select
-          [(ngModel)]="selectedStatus"
-          (ngModelChange)="loadGoals()"
-          class="bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                 focus:outline-none focus:ring-1 focus:ring-accent">
-          <option value="">{{ t('goals.allStatuses') }}</option>
-          @for (s of statuses; track s) {
-            <option [value]="s">{{ t('goals.status.' + s) }}</option>
-          }
-        </select>
         <select
           [(ngModel)]="selectedWorkType"
           (ngModelChange)="loadGoals()"
@@ -1220,7 +1209,6 @@ export class WorkPage {
   /** True on touch-primary devices — disables CDK drag to preserve mobile scrolling. */
   isTouch = signal(false);
 
-  readonly statuses = STATUSES;
   readonly goalTypes = GOAL_TYPES;
   readonly taskStates = TASK_STATES;
 
@@ -1228,7 +1216,6 @@ export class WorkPage {
   loading = signal(false);
   selected = signal<SpWork | null>(null);
   searchQuery = signal('');
-  selectedStatus = '';
   selectedWorkType = '';
   progressMap = signal<Map<string, SpWorkProgress>>(new Map());
   statsMap = signal<Map<string, SpWorkStats>>(new Map());
@@ -1680,11 +1667,10 @@ export class WorkPage {
 
   loadGoals(): void {
     this.loading.set(true);
-    const status = this.selectedStatus as WorkStatus | '';
     const goalType = this.selectedWorkType as WorkType | '';
     // Exclude completed/archived statuses from the main load — they are lazy-loaded on expand
-    const statusNot = !status ? 'achieved,paused,abandoned' : undefined;
-    this.api.list({ status: status || undefined, statusNot, workType: goalType || undefined }).subscribe({
+    const statusNot = 'achieved,paused,abandoned';
+    this.api.list({ statusNot, workType: goalType || undefined }).subscribe({
       next: (items) => {
         this.items.set(items);
         this.loading.set(false);
