@@ -124,7 +124,7 @@ pub fn handle_git_request(
         }
         "release" => (
             "release",
-            wm.release(branch, path)
+            wm.release(branch, path, remote)
                 .map(|msg| serde_json::json!({ "message": msg })),
         ),
         "source_tree" => {

@@ -1,19 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage: release.sh [--release]
-#   Without --release: squash-merge dev→main, no changelog, no tag/push
-#   With --release:    same + changelog + tag + push to all remotes
+# Usage: release.sh [--production | --staging]
+#   --production:  squash-merge dev→main + changelog + tag + push to all remotes
+#   --staging:     squash-merge dev→main + push to all remotes (no changelog, no tag)
+#   (no flag):     squash-merge dev→main only (no changelog, no tag, no push)
 #
 # Environment variables (set by orchestra, or defaults):
 #   DIRAIGENT_BRANCH         — source branch (default: dev)
 #   DIRAIGENT_TARGET_BRANCH  — target branch (default: main)
 #   DIRAIGENT_VERSION        — tag name (default: vYYYYMMDD-HHMM)
+#   DIRAIGENT_RELEASE_ENV    — "production" or "staging" (alternative to flags)
 
-RELEASE="${DIRAIGENT_RELEASE:-false}"
+MODE="local"
+# Check env var first
+case "${DIRAIGENT_RELEASE_ENV:-}" in
+  production) MODE="production" ;;
+  staging)    MODE="staging" ;;
+esac
+# CLI flags override env var
 for arg in "$@"; do
   case "$arg" in
-    --release) RELEASE=true ;;
+    --production) MODE="production" ;;
+    --staging)    MODE="staging" ;;
   esac
 done
 
@@ -25,10 +34,10 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 git checkout "$TARGET"
 git merge --squash "$SOURCE"
 
-# Generate commit message (and changelog for releases) from the squashed diff
+# Generate commit message (and changelog for production) from the squashed diff
 COMMITS=$(git log "$TARGET".."$SOURCE" --oneline)
 
-if $RELEASE; then
+if [ "$MODE" = "production" ]; then
   COMMIT_MSG=$(git diff --cached --stat | claude -p \
     "You are writing a release commit message and changelog entry.
      Above is the diff stat for a squash merge from $SOURCE to $TARGET.
@@ -88,19 +97,22 @@ fi
 git add .
 git commit -m "$COMMIT_BODY"
 
-if $RELEASE; then
+if [ "$MODE" = "production" ]; then
   git tag "$TAG"
 fi
 
-# Push to all configured remotes (with tags only for releases)
-for remote in $(git remote); do
-  if $RELEASE; then
-    git push "$remote" "$TARGET" --tags || true
-  else
-    git push "$remote" "$TARGET" || true
-  fi
-done
+# Push for production and staging; skip for local-only
+if [ "$MODE" = "production" ] || [ "$MODE" = "staging" ]; then
+  for remote in $(git remote); do
+    if [ "$MODE" = "production" ]; then
+      git push "$remote" "$TARGET" --tags || true
+    else
+      git push "$remote" "$TARGET" || true
+    fi
+  done
+fi
 
 # Merge target back into source so changelog is present in both branches
 git checkout "$SOURCE"
 git merge "$TARGET" --no-edit
+git push

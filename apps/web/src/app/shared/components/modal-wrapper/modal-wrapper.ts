@@ -29,7 +29,7 @@ import { KeyboardService } from '../../../core/services/keyboard.service';
         role="document"
         tabindex="-1"
         (click)="$event.stopPropagation()"
-        (keydown)="$event.stopPropagation()">
+        (keydown)="onCardKeydown($event)">
         <ng-content />
       </div>
     </div>
@@ -48,6 +48,13 @@ export class ModalWrapperComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.keyboard.unregisterModal();
+  }
+
+  /** Stop propagation for all keys except Escape, so Escape can bubble to the document listener. */
+  onCardKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') {
+      event.stopPropagation();
+    }
   }
 
   @HostListener('document:keydown.escape')

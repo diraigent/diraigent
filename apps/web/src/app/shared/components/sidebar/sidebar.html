@@ -10,7 +10,7 @@
 @if (mobileOpen()) {
   <div class="lg:hidden fixed inset-0 z-30 bg-black/50"
        role="button" tabindex="0" aria-label="Close sidebar"
-       (click)="closeMobile()" (keydown.enter)="closeMobile()"></div>
+       (click)="closeMobile()" (keydown.enter)="closeMobile()" (keydown.escape)="closeMobile()"></div>
 }
 
 <!-- Sidebar -->

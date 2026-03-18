@@ -114,9 +114,24 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
             }
           }
           @if (showRelease()) {
-            <button (click)="onReleaseProject()"
+            <button (click)="onReleaseProject('staging')"
               [disabled]="releasing()"
-              title="Squash-merge dev → main, tag, and push to all remotes"
+              title="Squash-merge dev → main and push to all remotes"
+              class="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg
+                     bg-ctp-teal/15 text-ctp-teal hover:bg-ctp-teal/25 transition-colors
+                     disabled:opacity-50 disabled:cursor-not-allowed">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              @if (releasing()) {
+                {{ t('git.releasing') }}
+              } @else {
+                {{ t('git.staging') }}
+              }
+            </button>
+            <button (click)="onReleaseProject('production')"
+              [disabled]="releasing()"
+              title="Squash-merge dev → main, changelog, tag, and push to all remotes"
               class="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg
                      bg-ctp-mauve/15 text-ctp-mauve hover:bg-ctp-mauve/25 transition-colors
                      disabled:opacity-50 disabled:cursor-not-allowed">
@@ -126,7 +141,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               @if (releasing()) {
                 {{ t('git.releasing') }}
               } @else {
-                {{ t('git.release') }}
+                {{ t('git.production') }}
               }
             </button>
           }
@@ -332,6 +347,13 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                   </button>
                 </div>
                 <div class="flex gap-2 ml-auto">
+                  <button (click)="openCreateTaskForGoal()"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-green/15 text-ctp-green hover:bg-ctp-green/25 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                    {{ t('goals.createTaskBtn') }}
+                  </button>
                   <button (click)="executeWorkItem()"
                     [disabled]="executeLoading()"
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-peach/15 text-ctp-peach hover:bg-ctp-peach/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
@@ -362,13 +384,6 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                       </svg>
                     }
                     {{ t('goals.planExecuteBtn') }}
-                  </button>
-                  <button (click)="saveInlineField()"
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-accent/15 text-accent hover:bg-accent/25 transition-colors">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                    {{ t('goals.save') }}
                   </button>
                 </div>
               </div>
@@ -595,16 +610,11 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
               <div class="pt-3 border-t border-border mb-3">
                 <div class="flex items-center justify-between mb-2">
                   <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider">{{ t('goals.linkedTasks') }}</h3>
-                  <div class="flex gap-2">
-                    <button (click)="openCreateTaskForGoal()" class="px-3 py-1.5 text-xs bg-ctp-green text-bg rounded hover:opacity-90">
-                      {{ t('goals.createTaskBtn') }}
+                  @if (statsMap().get(selected()!.id)?.backlog_count) {
+                    <button (click)="startAllBacklogTasks()" class="px-3 py-1.5 text-xs bg-ctp-blue text-bg rounded hover:opacity-90">
+                      {{ t('goals.startAllBtn') }}
                     </button>
-                    @if (statsMap().get(selected()!.id)?.backlog_count) {
-                      <button (click)="startAllBacklogTasks()" class="px-3 py-1.5 text-xs bg-ctp-blue text-bg rounded hover:opacity-90">
-                        {{ t('goals.startAllBtn') }}
-                      </button>
-                    }
-                  </div>
+                  }
                 </div>
                 @if (linkedTasksLoading()) {
                   <p class="text-xs text-text-secondary">{{ t('common.loading') }}</p>
@@ -987,7 +997,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
       @if (showForm()) {
         <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]"
              role="button" tabindex="0" aria-label="Close modal"
-             (click)="closeForm()" (keydown.enter)="closeForm()">
+             (click)="closeForm()" (keydown.enter)="closeForm()" (keydown.escape)="closeForm()">
           <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
                tabindex="-1" (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()">
             <h2 class="text-lg font-semibold text-text-primary mb-4">
@@ -1040,28 +1050,41 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                 @if (!editing()) {
                   <button (click)="submitFormAndExecute()"
                     [disabled]="createAndExecuteLoading()"
-                    class="px-4 py-2 bg-ctp-peach text-bg rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-peach/15 text-ctp-peach hover:bg-ctp-peach/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                     @if (createAndExecuteLoading()) {
-                      <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                      </svg>
+                    } @else {
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     }
                     {{ t('goals.createAndExecute') }}
                   </button>
                   <button (click)="submitFormAndPlanExecute()"
                     [disabled]="createAndPlanExecuteLoading()"
-                    class="px-4 py-2 bg-ctp-mauve text-bg rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-ctp-mauve/15 text-ctp-mauve hover:bg-ctp-mauve/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                     @if (createAndPlanExecuteLoading()) {
-                      <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                      </svg>
+                    } @else {
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                       </svg>
                     }
                     {{ t('goals.createAndPlanExecute') }}
                   </button>
                 }
-                <button (click)="submitForm()" class="px-4 py-2 bg-accent text-bg rounded-lg text-sm font-medium hover:opacity-90">
+                <button (click)="submitForm()"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-accent/15 text-accent hover:bg-accent/25 transition-colors">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
                   {{ t('goals.save') }}
                 </button>
               </div>
@@ -1074,7 +1097,7 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
       @if (showTaskPicker()) {
         <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]"
              role="button" tabindex="0" aria-label="Close task picker"
-             (click)="closeTaskPicker()" (keydown.enter)="closeTaskPicker()">
+             (click)="closeTaskPicker()" (keydown.enter)="closeTaskPicker()" (keydown.escape)="closeTaskPicker()">
           <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-2xl max-h-[90vh] flex flex-col"
                tabindex="-1" (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()">
             <div class="flex items-center justify-between mb-4">
@@ -1430,10 +1453,13 @@ export class WorkPage {
     });
   }
 
-  onReleaseProject(): void {
-    if (!confirm('Create a new release? This will squash-merge dev → main, create a version tag, and push to all remotes.')) return;
+  onReleaseProject(env: 'staging' | 'production'): void {
+    const msg = env === 'production'
+      ? 'Production release? This will squash-merge dev → main, generate a changelog, create a version tag, and push to all remotes.'
+      : 'Staging release? This will squash-merge dev → main and push to all remotes.';
+    if (!confirm(msg)) return;
     this.releasing.set(true);
-    this.git.release().subscribe({
+    this.git.release({ release_env: env }).subscribe({
       next: (res) => {
         this.releasing.set(false);
         alert(res.message);

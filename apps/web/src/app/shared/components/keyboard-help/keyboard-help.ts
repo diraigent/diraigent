@@ -61,8 +61,11 @@ import { KeyboardService, ShortcutEntry } from '../../../core/services/keyboard.
 export class KeyboardHelpComponent {
   private keyboard = inject(KeyboardService);
 
-  /** All shortcuts from the service. */
-  private allShortcuts: ShortcutEntry[] = this.keyboard.shortcuts;
+  /** Global + navigation shortcuts plus current view's action shortcuts. */
+  private allShortcuts: ShortcutEntry[] = [
+    ...this.keyboard.shortcuts,
+    ...this.keyboard.getActionsForCurrentView(),
+  ];
 
   /** Unique group names in order. */
   groups: string[] = [...new Set(this.allShortcuts.map(s => s.group))];

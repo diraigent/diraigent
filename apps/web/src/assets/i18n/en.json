@@ -53,7 +53,9 @@
   },
   "git": {
     "release": "Release",
-    "releasing": "Releasing..."
+    "releasing": "Releasing...",
+    "staging": "Staging",
+    "production": "Production"
   },
   "dashboard": {
     "title": "Dashboard",

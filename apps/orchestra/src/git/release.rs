@@ -16,7 +16,18 @@ impl WorktreeManager {
     /// 5. Push default branch + tag to all remotes
     ///
     /// Returns a summary message with the tag name.
-    pub fn release(&self, source_branch: Option<&str>, message: Option<&str>) -> Result<String> {
+    /// Release with an environment target.
+    ///
+    /// `release_env` controls the release mode:
+    /// - `"production"` — squash-merge + changelog + tag + push
+    /// - `"staging"` — squash-merge + push (no changelog, no tag)
+    /// - anything else / None — squash-merge only (local)
+    pub fn release(
+        &self,
+        source_branch: Option<&str>,
+        message: Option<&str>,
+        release_env: Option<&str>,
+    ) -> Result<String> {
         let git_root = self
             .git_root
             .as_deref()
@@ -39,7 +50,14 @@ impl WorktreeManager {
         )?;
 
         if let Some(script) = script_path {
-            return self.run_release_script(&script, source, target, &tag, &config.release);
+            return self.run_release_script(
+                &script,
+                source,
+                target,
+                &tag,
+                &config.release,
+                release_env,
+            );
         }
 
         // Fallback: built-in release logic (squash-merge)
@@ -54,24 +72,34 @@ impl WorktreeManager {
         target: &str,
         tag: &str,
         hook_config: &crate::project::diraigent_config::HookConfig,
+        release_env: Option<&str>,
     ) -> Result<String> {
         let git_root = self.git_root.as_deref().unwrap();
+        let env_label = release_env.unwrap_or("local");
 
         info!(
             script = %script.display(),
             source,
             target,
             tag,
+            release_env = env_label,
             "running .diraigent/release.sh"
         );
 
         let mut cmd = Command::new("bash");
-        cmd.arg(script)
-            .current_dir(git_root)
+        cmd.arg(script);
+
+        // Pass --production or --staging flag to the script
+        if let Some(env) = release_env {
+            cmd.arg(format!("--{env}"));
+        }
+
+        cmd.current_dir(git_root)
             .env("DIRAIGENT_PROJECT_PATH", git_root)
             .env("DIRAIGENT_BRANCH", source)
             .env("DIRAIGENT_TARGET_BRANCH", target)
             .env("DIRAIGENT_VERSION", tag)
+            .env("DIRAIGENT_RELEASE_ENV", env_label)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 

@@ -208,7 +208,7 @@ const KIND_COLORS = VERIFICATION_KIND_COLORS;
       @if (showForm()) {
         <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]"
              role="button" tabindex="0" aria-label="Close modal"
-             (click)="closeForm()" (keydown.enter)="closeForm()">
+             (click)="closeForm()" (keydown.enter)="closeForm()" (keydown.escape)="closeForm()">
           <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
                tabindex="-1" (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()">
             <h2 class="text-lg font-semibold text-text-primary mb-4">{{ t('verifications.createTitle') }}</h2>
@@ -266,8 +266,9 @@ const KIND_COLORS = VERIFICATION_KIND_COLORS;
 
       <!-- Task preview modal -->
       @if (previewTask()) {
-        <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events, @angular-eslint/template/interactive-supports-focus -->
-        <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]" (click)="closeTaskPreview()">
+        <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]"
+             role="button" tabindex="0" aria-label="Close preview"
+             (click)="closeTaskPreview()" (keydown.escape)="closeTaskPreview()">
           <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events, @angular-eslint/template/interactive-supports-focus -->
           <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto" (click)="$event.stopPropagation()">
             @if (previewTaskLoading()) {
