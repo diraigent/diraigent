@@ -985,6 +985,7 @@ impl ApiClient {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_task(
         &self,
         project_id: Uuid,
@@ -993,6 +994,7 @@ impl ApiClient {
         urgent: bool,
         spec: &str,
         playbook_id: Option<Uuid>,
+        work_id: Option<Uuid>,
     ) -> Result<Task, reqwest::Error> {
         let mut body = serde_json::json!({
             "title": title,
@@ -1002,6 +1004,9 @@ impl ApiClient {
         });
         if let Some(pid) = playbook_id {
             body["playbook_id"] = serde_json::json!(pid);
+        }
+        if let Some(wid) = work_id {
+            body["work_id"] = serde_json::json!(wid);
         }
         let req = self
             .client

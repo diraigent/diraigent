@@ -252,7 +252,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
 
             lines.push(Line::from(""));
             lines.push(Line::styled(
-                "[l] Link tasks  [c] Comment",
+                "[t] New task  [c] Comment",
                 Style::default().fg(theme::overlay0()),
             ));
 

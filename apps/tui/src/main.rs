@@ -675,7 +675,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // View-specific action hints
                 let action_hint = match app.view {
                     View::Tasks => "[n]New [t]Trans [c]Cmt [f]Flag [F]Files [a]Claim [e]Edit",
-                    View::Work => "[n]New [c]Cmt [s]Status [l]Link [e]Edit",
+                    View::Work => "[n]New [t]Task [c]Cmt [s]Status [e]Edit",
                     View::Decisions => "[n]New [a]Accept [x]Reject [X]Deprecate",
                     View::Observations => "[n]New [s]Status [d]Dismiss [p]Promote [C]Cleanup",
                     View::Agents => "[a]Tasks",
@@ -1305,8 +1305,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(ref form) = app.task_form {
                 let form_area = widgets::popup::centered_rect(60, 50, size);
                 Clear.render(form_area, f.buffer_mut());
+                let form_title = if let Some(wid) = form.work_id {
+                    let work_name = app
+                        .work_items
+                        .iter()
+                        .find(|w| w.id == wid)
+                        .map(|w| w.title.as_str())
+                        .unwrap_or("?");
+                    format!(" New Task → {} ", work_name)
+                } else {
+                    " New Task ".to_string()
+                };
                 let block = Block::default()
-                    .title(" New Task ")
+                    .title(form_title)
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(theme::mauve()))
                     .style(Style::default().bg(theme::mantle()));
@@ -2713,6 +2724,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 } else {
                                     None
                                 };
+                                let work_id = form.work_id;
                                 let pid = app.current_project;
                                 app.task_form = None;
                                 if let Some(pid) = pid {
@@ -2727,12 +2739,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 urgent,
                                                 &spec,
                                                 playbook_id,
+                                                work_id,
                                             )
                                             .await
                                         {
                                             Ok(_) => {
                                                 if let Ok(resp) = api.list_tasks(pid).await {
                                                     let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
+                                                }
+                                                // Refresh work tasks if task was linked to a work item
+                                                if let Some(wid) = work_id {
+                                                    if let Ok(tasks) =
+                                                        api.list_work_tasks(wid, 100, 0).await
+                                                    {
+                                                        let _ = tx
+                                                            .send(ApiMsg::WorkTasksList(tasks))
+                                                            .await;
+                                                    }
                                                 }
                                             }
                                             Err(e) => {
@@ -6229,6 +6252,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             app.transition_selected = 0;
                                             app.modal = Modal::Transition;
                                         }
+                                    }
+                                } else if app.view == View::Work {
+                                    // Create a new task linked to the selected work item
+                                    if let Some(work) =
+                                        app.selected_work.and_then(|i| app.work_items.get(i))
+                                    {
+                                        app.task_form = Some(app::TaskForm {
+                                            playbook_index: app.default_playbook_index(),
+                                            work_id: Some(work.id),
+                                            ..Default::default()
+                                        });
                                     }
                                 } else if app.view == View::Webhooks {
                                     if let Some(wh) =

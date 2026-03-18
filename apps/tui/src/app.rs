@@ -186,6 +186,7 @@ pub struct TaskForm {
     pub playbook_index: usize, // 0 = None, 1+ = playbook from list
     pub active_field: usize,   // 0=title, 1=kind, 2=urgent, 3=playbook, 4=spec
     pub cursor: usize,
+    pub work_id: Option<Uuid>, // pre-linked work item (set when creating from Work view)
 }
 
 pub struct VerificationForm {
