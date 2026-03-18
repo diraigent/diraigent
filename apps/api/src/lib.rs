@@ -9,6 +9,7 @@ pub mod error;
 pub mod event_triggers;
 pub mod metrics;
 pub mod models;
+pub mod openapi;
 pub mod package_cache;
 pub mod rate_limit;
 pub mod repository;

@@ -33,6 +33,10 @@ prost-types = "0.14.1"
 axum = "0.8.7"
 tower-http = { version = "0.6.6", features = ["cors", "trace"] }
 
+# OpenAPI / Swagger
+utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
+utoipa-swagger-ui = { version = "9", features = ["axum"] }
+
 # Database
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "bigdecimal", "json", "migrate", "derive", "macros"] }
 bigdecimal = { version = "0.4", features = ["serde"] }

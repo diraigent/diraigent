@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Per-component score breakdown for a task.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct TaskScore {
     /// Final composite score (sum of all components).
     pub total: f64,
