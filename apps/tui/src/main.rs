@@ -109,6 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api = ApiClient::new();
     let (tx, mut rx) = mpsc::channel::<ApiMsg>(64);
     let (project_tx, project_rx) = watch::channel::<Option<uuid::Uuid>>(None);
+    let (view_tx, view_rx) = watch::channel::<View>(View::Work);
 
     // Initial fetch
     {
@@ -126,8 +127,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    // Shared helper: fetch all project data in parallel
-    async fn fetch_project_data(api: &ApiClient, tx: &mpsc::Sender<ApiMsg>, pid: uuid::Uuid) {
+    // Fetch all project data (used on project switch — everything is stale)
+    async fn fetch_all_data(api: &ApiClient, tx: &mpsc::Sender<ApiMsg>, pid: uuid::Uuid) {
         let (
             tasks,
             playbooks,
@@ -213,7 +214,128 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Immediate fetch when project changes
+    // Fetch only the data relevant to the active view (Tier 1)
+    async fn fetch_view_data(
+        api: &ApiClient,
+        tx: &mpsc::Sender<ApiMsg>,
+        pid: uuid::Uuid,
+        view: View,
+    ) {
+        match view {
+            View::Work => {
+                if let Ok(resp) = api.list_work(pid).await {
+                    let _ = tx.send(ApiMsg::WorkItems(resp)).await;
+                }
+            }
+            View::Tasks => {
+                if let Ok(resp) = api.list_tasks(pid).await {
+                    let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
+                }
+            }
+            View::Decisions => {
+                if let Ok(resp) = api.list_decisions(pid).await {
+                    let _ = tx.send(ApiMsg::Decisions(resp)).await;
+                }
+            }
+            View::Dashboard => {
+                let (metrics, events) = tokio::join!(
+                    api.get_project_metrics(pid, None),
+                    api.list_recent_events(pid),
+                );
+                if let Ok(m) = metrics {
+                    let _ = tx.send(ApiMsg::DashboardMetrics(m)).await;
+                }
+                if let Ok(ev) = events {
+                    let _ = tx.send(ApiMsg::DashboardEvents(ev)).await;
+                }
+            }
+            View::Agents | View::Team => {
+                let (roles, members) = tokio::join!(api.list_roles(), api.list_members());
+                if let Ok(r) = roles {
+                    let _ = tx.send(ApiMsg::Roles(r)).await;
+                }
+                if let Ok(m) = members {
+                    let _ = tx.send(ApiMsg::Members(m)).await;
+                }
+            }
+            View::Playbooks | View::StepTemplates => {
+                if let Ok(resp) = api.list_playbooks(pid).await {
+                    let _ = tx.send(ApiMsg::Playbooks(resp)).await;
+                }
+            }
+            View::Knowledge => {
+                if let Ok(resp) = api.list_knowledge(pid).await {
+                    let _ = tx.send(ApiMsg::Knowledge(resp)).await;
+                }
+            }
+            View::Observations => {
+                if let Ok(resp) = api.list_observations(pid).await {
+                    let _ = tx.send(ApiMsg::Observations(resp)).await;
+                }
+            }
+            View::Verifications => {
+                if let Ok(resp) = api.list_verifications(pid, None, None, None, 100, 0).await {
+                    let _ = tx.send(ApiMsg::Verifications(resp)).await;
+                }
+            }
+            View::Integrations => {
+                if let Ok(resp) = api.list_integrations(pid).await {
+                    let _ = tx.send(ApiMsg::Integrations(resp)).await;
+                }
+            }
+            View::Audit => {
+                if let Ok(resp) = api.list_audit(pid).await {
+                    let _ = tx.send(ApiMsg::Audit(resp)).await;
+                }
+            }
+            View::Events => {
+                if let Ok(resp) = api.list_events(pid, None, None).await {
+                    let _ = tx.send(ApiMsg::Events(resp)).await;
+                }
+            }
+            View::Reports => {
+                if let Ok(resp) = api.list_reports(pid).await {
+                    let _ = tx.send(ApiMsg::Reports(resp)).await;
+                }
+            }
+            View::Webhooks => {
+                if let Ok(resp) = api.list_webhooks(pid).await {
+                    let _ = tx.send(ApiMsg::Webhooks(resp)).await;
+                }
+            }
+            // On-demand views: no background polling needed
+            View::Git
+            | View::Source
+            | View::Search
+            | View::Chat
+            | View::Logs
+            | View::ProjectSettings => {}
+        }
+    }
+
+    // Fetch core cross-view data: tasks + work (Tier 2)
+    // Skips fetching if the active view already covers that data.
+    async fn fetch_core_data(
+        api: &ApiClient,
+        tx: &mpsc::Sender<ApiMsg>,
+        pid: uuid::Uuid,
+        active_view: View,
+    ) {
+        // Skip tasks if the active view already fetches them
+        if !matches!(active_view, View::Tasks) {
+            if let Ok(resp) = api.list_tasks(pid).await {
+                let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
+            }
+        }
+        // Skip work if the active view already fetches it
+        if !matches!(active_view, View::Work) {
+            if let Ok(resp) = api.list_work(pid).await {
+                let _ = tx.send(ApiMsg::WorkItems(resp)).await;
+            }
+        }
+    }
+
+    // Immediate fetch when project changes (full refresh — everything is stale)
     {
         let api = api.clone();
         let tx = tx.clone();
@@ -226,29 +348,75 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             while project_rx.changed().await.is_ok() {
                 let pid = { *project_rx.borrow_and_update() };
                 if let Some(pid) = pid {
-                    fetch_project_data(&api, &tx, pid).await;
+                    fetch_all_data(&api, &tx, pid).await;
                 }
             }
         });
     }
 
-    // Polling loop (background refresh)
+    // Immediate fetch when view changes (active view data only)
     {
         let api = api.clone();
         let tx = tx.clone();
         let project_rx = project_rx.clone();
+        let mut view_rx = view_rx.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(10));
-            loop {
-                interval.tick().await;
-                let (connected, agents) = tokio::join!(api.health(), api.list_agents());
-                let _ = tx.send(ApiMsg::Connected(connected.unwrap_or(false))).await;
-                if let Ok(agents) = agents {
-                    let _ = tx.send(ApiMsg::Agents(agents)).await;
-                }
+            // Skip the initial value
+            {
+                let _ = view_rx.borrow_and_update();
+            }
+            while view_rx.changed().await.is_ok() {
+                let view = { *view_rx.borrow_and_update() };
                 let pid = { *project_rx.borrow() };
                 if let Some(pid) = pid {
-                    fetch_project_data(&api, &tx, pid).await;
+                    fetch_view_data(&api, &tx, pid, view).await;
+                }
+            }
+        });
+    }
+
+    // Tiered polling loop
+    //
+    // Budget: health(1) + agents(1) every 20s = 6/min
+    //         active view (1-2) every 15s      = 4-8/min
+    //         core data (0-2) every 60s         = 0-2/min
+    //         ──────────────────────────────────────────
+    //         Total: ~10-16 req/min from polling
+    {
+        let api = api.clone();
+        let tx = tx.clone();
+        let project_rx = project_rx.clone();
+        let view_rx = view_rx.clone();
+        tokio::spawn(async move {
+            let mut health_interval = tokio::time::interval(Duration::from_secs(20));
+            let mut active_interval = tokio::time::interval(Duration::from_secs(15));
+            let mut core_interval = tokio::time::interval(Duration::from_secs(60));
+            loop {
+                tokio::select! {
+                    _ = health_interval.tick() => {
+                        // Health + agents (connectivity indicator)
+                        let (connected, agents) = tokio::join!(api.health(), api.list_agents());
+                        let _ = tx.send(ApiMsg::Connected(connected.unwrap_or(false))).await;
+                        if let Ok(agents) = agents {
+                            let _ = tx.send(ApiMsg::Agents(agents)).await;
+                        }
+                    }
+                    _ = active_interval.tick() => {
+                        // Active view data only
+                        let view = { *view_rx.borrow() };
+                        let pid = { *project_rx.borrow() };
+                        if let Some(pid) = pid {
+                            fetch_view_data(&api, &tx, pid, view).await;
+                        }
+                    }
+                    _ = core_interval.tick() => {
+                        // Core cross-view data (tasks + work for dashboard counts etc.)
+                        let view = { *view_rx.borrow() };
+                        let pid = { *project_rx.borrow() };
+                        if let Some(pid) = pid {
+                            fetch_core_data(&api, &tx, pid, view).await;
+                        }
+                    }
                 }
             }
         });
@@ -256,8 +424,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut last_nav_time: Option<Instant> = None;
     let mut last_fetched_task: Option<uuid::Uuid> = None;
+    let mut last_view = app.view;
 
     loop {
+        // Detect view changes and notify the view watcher for immediate data fetch
+        if app.view != last_view {
+            last_view = app.view;
+            view_tx.send(app.view).ok();
+        }
         // Debounced detail fetch: if selection changed and 200ms passed
         if let (Some(nav_time), Some(tid)) = (last_nav_time, app.selected_task_id()) {
             if nav_time.elapsed() >= Duration::from_millis(200) && Some(tid) != last_fetched_task {
@@ -1775,10 +1949,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let field_chunks = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([
+                        Constraint::Length(2), // Status
                         Constraint::Length(2), // Title
                         Constraint::Length(2), // Description
                         Constraint::Length(2), // Success criteria
-                        Constraint::Length(2), // Status
                         Constraint::Length(2), // Work type
                         Constraint::Length(2), // Priority
                         Constraint::Length(2), // Auto status
@@ -1806,9 +1980,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         f.render_widget(p, area);
                     };
 
-                // Title with cursor
+                // Status selector (field 0)
                 {
-                    let val = if form.active_field == 0 {
+                    let val = format!("◀ {} ▶", views::work::work_status_label(WORK_STATUSES[form.status_index]));
+                    render_gf(f, field_chunks[0], "Status:", &val, form.active_field == 0);
+                }
+                // Title with cursor (field 1)
+                {
+                    let val = if form.active_field == 1 {
                         let bp = form
                             .title
                             .char_indices()
@@ -1823,11 +2002,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         form.title.clone()
                     };
-                    render_gf(f, field_chunks[0], "Title:", &val, form.active_field == 0);
+                    render_gf(f, field_chunks[1], "Title:", &val, form.active_field == 1);
                 }
-                // Description with cursor
+                // Description with cursor (field 2)
                 {
-                    let val = if form.active_field == 1 {
+                    let val = if form.active_field == 2 {
                         let bp = form
                             .description
                             .char_indices()
@@ -1844,15 +2023,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     };
                     render_gf(
                         f,
-                        field_chunks[1],
+                        field_chunks[2],
                         "Description:",
                         &val,
-                        form.active_field == 1,
+                        form.active_field == 2,
                     );
                 }
-                // Success criteria with cursor
+                // Success criteria with cursor (field 3)
                 {
-                    let val = if form.active_field == 2 {
+                    let val = if form.active_field == 3 {
                         let bp = form
                             .success_criteria
                             .char_indices()
@@ -1873,23 +2052,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     };
                     render_gf(
                         f,
-                        field_chunks[2],
+                        field_chunks[3],
                         "Criteria:",
                         &val,
-                        form.active_field == 2,
+                        form.active_field == 3,
                     );
                 }
-                // Status selector
-                {
-                    let val = format!("◀ {} ▶", views::work::work_status_label(WORK_STATUSES[form.status_index]));
-                    render_gf(f, field_chunks[3], "Status:", &val, form.active_field == 3);
-                }
-                // Work type selector
+                // Work type selector (field 4)
                 {
                     let val = format!("◀ {} ▶", WORK_TYPES[form.work_type_index]);
                     render_gf(f, field_chunks[4], "Type:", &val, form.active_field == 4);
                 }
-                // Priority with cursor
+                // Priority with cursor (field 5)
                 {
                     let val = if form.active_field == 5 {
                         let bp = form
@@ -1914,7 +2088,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         form.active_field == 5,
                     );
                 }
-                // Auto status toggle
+                // Auto status toggle (field 6)
                 {
                     let val = if form.auto_status { "ON" } else { "OFF" };
                     render_gf(
@@ -3349,15 +3523,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             KeyCode::Tab => {
                                 form.active_field = (form.active_field + 1) % 7;
                                 form.cursor = match form.active_field {
-                                    0 => form.title.chars().count(),
-                                    1 => form.description.chars().count(),
-                                    2 => form.success_criteria.chars().count(),
+                                    1 => form.title.chars().count(),
+                                    2 => form.description.chars().count(),
+                                    3 => form.success_criteria.chars().count(),
                                     5 => form.priority.chars().count(),
                                     _ => 0,
                                 };
                             }
                             KeyCode::Left => match form.active_field {
-                                3 => {
+                                0 => {
                                     if form.status_index > 0 {
                                         form.status_index -= 1;
                                     } else {
@@ -3381,7 +3555,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             },
                             KeyCode::Right => match form.active_field {
-                                3 => {
+                                0 => {
                                     form.status_index =
                                         (form.status_index + 1) % WORK_STATUSES.len();
                                 }
@@ -3394,9 +3568,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                                 _ => {
                                     let len = match form.active_field {
-                                        0 => form.title.chars().count(),
-                                        1 => form.description.chars().count(),
-                                        2 => form.success_criteria.chars().count(),
+                                        1 => form.title.chars().count(),
+                                        2 => form.description.chars().count(),
+                                        3 => form.success_criteria.chars().count(),
                                         5 => form.priority.chars().count(),
                                         _ => 0,
                                     };
@@ -3406,7 +3580,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             },
                             KeyCode::Backspace => {
-                                if form.active_field == 3
+                                if form.active_field == 0
                                     || form.active_field == 4
                                     || form.active_field == 6
                                 {
@@ -3414,9 +3588,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 } else if form.cursor > 0 {
                                     form.cursor -= 1;
                                     let text = match form.active_field {
-                                        0 => &mut form.title,
-                                        1 => &mut form.description,
-                                        2 => &mut form.success_criteria,
+                                        1 => &mut form.title,
+                                        2 => &mut form.description,
+                                        3 => &mut form.success_criteria,
                                         5 => &mut form.priority,
                                         _ => &mut form.title,
                                     };
@@ -3429,16 +3603,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             KeyCode::Char(c) => {
-                                if form.active_field == 3
+                                if form.active_field == 0
                                     || form.active_field == 4
                                     || form.active_field == 6
                                 {
                                     // selectors/toggle, ignore chars
                                 } else {
                                     let text = match form.active_field {
-                                        0 => &mut form.title,
-                                        1 => &mut form.description,
-                                        2 => &mut form.success_criteria,
+                                        1 => &mut form.title,
+                                        2 => &mut form.description,
+                                        3 => &mut form.success_criteria,
                                         5 => &mut form.priority,
                                         _ => &mut form.title,
                                     };
@@ -7194,7 +7368,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 .unwrap_or_else(|| "0".to_string()),
                                             auto_status: goal.auto_status.unwrap_or(false),
                                             active_field: 0,
-                                            cursor: goal.title.chars().count(),
+                                            cursor: 0,
                                             editing_id: Some(goal.id),
                                         });
                                     }
