@@ -152,11 +152,11 @@ jobs:
           FORGEJO="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/api"
 
           # Sign Docker Hub manifest
-          DIGEST=$(docker buildx imagetools inspect "diraigent/api:${VERSION}" --format '{{.Digest}}')
+          DIGEST="sha256:$(docker buildx imagetools inspect --raw "diraigent/api:${VERSION}" | sha256sum | awk '{print $1}')"
           cosign sign --key /tmp/cosign.key --yes "diraigent/api@${DIGEST}"
 
           # Sign Forgejo manifest
-          DIGEST=$(docker buildx imagetools inspect "${FORGEJO}:${VERSION}" --format '{{.Digest}}')
+          DIGEST="sha256:$(docker buildx imagetools inspect --raw "${FORGEJO}:${VERSION}" | sha256sum | awk '{print $1}')"
           cosign sign --key /tmp/cosign.key --yes "${FORGEJO}@${DIGEST}"
 
           rm -f /tmp/cosign.key

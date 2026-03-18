@@ -149,10 +149,10 @@ jobs:
           VERSION="${GITHUB_REF_NAME}"
           FORGEJO="${{ vars.REGISTRY_URL }}/${{ github.repository_owner }}/diraigent/web"
 
-          DIGEST=$(docker buildx imagetools inspect "diraigent/web:${VERSION}" --format '{{.Digest}}')
+          DIGEST="sha256:$(docker buildx imagetools inspect --raw "diraigent/web:${VERSION}" | sha256sum | awk '{print $1}')"
           cosign sign --key /tmp/cosign.key --yes "diraigent/web@${DIGEST}"
 
-          DIGEST=$(docker buildx imagetools inspect "${FORGEJO}:${VERSION}" --format '{{.Digest}}')
+          DIGEST="sha256:$(docker buildx imagetools inspect --raw "${FORGEJO}:${VERSION}" | sha256sum | awk '{print $1}')"
           cosign sign --key /tmp/cosign.key --yes "${FORGEJO}@${DIGEST}"
 
           rm -f /tmp/cosign.key
