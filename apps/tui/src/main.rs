@@ -74,7 +74,8 @@ enum ApiMsg {
     MainStatus(client::MainPushStatus),
     GitActionResult(String),
     SearchResults(client::SearchResponse),
-    ChatResponse(String),
+    ChatResponse,
+    ChatChunk(String),
     ChatError(String),
     SourceTree(Vec<client::TreeEntry>),
     SourceBlob { path: String, content: String },
@@ -473,14 +474,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         app.selected_search_result = Some(0);
                     }
                 }
-                ApiMsg::ChatResponse(content) => {
-                    app.chat_streaming = false;
-                    if !content.is_empty() {
-                        app.chat_messages.push(client::ChatMessage {
-                            role: "assistant".into(),
-                            content,
-                        });
+                ApiMsg::ChatChunk(chunk) => {
+                    // Append to the last assistant message (created when streaming started)
+                    if let Some(last) = app.chat_messages.last_mut() {
+                        if last.role == "assistant" {
+                            last.content.push_str(&chunk);
+                        }
                     }
+                }
+                ApiMsg::ChatResponse => {
+                    app.chat_streaming = false;
                 }
                 ApiMsg::ChatError(e) => {
                     app.chat_streaming = false;
@@ -627,156 +630,71 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            // Footer
-            let footer = Paragraph::new(Line::from(vec![
-                Span::styled(
-                    " [1]",
-                    Style::default().fg(if app.view == View::Tasks {
-                        theme::blue()
-                    } else {
-                        theme::overlay0()
-                    }),
-                ),
-                Span::styled("Tasks ", Style::default().fg(theme::text())),
-                Span::styled(
-                    "[2]",
-                    Style::default().fg(if app.view == View::Agents {
-                        theme::blue()
-                    } else {
-                        theme::overlay0()
-                    }),
-                ),
-                Span::styled("Agents ", Style::default().fg(theme::text())),
-                Span::styled(
-                    "[3]",
-                    Style::default().fg(if app.view == View::Knowledge {
-                        theme::blue()
-                    } else {
-                        theme::overlay0()
-                    }),
-                ),
-                Span::styled("Knowledge ", Style::default().fg(theme::text())),
-                Span::styled(
-                    "[4]",
-                    Style::default().fg(if app.view == View::Decisions {
-                        theme::blue()
-                    } else {
-                        theme::overlay0()
-                    }),
-                ),
-                Span::styled("Decisions ", Style::default().fg(theme::text())),
-                Span::styled(
-                    "[5]",
-                    Style::default().fg(if app.view == View::Playbooks {
-                        theme::blue()
-                    } else {
-                        theme::overlay0()
-                    }),
-                ),
-                Span::styled("Playbooks ", Style::default().fg(theme::text())),
-                Span::styled(
-                    "[6]",
-                    Style::default().fg(if app.view == View::Work {
-                        theme::blue()
-                    } else {
-                        theme::overlay0()
-                    }),
-                ),
-                Span::styled("Work ", Style::default().fg(theme::text())),
-                Span::styled(
-                    "[7]",
-                    Style::default().fg(if app.view == View::Observations {
-                        theme::blue()
-                    } else {
-                        theme::overlay0()
-                    }),
-                ),
-                Span::styled("Obs ", Style::default().fg(theme::text())),
-                Span::styled(
-                    "[8]",
-                    Style::default().fg(if app.view == View::Team {
-                        theme::blue()
-                    } else {
-                        theme::overlay0()
-                    }),
-                ),
-                Span::styled("Team ", Style::default().fg(theme::text())),
-                Span::styled(
-                    "[9]",
-                    Style::default().fg(if app.view == View::Integrations {
-                        theme::blue()
-                    } else {
-                        theme::overlay0()
-                    }),
-                ),
-                Span::styled("Int ", Style::default().fg(theme::text())),
-                Span::styled(
-                    "[0]",
-                    Style::default().fg(if app.view == View::Audit {
-                        theme::blue()
-                    } else {
-                        theme::overlay0()
-                    }),
-                ),
-                Span::styled("Audit ", Style::default().fg(theme::text())),
-                Span::styled(
-                    "[l]",
-                    Style::default().fg(if app.view == View::Logs {
-                        theme::blue()
-                    } else {
-                        theme::overlay0()
-                    }),
-                ),
-                Span::styled("Logs ", Style::default().fg(theme::text())),
-                Span::styled(
-                    "[S]",
-                    Style::default().fg(if app.view == View::ProjectSettings {
-                        theme::blue()
-                    } else {
-                        theme::overlay0()
-                    }),
-                ),
-                Span::styled("Settings ", Style::default().fg(theme::text())),
-                Span::styled(
-                    "[V]",
-                    Style::default().fg(if app.view == View::Verifications {
-                        theme::blue()
-                    } else {
-                        theme::overlay0()
-                    }),
-                ),
-                Span::styled("Verify ", Style::default().fg(theme::text())),
-                Span::styled("[`]", Style::default().fg(theme::overlay0())),
-                Span::styled("Views ", Style::default().fg(theme::text())),
-                Span::styled("[[]", Style::default().fg(theme::overlay0())),
-                Span::styled("[]]", Style::default().fg(theme::overlay0())),
-                Span::styled("Project ", Style::default().fg(theme::text())),
-                // View-specific shortcuts
-                if app.view == View::Tasks {
-                    Span::styled("[f]Flag [F]Files [c]Comment ", Style::default().fg(theme::overlay0()))
-                } else if app.view == View::Work {
-                    Span::styled("[c]Comment [l]Link ", Style::default().fg(theme::overlay0()))
-                } else if app.view == View::Observations {
-                    Span::styled("[C]Cleanup [p]Promote ", Style::default().fg(theme::overlay0()))
-                } else if app.view == View::Playbooks {
-                    Span::styled("[T]Templates ", Style::default().fg(theme::overlay0()))
-                } else if app.view == View::Agents {
-                    Span::styled("[a]Tasks ", Style::default().fg(theme::overlay0()))
-                } else {
-                    Span::styled("", Style::default())
-                },
-                Span::styled("[/]", Style::default().fg(theme::overlay0())),
-                Span::styled("Search ", Style::default().fg(theme::text())),
-                Span::styled("[q]", Style::default().fg(theme::overlay0())),
-                Span::styled("Quit ", Style::default().fg(theme::text())),
-                Span::styled("[L]", Style::default().fg(theme::overlay0())),
-                Span::styled(
+            // Footer — data-driven from View::shortcut() / View::label()
+            {
+                let mut spans: Vec<Span> = vec![Span::styled(" ", Style::default())];
+
+                // Numbered views (1-0) — the first 10 views in ALL_VIEWS
+                let footer_views: &[View] = &[
+                    View::Work, View::Tasks, View::Decisions, View::Dashboard,
+                    View::Agents, View::Playbooks, View::Observations, View::Team,
+                    View::Knowledge, View::Verifications,
+                ];
+                for v in footer_views {
+                    let active = app.view == *v;
+                    spans.push(Span::styled(
+                        format!("[{}]", v.shortcut()),
+                        Style::default().fg(if active { theme::blue() } else { theme::overlay0() }),
+                    ));
+                    // Use short labels for the footer
+                    let short = match v {
+                        View::Observations => "Obs",
+                        View::Verifications => "Verify",
+                        View::Knowledge => "Know",
+                        _ => v.label(),
+                    };
+                    spans.push(Span::styled(format!("{short} "), Style::default().fg(theme::text())));
+                }
+
+                // View-specific action hints
+                let action_hint = match app.view {
+                    View::Tasks => "[n]New [t]Trans [c]Cmt [f]Flag [F]Files [a]Claim [e]Edit",
+                    View::Work => "[n]New [c]Cmt [s]Status [l]Link [e]Edit",
+                    View::Decisions => "[n]New [a]Accept [x]Reject [X]Deprecate",
+                    View::Observations => "[n]New [s]Status [d]Dismiss [p]Promote [C]Cleanup",
+                    View::Agents => "[a]Tasks",
+                    View::Playbooks => "[n]New [e]Edit [T]Templates [D]Delete",
+                    View::Knowledge => "[n]New [e]Edit [D]Delete",
+                    View::Git => "[r]Refresh [p]Push [R]Resolve [P]PR",
+                    View::Verifications => "[n]New [s]Status [K]Kind [S]Filter",
+                    View::Integrations => "[n]New [e]Edit [a]Access [D]Delete",
+                    View::Webhooks => "[n]New [e]Edit [d]Deliveries [t]Test [D]Delete",
+                    View::Logs => "[/]Filter [T]Tail [Y]Yank",
+                    View::Chat => "[i]Type",
+                    _ => "",
+                };
+                if !action_hint.is_empty() {
+                    spans.push(Span::styled(
+                        format!("{action_hint} "),
+                        Style::default().fg(theme::overlay0()),
+                    ));
+                }
+
+                // Global actions
+                spans.push(Span::styled("[/]", Style::default().fg(theme::overlay0())));
+                spans.push(Span::styled("Search ", Style::default().fg(theme::text())));
+                spans.push(Span::styled("[q]", Style::default().fg(theme::overlay0())));
+                spans.push(Span::styled("Quit ", Style::default().fg(theme::text())));
+                spans.push(Span::styled("[L]", Style::default().fg(theme::overlay0())));
+                spans.push(Span::styled(
                     if theme::is_light() { "Light" } else { "Dark" },
                     Style::default().fg(theme::text()),
-                ),
-            ]))
-            .style(Style::default().bg(theme::mantle()));
-            f.render_widget(footer, main_layout[2]);
+                ));
+
+                let footer = Paragraph::new(Line::from(spans))
+                    .style(Style::default().bg(theme::mantle()));
+                f.render_widget(footer, main_layout[2]);
+            }
 
             // Modals
             match app.modal {
@@ -5186,18 +5104,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         role: "user".into(),
                                         content: msg,
                                     });
+                                    // Push an empty assistant message to receive streamed chunks
+                                    app.chat_messages.push(client::ChatMessage {
+                                        role: "assistant".into(),
+                                        content: String::new(),
+                                    });
                                     app.chat_input.clear();
                                     app.chat_streaming = true;
-                                    let messages = app.chat_messages.clone();
+                                    // Send all messages except the empty assistant placeholder
+                                    let messages: Vec<_> = app
+                                        .chat_messages
+                                        .iter()
+                                        .filter(|m| {
+                                            !(m.role == "assistant" && m.content.is_empty())
+                                        })
+                                        .cloned()
+                                        .collect();
                                     if let Some(pid) = app.current_project {
                                         let api = api.clone();
                                         let tx = tx.clone();
                                         tokio::spawn(async move {
-                                            match api.send_chat(pid, messages).await {
-                                                Ok(content) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::ChatResponse(content))
-                                                        .await;
+                                            match api.send_chat_stream(pid, &messages, &tx).await {
+                                                Ok(()) => {
+                                                    let _ = tx.send(ApiMsg::ChatResponse).await;
                                                 }
                                                 Err(e) => {
                                                     let _ = tx
@@ -5401,8 +5330,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             KeyCode::Enter => {
                                 if app.transition_selected < ALL_VIEWS.len() {
-                                    app.view = ALL_VIEWS[app.transition_selected];
+                                    let target = ALL_VIEWS[app.transition_selected];
+                                    app.view = target;
                                     app.detail_scroll = 0;
+                                    // Fetch log labels on first visit to Logs
+                                    if target == View::Logs && app.log_labels.is_empty() {
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            if let Ok(resp) = api.list_log_labels().await {
+                                                let _ = tx.send(ApiMsg::LogLabels(resp.data)).await;
+                                            }
+                                        });
+                                    }
                                 }
                                 app.modal = Modal::None;
                             }
@@ -6107,65 +6047,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.bulk_mode = false;
                                 }
                             }
+                            // View shortcuts — matches navigation.json
                             KeyCode::Char('1') => {
-                                app.view = View::Tasks;
-                                app.detail_scroll = 0;
-                            }
-                            KeyCode::Char('2') => {
-                                app.view = View::Agents;
-                                app.detail_scroll = 0;
-                            }
-                            KeyCode::Char('3') => {
-                                app.view = View::Knowledge;
-                                app.detail_scroll = 0;
-                            }
-                            KeyCode::Char('4') => {
-                                app.view = View::Decisions;
-                                app.detail_scroll = 0;
-                            }
-                            KeyCode::Char('5') => {
-                                app.view = View::Playbooks;
-                                app.detail_scroll = 0;
-                            }
-                            KeyCode::Char('6') => {
                                 app.view = View::Work;
                                 app.detail_scroll = 0;
                             }
-                            KeyCode::Char('7') => {
-                                app.view = View::Observations;
+                            KeyCode::Char('2') => {
+                                app.view = View::Tasks;
                                 app.detail_scroll = 0;
                             }
-                            KeyCode::Char('8') => {
-                                app.view = View::Team;
+                            KeyCode::Char('3') => {
+                                app.view = View::Decisions;
                                 app.detail_scroll = 0;
                             }
-                            KeyCode::Char('9') => {
-                                app.view = View::Integrations;
-                                app.detail_scroll = 0;
-                            }
-                            KeyCode::Char('0') => {
-                                app.view = View::Audit;
-                                app.detail_scroll = 0;
-                            }
-                            KeyCode::Char('l')
-                                if app.view != View::Logs && app.view != View::Tasks =>
-                            {
-                                // 'l' switches to Logs view (except when already in Logs or Tasks
-                                // where it conflicts with nothing, but 'l' is a common char)
-                                app.view = View::Logs;
-                                app.detail_scroll = 0;
-                                // Fetch labels on first visit
-                                if app.log_labels.is_empty() {
-                                    let api = api.clone();
-                                    let tx = tx.clone();
-                                    tokio::spawn(async move {
-                                        if let Ok(resp) = api.list_log_labels().await {
-                                            let _ = tx.send(ApiMsg::LogLabels(resp.data)).await;
-                                        }
-                                    });
-                                }
-                            }
-                            KeyCode::Char('H') | KeyCode::Home => {
+                            KeyCode::Char('4') => {
                                 app.view = View::Dashboard;
                                 app.detail_scroll = 0;
                                 if let Some(pid) = app.current_project {
@@ -6185,8 +6080,62 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     });
                                 }
                             }
-                            KeyCode::Char('V') => {
+                            KeyCode::Char('5') => {
+                                app.view = View::Agents;
+                                app.detail_scroll = 0;
+                            }
+                            KeyCode::Char('6') => {
+                                app.view = View::Playbooks;
+                                app.detail_scroll = 0;
+                            }
+                            KeyCode::Char('7') => {
+                                app.view = View::Observations;
+                                app.detail_scroll = 0;
+                            }
+                            KeyCode::Char('8') => {
+                                app.view = View::Team;
+                                app.detail_scroll = 0;
+                            }
+                            KeyCode::Char('9') => {
+                                app.view = View::Knowledge;
+                                app.detail_scroll = 0;
+                            }
+                            KeyCode::Char('0') => {
                                 app.view = View::Verifications;
+                                app.detail_scroll = 0;
+                            }
+                            // 'l' — Logs view, except in views where 'l' is an action (Work, Tasks).
+                            KeyCode::Home => {
+                                // Home key is an alias for Dashboard (primary: '4')
+                                app.view = View::Dashboard;
+                                app.detail_scroll = 0;
+                                if let Some(pid) = app.current_project {
+                                    let api2 = api.clone();
+                                    let tx2 = tx.clone();
+                                    tokio::spawn(async move {
+                                        if let Ok(m) = api2.get_project_metrics(pid, None).await {
+                                            let _ = tx2.send(ApiMsg::DashboardMetrics(m)).await;
+                                        }
+                                    });
+                                    let api3 = api.clone();
+                                    let tx3 = tx.clone();
+                                    tokio::spawn(async move {
+                                        if let Ok(ev) = api3.list_recent_events(pid).await {
+                                            let _ = tx3.send(ApiMsg::DashboardEvents(ev)).await;
+                                        }
+                                    });
+                                }
+                            }
+                            KeyCode::Char('A') => {
+                                app.view = View::Audit;
+                                app.detail_scroll = 0;
+                            }
+                            KeyCode::Char('I') => {
+                                app.view = View::Integrations;
+                                app.detail_scroll = 0;
+                            }
+                            KeyCode::Char('E') => {
+                                app.view = View::Events;
                                 app.detail_scroll = 0;
                             }
                             KeyCode::Char('C') => {

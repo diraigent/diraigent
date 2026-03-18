@@ -186,10 +186,15 @@ const TASK_STATES = ['backlog', 'ready', 'working', 'done', 'cancelled'];
                 fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
               </svg>
+              <select (click)="$event.stopPropagation()" (change)="changeWorkType(goal, $any($event.target).value)"
+                [value]="goal.work_type"
+                class="px-2 py-0.5 rounded-full text-xs font-medium border-0 cursor-pointer shrink-0
+                       appearance-none bg-transparent focus:outline-none focus:ring-1 focus:ring-accent {{ typeColor(goal.work_type) }}">
+                @for (gt of goalTypes; track gt) {
+                  <option [value]="gt" [selected]="gt === goal.work_type">{{ t('goals.type.' + gt) }}</option>
+                }
+              </select>
               <span class="text-sm font-medium text-text-primary">{{ goal.title }}</span>
-              <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ typeColor(goal.work_type) }}">
-                {{ t('goals.type.' + goal.work_type) }}
-              </span>
               @if (goal.status !== 'active') {
                 <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ statusColor(goal.status) }}">
                   {{ t('goals.status.' + goal.status) }}
@@ -1919,6 +1924,19 @@ export class WorkPage {
 
   clearStatsFilter(): void {
     this.statsFilter.set('');
+  }
+
+  changeWorkType(goal: SpWork, newType: WorkType): void {
+    if (goal.work_type === newType) return;
+    this.api.update(goal.id, { work_type: newType }).subscribe({
+      next: () => {
+        // Also update formWorkType if this is the selected item
+        if (this.selected()?.id === goal.id) {
+          this.formWorkType = newType;
+        }
+        this.loadGoals();
+      },
+    });
   }
 
   transitionStatus(goal: SpWork, newStatus: WorkStatus): void {
