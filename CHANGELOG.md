@@ -1,5 +1,23 @@
 # Changelog
 
+## v20260318-0719 (2026-03-18)
+
+### Added
+- **API**: OpenAPI/Swagger UI for interactive API documentation
+- **API**: Tenant quota system with configurable resource limits
+- **CI/CD**: Additional CI image build targets
+
+### Changed
+- **API**: Rate limiting now integrates with tenant quotas
+- **API**: Route annotations updated for OpenAPI spec generation
+
+### Fixed
+- **API**: Deterministic output in dependency graph cycle detection
+- **Web**: Remove unused imports causing dashboard warnings
+- **API**: Various stability and model fixes
+
+---
+
 ## v20260317 (2026-03-17)
 
 ### Added
