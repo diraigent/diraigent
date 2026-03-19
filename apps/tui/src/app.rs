@@ -33,11 +33,11 @@ pub enum View {
 pub const ALL_VIEWS: &[View] = &[
     // core
     View::Work,
-    View::Decisions,
     View::Dashboard,
+    View::Decisions,
     // operations
-    View::Agents,
     View::Observations,
+    View::Agents,
     // reference
     View::Reports,
     // tools
@@ -80,10 +80,10 @@ impl View {
     pub fn shortcut(self) -> &'static str {
         match self {
             View::Work => "1",
-            View::Decisions => "2",
-            View::Dashboard => "3",
-            View::Agents => "4",
-            View::Observations => "5",
+            View::Dashboard => "2",
+            View::Decisions => "3",
+            View::Observations => "4",
+            View::Agents => "5",
             View::Reports => "R",
             View::Git => "G",
             View::Source => "B",
