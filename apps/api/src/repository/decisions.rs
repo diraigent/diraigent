@@ -44,28 +44,17 @@ pub async fn get_decision_by_id(pool: &PgPool, id: Uuid) -> Result<Decision, App
     fetch_by_id(pool, Table::Decision, id, "Decision not found").await
 }
 
-pub async fn list_decisions(
-    pool: &PgPool,
-    project_id: Uuid,
-    filters: &DecisionFilters,
-) -> Result<Vec<Decision>, AppError> {
-    let limit = filters.limit.unwrap_or(50).min(100);
-    let offset = filters.offset.unwrap_or(0);
-
-    let sql = format!(
-        "SELECT * FROM diraigent.decision {} ORDER BY created_at DESC LIMIT $3 OFFSET $4",
-        DECISION_FILTERS_WHERE
-    );
-    let items = sqlx::query_as::<_, Decision>(&sql)
-        .bind(project_id)
-        .bind(&filters.status)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(pool)
-        .await?;
-
-    Ok(items)
-}
+super::list_and_count!(
+    list_decisions,
+    count_decisions,
+    Decision,
+    DecisionFilters,
+    "decision",
+    DECISION_FILTERS_WHERE,
+    |f| f.limit,
+    |f| f.offset,
+    |q, f| q.bind(&f.status)
+);
 
 pub async fn update_decision(
     pool: &PgPool,
@@ -120,22 +109,4 @@ pub async fn update_decision(
 
 pub async fn delete_decision(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
     delete_by_id(pool, Table::Decision, id, "Decision not found").await
-}
-
-pub async fn count_decisions(
-    pool: &PgPool,
-    project_id: Uuid,
-    filters: &DecisionFilters,
-) -> Result<i64, AppError> {
-    let sql = format!(
-        "SELECT COUNT(*) FROM diraigent.decision {}",
-        DECISION_FILTERS_WHERE
-    );
-    let row: (i64,) = sqlx::query_as(&sql)
-        .bind(project_id)
-        .bind(&filters.status)
-        .fetch_one(pool)
-        .await?;
-
-    Ok(row.0)
 }

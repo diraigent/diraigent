@@ -167,6 +167,89 @@ where
         .ok_or_else(|| AppError::NotFound(not_found_msg.into()))
 }
 
+/// Generate `list_*` and `count_*` functions for a filtered, paginated query.
+///
+/// Usage:
+/// ```ignore
+/// list_and_count!(
+///     list_events, count_events,    // function names
+///     Event, EventFilters,          // return type, filter type
+///     "event", EVENT_FILTERS_WHERE, // table name, WHERE constant
+///     |filters| { filters.limit },  // limit accessor
+///     |filters| { filters.offset }, // offset accessor
+///     |q, filters| {                // bind filter params (excluding limit/offset)
+///         q.bind(&filters.kind).bind(&filters.severity).bind(filters.since)
+///     }
+/// );
+/// ```
+macro_rules! list_and_count {
+    (
+        $list_fn:ident, $count_fn:ident,
+        $row_type:ty, $filters_type:ty,
+        $table:expr, $where_clause:expr,
+        |$lf:ident| $limit_expr:expr,
+        |$of:ident| $offset_expr:expr,
+        |$q:ident, $f:ident| $bind_expr:expr
+    ) => {
+        pub async fn $list_fn(
+            pool: &sqlx::PgPool,
+            project_id: uuid::Uuid,
+            filters: &$filters_type,
+        ) -> Result<Vec<$row_type>, $crate::error::AppError> {
+            let $lf = filters;
+            let limit = ($limit_expr).unwrap_or(50).min(100);
+            let $of = filters;
+            let offset = ($offset_expr).unwrap_or(0);
+
+            // Count filter binds to compute correct limit/offset parameter positions
+            let filter_sql = $where_clause;
+            let max_param = filter_sql
+                .match_indices('$')
+                .filter_map(|(i, _)| {
+                    filter_sql[i + 1..]
+                        .chars()
+                        .take_while(|c| c.is_ascii_digit())
+                        .collect::<String>()
+                        .parse::<i32>()
+                        .ok()
+                })
+                .max()
+                .unwrap_or(0);
+            let sql = format!(
+                "SELECT * FROM diraigent.{} {} ORDER BY created_at DESC LIMIT ${} OFFSET ${}",
+                $table,
+                filter_sql,
+                max_param + 1,
+                max_param + 2,
+            );
+
+            let $q = sqlx::query_as::<_, $row_type>(&sql).bind(project_id);
+            let $f = filters;
+            let query = $bind_expr;
+            let items = query.bind(limit).bind(offset).fetch_all(pool).await?;
+            Ok(items)
+        }
+
+        pub async fn $count_fn(
+            pool: &sqlx::PgPool,
+            project_id: uuid::Uuid,
+            filters: &$filters_type,
+        ) -> Result<i64, $crate::error::AppError> {
+            let sql = format!(
+                "SELECT COUNT(*) FROM diraigent.{} {}",
+                $table, $where_clause,
+            );
+            let $q = sqlx::query_as::<_, (i64,)>(&sql).bind(project_id);
+            let $f = filters;
+            let query = $bind_expr;
+            let row = query.fetch_one(pool).await?;
+            Ok(row.0)
+        }
+    };
+}
+
+pub(crate) use list_and_count;
+
 pub(crate) async fn delete_by_id(
     pool: &PgPool,
     table: Table,

@@ -39,48 +39,17 @@ pub async fn get_report_by_id(pool: &PgPool, id: Uuid) -> Result<Report, AppErro
     fetch_by_id(pool, Table::Report, id, "Report not found").await
 }
 
-pub async fn list_reports(
-    pool: &PgPool,
-    project_id: Uuid,
-    filters: &ReportFilters,
-) -> Result<Vec<Report>, AppError> {
-    let limit = filters.limit.unwrap_or(50).min(100);
-    let offset = filters.offset.unwrap_or(0);
-
-    let sql = format!(
-        "SELECT * FROM diraigent.report {} ORDER BY created_at DESC LIMIT $4 OFFSET $5",
-        REPORT_FILTERS_WHERE
-    );
-    let items = sqlx::query_as::<_, Report>(&sql)
-        .bind(project_id)
-        .bind(&filters.status)
-        .bind(&filters.kind)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(pool)
-        .await?;
-
-    Ok(items)
-}
-
-pub async fn count_reports(
-    pool: &PgPool,
-    project_id: Uuid,
-    filters: &ReportFilters,
-) -> Result<i64, AppError> {
-    let sql = format!(
-        "SELECT COUNT(*) FROM diraigent.report {}",
-        REPORT_FILTERS_WHERE
-    );
-    let row: (i64,) = sqlx::query_as(&sql)
-        .bind(project_id)
-        .bind(&filters.status)
-        .bind(&filters.kind)
-        .fetch_one(pool)
-        .await?;
-
-    Ok(row.0)
-}
+super::list_and_count!(
+    list_reports,
+    count_reports,
+    Report,
+    ReportFilters,
+    "report",
+    REPORT_FILTERS_WHERE,
+    |f| f.limit,
+    |f| f.offset,
+    |q, f| q.bind(&f.status).bind(&f.kind)
+);
 
 pub async fn update_report(
     pool: &PgPool,
