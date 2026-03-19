@@ -240,40 +240,6 @@ pub struct TaskDependencies {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Role {
-    pub id: Uuid,
-    pub name: String,
-    pub description: Option<String>,
-    #[serde(default)]
-    pub authorities: Vec<String>,
-    #[serde(default)]
-    pub required_capabilities: Vec<String>,
-    #[serde(default)]
-    pub knowledge_scope: Vec<String>,
-    #[serde(default)]
-    pub created_at: Option<String>,
-    #[serde(default)]
-    pub updated_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Member {
-    pub id: Uuid,
-    #[serde(default)]
-    pub agent_id: Option<Uuid>,
-    #[serde(default)]
-    pub role_id: Option<Uuid>,
-    #[serde(default)]
-    pub status: Option<String>,
-    #[serde(default)]
-    pub config: Option<serde_json::Value>,
-    #[serde(default)]
-    pub joined_at: Option<String>,
-    #[serde(default)]
-    pub updated_at: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Integration {
     pub id: Uuid,
     #[serde(default)]
@@ -658,17 +624,6 @@ pub struct TaskLog {
     pub metadata: serde_json::Value,
     #[serde(default)]
     pub created_at: Option<String>,
-}
-
-// ── Scratchpad types ─────────────────────────────────────────
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Scratchpad {
-    #[serde(default)]
-    pub notes: Option<String>,
-    #[serde(default)]
-    pub todos: Option<serde_json::Value>,
-    #[serde(default)]
-    pub metadata: Option<serde_json::Value>,
 }
 
 // ── Metrics types ────────────────────────────────────────────
@@ -1398,94 +1353,6 @@ impl ApiClient {
             "{}/tasks/{}/dependencies/{}",
             self.base_url, task_id, dep_id
         ));
-        self.auth(req).send().await?.error_for_status()?;
-        Ok(())
-    }
-
-    // ── Role operations ───────────────────────────────────────
-
-    pub async fn list_roles(&self) -> Result<Vec<Role>, reqwest::Error> {
-        let req = self.client.get(format!("{}/roles", self.base_url));
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn create_role(&self, body: serde_json::Value) -> Result<Role, reqwest::Error> {
-        let req = self.client.post(format!("{}/roles", self.base_url));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn update_role(
-        &self,
-        role_id: Uuid,
-        body: serde_json::Value,
-    ) -> Result<Role, reqwest::Error> {
-        let req = self
-            .client
-            .put(format!("{}/roles/{}", self.base_url, role_id));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn delete_role(&self, role_id: Uuid) -> Result<(), reqwest::Error> {
-        let req = self
-            .client
-            .delete(format!("{}/roles/{}", self.base_url, role_id));
-        self.auth(req).send().await?.error_for_status()?;
-        Ok(())
-    }
-
-    // ── Member operations ─────────────────────────────────────
-
-    pub async fn list_members(&self) -> Result<Vec<Member>, reqwest::Error> {
-        let req = self.client.get(format!("{}/members", self.base_url));
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn create_member(&self, body: serde_json::Value) -> Result<Member, reqwest::Error> {
-        let req = self.client.post(format!("{}/members", self.base_url));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn update_member(
-        &self,
-        member_id: Uuid,
-        body: serde_json::Value,
-    ) -> Result<Member, reqwest::Error> {
-        let req = self
-            .client
-            .put(format!("{}/members/{}", self.base_url, member_id));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn delete_member(&self, member_id: Uuid) -> Result<(), reqwest::Error> {
-        let req = self
-            .client
-            .delete(format!("{}/members/{}", self.base_url, member_id));
         self.auth(req).send().await?.error_for_status()?;
         Ok(())
     }
@@ -2315,40 +2182,6 @@ impl ApiClient {
             .client
             .get(format!("{}/task-logs/{}", self.base_url, id));
         let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
-    // ── Scratchpad operations ───────────────────────────────────
-
-    pub async fn get_scratchpad(
-        &self,
-        project_id: Uuid,
-    ) -> Result<Option<Scratchpad>, reqwest::Error> {
-        let req = self
-            .client
-            .get(format!("{}/{}/scratchpad", self.base_url, project_id));
-        let resp = self.auth(req).send().await?;
-        if resp.status() == reqwest::StatusCode::NOT_FOUND {
-            return Ok(None);
-        }
-        let body = resp.error_for_status()?;
-        Ok(Some(body.json().await?))
-    }
-
-    pub async fn upsert_scratchpad(
-        &self,
-        project_id: Uuid,
-        body: serde_json::Value,
-    ) -> Result<Scratchpad, reqwest::Error> {
-        let req = self
-            .client
-            .put(format!("{}/{}/scratchpad", self.base_url, project_id));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
         resp.json().await
     }
 
