@@ -1,14 +1,13 @@
-import { Component, inject, signal, computed, DestroyRef, HostListener } from '@angular/core';
+import { Component, inject, signal, computed, DestroyRef } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { timer, switchMap, from, mergeMap, toArray, of } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
-import { TasksApiService, SpTask } from '../../core/services/tasks-api.service';
 import { DiraigentApiService, TokenDayCount, CostSummary, DashboardProjectSummary } from '../../core/services/diraigent-api.service';
 import { GitApiService, BranchInfo } from '../../core/services/git-api.service';
-import { WORK_STATUS_COLORS, taskStateColor, taskTransitions } from '../../shared/ui-constants';
+import { WORK_STATUS_COLORS } from '../../shared/ui-constants';
 import { TokenUsageChartComponent, ChartProject } from './token-usage-chart';
 
 interface UnmergedBranchRow {
@@ -198,7 +197,6 @@ interface ActiveWorkRow {
   `,
 })
 export class DashboardPage {
-  private tasksApi = inject(TasksApiService);
   private diraigentApi = inject(DiraigentApiService);
   private gitApi = inject(GitApiService);
   private router = inject(Router);
@@ -212,13 +210,6 @@ export class DashboardPage {
   loading = signal(true);
   error = signal(false);
   lastUpdated = signal<Date>(new Date());
-  openMenuId = signal<string | null>(null);
-
-  @HostListener('document:click')
-  onDocumentClick(): void {
-    this.openMenuId.set(null);
-  }
-
   stats = computed(() => {
     const sums = this.projectSummaries().reduce(
       (acc, ps) => ({
@@ -289,20 +280,6 @@ export class DashboardPage {
     if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
     if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
     return n.toString();
-  }
-
-  protected readonly stateColor = taskStateColor;
-  protected readonly getTransitions = taskTransitions;
-
-  toggleStateMenu(event: Event, taskId: string): void {
-    event.stopPropagation();
-    this.openMenuId.set(this.openMenuId() === taskId ? null : taskId);
-  }
-
-  onTransition(event: Event, task: SpTask, target: string): void {
-    event.stopPropagation();
-    this.openMenuId.set(null);
-    this.tasksApi.transition(task.id, target).subscribe();
   }
 
   workStatusColor(status: string): string {
