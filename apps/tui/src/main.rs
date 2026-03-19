@@ -24,10 +24,9 @@ use ratatui::{Frame, Terminal};
 use tokio::sync::{mpsc, watch};
 
 use app::{
-    App, Modal, VerificationForm, View, ALL_VIEWS, EVENT_KINDS, EVENT_SEVERITIES,
-    INTEGRATION_AUTH_TYPES, INTEGRATION_KINDS, KNOWLEDGE_CATEGORIES, LOG_DIRECTIONS, LOG_LIMITS,
-    OBSERVATION_KINDS, OBSERVATION_SEVERITIES, TASK_KINDS, TIME_RANGES, VERIFICATION_KINDS,
-    VERIFICATION_STATUSES, WORK_STATUSES, WORK_TYPES,
+    App, Modal, View, ALL_VIEWS, EVENT_KINDS, EVENT_SEVERITIES, INTEGRATION_AUTH_TYPES,
+    INTEGRATION_KINDS, LOG_DIRECTIONS, LOG_LIMITS, OBSERVATION_KINDS, OBSERVATION_SEVERITIES,
+    TASK_KINDS, TIME_RANGES, WORK_STATUSES, WORK_TYPES,
 };
 use client::ApiClient;
 
@@ -42,9 +41,7 @@ enum ApiMsg {
     TaskComments(Vec<client::TaskComment>),
     TaskDependencies(client::TaskDependencies),
     Agents(Vec<client::Agent>),
-    Knowledge(Vec<client::KnowledgeEntry>),
     Decisions(Vec<client::Decision>),
-    Playbooks(Vec<client::Playbook>),
     WorkItems(Vec<client::Work>),
     DoneWorkItems(Vec<client::Work>),
     WorkProgress(client::WorkProgress),
@@ -52,8 +49,6 @@ enum ApiMsg {
     WorkStats(client::WorkStats),
     WorkChildren(Vec<client::Work>),
     Observations(Vec<client::Observation>),
-    Roles(Vec<client::Role>),
-    Members(Vec<client::Member>),
     Integrations(Vec<client::Integration>),
     IntegrationAccessList(Vec<client::IntegrationAccess>),
     Audit(Vec<client::AuditEntry>),
@@ -62,8 +57,6 @@ enum ApiMsg {
     ClaudeMd(String),
     ProjectUpdated(client::Project),
     GitTaskStatus(client::GitTaskStatus),
-    ChangedFiles(Vec<client::ChangedFile>),
-    Verifications(Vec<client::Verification>),
     Events(Vec<client::Event>),
     DashboardMetrics(client::ProjectMetrics),
     DashboardEvents(Vec<client::Event>),
@@ -72,6 +65,8 @@ enum ApiMsg {
     WebhookDeliveries(Vec<client::WebhookDelivery>),
     WebhookTestResult(String),
     WorkTasksList(Vec<client::Task>),
+    WorkTaskUpdates(Vec<client::TaskUpdate>),
+    WorkTaskComments(Vec<client::TaskComment>),
     Branches(client::BranchListResponse),
     MainStatus(client::MainPushStatus),
     GitActionResult(String),
@@ -82,22 +77,10 @@ enum ApiMsg {
     SourceTree(Vec<client::TreeEntry>),
     SourceBlob { path: String, content: String },
     WorkComments(Vec<client::WorkComment>),
-    StepTemplates(Vec<client::StepTemplate>),
     AgentTasks(Vec<client::Task>),
     Subtasks(Vec<client::Task>),
     ObservationsCleanup(client::CleanupObservationsResult),
     Error(String),
-}
-
-fn valid_transitions(state: &str) -> Vec<String> {
-    match state {
-        "backlog" => vec!["ready".into(), "cancelled".into()],
-        "ready" => vec!["cancelled".into()],
-        "done" => vec!["ready".into()],
-        "cancelled" => vec!["backlog".into()],
-        // Any active step (implement, review, merge, working, etc.)
-        _ => vec!["done".into(), "ready".into(), "cancelled".into()],
-    }
 }
 
 #[tokio::main]
@@ -134,17 +117,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     async fn fetch_all_data(api: &ApiClient, tx: &mpsc::Sender<ApiMsg>, pid: uuid::Uuid) {
         let (
             tasks,
-            playbooks,
-            knowledge,
             decisions,
             active_work,
             done_work,
             observations,
-            roles,
-            members,
             integrations,
             audit,
-            verifications,
             events,
             reports,
             metrics,
@@ -152,8 +130,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             webhooks,
         ) = tokio::join!(
             api.list_tasks(pid),
-            api.list_playbooks(pid),
-            api.list_knowledge(pid),
             api.list_decisions(pid),
             api.list_work_filtered(pid, Some("achieved,abandoned"), None, None),
             api.list_work_filtered(
@@ -163,11 +139,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Some(0)
             ),
             api.list_observations(pid),
-            api.list_roles(),
-            api.list_members(),
             api.list_integrations(pid),
             api.list_audit(pid),
-            api.list_verifications(pid, None, None, None, 100, 0),
             api.list_events(pid, None, None),
             api.list_reports(pid),
             api.get_project_metrics(pid, None),
@@ -176,12 +149,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         if let Ok(resp) = tasks {
             let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
-        }
-        if let Ok(resp) = playbooks {
-            let _ = tx.send(ApiMsg::Playbooks(resp)).await;
-        }
-        if let Ok(resp) = knowledge {
-            let _ = tx.send(ApiMsg::Knowledge(resp)).await;
         }
         if let Ok(resp) = decisions {
             let _ = tx.send(ApiMsg::Decisions(resp)).await;
@@ -195,20 +162,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Ok(resp) = observations {
             let _ = tx.send(ApiMsg::Observations(resp)).await;
         }
-        if let Ok(resp) = roles {
-            let _ = tx.send(ApiMsg::Roles(resp)).await;
-        }
-        if let Ok(resp) = members {
-            let _ = tx.send(ApiMsg::Members(resp)).await;
-        }
         if let Ok(resp) = integrations {
             let _ = tx.send(ApiMsg::Integrations(resp)).await;
         }
         if let Ok(resp) = audit {
             let _ = tx.send(ApiMsg::Audit(resp)).await;
-        }
-        if let Ok(resp) = verifications {
-            let _ = tx.send(ApiMsg::Verifications(resp)).await;
         }
         if let Ok(resp) = events {
             let _ = tx.send(ApiMsg::Events(resp)).await;
@@ -252,11 +210,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let _ = tx.send(ApiMsg::DoneWorkItems(resp)).await;
                 }
             }
-            View::Tasks => {
-                if let Ok(resp) = api.list_tasks(pid).await {
-                    let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
-                }
-            }
             View::Decisions => {
                 if let Ok(resp) = api.list_decisions(pid).await {
                     let _ = tx.send(ApiMsg::Decisions(resp)).await;
@@ -274,33 +227,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let _ = tx.send(ApiMsg::DashboardEvents(ev)).await;
                 }
             }
-            View::Agents | View::Team => {
-                let (roles, members) = tokio::join!(api.list_roles(), api.list_members());
-                if let Ok(r) = roles {
-                    let _ = tx.send(ApiMsg::Roles(r)).await;
-                }
-                if let Ok(m) = members {
-                    let _ = tx.send(ApiMsg::Members(m)).await;
-                }
-            }
-            View::Playbooks | View::StepTemplates => {
-                if let Ok(resp) = api.list_playbooks(pid).await {
-                    let _ = tx.send(ApiMsg::Playbooks(resp)).await;
-                }
-            }
-            View::Knowledge => {
-                if let Ok(resp) = api.list_knowledge(pid).await {
-                    let _ = tx.send(ApiMsg::Knowledge(resp)).await;
+            View::Agents => {
+                if let Ok(agents) = api.list_agents().await {
+                    let _ = tx.send(ApiMsg::Agents(agents)).await;
                 }
             }
             View::Observations => {
                 if let Ok(resp) = api.list_observations(pid).await {
                     let _ = tx.send(ApiMsg::Observations(resp)).await;
-                }
-            }
-            View::Verifications => {
-                if let Ok(resp) = api.list_verifications(pid, None, None, None, 100, 0).await {
-                    let _ = tx.send(ApiMsg::Verifications(resp)).await;
                 }
             }
             View::Integrations => {
@@ -346,11 +280,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         pid: uuid::Uuid,
         active_view: View,
     ) {
-        // Skip tasks if the active view already fetches them
-        if !matches!(active_view, View::Tasks) {
-            if let Ok(resp) = api.list_tasks(pid).await {
-                let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
-            }
+        // Tasks are always fetched as core data (used by work view and others)
+        if let Ok(resp) = api.list_tasks(pid).await {
+            let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
         }
         // Skip work if the active view already fetches it
         if !matches!(active_view, View::Work) {
@@ -594,9 +526,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::TaskComments(c) => app.task_comments = c,
                 ApiMsg::TaskDependencies(d) => app.task_dependencies = d,
                 ApiMsg::Agents(a) => app.agents = a,
-                ApiMsg::Knowledge(k) => app.knowledge = k,
                 ApiMsg::Decisions(d) => app.decisions = d,
-                ApiMsg::Playbooks(p) => app.playbooks = p,
                 ApiMsg::WorkItems(mut g) => {
                     g.sort_by_key(|w| match w.status.as_deref().unwrap_or("") {
                         "active" => 0,
@@ -651,12 +581,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::WorkStats(s) => app.work_stats = Some(s),
                 ApiMsg::WorkChildren(c) => app.work_children = c,
                 ApiMsg::Observations(o) => app.observations = o,
-                ApiMsg::Roles(r) => app.roles = r,
-                ApiMsg::Members(m) => app.members = m,
                 ApiMsg::Integrations(intg) => app.integrations = intg,
                 ApiMsg::IntegrationAccessList(access) => app.integration_access = access,
                 ApiMsg::Audit(a) => app.audit_log = a,
-                ApiMsg::Verifications(v) => app.verifications = v,
                 ApiMsg::Events(e) => app.events = e,
                 ApiMsg::Reports(r) => app.reports = r,
                 ApiMsg::DashboardMetrics(m) => app.dashboard_metrics = Some(m),
@@ -664,7 +591,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::Webhooks(w) => app.webhooks = w,
                 ApiMsg::WebhookDeliveries(d) => app.webhook_deliveries = d,
                 ApiMsg::WebhookTestResult(r) => app.webhook_test_result = Some(r),
-                ApiMsg::WorkTasksList(tasks) => app.work_tasks = tasks,
+                ApiMsg::WorkTasksList(tasks) => {
+                    // Auto-select first task if none selected
+                    if !tasks.is_empty() && app.work_task_selected.is_none() {
+                        app.work_task_selected = Some(0);
+                        app.work_task_list_state.select(Some(0));
+                        // Fetch updates/comments for the first task
+                        let tid = tasks[0].id;
+                        let api = api.clone();
+                        let tx = tx.clone();
+                        tokio::spawn(async move {
+                            let (updates, comments) = tokio::join!(
+                                api.get_task_updates(tid),
+                                api.get_task_comments(tid),
+                            );
+                            if let Ok(updates) = updates {
+                                let _ = tx.send(ApiMsg::WorkTaskUpdates(updates)).await;
+                            }
+                            if let Ok(comments) = comments {
+                                let _ = tx.send(ApiMsg::WorkTaskComments(comments)).await;
+                            }
+                        });
+                    } else if tasks.is_empty() {
+                        app.work_task_selected = None;
+                        app.work_task_list_state.select(None);
+                        app.work_task_updates.clear();
+                        app.work_task_comments.clear();
+                    }
+                    app.work_tasks = tasks;
+                }
+                ApiMsg::WorkTaskUpdates(updates) => app.work_task_updates = updates,
+                ApiMsg::WorkTaskComments(comments) => app.work_task_comments = comments,
                 ApiMsg::Logs(resp) => {
                     app.log_entries = resp.entries;
                     app.log_loading = false;
@@ -683,7 +640,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 ApiMsg::GitTaskStatus(status) => app.git_task_status = Some(status),
-                ApiMsg::ChangedFiles(files) => app.changed_files = files,
                 ApiMsg::Branches(resp) => {
                     app.current_branch = resp.current_branch;
                     app.branches = resp.branches;
@@ -745,9 +701,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 ApiMsg::WorkComments(comments) => {
                     app.work_comments = comments;
-                }
-                ApiMsg::StepTemplates(templates) => {
-                    app.step_templates = templates;
                 }
                 ApiMsg::AgentTasks(tasks) => {
                     app.agent_tasks = tasks;
@@ -829,21 +782,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Main content
             match app.view {
-                View::Tasks => views::tasks::render(f, main_layout[1], &mut app),
                 View::Agents => views::agents::render(f, main_layout[1], &mut app),
-                View::Knowledge => views::knowledge::render(f, main_layout[1], &mut app),
                 View::Decisions => views::decisions::render(f, main_layout[1], &mut app),
-                View::Playbooks => views::playbooks::render(f, main_layout[1], &mut app),
                 View::Work => views::work::render(f, main_layout[1], &mut app),
                 View::Observations => views::observations::render(f, main_layout[1], &mut app),
-                View::Team => views::team::render(f, main_layout[1], &mut app),
                 View::Integrations => views::integrations::render(f, main_layout[1], &mut app),
                 View::Audit => views::audit::render(f, main_layout[1], &mut app),
                 View::Logs => views::logs::render(f, main_layout[1], &mut app),
                 View::ProjectSettings => {
                     views::project_settings::render(f, main_layout[1], &mut app)
                 }
-                View::Verifications => views::verifications::render(f, main_layout[1], &mut app),
                 View::Git => views::git::render(f, main_layout[1], &mut app),
                 View::Search => views::search::render(f, main_layout[1], &mut app),
                 View::Chat => views::chat::render(f, main_layout[1], &mut app),
@@ -852,17 +800,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 View::Webhooks => views::webhooks::render(f, main_layout[1], &mut app),
                 View::Reports => views::reports::render(f, main_layout[1], &mut app),
                 View::Dashboard => views::dashboard::render(f, main_layout[1], &mut app),
-                View::StepTemplates => {
-                    let label = app.view.label();
-                    let block = ratatui::widgets::Block::default()
-                        .title(format!(" {} ", label))
-                        .borders(ratatui::widgets::Borders::ALL)
-                        .border_style(Style::default().fg(theme::overlay0()));
-                    let text = Paragraph::new(format!("{} view — coming soon", label))
-                        .block(block)
-                        .style(Style::default().fg(theme::subtext0()));
-                    f.render_widget(text, main_layout[1]);
-                }
             }
 
             // Footer — data-driven from View::shortcut() / View::label()
@@ -871,37 +808,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Numbered views (1-0) — the first 10 views in ALL_VIEWS
                 let footer_views: &[View] = &[
-                    View::Work, View::Tasks, View::Decisions, View::Dashboard,
-                    View::Agents, View::Playbooks, View::Observations, View::Team,
-                    View::Knowledge, View::Verifications,
+                    View::Work,
+                    View::Decisions,
+                    View::Dashboard,
+                    View::Agents,
+                    View::Observations,
                 ];
                 for v in footer_views {
                     let active = app.view == *v;
                     spans.push(Span::styled(
                         format!("[{}]", v.shortcut()),
-                        Style::default().fg(if active { theme::blue() } else { theme::overlay0() }),
+                        Style::default().fg(if active {
+                            theme::blue()
+                        } else {
+                            theme::overlay0()
+                        }),
                     ));
                     // Use short labels for the footer
                     let short = match v {
                         View::Observations => "Obs",
-                        View::Verifications => "Verify",
-                        View::Knowledge => "Know",
                         _ => v.label(),
                     };
-                    spans.push(Span::styled(format!("{short} "), Style::default().fg(theme::text())));
+                    spans.push(Span::styled(
+                        format!("{short} "),
+                        Style::default().fg(theme::text()),
+                    ));
                 }
 
                 // View-specific action hints
                 let action_hint = match app.view {
-                    View::Tasks => "[n]New [t]Trans [c]Cmt [f]Flag [F]Files [a]Claim [e]Edit",
-                    View::Work => "[n]New [t]Task [c]Cmt [s]Status [e]Edit",
+                    View::Work => "[n]New [t]Task [c]Cmt [s]Status [e]Edit [Tab]Focus",
                     View::Decisions => "[n]New [a]Accept [x]Reject [X]Deprecate",
                     View::Observations => "[n]New [s]Status [d]Dismiss [p]Promote [C]Cleanup",
                     View::Agents => "[a]Tasks",
-                    View::Playbooks => "[n]New [e]Edit [T]Templates [D]Delete",
-                    View::Knowledge => "[n]New [e]Edit [D]Delete",
                     View::Git => "[r]Refresh [p]Push [R]Resolve [P]PR",
-                    View::Verifications => "[n]New [s]Status [K]Kind [S]Filter",
                     View::Integrations => "[n]New [e]Edit [a]Access [D]Delete",
                     View::Webhooks => "[n]New [e]Edit [d]Deliveries [t]Test [D]Delete",
                     View::Logs => "[/]Filter [T]Tail [Y]Yank",
@@ -926,27 +866,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Style::default().fg(theme::text()),
                 ));
 
-                let footer = Paragraph::new(Line::from(spans))
-                    .style(Style::default().bg(theme::mantle()));
+                let footer =
+                    Paragraph::new(Line::from(spans)).style(Style::default().bg(theme::mantle()));
                 f.render_widget(footer, main_layout[2]);
             }
 
             // Modals
             match app.modal {
-                Modal::Transition => {
-                    let states: Vec<&str> =
-                        app.transition_options.iter().map(|s| s.as_str()).collect();
-                    f.render_widget(
-                        widgets::popup::TransitionPopup {
-                            states: &states,
-                            selected: app.transition_selected,
-                        },
-                        size,
-                    );
-                }
-                Modal::Reply
-                | Modal::Comment
-                | Modal::WorkComment
+                Modal::WorkComment
                 | Modal::Search
                 | Modal::GlobalSearch
                 | Modal::LogQuery
@@ -959,18 +886,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "Search"
                     } else if app.modal == Modal::GlobalSearch {
                         "Global Search"
-                    } else if app.modal == Modal::Comment {
-                        "Comment"
-                    } else if app.modal == Modal::WorkComment {
-                        "Work Comment"
-                    } else if app
-                        .selected_task
-                        .and_then(|i| app.tasks.get(i))
-                        .is_some_and(|t| t.state == "backlog")
-                    {
-                        "Refine spec"
                     } else {
-                        "Reply"
+                        "Work Comment"
                     };
                     f.render_widget(
                         widgets::popup::InputPopup {
@@ -991,42 +908,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         size,
                     );
                 }
-                Modal::ClaimTask | Modal::DelegateTask | Modal::BulkTransition => {
-                    let states: Vec<&str> =
-                        app.transition_options.iter().map(|s| s.as_str()).collect();
-                    let title = match app.modal {
-                        Modal::ClaimTask => " Claim Task — Select Agent ",
-                        Modal::DelegateTask => " Delegate Task — Select Agent ",
-                        Modal::BulkTransition => " Bulk Transition ",
-                        _ => "",
-                    };
-                    let popup_area = widgets::popup::centered_rect(40, 50, size);
-                    Clear.render(popup_area, f.buffer_mut());
-                    let block = Block::default()
-                        .title(title)
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(theme::peach()))
-                        .style(Style::default().bg(theme::mantle()));
-                    let inner = block.inner(popup_area);
-                    f.render_widget(block, popup_area);
-                    let items: Vec<ratatui::widgets::ListItem> = states
-                        .iter()
-                        .enumerate()
-                        .map(|(i, s)| {
-                            let style = if i == app.transition_selected {
-                                Style::default().fg(theme::base()).bg(theme::peach())
-                            } else {
-                                Style::default().fg(theme::text())
-                            };
-                            ratatui::widgets::ListItem::new(Line::styled(
-                                format!("  {}  ", s),
-                                style,
-                            ))
-                        })
-                        .collect();
-                    f.render_widget(ratatui::widgets::List::new(items), inner);
-                }
-                Modal::BulkDelete | Modal::ReportDelete => {
+                Modal::ReportDelete => {
                     let count = app.bulk_selected.len();
                     let popup_area = widgets::popup::centered_rect(50, 20, size);
                     Clear.render(popup_area, f.buffer_mut());
@@ -1042,19 +924,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         count,
                         if count == 1 { "" } else { "s" }
                     );
-                    let p = Paragraph::new(Line::styled(
-                        msg,
-                        Style::default().fg(theme::red()),
-                    ));
+                    let p = Paragraph::new(Line::styled(msg, Style::default().fg(theme::red())));
                     f.render_widget(p, inner);
                 }
                 Modal::ObservationStatus
                 | Modal::DecisionSupersede
                 | Modal::IntegrationAccess
                 | Modal::ViewPicker
-                | Modal::VerificationStatus
-                | Modal::VerificationKindFilter
-                | Modal::VerificationStatusFilter
                 | Modal::EventKindFilter
                 | Modal::EventSeverityFilter => {
                     let states: Vec<&str> =
@@ -1064,9 +940,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Modal::DecisionSupersede => " Supersede with Decision ",
                         Modal::IntegrationAccess => " Agent Access ",
                         Modal::ViewPicker => " Switch View ",
-                        Modal::VerificationStatus => " Verification Status ",
-                        Modal::VerificationKindFilter => " Filter by Kind ",
-                        Modal::VerificationStatusFilter => " Filter by Status ",
                         Modal::EventKindFilter => " Filter Events by Kind ",
                         Modal::EventSeverityFilter => " Filter Events by Severity ",
                         _ => "",
@@ -1179,7 +1052,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
-                        "                  Playbooks/Work/Obs/Team/Int/Audit)  l = Logs",
+                        "                  Work/Obs/Team/Int/Audit)  l = Logs",
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
@@ -1205,7 +1078,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
-                        "    e             Edit task (Tasks) / playbook / toggle int",
+                        "    e             Edit task (Tasks) / toggle int",
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
@@ -1284,12 +1157,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
-                        "    D             Delete entry (Decisions/Knowledge/Playbooks/Team/Int)",
+                        "    D             Delete entry (Decisions/Knowledge/Team/Int)",
                         Style::default().fg(theme::text()),
                     ),
                     Line::from(""),
                     Line::styled(
-                        "  Dependencies / Playbooks / Integrations / Audit",
+                        "  Dependencies / Integrations / Audit",
                         Style::default().fg(theme::blue()),
                     ),
                     Line::styled(
@@ -1301,11 +1174,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
-                        "    n             New playbook (Playbooks view)",
-                        Style::default().fg(theme::text()),
-                    ),
-                    Line::styled(
-                        "    e             Edit playbook / Toggle integration",
+                        "    e             Toggle integration",
                         Style::default().fg(theme::text()),
                     ),
                     Line::styled(
@@ -1464,7 +1333,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Urgent toggle
                 {
-                    let val = if form.urgent { "⚡ Urgent" } else { "  Normal" };
+                    let val = if form.urgent {
+                        "⚡ Urgent"
+                    } else {
+                        "  Normal"
+                    };
                     render_field(
                         f,
                         field_chunks[2],
@@ -1550,7 +1423,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Constraint::Length(2), // Title
                         Constraint::Length(2), // Kind
                         Constraint::Length(2), // Priority
-                        Constraint::Length(2), // Playbook
                         Constraint::Min(3),    // Spec
                         Constraint::Length(1), // Footer
                     ])
@@ -1635,7 +1507,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Urgent toggle
                 {
-                    let val = if form.urgent { "⚡ Urgent" } else { "  Normal" };
+                    let val = if form.urgent {
+                        "⚡ Urgent"
+                    } else {
+                        "  Normal"
+                    };
                     render_field(
                         f,
                         field_chunks[2],
@@ -1646,28 +1522,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
 
-                // Playbook (field 3)
+                // Spec (field 3)
                 {
-                    let val = if form.playbook_index == 0 {
-                        "◀ None (manual) ▶".to_string()
-                    } else if let Some(pb) = app.playbooks.get(form.playbook_index - 1) {
-                        format!("◀ {} ▶", pb.title)
-                    } else {
-                        "◀ None (manual) ▶".to_string()
-                    };
-                    render_field(
-                        f,
-                        field_chunks[3],
-                        "Playbook:",
-                        &val,
-                        form.active_field == 3,
-                        (0, 0),
-                    );
-                }
-
-                // Spec (field 4)
-                {
-                    let cursor_text = if form.active_field == 4 {
+                    let cursor_text = if form.active_field == 3 {
                         let bp = form
                             .spec
                             .char_indices()
@@ -1682,7 +1539,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         form.spec.clone()
                     };
-                    let area = field_chunks[4];
+                    let area = field_chunks[3];
                     let avail_w = area.width as usize;
                     let chars_before = " Spec: ".len() + form.cursor;
                     let cursor_line = if avail_w > 0 {
@@ -1697,7 +1554,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         area,
                         "Spec:",
                         &cursor_text,
-                        form.active_field == 4,
+                        form.active_field == 3,
                         (scroll_y, 0),
                     );
                 }
@@ -1707,272 +1564,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     " Tab: next field | Enter: submit | Esc: cancel",
                     Style::default().fg(theme::overlay0()),
                 ));
-                f.render_widget(hint, field_chunks[5]);
-            }
-
-            // Playbook creation/edit form
-            if let Some(ref form) = app.playbook_form {
-                let form_area = widgets::popup::centered_rect(80, 80, size);
-                Clear.render(form_area, f.buffer_mut());
-                let title = if form.editing_id.is_some() {
-                    " Edit Playbook "
-                } else {
-                    " New Playbook "
-                };
-                let block = Block::default()
-                    .title(title)
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(theme::peach()))
-                    .style(Style::default().bg(theme::mantle()));
-                let inner = block.inner(form_area);
-                f.render_widget(block, form_area);
-
-                let field_chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([
-                        Constraint::Length(2), // Title
-                        Constraint::Length(2), // Trigger
-                        Constraint::Length(2), // Tags
-                        Constraint::Length(1), // Steps header
-                        Constraint::Min(4),    // Steps list / step editor
-                        Constraint::Length(1), // Footer
-                    ])
-                    .split(inner);
-
-                let render_pb_field =
-                    |f: &mut Frame, area: Rect, label: &str, value: &str, active: bool| {
-                        let style = if active {
-                            Style::default().fg(theme::blue())
-                        } else {
-                            Style::default().fg(theme::subtext0())
-                        };
-                        let val_style = if active {
-                            Style::default().fg(theme::text())
-                        } else {
-                            Style::default().fg(theme::overlay0())
-                        };
-                        let p = Paragraph::new(vec![Line::from(vec![
-                            Span::styled(format!(" {} ", label), style),
-                            Span::styled(value.to_string(), val_style),
-                        ])]);
-                        f.render_widget(p, area);
-                    };
-
-                // Helper to render text with cursor
-                let text_with_cursor = |text: &str, cursor: usize, active: bool| -> String {
-                    if active {
-                        let bp = text
-                            .char_indices()
-                            .nth(cursor)
-                            .map(|(i, _)| i)
-                            .unwrap_or(text.len());
-                        if bp < text.len() {
-                            format!("{}│{}", &text[..bp], &text[bp..])
-                        } else {
-                            format!("{}│", text)
-                        }
-                    } else {
-                        text.to_string()
-                    }
-                };
-
-                // Title
-                {
-                    let val = text_with_cursor(
-                        &form.title,
-                        form.cursor,
-                        form.active_field == 0 && !form.editing_step,
-                    );
-                    render_pb_field(
-                        f,
-                        field_chunks[0],
-                        "Title:",
-                        &val,
-                        form.active_field == 0 && !form.editing_step,
-                    );
-                }
-                // Trigger
-                {
-                    let val = text_with_cursor(
-                        &form.trigger,
-                        form.cursor,
-                        form.active_field == 1 && !form.editing_step,
-                    );
-                    render_pb_field(
-                        f,
-                        field_chunks[1],
-                        "Trigger:",
-                        &val,
-                        form.active_field == 1 && !form.editing_step,
-                    );
-                }
-                // Tags
-                {
-                    let val = text_with_cursor(
-                        &form.tags,
-                        form.cursor,
-                        form.active_field == 2 && !form.editing_step,
-                    );
-                    render_pb_field(
-                        f,
-                        field_chunks[2],
-                        "Tags:",
-                        &val,
-                        form.active_field == 2 && !form.editing_step,
-                    );
-                }
-
-                // Steps header
-                {
-                    let style = if form.active_field == 3 {
-                        Style::default().fg(theme::blue())
-                    } else {
-                        Style::default().fg(theme::subtext0())
-                    };
-                    let p = Paragraph::new(Line::styled(
-                        format!(" Steps ({}):", form.steps.len()),
-                        style,
-                    ));
-                    f.render_widget(p, field_chunks[3]);
-                }
-
-                // Steps area
-                if form.active_field == 3 && form.editing_step {
-                    // Step detail editor
-                    if let Some(step) = form.steps.get(form.selected_step) {
-                        let step_chunks = Layout::default()
-                            .direction(Direction::Vertical)
-                            .constraints([
-                                Constraint::Length(1), // Step name
-                                Constraint::Length(1), // Description
-                                Constraint::Length(1), // on_complete
-                                Constraint::Length(1), // timeout
-                                Constraint::Length(1), // model
-                                Constraint::Min(0),    // spacer
-                            ])
-                            .split(field_chunks[4]);
-
-                        let step_label = format!(" Editing step {}:", form.selected_step);
-                        let name_val =
-                            text_with_cursor(&step.name, form.cursor, form.step_field == 0);
-                        let desc_val = text_with_cursor(
-                            &step.description,
-                            form.cursor,
-                            form.step_field == 1,
-                        );
-                        let on_complete =
-                            app::ON_COMPLETE_OPTIONS[step.on_complete_index];
-                        let timeout_val = text_with_cursor(
-                            &step.timeout_minutes,
-                            form.cursor,
-                            form.step_field == 3,
-                        );
-                        let model_val = app::STEP_MODEL_OPTIONS[step.model_index];
-                        let model_display = if model_val.is_empty() {
-                            "(default)"
-                        } else {
-                            model_val
-                        };
-
-                        // Render each step field
-                        let fields: Vec<(&str, String, bool)> = vec![
-                            ("  Name:", name_val, form.step_field == 0),
-                            ("  Desc:", desc_val, form.step_field == 1),
-                            (
-                                "  OnComplete:",
-                                format!("◄ {} ►", on_complete),
-                                form.step_field == 2,
-                            ),
-                            ("  Timeout:", timeout_val, form.step_field == 3),
-                            (
-                                "  Model:",
-                                format!("◄ {} ►", model_display),
-                                form.step_field == 4,
-                            ),
-                        ];
-
-                        // Step header
-                        let header_p = Paragraph::new(Line::styled(
-                            step_label,
-                            Style::default().fg(theme::green()),
-                        ));
-                        f.render_widget(header_p, step_chunks[0]);
-
-                        for (idx, (label, val, active)) in fields.iter().enumerate() {
-                            if idx + 1 < step_chunks.len() {
-                                let style = if *active {
-                                    Style::default().fg(theme::blue())
-                                } else {
-                                    Style::default().fg(theme::subtext0())
-                                };
-                                let val_style = if *active {
-                                    Style::default().fg(theme::text())
-                                } else {
-                                    Style::default().fg(theme::overlay0())
-                                };
-                                let p = Paragraph::new(vec![Line::from(vec![
-                                    Span::styled(label.to_string(), style),
-                                    Span::raw(" "),
-                                    Span::styled(val.clone(), val_style),
-                                ])]);
-                                // step_chunks[0] = header, [1..5] = fields
-                                f.render_widget(p, step_chunks[idx + 1]);
-                            }
-                        }
-                    }
-                } else {
-                    // Step list view
-                    let mut lines: Vec<Line> = Vec::new();
-                    if form.steps.is_empty() {
-                        lines.push(Line::styled(
-                            "  (no steps — press 'a' to add)",
-                            Style::default().fg(theme::overlay0()),
-                        ));
-                    } else {
-                        for (i, step) in form.steps.iter().enumerate() {
-                            let selected = form.active_field == 3 && i == form.selected_step;
-                            let on_complete =
-                                app::ON_COMPLETE_OPTIONS[step.on_complete_index];
-                            let model_str = app::STEP_MODEL_OPTIONS[step.model_index];
-                            let model_display = if model_str.is_empty() {
-                                String::new()
-                            } else {
-                                format!(" [{}]", model_str)
-                            };
-                            let timeout_display = if step.timeout_minutes.is_empty() {
-                                String::new()
-                            } else {
-                                format!(" ({}m)", step.timeout_minutes)
-                            };
-                            let label = format!(
-                                "  {}. {}{}{} → {}",
-                                i, step.name, timeout_display, model_display, on_complete
-                            );
-                            let style = if selected {
-                                Style::default().fg(theme::base()).bg(theme::peach())
-                            } else {
-                                Style::default().fg(theme::text())
-                            };
-                            lines.push(Line::styled(label, style));
-                        }
-                    }
-                    let p = Paragraph::new(lines);
-                    f.render_widget(p, field_chunks[4]);
-                }
-
-                // Footer hint
-                let hint_text = if form.active_field == 3 && form.editing_step {
-                    " Tab: next field | ◄►: cycle option | Esc: back to list"
-                } else if form.active_field == 3 {
-                    " ↑↓: select | Enter: edit | a: add | d: del | Ctrl+↑↓: reorder | Tab: next | Esc: cancel"
-                } else {
-                    " Tab: next field | Enter: submit | Esc: cancel"
-                };
-                let hint = Paragraph::new(Line::styled(
-                    hint_text,
-                    Style::default().fg(theme::overlay0()),
-                ));
-                f.render_widget(hint, field_chunks[5]);
+                f.render_widget(hint, field_chunks[4]);
             }
 
             // Work creation/edit form
@@ -2028,7 +1620,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Status selector (field 0)
                 {
-                    let val = format!("◀ {} ▶", views::work::work_status_label(WORK_STATUSES[form.status_index]));
+                    let val = format!(
+                        "◀ {} ▶",
+                        views::work::work_status_label(WORK_STATUSES[form.status_index])
+                    );
                     render_gf(f, field_chunks[0], "Status:", &val, form.active_field == 0);
                 }
                 // Title with cursor (field 1)
@@ -2331,129 +1926,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 f.render_widget(hint, field_chunks[5]);
             }
 
-            // Knowledge creation/edit form
-            if let Some(ref form) = app.knowledge_form {
-                let form_area = widgets::popup::centered_rect(60, 45, size);
-                Clear.render(form_area, f.buffer_mut());
-                let title = if form.editing_id.is_some() {
-                    " Edit Knowledge "
-                } else {
-                    " New Knowledge "
-                };
-                let block = Block::default()
-                    .title(title)
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(theme::teal()))
-                    .style(Style::default().bg(theme::mantle()));
-                let inner = block.inner(form_area);
-                f.render_widget(block, form_area);
-
-                let field_chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([
-                        Constraint::Length(2), // Title
-                        Constraint::Length(2), // Category
-                        Constraint::Min(3),    // Content
-                        Constraint::Length(2), // Tags
-                        Constraint::Length(1), // Footer
-                    ])
-                    .split(inner);
-
-                let render_kf =
-                    |f: &mut Frame, area: Rect, label: &str, value: &str, active: bool| {
-                        let style = if active {
-                            Style::default().fg(theme::blue())
-                        } else {
-                            Style::default().fg(theme::subtext0())
-                        };
-                        let val_style = if active {
-                            Style::default().fg(theme::text())
-                        } else {
-                            Style::default().fg(theme::overlay0())
-                        };
-                        let p = Paragraph::new(vec![Line::from(vec![
-                            Span::styled(format!(" {} ", label), style),
-                            Span::styled(value.to_string(), val_style),
-                        ])])
-                        .wrap(Wrap { trim: false });
-                        f.render_widget(p, area);
-                    };
-
-                // Title
-                {
-                    let val = if form.active_field == 0 {
-                        let bp = form
-                            .title
-                            .char_indices()
-                            .nth(form.cursor)
-                            .map(|(i, _)| i)
-                            .unwrap_or(form.title.len());
-                        if bp < form.title.len() {
-                            format!("{}│{}", &form.title[..bp], &form.title[bp..])
-                        } else {
-                            format!("{}│", &form.title)
-                        }
-                    } else {
-                        form.title.clone()
-                    };
-                    render_kf(f, field_chunks[0], "Title:", &val, form.active_field == 0);
-                }
-                // Category selector
-                {
-                    let val = format!("◀ {} ▶", KNOWLEDGE_CATEGORIES[form.category_index]);
-                    render_kf(
-                        f,
-                        field_chunks[1],
-                        "Category:",
-                        &val,
-                        form.active_field == 1,
-                    );
-                }
-                // Content
-                {
-                    let val = if form.active_field == 2 {
-                        let bp = form
-                            .content
-                            .char_indices()
-                            .nth(form.cursor)
-                            .map(|(i, _)| i)
-                            .unwrap_or(form.content.len());
-                        if bp < form.content.len() {
-                            format!("{}│{}", &form.content[..bp], &form.content[bp..])
-                        } else {
-                            format!("{}│", &form.content)
-                        }
-                    } else {
-                        form.content.clone()
-                    };
-                    render_kf(f, field_chunks[2], "Content:", &val, form.active_field == 2);
-                }
-                // Tags
-                {
-                    let val = if form.active_field == 3 {
-                        let bp = form
-                            .tags
-                            .char_indices()
-                            .nth(form.cursor)
-                            .map(|(i, _)| i)
-                            .unwrap_or(form.tags.len());
-                        if bp < form.tags.len() {
-                            format!("{}│{}", &form.tags[..bp], &form.tags[bp..])
-                        } else {
-                            format!("{}│", &form.tags)
-                        }
-                    } else {
-                        form.tags.clone()
-                    };
-                    render_kf(f, field_chunks[3], "Tags:", &val, form.active_field == 3);
-                }
-                let hint = Paragraph::new(Line::styled(
-                    " Tab: next | Enter: submit | Esc: cancel",
-                    Style::default().fg(theme::overlay0()),
-                ));
-                f.render_widget(hint, field_chunks[4]);
-            }
-
             // Integration creation form
             if let Some(ref form) = app.integration_form {
                 let form_area = widgets::popup::centered_rect(60, 45, size);
@@ -2582,171 +2054,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Style::default().fg(theme::overlay0()),
                 ));
                 f.render_widget(hint, field_chunks[5]);
-            }
-
-            // Verification creation/edit form
-            if let Some(ref form) = app.verification_form {
-                let form_area = widgets::popup::centered_rect(60, 60, size);
-                Clear.render(form_area, f.buffer_mut());
-                let title = if form.editing_id.is_some() {
-                    " Edit Verification "
-                } else {
-                    " New Verification "
-                };
-                let block = Block::default()
-                    .title(title)
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(theme::mauve()))
-                    .style(Style::default().bg(theme::mantle()));
-                let inner = block.inner(form_area);
-                f.render_widget(block, form_area);
-
-                let field_chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([
-                        Constraint::Length(2), // Task
-                        Constraint::Length(2), // Kind
-                        Constraint::Length(2), // Status
-                        Constraint::Length(2), // Title
-                        Constraint::Min(2),    // Detail
-                        Constraint::Min(2),    // Evidence
-                        Constraint::Length(1), // Footer
-                    ])
-                    .split(inner);
-
-                let render_vf_field =
-                    |f: &mut Frame, area: Rect, label: &str, value: &str, active: bool| {
-                        let style = if active {
-                            Style::default().fg(theme::blue())
-                        } else {
-                            Style::default().fg(theme::subtext0())
-                        };
-                        let val_style = if active {
-                            Style::default().fg(theme::text())
-                        } else {
-                            Style::default().fg(theme::overlay0())
-                        };
-                        let p = Paragraph::new(vec![Line::from(vec![
-                            Span::styled(format!(" {} ", label), style),
-                            Span::styled(value.to_string(), val_style),
-                        ])])
-                        .wrap(Wrap { trim: false });
-                        f.render_widget(p, area);
-                    };
-
-                // Task picker (field 0)
-                {
-                    let task_label = if app.tasks.is_empty() {
-                        "◀ (no tasks) ▶".to_string()
-                    } else {
-                        let t = &app.tasks[form.task_index.min(app.tasks.len() - 1)];
-                        format!("◀ {} ▶", t.title)
-                    };
-                    render_vf_field(
-                        f,
-                        field_chunks[0],
-                        "Task:",
-                        &task_label,
-                        form.active_field == 0,
-                    );
-                }
-
-                // Kind picker (field 1)
-                {
-                    let kind = VERIFICATION_KINDS[form.kind_index];
-                    render_vf_field(
-                        f,
-                        field_chunks[1],
-                        "Kind:",
-                        &format!("◀ {} ▶", kind),
-                        form.active_field == 1,
-                    );
-                }
-
-                // Status picker (field 2)
-                {
-                    let status = VERIFICATION_STATUSES[form.status_index];
-                    render_vf_field(
-                        f,
-                        field_chunks[2],
-                        "Status:",
-                        &format!("◀ {} ▶", status),
-                        form.active_field == 2,
-                    );
-                }
-
-                // Title text (field 3)
-                {
-                    let val = if form.active_field == 3 {
-                        let bp = form
-                            .title
-                            .char_indices()
-                            .nth(form.cursor)
-                            .map(|(i, _)| i)
-                            .unwrap_or(form.title.len());
-                        if bp < form.title.len() {
-                            format!("{}│{}", &form.title[..bp], &form.title[bp..])
-                        } else {
-                            format!("{}│", &form.title)
-                        }
-                    } else {
-                        form.title.clone()
-                    };
-                    render_vf_field(f, field_chunks[3], "Title:", &val, form.active_field == 3);
-                }
-
-                // Detail text (field 4)
-                {
-                    let val = if form.active_field == 4 {
-                        let bp = form
-                            .detail
-                            .char_indices()
-                            .nth(form.cursor)
-                            .map(|(i, _)| i)
-                            .unwrap_or(form.detail.len());
-                        if bp < form.detail.len() {
-                            format!("{}│{}", &form.detail[..bp], &form.detail[bp..])
-                        } else {
-                            format!("{}│", &form.detail)
-                        }
-                    } else {
-                        form.detail.clone()
-                    };
-                    render_vf_field(f, field_chunks[4], "Detail:", &val, form.active_field == 4);
-                }
-
-                // Evidence text (field 5)
-                {
-                    let val = if form.active_field == 5 {
-                        let bp = form
-                            .evidence
-                            .char_indices()
-                            .nth(form.cursor)
-                            .map(|(i, _)| i)
-                            .unwrap_or(form.evidence.len());
-                        if bp < form.evidence.len() {
-                            format!("{}│{}", &form.evidence[..bp], &form.evidence[bp..])
-                        } else {
-                            format!("{}│", &form.evidence)
-                        }
-                    } else {
-                        form.evidence.clone()
-                    };
-                    render_vf_field(
-                        f,
-                        field_chunks[5],
-                        "Evidence:",
-                        &val,
-                        form.active_field == 5,
-                    );
-                }
-
-                // Footer hint
-                let hint = Paragraph::new(Line::styled(
-                    " Tab: next  ◀▶: cycle  Enter: submit  Esc: cancel",
-                    Style::default().fg(theme::overlay0()),
-                ));
-                f.render_widget(hint, field_chunks[6]);
             }
         })?;
 
@@ -2918,18 +2225,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         _ => {}
                     }
                 } else if app.task_form.is_some() {
-                    let playbook_count = app.playbooks.len();
                     let form = app.task_form.as_mut().unwrap();
                     match key.code {
                         KeyCode::Esc => {
                             app.task_form = None;
                         }
                         KeyCode::Tab => {
-                            form.active_field = (form.active_field + 1) % 5;
+                            form.active_field = (form.active_field + 1) % 4;
                             // Reset cursor to end of target text field
                             form.cursor = match form.active_field {
                                 0 => form.title.chars().count(),
-                                4 => form.spec.chars().count(),
+                                3 => form.spec.chars().count(),
                                 _ => 0,
                             };
                         }
@@ -2939,11 +2245,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let kind = TASK_KINDS[form.kind_index].to_string();
                                 let urgent = form.urgent;
                                 let spec = form.spec.clone();
-                                let playbook_id = if form.playbook_index > 0 {
-                                    app.playbooks.get(form.playbook_index - 1).map(|pb| pb.id)
-                                } else {
-                                    None
-                                };
                                 let work_id = form.work_id;
                                 let pid = app.current_project;
                                 app.task_form = None;
@@ -2952,15 +2253,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let tx = tx.clone();
                                     tokio::spawn(async move {
                                         match api
-                                            .create_task(
-                                                pid,
-                                                &title,
-                                                &kind,
-                                                urgent,
-                                                &spec,
-                                                playbook_id,
-                                                work_id,
-                                            )
+                                            .create_task(pid, &title, &kind, urgent, &spec, work_id)
                                             .await
                                         {
                                             Ok(_) => {
@@ -3001,20 +2294,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             2 => {
                                 form.urgent = !form.urgent;
                             }
-                            3 => {
-                                // Playbook selector: 0=None, 1..=N=playbooks
-                                if form.playbook_index > 0 {
-                                    form.playbook_index -= 1;
-                                } else {
-                                    form.playbook_index = playbook_count;
-                                }
-                            }
-                            0 => {
-                                if form.cursor > 0 {
-                                    form.cursor -= 1;
-                                }
-                            }
-                            4 => {
+                            0 | 3 => {
                                 if form.cursor > 0 {
                                     form.cursor -= 1;
                                 }
@@ -3028,17 +2308,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             2 => {
                                 form.urgent = !form.urgent;
                             }
-                            3 => {
-                                // Playbook selector
-                                form.playbook_index =
-                                    (form.playbook_index + 1) % (playbook_count + 1);
-                            }
                             0 => {
                                 if form.cursor < form.title.chars().count() {
                                     form.cursor += 1;
                                 }
                             }
-                            4 => {
+                            3 => {
                                 if form.cursor < form.spec.chars().count() {
                                     form.cursor += 1;
                                 }
@@ -3056,7 +2331,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     .unwrap_or(form.title.len());
                                 form.title.remove(bp);
                             }
-                            4 if form.cursor > 0 => {
+                            3 if form.cursor > 0 => {
                                 form.cursor -= 1;
                                 let bp = form
                                     .spec
@@ -3085,7 +2360,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     form.urgent = !form.urgent;
                                 }
                             }
-                            4 => {
+                            3 => {
                                 let bp = form
                                     .spec
                                     .char_indices()
@@ -3098,335 +2373,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             _ => {}
                         },
                         _ => {}
-                    }
-                } else if app.playbook_form.is_some() {
-                    let form = app.playbook_form.as_mut().unwrap();
-                    if form.active_field == 3 && form.editing_step {
-                        // Step detail editing mode
-                        match key.code {
-                            KeyCode::Esc => {
-                                form.editing_step = false;
-                                form.cursor = 0;
-                            }
-                            KeyCode::Tab => {
-                                form.step_field = (form.step_field + 1) % 5;
-                                form.cursor = if let Some(step) = form.steps.get(form.selected_step)
-                                {
-                                    match form.step_field {
-                                        0 => step.name.chars().count(),
-                                        1 => step.description.chars().count(),
-                                        3 => step.timeout_minutes.chars().count(),
-                                        _ => 0,
-                                    }
-                                } else {
-                                    0
-                                };
-                            }
-                            KeyCode::Left => {
-                                if let Some(step) = form.steps.get_mut(form.selected_step) {
-                                    match form.step_field {
-                                        2 => {
-                                            // on_complete selector
-                                            if step.on_complete_index > 0 {
-                                                step.on_complete_index -= 1;
-                                            } else {
-                                                step.on_complete_index =
-                                                    app::ON_COMPLETE_OPTIONS.len() - 1;
-                                            }
-                                        }
-                                        4 => {
-                                            // model selector
-                                            if step.model_index > 0 {
-                                                step.model_index -= 1;
-                                            } else {
-                                                step.model_index =
-                                                    app::STEP_MODEL_OPTIONS.len() - 1;
-                                            }
-                                        }
-                                        _ => {
-                                            if form.cursor > 0 {
-                                                form.cursor -= 1;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            KeyCode::Right => {
-                                if let Some(step) = form.steps.get_mut(form.selected_step) {
-                                    match form.step_field {
-                                        2 => {
-                                            step.on_complete_index = (step.on_complete_index + 1)
-                                                % app::ON_COMPLETE_OPTIONS.len();
-                                        }
-                                        4 => {
-                                            step.model_index = (step.model_index + 1)
-                                                % app::STEP_MODEL_OPTIONS.len();
-                                        }
-                                        _ => {
-                                            let len = if let Some(step) =
-                                                form.steps.get(form.selected_step)
-                                            {
-                                                match form.step_field {
-                                                    0 => step.name.chars().count(),
-                                                    1 => step.description.chars().count(),
-                                                    3 => step.timeout_minutes.chars().count(),
-                                                    _ => 0,
-                                                }
-                                            } else {
-                                                0
-                                            };
-                                            if form.cursor < len {
-                                                form.cursor += 1;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            KeyCode::Backspace => {
-                                if form.cursor > 0 {
-                                    if let Some(step) = form.steps.get_mut(form.selected_step) {
-                                        let text = match form.step_field {
-                                            0 => &mut step.name,
-                                            1 => &mut step.description,
-                                            3 => &mut step.timeout_minutes,
-                                            _ => continue,
-                                        };
-                                        form.cursor -= 1;
-                                        let bp = text
-                                            .char_indices()
-                                            .nth(form.cursor)
-                                            .map(|(i, _)| i)
-                                            .unwrap_or(text.len());
-                                        text.remove(bp);
-                                    }
-                                }
-                            }
-                            KeyCode::Char(c) => {
-                                if let Some(step) = form.steps.get_mut(form.selected_step) {
-                                    let text = match form.step_field {
-                                        0 => &mut step.name,
-                                        1 => &mut step.description,
-                                        3 => &mut step.timeout_minutes,
-                                        _ => continue,
-                                    };
-                                    // For timeout, only allow digits
-                                    if form.step_field == 3 && !c.is_ascii_digit() {
-                                        continue;
-                                    }
-                                    let bp = text
-                                        .char_indices()
-                                        .nth(form.cursor)
-                                        .map(|(i, _)| i)
-                                        .unwrap_or(text.len());
-                                    text.insert(bp, c);
-                                    form.cursor += 1;
-                                }
-                            }
-                            _ => {}
-                        }
-                    } else if form.active_field == 3 {
-                        // Steps list mode
-                        match key.code {
-                            KeyCode::Esc => {
-                                app.playbook_form = None;
-                            }
-                            KeyCode::Tab => {
-                                form.active_field = 0;
-                                form.cursor = form.title.chars().count();
-                            }
-                            KeyCode::BackTab => {
-                                form.active_field = 2;
-                                form.cursor = form.tags.chars().count();
-                            }
-                            KeyCode::Up => {
-                                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                                    // Reorder: move step up
-                                    if form.selected_step > 0 {
-                                        form.steps.swap(form.selected_step, form.selected_step - 1);
-                                        form.selected_step -= 1;
-                                    }
-                                } else if form.selected_step > 0 {
-                                    form.selected_step -= 1;
-                                }
-                            }
-                            KeyCode::Down => {
-                                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                                    // Reorder: move step down
-                                    if form.selected_step + 1 < form.steps.len() {
-                                        form.steps.swap(form.selected_step, form.selected_step + 1);
-                                        form.selected_step += 1;
-                                    }
-                                } else if form.selected_step + 1 < form.steps.len() {
-                                    form.selected_step += 1;
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if !form.steps.is_empty() {
-                                    form.editing_step = true;
-                                    form.step_field = 0;
-                                    form.cursor = form
-                                        .steps
-                                        .get(form.selected_step)
-                                        .map(|s| s.name.chars().count())
-                                        .unwrap_or(0);
-                                }
-                            }
-                            KeyCode::Char('a') => {
-                                // Add new step
-                                form.steps.push(app::PlaybookStepForm::default());
-                                form.selected_step = form.steps.len() - 1;
-                                form.editing_step = true;
-                                form.step_field = 0;
-                                form.cursor = 0;
-                            }
-                            KeyCode::Char('d') => {
-                                // Delete selected step
-                                if !form.steps.is_empty() {
-                                    form.steps.remove(form.selected_step);
-                                    if form.selected_step >= form.steps.len()
-                                        && !form.steps.is_empty()
-                                    {
-                                        form.selected_step = form.steps.len() - 1;
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-                    } else {
-                        // Header fields (title, trigger, tags)
-                        match key.code {
-                            KeyCode::Esc => {
-                                app.playbook_form = None;
-                            }
-                            KeyCode::Tab => {
-                                form.active_field = (form.active_field + 1) % 4;
-                                form.cursor = match form.active_field {
-                                    0 => form.title.chars().count(),
-                                    1 => form.trigger.chars().count(),
-                                    2 => form.tags.chars().count(),
-                                    _ => 0,
-                                };
-                            }
-                            KeyCode::BackTab => {
-                                form.active_field = if form.active_field == 0 {
-                                    3
-                                } else {
-                                    form.active_field - 1
-                                };
-                                form.cursor = match form.active_field {
-                                    0 => form.title.chars().count(),
-                                    1 => form.trigger.chars().count(),
-                                    2 => form.tags.chars().count(),
-                                    _ => 0,
-                                };
-                            }
-                            KeyCode::Enter => {
-                                // Submit form
-                                if !form.title.is_empty() {
-                                    let title = form.title.clone();
-                                    let trigger = form.trigger.clone();
-                                    let tags: Vec<String> = form
-                                        .tags
-                                        .split(',')
-                                        .map(|s| s.trim().to_string())
-                                        .filter(|s| !s.is_empty())
-                                        .collect();
-                                    let steps_json = form.steps_to_json();
-                                    let editing_id = form.editing_id;
-                                    let pid = app.current_project;
-                                    app.playbook_form = None;
-                                    if let Some(pid) = pid {
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        tokio::spawn(async move {
-                                            let result = if let Some(pb_id) = editing_id {
-                                                api.update_playbook(
-                                                    pb_id,
-                                                    serde_json::json!({
-                                                        "title": title,
-                                                        "trigger_description": trigger,
-                                                        "tags": tags,
-                                                        "steps": steps_json,
-                                                    }),
-                                                )
-                                                .await
-                                                .map(|_| ())
-                                            } else {
-                                                api.create_playbook(
-                                                    pid, &title, &trigger, steps_json, tags,
-                                                )
-                                                .await
-                                                .map(|_| ())
-                                            };
-                                            match result {
-                                                Ok(()) => {
-                                                    if let Ok(pbs) = api.list_playbooks(pid).await {
-                                                        let _ =
-                                                            tx.send(ApiMsg::Playbooks(pbs)).await;
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!(
-                                                            "Playbook: {e}"
-                                                        )))
-                                                        .await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                            }
-                            KeyCode::Left => {
-                                if form.cursor > 0 {
-                                    form.cursor -= 1;
-                                }
-                            }
-                            KeyCode::Right => {
-                                let len = match form.active_field {
-                                    0 => form.title.chars().count(),
-                                    1 => form.trigger.chars().count(),
-                                    2 => form.tags.chars().count(),
-                                    _ => 0,
-                                };
-                                if form.cursor < len {
-                                    form.cursor += 1;
-                                }
-                            }
-                            KeyCode::Backspace => {
-                                if form.cursor > 0 {
-                                    form.cursor -= 1;
-                                    let text = match form.active_field {
-                                        0 => &mut form.title,
-                                        1 => &mut form.trigger,
-                                        2 => &mut form.tags,
-                                        _ => continue,
-                                    };
-                                    let bp = text
-                                        .char_indices()
-                                        .nth(form.cursor)
-                                        .map(|(i, _)| i)
-                                        .unwrap_or(text.len());
-                                    text.remove(bp);
-                                }
-                            }
-                            KeyCode::Char(c) => {
-                                let text = match form.active_field {
-                                    0 => &mut form.title,
-                                    1 => &mut form.trigger,
-                                    2 => &mut form.tags,
-                                    _ => continue,
-                                };
-                                let bp = text
-                                    .char_indices()
-                                    .nth(form.cursor)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(text.len());
-                                text.insert(bp, c);
-                                form.cursor += 1;
-                            }
-                            _ => {}
-                        }
                     }
                 } else if app.work_form.is_some() {
                     // Detect save actions before general key match
@@ -3933,134 +2879,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         _ => {}
                     }
-                } else if app.knowledge_form.is_some() {
-                    let form = app.knowledge_form.as_mut().unwrap();
-                    match key.code {
-                        KeyCode::Esc => {
-                            app.knowledge_form = None;
-                        }
-                        KeyCode::Tab => {
-                            form.active_field = (form.active_field + 1) % 4;
-                            form.cursor = match form.active_field {
-                                0 => form.title.chars().count(),
-                                2 => form.content.chars().count(),
-                                3 => form.tags.chars().count(),
-                                _ => 0,
-                            };
-                        }
-                        KeyCode::Enter => {
-                            if !form.title.is_empty() {
-                                let title = form.title.clone();
-                                let category =
-                                    KNOWLEDGE_CATEGORIES[form.category_index].to_string();
-                                let content = form.content.clone();
-                                let tags: Vec<String> = form
-                                    .tags
-                                    .split(',')
-                                    .map(|s| s.trim().to_string())
-                                    .filter(|s| !s.is_empty())
-                                    .collect();
-                                let editing_id = form.editing_id;
-                                let pid = app.current_project;
-                                app.knowledge_form = None;
-                                if let Some(pid) = pid {
-                                    let api = api.clone();
-                                    let tx = tx.clone();
-                                    tokio::spawn(async move {
-                                        let body = serde_json::json!({
-                                            "title": title,
-                                            "category": category,
-                                            "content": content,
-                                            "tags": tags,
-                                        });
-                                        let result = if let Some(kid) = editing_id {
-                                            api.update_knowledge(kid, body).await.map(|_| ())
-                                        } else {
-                                            api.create_knowledge(pid, body).await.map(|_| ())
-                                        };
-                                        match result {
-                                            Ok(()) => {
-                                                if let Ok(k) = api.list_knowledge(pid).await {
-                                                    let _ = tx.send(ApiMsg::Knowledge(k)).await;
-                                                }
-                                            }
-                                            Err(e) => {
-                                                let _ = tx
-                                                    .send(ApiMsg::Error(format!("Knowledge: {e}")))
-                                                    .await;
-                                            }
-                                        }
-                                    });
-                                }
-                            }
-                        }
-                        KeyCode::Left => match form.active_field {
-                            1 => {
-                                if form.category_index > 0 {
-                                    form.category_index -= 1;
-                                } else {
-                                    form.category_index = KNOWLEDGE_CATEGORIES.len() - 1;
-                                }
-                            }
-                            _ => {
-                                if form.cursor > 0 {
-                                    form.cursor -= 1;
-                                }
-                            }
-                        },
-                        KeyCode::Right => match form.active_field {
-                            1 => {
-                                form.category_index =
-                                    (form.category_index + 1) % KNOWLEDGE_CATEGORIES.len();
-                            }
-                            _ => {
-                                let len = match form.active_field {
-                                    0 => form.title.chars().count(),
-                                    2 => form.content.chars().count(),
-                                    3 => form.tags.chars().count(),
-                                    _ => 0,
-                                };
-                                if form.cursor < len {
-                                    form.cursor += 1;
-                                }
-                            }
-                        },
-                        KeyCode::Backspace => {
-                            if form.cursor > 0 && matches!(form.active_field, 0 | 2 | 3) {
-                                form.cursor -= 1;
-                                let text = match form.active_field {
-                                    0 => &mut form.title,
-                                    2 => &mut form.content,
-                                    3 => &mut form.tags,
-                                    _ => &mut form.title,
-                                };
-                                let bp = text
-                                    .char_indices()
-                                    .nth(form.cursor)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(text.len());
-                                text.remove(bp);
-                            }
-                        }
-                        KeyCode::Char(c) => {
-                            if matches!(form.active_field, 0 | 2 | 3) {
-                                let text = match form.active_field {
-                                    0 => &mut form.title,
-                                    2 => &mut form.content,
-                                    3 => &mut form.tags,
-                                    _ => &mut form.title,
-                                };
-                                let bp = text
-                                    .char_indices()
-                                    .nth(form.cursor)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(text.len());
-                                text.insert(bp, c);
-                                form.cursor += 1;
-                            }
-                        }
-                        _ => {}
-                    }
                 } else if app.integration_form.is_some() {
                     let form = app.integration_form.as_mut().unwrap();
                     match key.code {
@@ -4531,12 +3349,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 } else if app.view == View::ProjectSettings && app.settings_form.is_some() {
                     // Settings form handles its own keys
-                    let playbook_count = app.playbooks.len();
                     let form = app.settings_form.as_mut().unwrap();
                     match key.code {
                         KeyCode::Esc => {
                             app.settings_form = None;
-                            app.view = View::Tasks;
+                            app.view = View::Work;
                         }
                         KeyCode::Tab => {
                             form.active_field = (form.active_field + 1) % app::SETTINGS_FIELD_COUNT;
@@ -4548,8 +3365,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 3 => form.repo_path.chars().count(),
                                 4 => form.default_branch.chars().count(),
                                 5 => form.service_name.chars().count(),
-                                7 => form.claude_md.chars().count(),
-                                _ => 0, // playbook dropdown
+                                6 => form.claude_md.chars().count(),
+                                _ => 0,
                             };
                         }
                         KeyCode::BackTab => {
@@ -4565,37 +3382,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 3 => form.repo_path.chars().count(),
                                 4 => form.default_branch.chars().count(),
                                 5 => form.service_name.chars().count(),
-                                7 => form.claude_md.chars().count(),
+                                6 => form.claude_md.chars().count(),
                                 _ => 0,
                             };
                         }
                         KeyCode::Left => {
-                            if form.active_field == 6 {
-                                // Playbook dropdown
-                                if form.playbook_index > 0 {
-                                    form.playbook_index -= 1;
-                                } else {
-                                    form.playbook_index = playbook_count;
-                                }
-                                form.dirty = true;
-                            } else if form.cursor > 0 {
+                            if form.cursor > 0 {
                                 form.cursor -= 1;
                             }
                         }
                         KeyCode::Right => {
-                            if form.active_field == 6 {
-                                form.playbook_index =
-                                    (form.playbook_index + 1) % (playbook_count + 1);
-                                form.dirty = true;
-                            } else {
-                                let len = form.field_text().chars().count();
-                                if form.cursor < len {
-                                    form.cursor += 1;
-                                }
+                            let len = form.field_text().chars().count();
+                            if form.cursor < len {
+                                form.cursor += 1;
                             }
                         }
                         KeyCode::Enter => {
-                            if form.active_field == 7 {
+                            if form.active_field == 6 {
                                 // In CLAUDE.md field, Enter inserts newline
                                 let cur = form.cursor;
                                 if let Some(text) = form.field_text_mut() {
@@ -4612,7 +3415,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // For other fields, Enter does nothing (use Ctrl+S to save)
                         }
                         KeyCode::Backspace => {
-                            if form.active_field != 6 && form.cursor > 0 {
+                            if form.cursor > 0 {
                                 form.cursor -= 1;
                                 let cur = form.cursor;
                                 if let Some(text) = form.field_text_mut() {
@@ -4635,11 +3438,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let repo_path = form.repo_path.clone();
                                 let default_branch = form.default_branch.clone();
                                 let service_name = form.service_name.clone();
-                                let playbook_id = if form.playbook_index > 0 {
-                                    app.playbooks.get(form.playbook_index - 1).map(|pb| pb.id)
-                                } else {
-                                    None
-                                };
                                 let claude_md = form.claude_md.clone();
                                 form.dirty = false;
 
@@ -4647,7 +3445,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let tx = tx.clone();
                                 tokio::spawn(async move {
                                     // Update project properties
-                                    let mut body = serde_json::json!({
+                                    let body = serde_json::json!({
                                         "name": name,
                                         "description": description,
                                         "repo_url": if repo_url.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(repo_url) },
@@ -4655,10 +3453,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         "default_branch": if default_branch.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(default_branch) },
                                         "service_name": if service_name.is_empty() { serde_json::Value::Null } else { serde_json::Value::String(service_name) },
                                     });
-                                    body["default_playbook_id"] = match playbook_id {
-                                        Some(id) => serde_json::json!(id),
-                                        None => serde_json::Value::Null,
-                                    };
 
                                     match api.update_project(pid, body).await {
                                         Ok(proj) => {
@@ -4698,375 +3492,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         _ => {}
                     }
-                } else if app.verification_form.is_some() {
-                    let task_count = app.tasks.len().max(1);
-                    let form = app.verification_form.as_mut().unwrap();
-                    match key.code {
-                        KeyCode::Esc => {
-                            app.verification_form = None;
-                        }
-                        KeyCode::Tab => {
-                            form.active_field = (form.active_field + 1) % 6;
-                            form.cursor = match form.active_field {
-                                3 => form.title.chars().count(),
-                                4 => form.detail.chars().count(),
-                                5 => form.evidence.chars().count(),
-                                _ => 0,
-                            };
-                        }
-                        KeyCode::Enter => {
-                            if !form.title.is_empty() {
-                                let task_id = app.tasks.get(form.task_index).map(|t| t.id);
-                                let kind = VERIFICATION_KINDS[form.kind_index].to_string();
-                                let status = VERIFICATION_STATUSES[form.status_index].to_string();
-                                let title = form.title.clone();
-                                let detail = if form.detail.is_empty() {
-                                    None
-                                } else {
-                                    Some(form.detail.clone())
-                                };
-                                let evidence: Option<serde_json::Value> =
-                                    if form.evidence.is_empty() {
-                                        None
-                                    } else {
-                                        serde_json::from_str(&form.evidence).ok()
-                                    };
-                                let editing_id = form.editing_id;
-                                let pid = app.current_project;
-                                app.verification_form = None;
-                                if let Some(pid) = pid {
-                                    let api = api.clone();
-                                    let tx = tx.clone();
-                                    tokio::spawn(async move {
-                                        let mut body = serde_json::json!({
-                                            "kind": kind,
-                                            "status": status,
-                                            "title": title,
-                                        });
-                                        if let Some(tid) = task_id {
-                                            body["task_id"] = serde_json::json!(tid);
-                                        }
-                                        if let Some(d) = detail {
-                                            body["detail"] = serde_json::json!(d);
-                                        }
-                                        if let Some(e) = evidence {
-                                            body["evidence"] = e;
-                                        }
-                                        let result = if let Some(vid) = editing_id {
-                                            api.update_verification(vid, body).await.map(|_| ())
-                                        } else {
-                                            api.create_verification(pid, body).await.map(|_| ())
-                                        };
-                                        match result {
-                                            Ok(()) => {
-                                                if let Ok(vs) = api
-                                                    .list_verifications(
-                                                        pid, None, None, None, 100, 0,
-                                                    )
-                                                    .await
-                                                {
-                                                    let _ =
-                                                        tx.send(ApiMsg::Verifications(vs)).await;
-                                                }
-                                            }
-                                            Err(e) => {
-                                                let _ = tx
-                                                    .send(ApiMsg::Error(format!(
-                                                        "Verification: {e}"
-                                                    )))
-                                                    .await;
-                                            }
-                                        }
-                                    });
-                                }
-                            }
-                        }
-                        KeyCode::Left => {
-                            match form.active_field {
-                                0 => {
-                                    // Cycle task
-                                    if form.task_index > 0 {
-                                        form.task_index -= 1;
-                                    } else {
-                                        form.task_index = task_count - 1;
-                                    }
-                                }
-                                1 => {
-                                    // Cycle kind
-                                    if form.kind_index > 0 {
-                                        form.kind_index -= 1;
-                                    } else {
-                                        form.kind_index = VERIFICATION_KINDS.len() - 1;
-                                    }
-                                }
-                                2 => {
-                                    // Cycle status
-                                    if form.status_index > 0 {
-                                        form.status_index -= 1;
-                                    } else {
-                                        form.status_index = VERIFICATION_STATUSES.len() - 1;
-                                    }
-                                }
-                                _ => {
-                                    // Text field cursor left
-                                    if form.cursor > 0 {
-                                        form.cursor -= 1;
-                                    }
-                                }
-                            }
-                        }
-                        KeyCode::Right => match form.active_field {
-                            0 => {
-                                form.task_index = (form.task_index + 1) % task_count;
-                            }
-                            1 => {
-                                form.kind_index = (form.kind_index + 1) % VERIFICATION_KINDS.len();
-                            }
-                            2 => {
-                                form.status_index =
-                                    (form.status_index + 1) % VERIFICATION_STATUSES.len();
-                            }
-                            _ => {
-                                let len = match form.active_field {
-                                    3 => form.title.chars().count(),
-                                    4 => form.detail.chars().count(),
-                                    5 => form.evidence.chars().count(),
-                                    _ => 0,
-                                };
-                                if form.cursor < len {
-                                    form.cursor += 1;
-                                }
-                            }
-                        },
-                        KeyCode::Backspace => {
-                            if form.active_field >= 3 && form.cursor > 0 {
-                                form.cursor -= 1;
-                                let text = match form.active_field {
-                                    3 => &mut form.title,
-                                    4 => &mut form.detail,
-                                    5 => &mut form.evidence,
-                                    _ => &mut form.title,
-                                };
-                                let bp = text
-                                    .char_indices()
-                                    .nth(form.cursor)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(text.len());
-                                text.remove(bp);
-                            }
-                        }
-                        KeyCode::Char(c) => {
-                            if form.active_field >= 3 {
-                                let text = match form.active_field {
-                                    3 => &mut form.title,
-                                    4 => &mut form.detail,
-                                    5 => &mut form.evidence,
-                                    _ => &mut form.title,
-                                };
-                                let bp = text
-                                    .char_indices()
-                                    .nth(form.cursor)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(text.len());
-                                text.insert(bp, c);
-                                form.cursor += 1;
-                            }
-                        }
-                        _ => {}
-                    }
                 } else {
                     match app.modal {
-                        Modal::Transition => match key.code {
-                            KeyCode::Esc => app.modal = Modal::None,
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                if app.transition_selected > 0 {
-                                    app.transition_selected -= 1;
-                                }
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.transition_selected + 1 < app.transition_options.len() {
-                                    app.transition_selected += 1;
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if let Some(state) =
-                                    app.transition_options.get(app.transition_selected).cloned()
-                                {
-                                    if let Some(tid) = app.selected_task_id() {
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        let pid = app.current_project;
-                                        tokio::spawn(async move {
-                                            let _ = api.transition_task(tid, &state).await;
-                                            if let Some(pid) = pid {
-                                                if let Ok(resp) = api.list_tasks(pid).await {
-                                                    let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                                app.modal = Modal::None;
-                            }
-                            _ => {}
-                        },
-                        Modal::Reply => match key.code {
-                            KeyCode::Esc => {
-                                app.modal = Modal::None;
-                                app.input_text.clear();
-                                app.input_cursor = 0;
-                            }
-                            KeyCode::Enter => {
-                                if !app.input_text.is_empty() {
-                                    if let Some(idx) = app.selected_task {
-                                        let task = &app.tasks[idx];
-                                        let tid = task.id;
-                                        let is_backlog = task.state == "backlog";
-                                        let content = app.input_text.clone();
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        if is_backlog {
-                                            // Append to spec so additions become part of the task description
-                                            let existing_spec = task
-                                                .context
-                                                .get("spec")
-                                                .and_then(|s| s.as_str())
-                                                .unwrap_or("");
-                                            let new_spec = if existing_spec.is_empty() {
-                                                content
-                                            } else {
-                                                format!("{}\n{}", existing_spec, content)
-                                            };
-                                            let mut new_context = task.context.clone();
-                                            new_context["spec"] =
-                                                serde_json::Value::String(new_spec);
-                                            let pid = app.current_project;
-                                            tokio::spawn(async move {
-                                                let _ = api
-                                                    .update_task(
-                                                        tid,
-                                                        serde_json::json!({ "context": new_context }),
-                                                    )
-                                                    .await;
-                                                // Refresh task list
-                                                if let Some(pid) = pid {
-                                                    if let Ok(resp) = api.list_tasks(pid).await {
-                                                        let _ =
-                                                            tx.send(ApiMsg::Tasks(resp.data)).await;
-                                                    }
-                                                }
-                                            });
-                                        } else {
-                                            tokio::spawn(async move {
-                                                let _ = api
-                                                    .post_update(tid, &content, "progress")
-                                                    .await;
-                                                if let Ok(updates) = api.get_task_updates(tid).await
-                                                {
-                                                    let _ =
-                                                        tx.send(ApiMsg::TaskUpdates(updates)).await;
-                                                }
-                                            });
-                                        }
-                                    }
-                                }
-                                app.modal = Modal::None;
-                                app.input_text.clear();
-                                app.input_cursor = 0;
-                            }
-                            KeyCode::Backspace => {
-                                if app.input_cursor > 0 {
-                                    app.input_cursor -= 1;
-                                    let byte_pos = app
-                                        .input_text
-                                        .char_indices()
-                                        .nth(app.input_cursor)
-                                        .map(|(i, _)| i)
-                                        .unwrap_or(app.input_text.len());
-                                    app.input_text.remove(byte_pos);
-                                }
-                            }
-                            KeyCode::Left => {
-                                if app.input_cursor > 0 {
-                                    app.input_cursor -= 1;
-                                }
-                            }
-                            KeyCode::Right => {
-                                if app.input_cursor < app.input_text.chars().count() {
-                                    app.input_cursor += 1;
-                                }
-                            }
-                            KeyCode::Char(c) => {
-                                let byte_pos = app
-                                    .input_text
-                                    .char_indices()
-                                    .nth(app.input_cursor)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(app.input_text.len());
-                                app.input_text.insert(byte_pos, c);
-                                app.input_cursor += 1;
-                            }
-                            _ => {}
-                        },
-                        Modal::Comment => match key.code {
-                            KeyCode::Esc => {
-                                app.modal = Modal::None;
-                                app.input_text.clear();
-                                app.input_cursor = 0;
-                            }
-                            KeyCode::Enter => {
-                                if !app.input_text.is_empty() {
-                                    if let Some(tid) = app.selected_task_id() {
-                                        let content = app.input_text.clone();
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        tokio::spawn(async move {
-                                            let _ = api.post_comment(tid, &content).await;
-                                            if let Ok(comments) = api.get_task_comments(tid).await {
-                                                let _ =
-                                                    tx.send(ApiMsg::TaskComments(comments)).await;
-                                            }
-                                        });
-                                    }
-                                }
-                                app.modal = Modal::None;
-                                app.input_text.clear();
-                                app.input_cursor = 0;
-                            }
-                            KeyCode::Backspace => {
-                                if app.input_cursor > 0 {
-                                    app.input_cursor -= 1;
-                                    let byte_pos = app
-                                        .input_text
-                                        .char_indices()
-                                        .nth(app.input_cursor)
-                                        .map(|(i, _)| i)
-                                        .unwrap_or(app.input_text.len());
-                                    app.input_text.remove(byte_pos);
-                                }
-                            }
-                            KeyCode::Left => {
-                                if app.input_cursor > 0 {
-                                    app.input_cursor -= 1;
-                                }
-                            }
-                            KeyCode::Right => {
-                                if app.input_cursor < app.input_text.chars().count() {
-                                    app.input_cursor += 1;
-                                }
-                            }
-                            KeyCode::Char(c) => {
-                                let byte_pos = app
-                                    .input_text
-                                    .char_indices()
-                                    .nth(app.input_cursor)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(app.input_text.len());
-                                app.input_text.insert(byte_pos, c);
-                                app.input_cursor += 1;
-                            }
-                            _ => {}
-                        },
                         Modal::WorkComment => match key.code {
                             KeyCode::Esc => {
                                 app.modal = Modal::None;
@@ -5625,109 +4052,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             _ => {}
                         },
-                        Modal::VerificationStatus => match key.code {
-                            KeyCode::Esc => app.modal = Modal::None,
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                if app.transition_selected > 0 {
-                                    app.transition_selected -= 1;
-                                }
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.transition_selected + 1 < app.transition_options.len() {
-                                    app.transition_selected += 1;
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if let Some(new_status) =
-                                    app.transition_options.get(app.transition_selected).cloned()
-                                {
-                                    let filtered = app.filtered_verifications();
-                                    if let Some(v) =
-                                        app.selected_verification.and_then(|i| filtered.get(i))
-                                    {
-                                        let vid = v.id;
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        let pid = app.current_project;
-                                        tokio::spawn(async move {
-                                            let body = serde_json::json!({"status": new_status});
-                                            if let Err(e) = api.update_verification(vid, body).await
-                                            {
-                                                let _ = tx
-                                                    .send(ApiMsg::Error(format!("Status: {e}")))
-                                                    .await;
-                                            } else if let Some(pid) = pid {
-                                                if let Ok(vs) = api
-                                                    .list_verifications(
-                                                        pid, None, None, None, 100, 0,
-                                                    )
-                                                    .await
-                                                {
-                                                    let _ =
-                                                        tx.send(ApiMsg::Verifications(vs)).await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                                app.modal = Modal::None;
-                            }
-                            _ => {}
-                        },
-                        Modal::VerificationKindFilter => match key.code {
-                            KeyCode::Esc => app.modal = Modal::None,
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                if app.transition_selected > 0 {
-                                    app.transition_selected -= 1;
-                                }
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.transition_selected + 1 < app.transition_options.len() {
-                                    app.transition_selected += 1;
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if let Some(selected) =
-                                    app.transition_options.get(app.transition_selected).cloned()
-                                {
-                                    if selected == "all" {
-                                        app.verification_kind_filter = None;
-                                    } else {
-                                        app.verification_kind_filter = Some(selected);
-                                    }
-                                    app.selected_verification = None;
-                                }
-                                app.modal = Modal::None;
-                            }
-                            _ => {}
-                        },
-                        Modal::VerificationStatusFilter => match key.code {
-                            KeyCode::Esc => app.modal = Modal::None,
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                if app.transition_selected > 0 {
-                                    app.transition_selected -= 1;
-                                }
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.transition_selected + 1 < app.transition_options.len() {
-                                    app.transition_selected += 1;
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if let Some(selected) =
-                                    app.transition_options.get(app.transition_selected).cloned()
-                                {
-                                    if selected == "all" {
-                                        app.verification_status_filter = None;
-                                    } else {
-                                        app.verification_status_filter = Some(selected);
-                                    }
-                                    app.selected_verification = None;
-                                }
-                                app.modal = Modal::None;
-                            }
-                            _ => {}
-                        },
                         Modal::EventKindFilter => match key.code {
                             KeyCode::Esc => app.modal = Modal::None,
                             KeyCode::Up | KeyCode::Char('k') => {
@@ -5991,206 +4315,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             _ => {}
                         },
-                        Modal::ClaimTask => match key.code {
-                            KeyCode::Esc => app.modal = Modal::None,
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                if app.transition_selected > 0 {
-                                    app.transition_selected -= 1;
-                                }
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.transition_selected + 1 < app.transition_options.len() {
-                                    app.transition_selected += 1;
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if let Some(agent_name) =
-                                    app.transition_options.get(app.transition_selected).cloned()
-                                {
-                                    if let Some(tid) = app.selected_task_id() {
-                                        let agent_id = app
-                                            .agents
-                                            .iter()
-                                            .find(|a| a.name == agent_name)
-                                            .map(|a| a.id);
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        let pid = app.current_project;
-                                        tokio::spawn(async move {
-                                            match api.claim_task(tid, agent_id).await {
-                                                Ok(_) => {
-                                                    if let Some(pid) = pid {
-                                                        if let Ok(resp) = api.list_tasks(pid).await
-                                                        {
-                                                            let _ = tx
-                                                                .send(ApiMsg::Tasks(resp.data))
-                                                                .await;
-                                                        }
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!("Claim: {e}")))
-                                                        .await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                                app.modal = Modal::None;
-                            }
-                            _ => {}
-                        },
-                        Modal::DelegateTask => match key.code {
-                            KeyCode::Esc => app.modal = Modal::None,
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                if app.transition_selected > 0 {
-                                    app.transition_selected -= 1;
-                                }
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.transition_selected + 1 < app.transition_options.len() {
-                                    app.transition_selected += 1;
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if let Some(selected) =
-                                    app.transition_options.get(app.transition_selected).cloned()
-                                {
-                                    if let Some(tid) = app.selected_task_id() {
-                                        // Check if it's an agent or role
-                                        let agent_id = app
-                                            .agents
-                                            .iter()
-                                            .find(|a| a.name == selected)
-                                            .map(|a| a.id);
-                                        let role_id = if agent_id.is_none() {
-                                            app.roles
-                                                .iter()
-                                                .find(|r| format!("Role: {}", r.name) == selected)
-                                                .map(|r| r.id)
-                                        } else {
-                                            None
-                                        };
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        let pid = app.current_project;
-                                        tokio::spawn(async move {
-                                            match api.delegate_task(tid, agent_id, role_id).await {
-                                                Ok(_) => {
-                                                    if let Some(pid) = pid {
-                                                        if let Ok(resp) = api.list_tasks(pid).await
-                                                        {
-                                                            let _ = tx
-                                                                .send(ApiMsg::Tasks(resp.data))
-                                                                .await;
-                                                        }
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!(
-                                                            "Delegate: {e}"
-                                                        )))
-                                                        .await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                                app.modal = Modal::None;
-                            }
-                            _ => {}
-                        },
-                        Modal::BulkTransition => match key.code {
-                            KeyCode::Esc => app.modal = Modal::None,
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                if app.transition_selected > 0 {
-                                    app.transition_selected -= 1;
-                                }
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.transition_selected + 1 < app.transition_options.len() {
-                                    app.transition_selected += 1;
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if let Some(state) =
-                                    app.transition_options.get(app.transition_selected).cloned()
-                                {
-                                    let task_ids: Vec<uuid::Uuid> =
-                                        app.bulk_selected.iter().copied().collect();
-                                    if !task_ids.is_empty() {
-                                        if let Some(pid) = app.current_project {
-                                            let api = api.clone();
-                                            let tx = tx.clone();
-                                            tokio::spawn(async move {
-                                                match api
-                                                    .bulk_transition(pid, task_ids, &state)
-                                                    .await
-                                                {
-                                                    Ok(()) => {
-                                                        if let Ok(resp) = api.list_tasks(pid).await
-                                                        {
-                                                            let _ = tx
-                                                                .send(ApiMsg::Tasks(resp.data))
-                                                                .await;
-                                                        }
-                                                    }
-                                                    Err(e) => {
-                                                        let _ = tx
-                                                            .send(ApiMsg::Error(format!(
-                                                                "Bulk: {e}"
-                                                            )))
-                                                            .await;
-                                                    }
-                                                }
-                                            });
-                                        }
-                                    }
-                                    app.bulk_selected.clear();
-                                    app.bulk_mode = false;
-                                }
-                                app.modal = Modal::None;
-                            }
-                            _ => {}
-                        },
-                        Modal::BulkDelete => match key.code {
-                            KeyCode::Esc | KeyCode::Char('n') => {
-                                app.modal = Modal::None;
-                            }
-                            KeyCode::Enter | KeyCode::Char('y') => {
-                                let task_ids: Vec<uuid::Uuid> =
-                                    app.bulk_selected.iter().copied().collect();
-                                if !task_ids.is_empty() {
-                                    if let Some(pid) = app.current_project {
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        tokio::spawn(async move {
-                                            match api.bulk_delete(pid, task_ids).await {
-                                                Ok(()) => {
-                                                    if let Ok(resp) = api.list_tasks(pid).await {
-                                                        let _ =
-                                                            tx.send(ApiMsg::Tasks(resp.data)).await;
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!(
-                                                            "Bulk delete: {e}"
-                                                        )))
-                                                        .await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                                app.bulk_selected.clear();
-                                app.bulk_mode = false;
-                                app.modal = Modal::None;
-                            }
-                            _ => {}
-                        },
                         Modal::None => match key.code {
                             KeyCode::Char('q') => break,
                             KeyCode::Char('[') | KeyCode::Char(']') => {
@@ -6220,8 +4344,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         blocks: vec![],
                                     };
                                     app.search_query.clear();
-                                    app.playbooks.clear();
-                                    app.knowledge.clear();
                                     app.decisions.clear();
                                     app.work_items.clear();
                                     app.done_work_items.clear();
@@ -6234,9 +4356,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.work_stats = None;
                                     app.work_children.clear();
                                     app.work_comments.clear();
+                                    app.work_focus = 0;
+                                    app.work_task_selected = None;
+                                    app.work_task_list_state.select(None);
+                                    app.work_task_updates.clear();
+                                    app.work_task_comments.clear();
+                                    app.work_task_detail_scroll = 0;
                                     app.observations.clear();
-                                    app.roles.clear();
-                                    app.members.clear();
                                     app.integrations.clear();
                                     app.audit_log.clear();
                                     app.log_entries.clear();
@@ -6249,8 +4375,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.selected_done_work = None;
                                     app.done_work_list_state.select(None);
                                     app.selected_observation = None;
-                                    app.selected_role = None;
-                                    app.selected_member = None;
                                     app.selected_integration = None;
                                     app.selected_audit = None;
                                     app.detail_scroll = 0;
@@ -6267,14 +4391,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 app.detail_scroll = 0;
                             }
                             KeyCode::Char('2') => {
-                                app.view = View::Tasks;
-                                app.detail_scroll = 0;
-                            }
-                            KeyCode::Char('3') => {
                                 app.view = View::Decisions;
                                 app.detail_scroll = 0;
                             }
-                            KeyCode::Char('4') => {
+                            KeyCode::Char('3') => {
                                 app.view = View::Dashboard;
                                 app.detail_scroll = 0;
                                 if let Some(pid) = app.current_project {
@@ -6294,33 +4414,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     });
                                 }
                             }
-                            KeyCode::Char('5') => {
+                            KeyCode::Char('4') => {
                                 app.view = View::Agents;
                                 app.detail_scroll = 0;
                             }
-                            KeyCode::Char('6') => {
-                                app.view = View::Playbooks;
-                                app.detail_scroll = 0;
-                            }
-                            KeyCode::Char('7') => {
+                            KeyCode::Char('5') => {
                                 app.view = View::Observations;
                                 app.detail_scroll = 0;
                             }
-                            KeyCode::Char('8') => {
-                                app.view = View::Team;
-                                app.detail_scroll = 0;
-                            }
-                            KeyCode::Char('9') => {
-                                app.view = View::Knowledge;
-                                app.detail_scroll = 0;
-                            }
-                            KeyCode::Char('0') => {
-                                app.view = View::Verifications;
-                                app.detail_scroll = 0;
-                            }
-                            // 'l' — Logs view, except in views where 'l' is an action (Work, Tasks).
+                            // 'l' — Logs view, except in views where 'l' is an action (Work).
                             KeyCode::Home => {
-                                // Home key is an alias for Dashboard (primary: '4')
+                                // Home key is an alias for Dashboard (primary: '3')
                                 app.view = View::Dashboard;
                                 app.detail_scroll = 0;
                                 if let Some(pid) = app.current_project {
@@ -6383,10 +4487,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             KeyCode::Up | KeyCode::Char('k') => {
                                 if app.view == View::Logs {
                                     app.scroll_logs(-1);
+                                } else if app.view == View::Work && app.work_focus == 1 {
+                                    app.move_work_task_selection(-1);
                                 } else if app.focus == 1 {
                                     app.scroll_detail(-1);
-                                } else if app.view == View::Tasks {
-                                    app.move_task_selection(-1);
                                 } else {
                                     app.move_selection(-1);
                                 }
@@ -6394,17 +4498,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             KeyCode::Down | KeyCode::Char('j') => {
                                 if app.view == View::Logs {
                                     app.scroll_logs(1);
+                                } else if app.view == View::Work && app.work_focus == 1 {
+                                    app.move_work_task_selection(1);
                                 } else if app.focus == 1 {
                                     app.scroll_detail(1);
-                                } else if app.view == View::Tasks {
-                                    app.move_task_selection(1);
                                 } else {
                                     app.move_selection(1);
                                 }
                             }
                             KeyCode::Tab => {
-                                if app.view == View::Team {
-                                    app.team_focus = (app.team_focus + 1) % 3;
+                                if app.view == View::Work {
+                                    // Cycle: 0=work list, 1=task list
+                                    app.work_focus = (app.work_focus + 1) % 2;
                                 } else {
                                     app.focus = (app.focus + 1) % 2;
                                 }
@@ -6415,24 +4520,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.modal = Modal::LogQuery;
                                     app.input_text = app.log_query.clone();
                                     app.input_cursor = app.input_text.chars().count();
-                                } else if app.view == View::Tasks {
-                                    if let Some(tid) = app.selected_task_id() {
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        tokio::spawn(async move {
-                                            let (updates, comments) = tokio::join!(
-                                                api.get_task_updates(tid),
-                                                api.get_task_comments(tid),
-                                            );
-                                            if let Ok(updates) = updates {
-                                                let _ = tx.send(ApiMsg::TaskUpdates(updates)).await;
-                                            }
-                                            if let Ok(comments) = comments {
-                                                let _ =
-                                                    tx.send(ApiMsg::TaskComments(comments)).await;
-                                            }
-                                        });
-                                    }
                                 } else if app.view == View::Source {
                                     if let Some(sel) = app.source_selected {
                                         let offset = if app.source_current_path.is_empty() {
@@ -6501,25 +4588,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         }
                                     }
+                                } else if app.view == View::Work && app.work_focus == 1 {
+                                    // Load task details for the selected work task
+                                    if let Some(tid) = app
+                                        .work_task_selected
+                                        .and_then(|i| app.work_tasks.get(i))
+                                        .map(|t| t.id)
+                                    {
+                                        let api = api.clone();
+                                        let tx = tx.clone();
+                                        tokio::spawn(async move {
+                                            let (updates, comments) = tokio::join!(
+                                                api.get_task_updates(tid),
+                                                api.get_task_comments(tid),
+                                            );
+                                            if let Ok(updates) = updates {
+                                                let _ =
+                                                    tx.send(ApiMsg::WorkTaskUpdates(updates)).await;
+                                            }
+                                            if let Ok(comments) = comments {
+                                                let _ = tx
+                                                    .send(ApiMsg::WorkTaskComments(comments))
+                                                    .await;
+                                            }
+                                        });
+                                    }
                                 }
                             }
                             KeyCode::Char('t') => {
-                                if app.view == View::Tasks {
-                                    if let Some(task) =
-                                        app.selected_task.and_then(|i| app.tasks.get(i))
-                                    {
-                                        let opts = valid_transitions(&task.state);
-                                        if !opts.is_empty() {
-                                            app.transition_options = opts;
-                                            app.transition_selected = 0;
-                                            app.modal = Modal::Transition;
-                                        }
-                                    }
-                                } else if app.view == View::Work {
+                                if app.view == View::Work {
                                     // Create a new task linked to the selected work item
                                     if let Some(work) = app.selected_work_item() {
                                         app.task_form = Some(app::TaskForm {
-                                            playbook_index: app.default_playbook_index(),
                                             work_id: Some(work.id),
                                             ..Default::default()
                                         });
@@ -6559,24 +4659,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             KeyCode::Char('c') => {
-                                if app.view == View::Tasks && app.selected_task.is_some() {
-                                    app.modal = Modal::Comment;
-                                    app.input_text.clear();
-                                    app.input_cursor = 0;
-                                } else if app.view == View::Work
-                                    && app.selected_work_item().is_some()
-                                {
+                                if app.view == View::Work && app.selected_work_item().is_some() {
                                     app.modal = Modal::WorkComment;
                                     app.input_text.clear();
                                     app.input_cursor = 0;
                                 }
                             }
                             KeyCode::Char('r') => {
-                                if app.view == View::Tasks && app.selected_task.is_some() {
-                                    app.modal = Modal::Reply;
-                                    app.input_text.clear();
-                                    app.input_cursor = 0;
-                                } else if app.view == View::Git {
+                                if app.view == View::Git {
                                     app.git_action_result = None;
                                     if let Some(pid) = app.current_project {
                                         let api = api.clone();
@@ -6611,23 +4701,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 app.show_help = true;
                             }
                             KeyCode::Char('n') => {
-                                if app.view == View::Tasks {
-                                    app.task_form = Some(app::TaskForm {
-                                        playbook_index: app.default_playbook_index(),
-                                        ..Default::default()
-                                    });
-                                } else if app.view == View::Playbooks {
-                                    app.playbook_form = Some(app::PlaybookForm::default());
-                                } else if app.view == View::Verifications {
-                                    app.verification_form = Some(VerificationForm::default());
-                                } else if app.view == View::Work {
+                                if app.view == View::Work {
                                     app.work_form = Some(app::WorkForm::default());
                                 } else if app.view == View::Observations {
                                     app.observation_form = Some(app::ObservationForm::default());
                                 } else if app.view == View::Decisions {
                                     app.decision_form = Some(app::DecisionForm::default());
-                                } else if app.view == View::Knowledge {
-                                    app.knowledge_form = Some(app::KnowledgeForm::default());
                                 } else if app.view == View::Integrations {
                                     app.integration_form = Some(app::IntegrationForm::default());
                                 } else if app.view == View::Reports {
@@ -6698,22 +4777,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             app.modal = Modal::ObservationStatus;
                                         }
                                     }
-                                } else if app.view == View::Verifications {
-                                    let filtered = app.filtered_verifications();
-                                    if let Some(v) =
-                                        app.selected_verification.and_then(|i| filtered.get(i))
-                                    {
-                                        let opts: Vec<String> = VERIFICATION_STATUSES
-                                            .iter()
-                                            .filter(|s| **s != v.status)
-                                            .map(|s| s.to_string())
-                                            .collect();
-                                        if !opts.is_empty() {
-                                            app.transition_options = opts;
-                                            app.transition_selected = 0;
-                                            app.modal = Modal::VerificationStatus;
-                                        }
-                                    }
                                 }
                             }
                             // Work view: done section pagination
@@ -6781,26 +4844,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 app.transition_selected = 0;
                                 app.modal = Modal::EventKindFilter;
                             }
-                            // Verifications view: K = kind filter, S = status filter
-                            KeyCode::Char('K') => {
-                                if app.view == View::Verifications {
-                                    let mut opts: Vec<String> = vec!["all".into()];
-                                    opts.extend(VERIFICATION_KINDS.iter().map(|k| k.to_string()));
-                                    app.transition_options = opts;
-                                    app.transition_selected = 0;
-                                    app.modal = Modal::VerificationKindFilter;
-                                }
-                            }
                             KeyCode::Char('S') => {
-                                if app.view == View::Verifications {
-                                    let mut opts: Vec<String> = vec!["all".into()];
-                                    opts.extend(
-                                        VERIFICATION_STATUSES.iter().map(|s| s.to_string()),
-                                    );
-                                    app.transition_options = opts;
-                                    app.transition_selected = 0;
-                                    app.modal = Modal::VerificationStatusFilter;
-                                } else if app.view == View::Decisions {
+                                if app.view == View::Decisions {
                                     if let Some(dec) =
                                         app.selected_decision.and_then(|i| app.decisions.get(i))
                                     {
@@ -6823,15 +4868,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let project =
                                         app.projects.iter().find(|p| p.id == pid).cloned();
                                     if let Some(proj) = project {
-                                        // Find playbook index
-                                        let pb_idx = proj
-                                            .default_playbook_id
-                                            .and_then(|pb_id| {
-                                                app.playbooks.iter().position(|pb| pb.id == pb_id)
-                                            })
-                                            .map(|i| i + 1)
-                                            .unwrap_or(0);
-
                                         app.settings_form = Some(app::ProjectSettingsForm {
                                             name: proj.name.clone(),
                                             description: proj
@@ -6848,7 +4884,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 .service_name
                                                 .clone()
                                                 .unwrap_or_default(),
-                                            playbook_index: pb_idx,
                                             claude_md: String::new(),
                                             active_field: 0,
                                             cursor: proj.name.chars().count(),
@@ -6904,11 +4939,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                         });
                                     }
-                                } else if app.view == View::Tasks
-                                    && app.bulk_mode
-                                    && !app.bulk_selected.is_empty()
-                                {
-                                    app.modal = Modal::BulkDelete;
                                 } else if app.view == View::Observations {
                                     if let Some(obs) = app
                                         .selected_observation
@@ -7003,15 +5033,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 }
                                             }
                                         });
-                                    }
-                                } else if app.view == View::Tasks && app.selected_task.is_some() {
-                                    // Open claim modal with agent list
-                                    let opts: Vec<String> =
-                                        app.agents.iter().map(|a| a.name.clone()).collect();
-                                    if !opts.is_empty() {
-                                        app.transition_options = opts;
-                                        app.transition_selected = 0;
-                                        app.modal = Modal::ClaimTask;
                                     }
                                 } else if app.view == View::Integrations {
                                     // Open access management for selected integration
@@ -7144,42 +5165,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                            // R = release task (Tasks view)
+                            // R = resolve+push (Git view)
                             KeyCode::Char('R') => {
-                                if app.view == View::Tasks {
-                                    if let Some(task) =
-                                        app.selected_task.and_then(|i| app.tasks.get(i))
-                                    {
-                                        if task.assigned_agent_id.is_some() {
-                                            let tid = task.id;
-                                            let api = api.clone();
-                                            let tx = tx.clone();
-                                            let pid = app.current_project;
-                                            tokio::spawn(async move {
-                                                match api.release_task(tid).await {
-                                                    Ok(_) => {
-                                                        if let Some(pid) = pid {
-                                                            if let Ok(resp) =
-                                                                api.list_tasks(pid).await
-                                                            {
-                                                                let _ = tx
-                                                                    .send(ApiMsg::Tasks(resp.data))
-                                                                    .await;
-                                                            }
-                                                        }
-                                                    }
-                                                    Err(e) => {
-                                                        let _ = tx
-                                                            .send(ApiMsg::Error(format!(
-                                                                "Release: {e}"
-                                                            )))
-                                                            .await;
-                                                    }
-                                                }
-                                            });
-                                        }
-                                    }
-                                } else if app.view == View::Git {
+                                if app.view == View::Git {
                                     if let Some(pid) = app.current_project {
                                         let api = api.clone();
                                         let tx = tx.clone();
@@ -7202,91 +5190,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                            // v = toggle bulk selection / multi-select (Tasks view)
-                            KeyCode::Char('v') => {
-                                if app.view == View::Tasks {
-                                    if !app.bulk_mode {
-                                        app.bulk_mode = true;
-                                        app.bulk_selected.clear();
-                                        // Select current task
-                                        if let Some(tid) = app.selected_task_id() {
-                                            app.bulk_selected.insert(tid);
-                                        }
-                                    } else {
-                                        // Toggle current task in selection
-                                        if let Some(tid) = app.selected_task_id() {
-                                            if app.bulk_selected.contains(&tid) {
-                                                app.bulk_selected.remove(&tid);
-                                            } else {
-                                                app.bulk_selected.insert(tid);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            // Esc in bulk mode = exit bulk mode (handled in normal Esc too)
-                            KeyCode::Esc => {
-                                if app.view == View::Tasks && app.bulk_mode {
-                                    app.bulk_mode = false;
-                                    app.bulk_selected.clear();
-                                }
-                            }
-                            // b = bulk transition (Tasks view, when in bulk mode)
-                            KeyCode::Char('b') => {
-                                if app.view == View::Tasks
-                                    && app.bulk_mode
-                                    && !app.bulk_selected.is_empty()
-                                {
-                                    let opts = vec![
-                                        "ready".into(),
-                                        "backlog".into(),
-                                        "done".into(),
-                                        "cancelled".into(),
-                                    ];
-                                    app.transition_options = opts;
-                                    app.transition_selected = 0;
-                                    app.modal = Modal::BulkTransition;
-                                }
-                            }
-                            // f = toggle flagged (Tasks view)
-                            KeyCode::Char('f') => {
-                                if app.view == View::Tasks {
-                                    if let Some(task) =
-                                        app.selected_task.and_then(|i| app.tasks.get(i))
-                                    {
-                                        let tid = task.id;
-                                        let new_flagged = !task.flagged;
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        let pid = app.current_project;
-                                        tokio::spawn(async move {
-                                            match api
-                                                .update_task(
-                                                    tid,
-                                                    serde_json::json!({"flagged": new_flagged}),
-                                                )
-                                                .await
-                                            {
-                                                Ok(_) => {
-                                                    if let Some(pid) = pid {
-                                                        if let Ok(resp) = api.list_tasks(pid).await
-                                                        {
-                                                            let _ = tx
-                                                                .send(ApiMsg::Tasks(resp.data))
-                                                                .await;
-                                                        }
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!("Flag: {e}")))
-                                                        .await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                            }
+                            KeyCode::Char('v') => {}
+                            KeyCode::Char('b') => {}
+                            KeyCode::Char('f') => {}
                             // F = view changed files (Tasks view), severity filter (Events view)
                             KeyCode::Char('F') => {
                                 if app.view == View::Events {
@@ -7295,186 +5201,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.transition_options = opts;
                                     app.transition_selected = 0;
                                     app.modal = Modal::EventSeverityFilter;
-                                } else if app.view == View::Tasks {
-                                    if let Some(tid) = app.selected_task_id() {
-                                        app.show_changed_files = !app.show_changed_files;
-                                        if app.show_changed_files {
-                                            let api = api.clone();
-                                            let tx = tx.clone();
-                                            tokio::spawn(async move {
-                                                let (status, files) = tokio::join!(
-                                                    api.get_git_task_status(tid),
-                                                    api.get_changed_files(tid),
-                                                );
-                                                if let Ok(status) = status {
-                                                    let _ = tx
-                                                        .send(ApiMsg::GitTaskStatus(status))
-                                                        .await;
-                                                }
-                                                if let Ok(files) = files {
-                                                    let _ =
-                                                        tx.send(ApiMsg::ChangedFiles(files)).await;
-                                                }
-                                            });
-                                        }
-                                    }
                                 }
                             }
-                            // G = git status for task (Tasks view) or switch to Git view
+                            // G = switch to Git view
                             KeyCode::Char('G') => {
-                                if app.view == View::Tasks {
-                                    if let Some(tid) = app.selected_task_id() {
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        tokio::spawn(async move {
-                                            match api.get_git_task_status(tid).await {
-                                                Ok(status) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::GitTaskStatus(status))
-                                                        .await;
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!(
-                                                            "Git status: {e}"
-                                                        )))
-                                                        .await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                } else {
-                                    app.view = View::Git;
-                                    app.detail_scroll = 0;
-                                    app.git_action_result = None;
-                                    if let Some(pid) = app.current_project {
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        tokio::spawn(async move {
-                                            if let Ok(resp) = api.list_branches(pid, None).await {
-                                                let _ = tx.send(ApiMsg::Branches(resp)).await;
-                                            }
-                                            if let Ok(status) = api.main_status(pid).await {
-                                                let _ = tx.send(ApiMsg::MainStatus(status)).await;
-                                            }
-                                        });
-                                    }
+                                app.view = View::Git;
+                                app.detail_scroll = 0;
+                                app.git_action_result = None;
+                                if let Some(pid) = app.current_project {
+                                    let api = api.clone();
+                                    let tx = tx.clone();
+                                    tokio::spawn(async move {
+                                        if let Ok(resp) = api.list_branches(pid, None).await {
+                                            let _ = tx.send(ApiMsg::Branches(resp)).await;
+                                        }
+                                        if let Ok(status) = api.main_status(pid).await {
+                                            let _ = tx.send(ApiMsg::MainStatus(status)).await;
+                                        }
+                                    });
                                 }
                             }
-                            // i = delegate task (Tasks view)
+                            // i = chat input
                             KeyCode::Char('i') => {
-                                if app.view == View::Tasks && app.selected_task.is_some() {
-                                    // Build list of agents + roles for delegation
-                                    let mut opts: Vec<String> =
-                                        app.agents.iter().map(|a| a.name.clone()).collect();
-                                    for role in &app.roles {
-                                        opts.push(format!("Role: {}", role.name));
-                                    }
-                                    if !opts.is_empty() {
-                                        app.transition_options = opts;
-                                        app.transition_selected = 0;
-                                        app.modal = Modal::DelegateTask;
-                                    }
-                                } else if app.view == View::Chat {
+                                if app.view == View::Chat {
                                     app.modal = Modal::ChatInput;
                                 }
                             }
-                            // w = add dependency (Tasks view)
-                            KeyCode::Char('w') => {
-                                if app.view == View::Tasks && app.selected_task.is_some() {
-                                    // Show list of other tasks to pick as dependency
-                                    let opts: Vec<String> = app
-                                        .tasks
-                                        .iter()
-                                        .filter(|t| Some(t.id) != app.selected_task_id())
-                                        .map(|t| t.title.clone())
-                                        .collect();
-                                    if !opts.is_empty() {
-                                        app.transition_options = opts;
-                                        app.transition_selected = 0;
-                                        app.modal = Modal::DependencyAdd;
-                                    }
-                                }
-                            }
-                            // W = remove first dependency (Tasks view)
-                            KeyCode::Char('W') => {
-                                if app.view == View::Tasks {
-                                    if let Some(tid) = app.selected_task_id() {
-                                        // Find first dependency for this task
-                                        if let Some(dep) = app.task_dependencies.depends_on.first()
-                                        {
-                                            let dep_on = dep.depends_on;
-                                            let api = api.clone();
-                                            let tx = tx.clone();
-                                            tokio::spawn(async move {
-                                                if let Err(e) =
-                                                    api.remove_dependency(tid, dep_on).await
-                                                {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!(
-                                                            "Remove dep: {e}"
-                                                        )))
-                                                        .await;
-                                                } else if let Ok(deps) =
-                                                    api.list_task_dependencies(tid).await
-                                                {
-                                                    let _ = tx
-                                                        .send(ApiMsg::TaskDependencies(deps))
-                                                        .await;
-                                                }
-                                            });
-                                        }
-                                    }
-                                }
-                            }
-                            // e = edit task (Tasks view), edit playbook (Playbooks view), toggle integration (Integrations view)
+                            KeyCode::Char('w') => {}
+                            KeyCode::Char('W') => {}
+                            // e = edit work (Work view), toggle integration (Integrations view)
                             KeyCode::Char('e') => {
-                                if app.view == View::Tasks {
-                                    if let Some(task) =
-                                        app.selected_task.and_then(|i| app.tasks.get(i))
-                                    {
-                                        let kind_index = TASK_KINDS
-                                            .iter()
-                                            .position(|&k| k == task.kind)
-                                            .unwrap_or(0);
-                                        let spec = task
-                                            .context
-                                            .get("spec")
-                                            .and_then(|s| s.as_str())
-                                            .unwrap_or("")
-                                            .to_string();
-                                        app.task_edit_form = Some(app::TaskEditForm {
-                                            task_id: task.id,
-                                            title: task.title.clone(),
-                                            kind_index,
-                                            urgent: task.urgent,
-                                            spec,
-                                            active_field: 0,
-                                            cursor: task.title.chars().count(),
-                                        });
-                                    }
-                                } else if app.view == View::Playbooks {
-                                    if let Some(pb) =
-                                        app.selected_playbook.and_then(|i| app.playbooks.get(i))
-                                    {
-                                        let steps = app::PlaybookForm::steps_from_json(&pb.steps);
-                                        app.playbook_form = Some(app::PlaybookForm {
-                                            title: pb.title.clone(),
-                                            trigger: pb
-                                                .trigger_description
-                                                .clone()
-                                                .unwrap_or_default(),
-                                            tags: pb.tags.join(", "),
-                                            steps,
-                                            active_field: 0,
-                                            cursor: pb.title.chars().count(),
-                                            editing_id: Some(pb.id),
-                                            selected_step: 0,
-                                            editing_step: false,
-                                            step_field: 0,
-                                        });
-                                    }
-                                } else if app.view == View::Work {
+                                if app.view == View::Work {
                                     if let Some(goal) = app.selected_work_item() {
                                         let status_idx = WORK_STATUSES
                                             .iter()
@@ -7511,28 +5268,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             active_field: 0,
                                             cursor: 0,
                                             editing_id: Some(goal.id),
-                                        });
-                                    }
-                                } else if app.view == View::Knowledge {
-                                    if let Some(k) =
-                                        app.selected_knowledge.and_then(|i| app.knowledge.get(i))
-                                    {
-                                        let cat_idx = KNOWLEDGE_CATEGORIES
-                                            .iter()
-                                            .position(|c| Some(*c) == k.category.as_deref())
-                                            .unwrap_or(0);
-                                        app.knowledge_form = Some(app::KnowledgeForm {
-                                            title: k.title.clone(),
-                                            category_index: cat_idx,
-                                            content: k.content.clone().unwrap_or_default(),
-                                            tags: k
-                                                .tags
-                                                .as_ref()
-                                                .map(|t| t.join(", "))
-                                                .unwrap_or_default(),
-                                            active_field: 0,
-                                            cursor: k.title.chars().count(),
-                                            editing_id: Some(k.id),
                                         });
                                     }
                                 } else if app.view == View::Integrations {
@@ -7587,11 +5322,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                            // h = toggle hierarchy (Tasks view) or entity history (Audit view)
+                            // h = entity history (Audit view)
                             KeyCode::Char('h') => {
-                                if app.view == View::Tasks {
-                                    app.show_hierarchy = !app.show_hierarchy;
-                                } else if app.view == View::Audit {
+                                if app.view == View::Audit {
                                     if let Some(entry) =
                                         app.selected_audit.and_then(|i| app.audit_log.get(i))
                                     {
@@ -7619,7 +5352,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                            // D = delete (Decisions, Knowledge, Playbooks, Team, Integrations)
+                            // D = delete (Decisions, Knowledge, Team, Integrations)
                             KeyCode::Char('D') => {
                                 if app.view == View::Decisions {
                                     if let Some(dec) =
@@ -7640,87 +5373,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 }
                                             }
                                         });
-                                    }
-                                } else if app.view == View::Knowledge {
-                                    if let Some(k) =
-                                        app.selected_knowledge.and_then(|i| app.knowledge.get(i))
-                                    {
-                                        let k_id = k.id;
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        let pid = app.current_project;
-                                        tokio::spawn(async move {
-                                            if let Err(e) = api.delete_knowledge(k_id).await {
-                                                let _ = tx
-                                                    .send(ApiMsg::Error(format!("Delete: {e}")))
-                                                    .await;
-                                            } else if let Some(pid) = pid {
-                                                if let Ok(knowledge) = api.list_knowledge(pid).await
-                                                {
-                                                    let _ =
-                                                        tx.send(ApiMsg::Knowledge(knowledge)).await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                } else if app.view == View::Playbooks {
-                                    if let Some(pb) =
-                                        app.selected_playbook.and_then(|i| app.playbooks.get(i))
-                                    {
-                                        let pb_id = pb.id;
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        let pid = app.current_project;
-                                        tokio::spawn(async move {
-                                            if let Err(e) = api.delete_playbook(pb_id).await {
-                                                let _ = tx
-                                                    .send(ApiMsg::Error(format!("Delete: {e}")))
-                                                    .await;
-                                            } else if let Some(pid) = pid {
-                                                if let Ok(pbs) = api.list_playbooks(pid).await {
-                                                    let _ = tx.send(ApiMsg::Playbooks(pbs)).await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                } else if app.view == View::Team {
-                                    if app.team_focus == 0 {
-                                        // Delete role
-                                        if let Some(role) =
-                                            app.selected_role.and_then(|i| app.roles.get(i))
-                                        {
-                                            let role_id = role.id;
-                                            let api = api.clone();
-                                            let tx = tx.clone();
-                                            tokio::spawn(async move {
-                                                if let Err(e) = api.delete_role(role_id).await {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!("Delete: {e}")))
-                                                        .await;
-                                                } else if let Ok(roles) = api.list_roles().await {
-                                                    let _ = tx.send(ApiMsg::Roles(roles)).await;
-                                                }
-                                            });
-                                        }
-                                    } else if app.team_focus == 1 {
-                                        // Delete member
-                                        if let Some(member) =
-                                            app.selected_member.and_then(|i| app.members.get(i))
-                                        {
-                                            let member_id = member.id;
-                                            let api = api.clone();
-                                            let tx = tx.clone();
-                                            tokio::spawn(async move {
-                                                if let Err(e) = api.delete_member(member_id).await {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!("Delete: {e}")))
-                                                        .await;
-                                                } else if let Ok(members) = api.list_members().await
-                                                {
-                                                    let _ = tx.send(ApiMsg::Members(members)).await;
-                                                }
-                                            });
-                                        }
                                     }
                                 } else if app.view == View::Integrations {
                                     if let Some(intg) = app
@@ -7771,30 +5423,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             // Logs view controls: T/Y = time range, N/M = limit, B = direction
-                            // Playbooks view: T = fetch step templates
                             KeyCode::Char('T') => {
-                                if app.view == View::Playbooks {
-                                    if let Some(pid) = app.current_project {
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        tokio::spawn(async move {
-                                            match api.list_step_templates(pid).await {
-                                                Ok(templates) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::StepTemplates(templates))
-                                                        .await;
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!(
-                                                            "Step templates: {e}"
-                                                        )))
-                                                        .await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                } else if app.view == View::Logs {
+                                if app.view == View::Logs {
                                     if app.log_time_range_idx > 0 {
                                         app.log_time_range_idx -= 1;
                                     } else {
@@ -7849,11 +5479,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             KeyCode::PageUp => {
                                 if app.view == View::Logs {
                                     app.scroll_logs(-20);
+                                } else if app.view == View::Work && app.work_focus == 1 {
+                                    let new = app.work_task_detail_scroll as i32 - 10;
+                                    app.work_task_detail_scroll = new.max(0) as u16;
                                 }
                             }
                             KeyCode::PageDown => {
                                 if app.view == View::Logs {
                                     app.scroll_logs(20);
+                                } else if app.view == View::Work && app.work_focus == 1 {
+                                    app.work_task_detail_scroll += 10;
                                 }
                             }
                             // ` = view picker (navigation expansion)
@@ -7922,25 +5557,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                // When task selection changes, mark for debounced fetch
-                if app.modal == Modal::None
-                    && app.view == View::Tasks
-                    && matches!(
-                        key.code,
-                        KeyCode::Up | KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('k')
-                    )
-                {
-                    last_nav_time = Some(Instant::now());
-                }
-
-                // Fetch work progress on selection change
+                // Fetch work progress on selection change (work list navigation)
                 if app.modal == Modal::None
                     && app.view == View::Work
+                    && app.work_focus == 0
                     && matches!(
                         key.code,
                         KeyCode::Up | KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('k')
                     )
                 {
+                    // Reset task selection when changing work items
+                    app.work_task_selected = None;
+                    app.work_task_list_state.select(None);
+                    app.work_task_updates.clear();
+                    app.work_task_comments.clear();
+                    app.work_task_detail_scroll = 0;
+
                     if let Some(goal) = app.selected_work_item() {
                         let gid = goal.id;
                         {
@@ -7982,6 +5614,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             });
                         }
+                    }
+                }
+
+                // Fetch task updates/comments on work task selection change
+                if app.modal == Modal::None
+                    && app.view == View::Work
+                    && app.work_focus == 1
+                    && matches!(
+                        key.code,
+                        KeyCode::Up | KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('k')
+                    )
+                {
+                    if let Some(tid) = app
+                        .work_task_selected
+                        .and_then(|i| app.work_tasks.get(i))
+                        .map(|t| t.id)
+                    {
+                        let api = api.clone();
+                        let tx = tx.clone();
+                        tokio::spawn(async move {
+                            let (updates, comments) = tokio::join!(
+                                api.get_task_updates(tid),
+                                api.get_task_comments(tid),
+                            );
+                            if let Ok(updates) = updates {
+                                let _ = tx.send(ApiMsg::WorkTaskUpdates(updates)).await;
+                            }
+                            if let Ok(comments) = comments {
+                                let _ = tx.send(ApiMsg::WorkTaskComments(comments)).await;
+                            }
+                        });
                     }
                 }
             }

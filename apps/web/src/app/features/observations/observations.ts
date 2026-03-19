@@ -1,10 +1,9 @@
-import { Component, inject, signal, computed, effect } from '@angular/core';
+import { Component, inject, signal, computed } from '@angular/core';
 import { DatePipe, JsonPipe, SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
 import { forkJoin } from 'rxjs';
-import { ProjectContext } from '../../core/services/project-context.service';
 import {
   ObservationsApiService,
   SpObservation,
@@ -16,6 +15,7 @@ import {
 } from '../../core/services/observations-api.service';
 import { TasksApiService } from '../../core/services/tasks-api.service';
 import { OBSERVATION_KIND_COLORS, OBSERVATION_SEVERITY_COLORS } from '../../shared/ui-constants';
+import { CrudFeatureBase } from '../../shared/crud-feature-base';
 import { FilterBarComponent } from '../../shared/components/filter-bar/filter-bar';
 import { ModalWrapperComponent } from '../../shared/components/modal-wrapper/modal-wrapper';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog';
@@ -352,25 +352,19 @@ const STATUSES: ObservationStatus[] = ['open', 'acknowledged', 'acted_on', 'dism
     </div>
   `,
 })
-export class ObservationsPage {
+export class ObservationsPage extends CrudFeatureBase<SpObservation> {
   private api = inject(ObservationsApiService);
   private tasksApi = inject(TasksApiService);
-  private ctx = inject(ProjectContext);
 
   readonly kinds = KINDS;
   readonly severities = SEVERITIES;
   readonly statuses = STATUSES;
 
-  items = signal<SpObservation[]>([]);
-  loading = signal(false);
-  selected = signal<SpObservation | null>(null);
-  searchQuery = signal('');
   selectedStatus = '';
   selectedKind = '';
   taskTitles = signal<Record<string, string>>({});
   taskNumbers = signal<Record<string, number>>({});
 
-  showForm = signal(false);
   formTitle = '';
   formKind: ObservationKind = 'insight';
   formSeverity: ObservationSeverity = 'medium';
@@ -397,18 +391,6 @@ export class ObservationsPage {
       return rank(a) - rank(b);
     });
   });
-
-  constructor() {
-    effect(() => {
-      this.ctx.projectId();
-      this.selected.set(null);
-      this.loadItems();
-    });
-  }
-
-  selectItem(item: SpObservation): void {
-    this.selected.set(item.id === this.selected()?.id ? null : item);
-  }
 
   severityColor(severity: ObservationSeverity): string {
     return OBSERVATION_SEVERITY_COLORS[severity] ?? '';
@@ -454,16 +436,15 @@ export class ObservationsPage {
     });
   }
 
-  openCreate(): void {
+  protected override resetForm(): void {
     this.formTitle = '';
     this.formKind = 'insight';
     this.formSeverity = 'medium';
     this.formDescription = '';
-    this.showForm.set(true);
   }
 
-  closeForm(): void {
-    this.showForm.set(false);
+  protected override fillForm(_item: SpObservation): void {
+    // Observations only support create, not edit
   }
 
   submitForm(): void {
@@ -481,18 +462,13 @@ export class ObservationsPage {
     });
   }
 
-  loadItems(): void {
+  override loadItems(): void {
     this.loading.set(true);
     const status = this.selectedStatus as ObservationStatus | '';
     const kind = this.selectedKind as ObservationKind | '';
     this.api.list(status || undefined, kind || undefined).subscribe({
       next: (items) => {
-        this.items.set(items);
-        this.loading.set(false);
-        if (this.selected()) {
-          const still = items.find(i => i.id === this.selected()!.id);
-          this.selected.set(still ?? null);
-        }
+        this.refreshAfterMutation(items);
         this.fetchSourceTaskTitles(items);
       },
       error: () => this.loading.set(false),

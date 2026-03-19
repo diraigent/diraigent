@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { TranslocoModule } from '@jsverse/transloco';
 import { SpTask, CreateTaskRequest, UpdateTaskRequest } from '../../../../core/services/tasks-api.service';
 import { PlaybooksApiService, SpPlaybook } from '../../../../core/services/playbooks-api.service';
+import { ModalWrapperComponent } from '../../../../shared/components/modal-wrapper/modal-wrapper';
 import { DiraigentApiService } from '../../../../core/services/diraigent-api.service';
 import { ProjectContext } from '../../../../core/services/project-context.service';
 import { DEFAULT_TASK_KINDS } from '../../../../shared/ui-constants';
@@ -10,14 +11,11 @@ import { DEFAULT_TASK_KINDS } from '../../../../shared/ui-constants';
 @Component({
   selector: 'app-task-form',
   standalone: true,
-  imports: [TranslocoModule, FormsModule],
+  imports: [TranslocoModule, FormsModule, ModalWrapperComponent],
   template: `
     @if (show()) {
-      <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]"
-           role="button" tabindex="0" aria-label="Close modal"
-           (click)="closeForm()" (keydown.enter)="closeForm()" (keydown.escape)="closeForm()" *transloco="let t">
-        <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
-             tabindex="-1" (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()">
+      <app-modal-wrapper (closed)="closeForm()" maxWidth="max-w-2xl" [scrollable]="true">
+        <div *transloco="let t">
           <h2 class="text-lg font-semibold text-text-primary mb-4">
             {{ editing() ? t('tasks.editTitle') : t('tasks.createTitle') }}
           </h2>
@@ -90,7 +88,7 @@ import { DEFAULT_TASK_KINDS } from '../../../../shared/ui-constants';
             </div>
           </div>
         </div>
-      </div>
+      </app-modal-wrapper>
     }
   `,
 })

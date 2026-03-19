@@ -43,6 +43,8 @@ import { VerificationsApiService, SpVerification } from '../../core/services/ver
 import { PlaybooksApiService, SpPlaybook } from '../../core/services/playbooks-api.service';
 import { GitApiService, BranchInfo, MainPushStatus, TaskBranchStatus } from '../../core/services/git-api.service';
 import { ChatService } from '../../core/services/chat.service';
+import { ModalWrapperComponent } from '../../shared/components/modal-wrapper/modal-wrapper';
+import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog';
 import {
   WORK_STATUS_COLORS, WORK_PROGRESS_COLORS, WORK_TYPE_COLORS,
 } from '../../shared/ui-constants';
@@ -67,7 +69,7 @@ function parseCriteria(value: unknown): string[] {
 @Component({
   selector: 'app-work',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, DatePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent, CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList],
+  imports: [TranslocoModule, FormsModule, DatePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent, CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList, ModalWrapperComponent, ConfirmDialogComponent],
   encapsulation: ViewEncapsulation.None,
   styles: [`
     .cdk-drag-animating {
@@ -990,11 +992,7 @@ function parseCriteria(value: unknown): string[] {
 
       <!-- Create/Edit goal modal -->
       @if (showForm()) {
-        <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]"
-             role="button" tabindex="0" aria-label="Close modal"
-             (click)="closeForm()" (keydown.enter)="closeForm()" (keydown.escape)="closeForm()">
-          <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
-               tabindex="-1" (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()">
+        <app-modal-wrapper (closed)="closeForm()" maxWidth="max-w-lg" [scrollable]="true">
             <h2 class="text-lg font-semibold text-text-primary mb-4">
               {{ editing() ? t('goals.editTitle') : t('goals.createTitle') }}
             </h2>
@@ -1084,8 +1082,7 @@ function parseCriteria(value: unknown): string[] {
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </app-modal-wrapper>
       }
 
       <!-- Task Create form (reuse TaskFormComponent) -->
@@ -1095,6 +1092,16 @@ function parseCriteria(value: unknown): string[] {
         (submitCreate)="onCreateTask($event)"
         (submitUpdate)="onUpdateTaskForGoal($event)"
         (closed)="closeTaskForm()" />
+
+      @if (showDeleteConfirm()) {
+        <app-confirm-dialog
+          [title]="t('goals.deleteConfirmTitle')"
+          [message]="t('goals.deleteConfirmMessage')"
+          [cancelLabel]="t('common.cancel')"
+          [confirmLabel]="t('goals.delete')"
+          (confirmed)="executeDelete()"
+          (cancelled)="showDeleteConfirm.set(false)" />
+      }
     </div>
   `,
 })
@@ -2064,12 +2071,24 @@ export class WorkPage {
     });
   }
 
+  showDeleteConfirm = signal(false);
+  private deleteTarget: SpWork | null = null;
+
   confirmDelete(goal: SpWork): void {
-    this.api.delete(goal.id).subscribe({
+    this.deleteTarget = goal;
+    this.showDeleteConfirm.set(true);
+  }
+
+  executeDelete(): void {
+    if (!this.deleteTarget) return;
+    this.api.delete(this.deleteTarget.id).subscribe({
       next: () => {
+        this.showDeleteConfirm.set(false);
+        this.deleteTarget = null;
         this.selected.set(null);
         this.loadGoals();
       },
+      error: () => this.showDeleteConfirm.set(false),
     });
   }
 

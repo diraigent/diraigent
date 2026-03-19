@@ -30,7 +30,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
         .split(area);
 
     // ── Left: project properties ──
-    let left_focused = form.active_field < 7;
+    let left_focused = form.active_field < 6;
     let left_block = Block::default()
         .title(" Project Properties ")
         .borders(Borders::ALL)
@@ -52,7 +52,6 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             Constraint::Length(2), // Repo Path (field 3)
             Constraint::Length(2), // Default Branch (field 4)
             Constraint::Length(2), // Service Name (field 5)
-            Constraint::Length(2), // Default Playbook (field 6)
             Constraint::Min(1),    // Footer hint
         ])
         .split(left_inner);
@@ -155,24 +154,6 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
         form.cursor,
     );
 
-    // Field 6: Default Playbook (dropdown)
-    {
-        let val = if form.playbook_index == 0 {
-            "◀ None ▶".to_string()
-        } else if let Some(pb) = app.playbooks.get(form.playbook_index - 1) {
-            format!("◀ {} ▶", pb.title)
-        } else {
-            "◀ None ▶".to_string()
-        };
-        render_field(
-            f,
-            field_chunks[6],
-            "Playbook:",
-            &val,
-            form.active_field == 6,
-        );
-    }
-
     // Footer hint
     {
         let dirty_marker = if form.dirty { " [modified]" } else { "" };
@@ -184,11 +165,11 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
                 theme::overlay0()
             }),
         ));
-        f.render_widget(hint, field_chunks[7]);
+        f.render_widget(hint, field_chunks[6]);
     }
 
     // ── Right: CLAUDE.md ──
-    let right_focused = form.active_field == 7;
+    let right_focused = form.active_field == 6;
     let right_block = Block::default()
         .title(" CLAUDE.md ")
         .borders(Borders::ALL)

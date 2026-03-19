@@ -12,11 +12,12 @@ import {
   StepTemplateEditorComponent,
   StepTemplateFormData,
 } from './step-template-editor';
+import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog';
 
 @Component({
   selector: 'app-step-templates',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, DatePipe, JsonPipe, StepTemplateEditorComponent],
+  imports: [TranslocoModule, FormsModule, DatePipe, JsonPipe, StepTemplateEditorComponent, ConfirmDialogComponent],
   template: `
     <div [class]="embedded() ? '' : 'p-3 sm:p-6'" *transloco="let t">
       <!-- Header (hidden when embedded in playbooks page) -->
@@ -245,6 +246,16 @@ import {
           }
         }
       </div>
+
+      @if (showDeleteConfirm()) {
+        <app-confirm-dialog
+          [title]="t('stepTemplates.deleteConfirmTitle')"
+          [message]="t('stepTemplates.deleteConfirmMessage')"
+          [cancelLabel]="t('common.cancel')"
+          [confirmLabel]="t('stepTemplates.delete')"
+          (confirmed)="executeDelete()"
+          (cancelled)="showDeleteConfirm.set(false)" />
+      }
     </div>
   `,
 })
@@ -396,12 +407,24 @@ export class StepTemplatesPage implements OnInit {
     });
   }
 
+  showDeleteConfirm = signal(false);
+  private deleteTarget: SpStepTemplate | null = null;
+
   confirmDelete(tpl: SpStepTemplate): void {
-    this.api.delete(tpl.id).subscribe({
+    this.deleteTarget = tpl;
+    this.showDeleteConfirm.set(true);
+  }
+
+  executeDelete(): void {
+    if (!this.deleteTarget) return;
+    this.api.delete(this.deleteTarget.id).subscribe({
       next: () => {
+        this.showDeleteConfirm.set(false);
+        this.deleteTarget = null;
         this.selected.set(null);
         this.loadTemplates();
       },
+      error: () => this.showDeleteConfirm.set(false),
     });
   }
 
