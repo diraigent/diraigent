@@ -9,6 +9,7 @@ import {
   SpPlaybook,
 } from '../../core/services/playbooks-api.service';
 import { CrudFeatureBase } from '../../shared/crud-feature-base';
+import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog';
 import { StepTemplatesPage } from './step-templates';
 
 type PlaybooksTab = 'playbooks' | 'templates';
@@ -16,7 +17,7 @@ type PlaybooksTab = 'playbooks' | 'templates';
 @Component({
   selector: 'app-playbooks',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, DatePipe, JsonPipe, StepTemplatesPage],
+  imports: [TranslocoModule, FormsModule, DatePipe, JsonPipe, StepTemplatesPage, ConfirmDialogComponent],
   template: `
     <div class="p-3 sm:p-6" *transloco="let t">
       <!-- Header -->
@@ -235,6 +236,16 @@ type PlaybooksTab = 'playbooks' | 'templates';
       @if (activeTab() === 'templates') {
         <app-step-templates #stepTemplates [embedded]="true" />
       }
+
+      @if (showDeleteConfirm()) {
+        <app-confirm-dialog
+          [title]="t('playbooks.deleteConfirmTitle')"
+          [message]="t('playbooks.deleteConfirmMessage')"
+          [cancelLabel]="t('common.cancel')"
+          [confirmLabel]="t('playbooks.delete')"
+          (confirmed)="executeDelete()"
+          (cancelled)="showDeleteConfirm.set(false)" />
+      }
     </div>
   `,
 })
@@ -316,12 +327,24 @@ export class PlaybooksPage extends CrudFeatureBase<SpPlaybook> {
     this.stepTemplatesComp?.openCreate();
   }
 
+  showDeleteConfirm = signal(false);
+  private deleteTarget: SpPlaybook | null = null;
+
   confirmDelete(pb: SpPlaybook): void {
-    this.api.delete(pb.id).subscribe({
+    this.deleteTarget = pb;
+    this.showDeleteConfirm.set(true);
+  }
+
+  executeDelete(): void {
+    if (!this.deleteTarget) return;
+    this.api.delete(this.deleteTarget.id).subscribe({
       next: () => {
+        this.showDeleteConfirm.set(false);
+        this.deleteTarget = null;
         this.selected.set(null);
         this.loadItems();
       },
+      error: () => this.showDeleteConfirm.set(false),
     });
   }
 }

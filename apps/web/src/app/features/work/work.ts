@@ -44,6 +44,7 @@ import { PlaybooksApiService, SpPlaybook } from '../../core/services/playbooks-a
 import { GitApiService, BranchInfo, MainPushStatus, TaskBranchStatus } from '../../core/services/git-api.service';
 import { ChatService } from '../../core/services/chat.service';
 import { ModalWrapperComponent } from '../../shared/components/modal-wrapper/modal-wrapper';
+import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog';
 import {
   WORK_STATUS_COLORS, WORK_PROGRESS_COLORS, WORK_TYPE_COLORS,
 } from '../../shared/ui-constants';
@@ -68,7 +69,7 @@ function parseCriteria(value: unknown): string[] {
 @Component({
   selector: 'app-work',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, DatePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent, CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList, ModalWrapperComponent],
+  imports: [TranslocoModule, FormsModule, DatePipe, NgTemplateOutlet, TaskFormComponent, TaskListComponent, CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList, ModalWrapperComponent, ConfirmDialogComponent],
   encapsulation: ViewEncapsulation.None,
   styles: [`
     .cdk-drag-animating {
@@ -1091,6 +1092,16 @@ function parseCriteria(value: unknown): string[] {
         (submitCreate)="onCreateTask($event)"
         (submitUpdate)="onUpdateTaskForGoal($event)"
         (closed)="closeTaskForm()" />
+
+      @if (showDeleteConfirm()) {
+        <app-confirm-dialog
+          [title]="t('goals.deleteConfirmTitle')"
+          [message]="t('goals.deleteConfirmMessage')"
+          [cancelLabel]="t('common.cancel')"
+          [confirmLabel]="t('goals.delete')"
+          (confirmed)="executeDelete()"
+          (cancelled)="showDeleteConfirm.set(false)" />
+      }
     </div>
   `,
 })
@@ -2060,12 +2071,24 @@ export class WorkPage {
     });
   }
 
+  showDeleteConfirm = signal(false);
+  private deleteTarget: SpWork | null = null;
+
   confirmDelete(goal: SpWork): void {
-    this.api.delete(goal.id).subscribe({
+    this.deleteTarget = goal;
+    this.showDeleteConfirm.set(true);
+  }
+
+  executeDelete(): void {
+    if (!this.deleteTarget) return;
+    this.api.delete(this.deleteTarget.id).subscribe({
       next: () => {
+        this.showDeleteConfirm.set(false);
+        this.deleteTarget = null;
         this.selected.set(null);
         this.loadGoals();
       },
+      error: () => this.showDeleteConfirm.set(false),
     });
   }
 
