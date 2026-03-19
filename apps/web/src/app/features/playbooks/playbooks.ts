@@ -1,14 +1,14 @@
-import { Component, inject, signal, computed, OnInit, ViewChild } from '@angular/core';
+import { Component, inject, signal, computed, ViewChild } from '@angular/core';
 import { DatePipe, JsonPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
-import { ProjectContext } from '../../core/services/project-context.service';
 import { DiraigentApiService, DgProject } from '../../core/services/diraigent-api.service';
 import {
   PlaybooksApiService,
   SpPlaybook,
 } from '../../core/services/playbooks-api.service';
+import { CrudFeatureBase } from '../../shared/crud-feature-base';
 import { StepTemplatesPage } from './step-templates';
 
 type PlaybooksTab = 'playbooks' | 'templates';
@@ -238,17 +238,12 @@ type PlaybooksTab = 'playbooks' | 'templates';
     </div>
   `,
 })
-export class PlaybooksPage implements OnInit {
+export class PlaybooksPage extends CrudFeatureBase<SpPlaybook> {
   private api = inject(PlaybooksApiService);
   private projectApi = inject(DiraigentApiService);
-  private ctx = inject(ProjectContext);
   private router = inject(Router);
 
   activeTab = signal<PlaybooksTab>('playbooks');
-  items = signal<SpPlaybook[]>([]);
-  loading = signal(false);
-  selected = signal<SpPlaybook | null>(null);
-  searchQuery = signal('');
   currentProject = signal<DgProject | null>(null);
 
   @ViewChild('stepTemplates') private stepTemplatesComp?: StepTemplatesPage;
@@ -261,22 +256,11 @@ export class PlaybooksPage implements OnInit {
     );
   });
 
-  ngOnInit(): void {
-    this.loadPlaybooks();
-    this.loadCurrentProject();
-  }
-
-  loadPlaybooks(): void {
+  override loadItems(): void {
     this.loading.set(true);
+    this.loadCurrentProject();
     this.api.list().subscribe({
-      next: (items) => {
-        this.items.set(items);
-        this.loading.set(false);
-        if (this.selected()) {
-          const still = items.find(i => i.id === this.selected()!.id);
-          this.selected.set(still ?? null);
-        }
-      },
+      next: (items) => this.refreshAfterMutation(items),
       error: () => this.loading.set(false),
     });
   }
@@ -292,6 +276,14 @@ export class PlaybooksPage implements OnInit {
     });
   }
 
+  protected override resetForm(): void {
+    // Playbooks use router navigation for create/edit, no inline form
+  }
+
+  protected override fillForm(_item: SpPlaybook): void {
+    // Playbooks use router navigation for create/edit, no inline form
+  }
+
   setProjectDefault(playbookId: string): void {
     const projectId = this.ctx.projectId();
     if (!projectId) return;
@@ -300,10 +292,6 @@ export class PlaybooksPage implements OnInit {
     }).subscribe({
       next: (updated) => this.currentProject.set(updated),
     });
-  }
-
-  selectItem(pb: SpPlaybook): void {
-    this.selected.set(pb.id === this.selected()?.id ? null : pb);
   }
 
   objectKeys(obj: Record<string, unknown>): string[] {
@@ -332,7 +320,7 @@ export class PlaybooksPage implements OnInit {
     this.api.delete(pb.id).subscribe({
       next: () => {
         this.selected.set(null);
-        this.loadPlaybooks();
+        this.loadItems();
       },
     });
   }

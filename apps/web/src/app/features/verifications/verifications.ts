@@ -3,7 +3,6 @@ import { DatePipe, JsonPipe, SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
-import { ProjectContext } from '../../core/services/project-context.service';
 import {
   VerificationsApiService,
   SpVerification,
@@ -12,6 +11,7 @@ import {
   VerificationStatus,
 } from '../../core/services/verifications-api.service';
 import { TasksApiService, SpTask } from '../../core/services/tasks-api.service';
+import { CrudFeatureBase } from '../../shared/crud-feature-base';
 import {
   VERIFICATION_STATUS_COLORS, VERIFICATION_KIND_COLORS,
 } from '../../shared/ui-constants';
@@ -319,20 +319,15 @@ const KIND_COLORS = VERIFICATION_KIND_COLORS;
     </div>
   `,
 })
-export class VerificationsPage {
+export class VerificationsPage extends CrudFeatureBase<SpVerification> {
   private api = inject(VerificationsApiService);
   private tasksApi = inject(TasksApiService);
   private router = inject(Router);
-  private ctx = inject(ProjectContext);
 
   readonly kinds = KINDS;
   readonly statuses = STATUSES;
 
-  items = signal<SpVerification[]>([]);
   total = signal(0);
-  loading = signal(false);
-  selected = signal<SpVerification | null>(null);
-  searchQuery = signal('');
   selectedStatus = '';
   selectedKind = '';
 
@@ -340,7 +335,6 @@ export class VerificationsPage {
   offset = signal(0);
   hasMore = signal(false);
 
-  showForm = signal(false);
   formTitle = '';
   formKind: VerificationKind = 'test';
   formStatus: VerificationStatus = 'pass';
@@ -350,6 +344,15 @@ export class VerificationsPage {
   previewTask = signal<SpTask | null>(null);
   previewTaskLoading = signal(false);
 
+  constructor() {
+    super();
+    // Reset pagination offset when the project changes
+    effect(() => {
+      this.ctx.projectId();
+      this.offset.set(0);
+    });
+  }
+
   filtered = computed(() => {
     const q = this.searchQuery().toLowerCase().trim();
     if (!q) return this.items();
@@ -358,16 +361,7 @@ export class VerificationsPage {
     );
   });
 
-  constructor() {
-    effect(() => {
-      this.ctx.projectId();
-      this.selected.set(null);
-      this.offset.set(0);
-      this.loadVerifications();
-    });
-  }
-
-  loadVerifications(): void {
+  override loadItems(): void {
     this.loading.set(true);
     const status = this.selectedStatus as VerificationStatus | '';
     const kind = this.selectedKind as VerificationKind | '';
@@ -380,21 +374,12 @@ export class VerificationsPage {
       })
       .subscribe({
         next: res => {
-          this.items.set(res.data);
           this.total.set(res.total);
           this.hasMore.set(res.has_more);
-          this.loading.set(false);
-          if (this.selected()) {
-            const still = res.data.find(i => i.id === this.selected()!.id);
-            this.selected.set(still ?? null);
-          }
+          this.refreshAfterMutation(res.data);
         },
         error: () => this.loading.set(false),
       });
-  }
-
-  selectItem(item: SpVerification): void {
-    this.selected.set(item.id === this.selected()?.id ? null : item);
   }
 
   statusColor(status: VerificationStatus): string {
@@ -415,31 +400,35 @@ export class VerificationsPage {
 
   updateStatus(item: SpVerification, status: VerificationStatus): void {
     this.api.update(item.id, { status }).subscribe({
-      next: () => this.loadVerifications(),
+      next: () => this.loadItems(),
     });
   }
 
   prevPage(): void {
     this.offset.update(v => Math.max(0, v - this.limit));
-    this.loadVerifications();
+    this.loadItems();
   }
 
   nextPage(): void {
     this.offset.update(v => v + this.limit);
-    this.loadVerifications();
+    this.loadItems();
   }
 
-  openCreate(): void {
+  /** Template alias kept for backward compatibility with the template. */
+  loadVerifications(): void {
+    this.loadItems();
+  }
+
+  protected override resetForm(): void {
     this.formTitle = '';
     this.formKind = 'test';
     this.formStatus = 'pass';
     this.formTaskId = '';
     this.formDetail = '';
-    this.showForm.set(true);
   }
 
-  closeForm(): void {
-    this.showForm.set(false);
+  protected override fillForm(_item: SpVerification): void {
+    // Verifications only support create, not edit
   }
 
   submitForm(): void {
@@ -453,7 +442,7 @@ export class VerificationsPage {
     this.api.create(data).subscribe({
       next: () => {
         this.closeForm();
-        this.loadVerifications();
+        this.loadItems();
       },
     });
   }
