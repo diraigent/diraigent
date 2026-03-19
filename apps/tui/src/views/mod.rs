@@ -2,12 +2,9 @@ pub mod agents;
 pub mod audit;
 pub mod decisions;
 pub mod integrations;
-pub mod knowledge;
 pub mod logs;
 pub mod observations;
 pub mod project_settings;
-pub mod team;
-pub mod verifications;
 pub mod work;
 
 pub mod chat;

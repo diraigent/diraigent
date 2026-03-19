@@ -24,10 +24,9 @@ use ratatui::{Frame, Terminal};
 use tokio::sync::{mpsc, watch};
 
 use app::{
-    App, Modal, VerificationForm, View, ALL_VIEWS, EVENT_KINDS, EVENT_SEVERITIES,
-    INTEGRATION_AUTH_TYPES, INTEGRATION_KINDS, KNOWLEDGE_CATEGORIES, LOG_DIRECTIONS, LOG_LIMITS,
-    OBSERVATION_KINDS, OBSERVATION_SEVERITIES, TASK_KINDS, TIME_RANGES, VERIFICATION_KINDS,
-    VERIFICATION_STATUSES, WORK_STATUSES, WORK_TYPES,
+    App, Modal, View, ALL_VIEWS, EVENT_KINDS, EVENT_SEVERITIES, INTEGRATION_AUTH_TYPES,
+    INTEGRATION_KINDS, LOG_DIRECTIONS, LOG_LIMITS, OBSERVATION_KINDS, OBSERVATION_SEVERITIES,
+    TASK_KINDS, TIME_RANGES, WORK_STATUSES, WORK_TYPES,
 };
 use client::ApiClient;
 
@@ -42,7 +41,6 @@ enum ApiMsg {
     TaskComments(Vec<client::TaskComment>),
     TaskDependencies(client::TaskDependencies),
     Agents(Vec<client::Agent>),
-    Knowledge(Vec<client::KnowledgeEntry>),
     Decisions(Vec<client::Decision>),
     WorkItems(Vec<client::Work>),
     DoneWorkItems(Vec<client::Work>),
@@ -51,8 +49,6 @@ enum ApiMsg {
     WorkStats(client::WorkStats),
     WorkChildren(Vec<client::Work>),
     Observations(Vec<client::Observation>),
-    Roles(Vec<client::Role>),
-    Members(Vec<client::Member>),
     Integrations(Vec<client::Integration>),
     IntegrationAccessList(Vec<client::IntegrationAccess>),
     Audit(Vec<client::AuditEntry>),
@@ -61,7 +57,6 @@ enum ApiMsg {
     ClaudeMd(String),
     ProjectUpdated(client::Project),
     GitTaskStatus(client::GitTaskStatus),
-    Verifications(Vec<client::Verification>),
     Events(Vec<client::Event>),
     DashboardMetrics(client::ProjectMetrics),
     DashboardEvents(Vec<client::Event>),
@@ -122,16 +117,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     async fn fetch_all_data(api: &ApiClient, tx: &mpsc::Sender<ApiMsg>, pid: uuid::Uuid) {
         let (
             tasks,
-            knowledge,
             decisions,
             active_work,
             done_work,
             observations,
-            roles,
-            members,
             integrations,
             audit,
-            verifications,
             events,
             reports,
             metrics,
@@ -139,7 +130,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             webhooks,
         ) = tokio::join!(
             api.list_tasks(pid),
-            api.list_knowledge(pid),
             api.list_decisions(pid),
             api.list_work_filtered(pid, Some("achieved,abandoned"), None, None),
             api.list_work_filtered(
@@ -149,11 +139,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Some(0)
             ),
             api.list_observations(pid),
-            api.list_roles(),
-            api.list_members(),
             api.list_integrations(pid),
             api.list_audit(pid),
-            api.list_verifications(pid, None, None, None, 100, 0),
             api.list_events(pid, None, None),
             api.list_reports(pid),
             api.get_project_metrics(pid, None),
@@ -162,9 +149,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         if let Ok(resp) = tasks {
             let _ = tx.send(ApiMsg::Tasks(resp.data)).await;
-        }
-        if let Ok(resp) = knowledge {
-            let _ = tx.send(ApiMsg::Knowledge(resp)).await;
         }
         if let Ok(resp) = decisions {
             let _ = tx.send(ApiMsg::Decisions(resp)).await;
@@ -178,20 +162,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Ok(resp) = observations {
             let _ = tx.send(ApiMsg::Observations(resp)).await;
         }
-        if let Ok(resp) = roles {
-            let _ = tx.send(ApiMsg::Roles(resp)).await;
-        }
-        if let Ok(resp) = members {
-            let _ = tx.send(ApiMsg::Members(resp)).await;
-        }
         if let Ok(resp) = integrations {
             let _ = tx.send(ApiMsg::Integrations(resp)).await;
         }
         if let Ok(resp) = audit {
             let _ = tx.send(ApiMsg::Audit(resp)).await;
-        }
-        if let Ok(resp) = verifications {
-            let _ = tx.send(ApiMsg::Verifications(resp)).await;
         }
         if let Ok(resp) = events {
             let _ = tx.send(ApiMsg::Events(resp)).await;
@@ -252,28 +227,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let _ = tx.send(ApiMsg::DashboardEvents(ev)).await;
                 }
             }
-            View::Agents | View::Team => {
-                let (roles, members) = tokio::join!(api.list_roles(), api.list_members());
-                if let Ok(r) = roles {
-                    let _ = tx.send(ApiMsg::Roles(r)).await;
-                }
-                if let Ok(m) = members {
-                    let _ = tx.send(ApiMsg::Members(m)).await;
-                }
-            }
-            View::Knowledge => {
-                if let Ok(resp) = api.list_knowledge(pid).await {
-                    let _ = tx.send(ApiMsg::Knowledge(resp)).await;
+            View::Agents => {
+                if let Ok(agents) = api.list_agents().await {
+                    let _ = tx.send(ApiMsg::Agents(agents)).await;
                 }
             }
             View::Observations => {
                 if let Ok(resp) = api.list_observations(pid).await {
                     let _ = tx.send(ApiMsg::Observations(resp)).await;
-                }
-            }
-            View::Verifications => {
-                if let Ok(resp) = api.list_verifications(pid, None, None, None, 100, 0).await {
-                    let _ = tx.send(ApiMsg::Verifications(resp)).await;
                 }
             }
             View::Integrations => {
@@ -565,7 +526,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::TaskComments(c) => app.task_comments = c,
                 ApiMsg::TaskDependencies(d) => app.task_dependencies = d,
                 ApiMsg::Agents(a) => app.agents = a,
-                ApiMsg::Knowledge(k) => app.knowledge = k,
                 ApiMsg::Decisions(d) => app.decisions = d,
                 ApiMsg::WorkItems(mut g) => {
                     g.sort_by_key(|w| match w.status.as_deref().unwrap_or("") {
@@ -621,12 +581,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ApiMsg::WorkStats(s) => app.work_stats = Some(s),
                 ApiMsg::WorkChildren(c) => app.work_children = c,
                 ApiMsg::Observations(o) => app.observations = o,
-                ApiMsg::Roles(r) => app.roles = r,
-                ApiMsg::Members(m) => app.members = m,
                 ApiMsg::Integrations(intg) => app.integrations = intg,
                 ApiMsg::IntegrationAccessList(access) => app.integration_access = access,
                 ApiMsg::Audit(a) => app.audit_log = a,
-                ApiMsg::Verifications(v) => app.verifications = v,
                 ApiMsg::Events(e) => app.events = e,
                 ApiMsg::Reports(r) => app.reports = r,
                 ApiMsg::DashboardMetrics(m) => app.dashboard_metrics = Some(m),
@@ -826,18 +783,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Main content
             match app.view {
                 View::Agents => views::agents::render(f, main_layout[1], &mut app),
-                View::Knowledge => views::knowledge::render(f, main_layout[1], &mut app),
                 View::Decisions => views::decisions::render(f, main_layout[1], &mut app),
                 View::Work => views::work::render(f, main_layout[1], &mut app),
                 View::Observations => views::observations::render(f, main_layout[1], &mut app),
-                View::Team => views::team::render(f, main_layout[1], &mut app),
                 View::Integrations => views::integrations::render(f, main_layout[1], &mut app),
                 View::Audit => views::audit::render(f, main_layout[1], &mut app),
                 View::Logs => views::logs::render(f, main_layout[1], &mut app),
                 View::ProjectSettings => {
                     views::project_settings::render(f, main_layout[1], &mut app)
                 }
-                View::Verifications => views::verifications::render(f, main_layout[1], &mut app),
                 View::Git => views::git::render(f, main_layout[1], &mut app),
                 View::Search => views::search::render(f, main_layout[1], &mut app),
                 View::Chat => views::chat::render(f, main_layout[1], &mut app),
@@ -859,9 +813,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     View::Dashboard,
                     View::Agents,
                     View::Observations,
-                    View::Team,
-                    View::Knowledge,
-                    View::Verifications,
                 ];
                 for v in footer_views {
                     let active = app.view == *v;
@@ -876,8 +827,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Use short labels for the footer
                     let short = match v {
                         View::Observations => "Obs",
-                        View::Verifications => "Verify",
-                        View::Knowledge => "Know",
                         _ => v.label(),
                     };
                     spans.push(Span::styled(
@@ -892,9 +841,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     View::Decisions => "[n]New [a]Accept [x]Reject [X]Deprecate",
                     View::Observations => "[n]New [s]Status [d]Dismiss [p]Promote [C]Cleanup",
                     View::Agents => "[a]Tasks",
-                    View::Knowledge => "[n]New [e]Edit [D]Delete",
                     View::Git => "[r]Refresh [p]Push [R]Resolve [P]PR",
-                    View::Verifications => "[n]New [s]Status [K]Kind [S]Filter",
                     View::Integrations => "[n]New [e]Edit [a]Access [D]Delete",
                     View::Webhooks => "[n]New [e]Edit [d]Deliveries [t]Test [D]Delete",
                     View::Logs => "[/]Filter [T]Tail [Y]Yank",
@@ -984,9 +931,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 | Modal::DecisionSupersede
                 | Modal::IntegrationAccess
                 | Modal::ViewPicker
-                | Modal::VerificationStatus
-                | Modal::VerificationKindFilter
-                | Modal::VerificationStatusFilter
                 | Modal::EventKindFilter
                 | Modal::EventSeverityFilter => {
                     let states: Vec<&str> =
@@ -996,9 +940,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Modal::DecisionSupersede => " Supersede with Decision ",
                         Modal::IntegrationAccess => " Agent Access ",
                         Modal::ViewPicker => " Switch View ",
-                        Modal::VerificationStatus => " Verification Status ",
-                        Modal::VerificationKindFilter => " Filter by Kind ",
-                        Modal::VerificationStatusFilter => " Filter by Status ",
                         Modal::EventKindFilter => " Filter Events by Kind ",
                         Modal::EventSeverityFilter => " Filter Events by Severity ",
                         _ => "",
@@ -1985,129 +1926,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 f.render_widget(hint, field_chunks[5]);
             }
 
-            // Knowledge creation/edit form
-            if let Some(ref form) = app.knowledge_form {
-                let form_area = widgets::popup::centered_rect(60, 45, size);
-                Clear.render(form_area, f.buffer_mut());
-                let title = if form.editing_id.is_some() {
-                    " Edit Knowledge "
-                } else {
-                    " New Knowledge "
-                };
-                let block = Block::default()
-                    .title(title)
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(theme::teal()))
-                    .style(Style::default().bg(theme::mantle()));
-                let inner = block.inner(form_area);
-                f.render_widget(block, form_area);
-
-                let field_chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([
-                        Constraint::Length(2), // Title
-                        Constraint::Length(2), // Category
-                        Constraint::Min(3),    // Content
-                        Constraint::Length(2), // Tags
-                        Constraint::Length(1), // Footer
-                    ])
-                    .split(inner);
-
-                let render_kf =
-                    |f: &mut Frame, area: Rect, label: &str, value: &str, active: bool| {
-                        let style = if active {
-                            Style::default().fg(theme::blue())
-                        } else {
-                            Style::default().fg(theme::subtext0())
-                        };
-                        let val_style = if active {
-                            Style::default().fg(theme::text())
-                        } else {
-                            Style::default().fg(theme::overlay0())
-                        };
-                        let p = Paragraph::new(vec![Line::from(vec![
-                            Span::styled(format!(" {} ", label), style),
-                            Span::styled(value.to_string(), val_style),
-                        ])])
-                        .wrap(Wrap { trim: false });
-                        f.render_widget(p, area);
-                    };
-
-                // Title
-                {
-                    let val = if form.active_field == 0 {
-                        let bp = form
-                            .title
-                            .char_indices()
-                            .nth(form.cursor)
-                            .map(|(i, _)| i)
-                            .unwrap_or(form.title.len());
-                        if bp < form.title.len() {
-                            format!("{}│{}", &form.title[..bp], &form.title[bp..])
-                        } else {
-                            format!("{}│", &form.title)
-                        }
-                    } else {
-                        form.title.clone()
-                    };
-                    render_kf(f, field_chunks[0], "Title:", &val, form.active_field == 0);
-                }
-                // Category selector
-                {
-                    let val = format!("◀ {} ▶", KNOWLEDGE_CATEGORIES[form.category_index]);
-                    render_kf(
-                        f,
-                        field_chunks[1],
-                        "Category:",
-                        &val,
-                        form.active_field == 1,
-                    );
-                }
-                // Content
-                {
-                    let val = if form.active_field == 2 {
-                        let bp = form
-                            .content
-                            .char_indices()
-                            .nth(form.cursor)
-                            .map(|(i, _)| i)
-                            .unwrap_or(form.content.len());
-                        if bp < form.content.len() {
-                            format!("{}│{}", &form.content[..bp], &form.content[bp..])
-                        } else {
-                            format!("{}│", &form.content)
-                        }
-                    } else {
-                        form.content.clone()
-                    };
-                    render_kf(f, field_chunks[2], "Content:", &val, form.active_field == 2);
-                }
-                // Tags
-                {
-                    let val = if form.active_field == 3 {
-                        let bp = form
-                            .tags
-                            .char_indices()
-                            .nth(form.cursor)
-                            .map(|(i, _)| i)
-                            .unwrap_or(form.tags.len());
-                        if bp < form.tags.len() {
-                            format!("{}│{}", &form.tags[..bp], &form.tags[bp..])
-                        } else {
-                            format!("{}│", &form.tags)
-                        }
-                    } else {
-                        form.tags.clone()
-                    };
-                    render_kf(f, field_chunks[3], "Tags:", &val, form.active_field == 3);
-                }
-                let hint = Paragraph::new(Line::styled(
-                    " Tab: next | Enter: submit | Esc: cancel",
-                    Style::default().fg(theme::overlay0()),
-                ));
-                f.render_widget(hint, field_chunks[4]);
-            }
-
             // Integration creation form
             if let Some(ref form) = app.integration_form {
                 let form_area = widgets::popup::centered_rect(60, 45, size);
@@ -2236,171 +2054,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Style::default().fg(theme::overlay0()),
                 ));
                 f.render_widget(hint, field_chunks[5]);
-            }
-
-            // Verification creation/edit form
-            if let Some(ref form) = app.verification_form {
-                let form_area = widgets::popup::centered_rect(60, 60, size);
-                Clear.render(form_area, f.buffer_mut());
-                let title = if form.editing_id.is_some() {
-                    " Edit Verification "
-                } else {
-                    " New Verification "
-                };
-                let block = Block::default()
-                    .title(title)
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(theme::mauve()))
-                    .style(Style::default().bg(theme::mantle()));
-                let inner = block.inner(form_area);
-                f.render_widget(block, form_area);
-
-                let field_chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([
-                        Constraint::Length(2), // Task
-                        Constraint::Length(2), // Kind
-                        Constraint::Length(2), // Status
-                        Constraint::Length(2), // Title
-                        Constraint::Min(2),    // Detail
-                        Constraint::Min(2),    // Evidence
-                        Constraint::Length(1), // Footer
-                    ])
-                    .split(inner);
-
-                let render_vf_field =
-                    |f: &mut Frame, area: Rect, label: &str, value: &str, active: bool| {
-                        let style = if active {
-                            Style::default().fg(theme::blue())
-                        } else {
-                            Style::default().fg(theme::subtext0())
-                        };
-                        let val_style = if active {
-                            Style::default().fg(theme::text())
-                        } else {
-                            Style::default().fg(theme::overlay0())
-                        };
-                        let p = Paragraph::new(vec![Line::from(vec![
-                            Span::styled(format!(" {} ", label), style),
-                            Span::styled(value.to_string(), val_style),
-                        ])])
-                        .wrap(Wrap { trim: false });
-                        f.render_widget(p, area);
-                    };
-
-                // Task picker (field 0)
-                {
-                    let task_label = if app.tasks.is_empty() {
-                        "◀ (no tasks) ▶".to_string()
-                    } else {
-                        let t = &app.tasks[form.task_index.min(app.tasks.len() - 1)];
-                        format!("◀ {} ▶", t.title)
-                    };
-                    render_vf_field(
-                        f,
-                        field_chunks[0],
-                        "Task:",
-                        &task_label,
-                        form.active_field == 0,
-                    );
-                }
-
-                // Kind picker (field 1)
-                {
-                    let kind = VERIFICATION_KINDS[form.kind_index];
-                    render_vf_field(
-                        f,
-                        field_chunks[1],
-                        "Kind:",
-                        &format!("◀ {} ▶", kind),
-                        form.active_field == 1,
-                    );
-                }
-
-                // Status picker (field 2)
-                {
-                    let status = VERIFICATION_STATUSES[form.status_index];
-                    render_vf_field(
-                        f,
-                        field_chunks[2],
-                        "Status:",
-                        &format!("◀ {} ▶", status),
-                        form.active_field == 2,
-                    );
-                }
-
-                // Title text (field 3)
-                {
-                    let val = if form.active_field == 3 {
-                        let bp = form
-                            .title
-                            .char_indices()
-                            .nth(form.cursor)
-                            .map(|(i, _)| i)
-                            .unwrap_or(form.title.len());
-                        if bp < form.title.len() {
-                            format!("{}│{}", &form.title[..bp], &form.title[bp..])
-                        } else {
-                            format!("{}│", &form.title)
-                        }
-                    } else {
-                        form.title.clone()
-                    };
-                    render_vf_field(f, field_chunks[3], "Title:", &val, form.active_field == 3);
-                }
-
-                // Detail text (field 4)
-                {
-                    let val = if form.active_field == 4 {
-                        let bp = form
-                            .detail
-                            .char_indices()
-                            .nth(form.cursor)
-                            .map(|(i, _)| i)
-                            .unwrap_or(form.detail.len());
-                        if bp < form.detail.len() {
-                            format!("{}│{}", &form.detail[..bp], &form.detail[bp..])
-                        } else {
-                            format!("{}│", &form.detail)
-                        }
-                    } else {
-                        form.detail.clone()
-                    };
-                    render_vf_field(f, field_chunks[4], "Detail:", &val, form.active_field == 4);
-                }
-
-                // Evidence text (field 5)
-                {
-                    let val = if form.active_field == 5 {
-                        let bp = form
-                            .evidence
-                            .char_indices()
-                            .nth(form.cursor)
-                            .map(|(i, _)| i)
-                            .unwrap_or(form.evidence.len());
-                        if bp < form.evidence.len() {
-                            format!("{}│{}", &form.evidence[..bp], &form.evidence[bp..])
-                        } else {
-                            format!("{}│", &form.evidence)
-                        }
-                    } else {
-                        form.evidence.clone()
-                    };
-                    render_vf_field(
-                        f,
-                        field_chunks[5],
-                        "Evidence:",
-                        &val,
-                        form.active_field == 5,
-                    );
-                }
-
-                // Footer hint
-                let hint = Paragraph::new(Line::styled(
-                    " Tab: next  ◀▶: cycle  Enter: submit  Esc: cancel",
-                    Style::default().fg(theme::overlay0()),
-                ));
-                f.render_widget(hint, field_chunks[6]);
             }
         })?;
 
@@ -3226,134 +2879,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         _ => {}
                     }
-                } else if app.knowledge_form.is_some() {
-                    let form = app.knowledge_form.as_mut().unwrap();
-                    match key.code {
-                        KeyCode::Esc => {
-                            app.knowledge_form = None;
-                        }
-                        KeyCode::Tab => {
-                            form.active_field = (form.active_field + 1) % 4;
-                            form.cursor = match form.active_field {
-                                0 => form.title.chars().count(),
-                                2 => form.content.chars().count(),
-                                3 => form.tags.chars().count(),
-                                _ => 0,
-                            };
-                        }
-                        KeyCode::Enter => {
-                            if !form.title.is_empty() {
-                                let title = form.title.clone();
-                                let category =
-                                    KNOWLEDGE_CATEGORIES[form.category_index].to_string();
-                                let content = form.content.clone();
-                                let tags: Vec<String> = form
-                                    .tags
-                                    .split(',')
-                                    .map(|s| s.trim().to_string())
-                                    .filter(|s| !s.is_empty())
-                                    .collect();
-                                let editing_id = form.editing_id;
-                                let pid = app.current_project;
-                                app.knowledge_form = None;
-                                if let Some(pid) = pid {
-                                    let api = api.clone();
-                                    let tx = tx.clone();
-                                    tokio::spawn(async move {
-                                        let body = serde_json::json!({
-                                            "title": title,
-                                            "category": category,
-                                            "content": content,
-                                            "tags": tags,
-                                        });
-                                        let result = if let Some(kid) = editing_id {
-                                            api.update_knowledge(kid, body).await.map(|_| ())
-                                        } else {
-                                            api.create_knowledge(pid, body).await.map(|_| ())
-                                        };
-                                        match result {
-                                            Ok(()) => {
-                                                if let Ok(k) = api.list_knowledge(pid).await {
-                                                    let _ = tx.send(ApiMsg::Knowledge(k)).await;
-                                                }
-                                            }
-                                            Err(e) => {
-                                                let _ = tx
-                                                    .send(ApiMsg::Error(format!("Knowledge: {e}")))
-                                                    .await;
-                                            }
-                                        }
-                                    });
-                                }
-                            }
-                        }
-                        KeyCode::Left => match form.active_field {
-                            1 => {
-                                if form.category_index > 0 {
-                                    form.category_index -= 1;
-                                } else {
-                                    form.category_index = KNOWLEDGE_CATEGORIES.len() - 1;
-                                }
-                            }
-                            _ => {
-                                if form.cursor > 0 {
-                                    form.cursor -= 1;
-                                }
-                            }
-                        },
-                        KeyCode::Right => match form.active_field {
-                            1 => {
-                                form.category_index =
-                                    (form.category_index + 1) % KNOWLEDGE_CATEGORIES.len();
-                            }
-                            _ => {
-                                let len = match form.active_field {
-                                    0 => form.title.chars().count(),
-                                    2 => form.content.chars().count(),
-                                    3 => form.tags.chars().count(),
-                                    _ => 0,
-                                };
-                                if form.cursor < len {
-                                    form.cursor += 1;
-                                }
-                            }
-                        },
-                        KeyCode::Backspace => {
-                            if form.cursor > 0 && matches!(form.active_field, 0 | 2 | 3) {
-                                form.cursor -= 1;
-                                let text = match form.active_field {
-                                    0 => &mut form.title,
-                                    2 => &mut form.content,
-                                    3 => &mut form.tags,
-                                    _ => &mut form.title,
-                                };
-                                let bp = text
-                                    .char_indices()
-                                    .nth(form.cursor)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(text.len());
-                                text.remove(bp);
-                            }
-                        }
-                        KeyCode::Char(c) => {
-                            if matches!(form.active_field, 0 | 2 | 3) {
-                                let text = match form.active_field {
-                                    0 => &mut form.title,
-                                    2 => &mut form.content,
-                                    3 => &mut form.tags,
-                                    _ => &mut form.title,
-                                };
-                                let bp = text
-                                    .char_indices()
-                                    .nth(form.cursor)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(text.len());
-                                text.insert(bp, c);
-                                form.cursor += 1;
-                            }
-                        }
-                        _ => {}
-                    }
                 } else if app.integration_form.is_some() {
                     let form = app.integration_form.as_mut().unwrap();
                     match key.code {
@@ -3967,182 +3492,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         _ => {}
                     }
-                } else if app.verification_form.is_some() {
-                    let task_count = app.tasks.len().max(1);
-                    let form = app.verification_form.as_mut().unwrap();
-                    match key.code {
-                        KeyCode::Esc => {
-                            app.verification_form = None;
-                        }
-                        KeyCode::Tab => {
-                            form.active_field = (form.active_field + 1) % 6;
-                            form.cursor = match form.active_field {
-                                3 => form.title.chars().count(),
-                                4 => form.detail.chars().count(),
-                                5 => form.evidence.chars().count(),
-                                _ => 0,
-                            };
-                        }
-                        KeyCode::Enter => {
-                            if !form.title.is_empty() {
-                                let task_id = app.tasks.get(form.task_index).map(|t| t.id);
-                                let kind = VERIFICATION_KINDS[form.kind_index].to_string();
-                                let status = VERIFICATION_STATUSES[form.status_index].to_string();
-                                let title = form.title.clone();
-                                let detail = if form.detail.is_empty() {
-                                    None
-                                } else {
-                                    Some(form.detail.clone())
-                                };
-                                let evidence: Option<serde_json::Value> =
-                                    if form.evidence.is_empty() {
-                                        None
-                                    } else {
-                                        serde_json::from_str(&form.evidence).ok()
-                                    };
-                                let editing_id = form.editing_id;
-                                let pid = app.current_project;
-                                app.verification_form = None;
-                                if let Some(pid) = pid {
-                                    let api = api.clone();
-                                    let tx = tx.clone();
-                                    tokio::spawn(async move {
-                                        let mut body = serde_json::json!({
-                                            "kind": kind,
-                                            "status": status,
-                                            "title": title,
-                                        });
-                                        if let Some(tid) = task_id {
-                                            body["task_id"] = serde_json::json!(tid);
-                                        }
-                                        if let Some(d) = detail {
-                                            body["detail"] = serde_json::json!(d);
-                                        }
-                                        if let Some(e) = evidence {
-                                            body["evidence"] = e;
-                                        }
-                                        let result = if let Some(vid) = editing_id {
-                                            api.update_verification(vid, body).await.map(|_| ())
-                                        } else {
-                                            api.create_verification(pid, body).await.map(|_| ())
-                                        };
-                                        match result {
-                                            Ok(()) => {
-                                                if let Ok(vs) = api
-                                                    .list_verifications(
-                                                        pid, None, None, None, 100, 0,
-                                                    )
-                                                    .await
-                                                {
-                                                    let _ =
-                                                        tx.send(ApiMsg::Verifications(vs)).await;
-                                                }
-                                            }
-                                            Err(e) => {
-                                                let _ = tx
-                                                    .send(ApiMsg::Error(format!(
-                                                        "Verification: {e}"
-                                                    )))
-                                                    .await;
-                                            }
-                                        }
-                                    });
-                                }
-                            }
-                        }
-                        KeyCode::Left => {
-                            match form.active_field {
-                                0 => {
-                                    // Cycle task
-                                    if form.task_index > 0 {
-                                        form.task_index -= 1;
-                                    } else {
-                                        form.task_index = task_count - 1;
-                                    }
-                                }
-                                1 => {
-                                    // Cycle kind
-                                    if form.kind_index > 0 {
-                                        form.kind_index -= 1;
-                                    } else {
-                                        form.kind_index = VERIFICATION_KINDS.len() - 1;
-                                    }
-                                }
-                                2 => {
-                                    // Cycle status
-                                    if form.status_index > 0 {
-                                        form.status_index -= 1;
-                                    } else {
-                                        form.status_index = VERIFICATION_STATUSES.len() - 1;
-                                    }
-                                }
-                                _ => {
-                                    // Text field cursor left
-                                    if form.cursor > 0 {
-                                        form.cursor -= 1;
-                                    }
-                                }
-                            }
-                        }
-                        KeyCode::Right => match form.active_field {
-                            0 => {
-                                form.task_index = (form.task_index + 1) % task_count;
-                            }
-                            1 => {
-                                form.kind_index = (form.kind_index + 1) % VERIFICATION_KINDS.len();
-                            }
-                            2 => {
-                                form.status_index =
-                                    (form.status_index + 1) % VERIFICATION_STATUSES.len();
-                            }
-                            _ => {
-                                let len = match form.active_field {
-                                    3 => form.title.chars().count(),
-                                    4 => form.detail.chars().count(),
-                                    5 => form.evidence.chars().count(),
-                                    _ => 0,
-                                };
-                                if form.cursor < len {
-                                    form.cursor += 1;
-                                }
-                            }
-                        },
-                        KeyCode::Backspace => {
-                            if form.active_field >= 3 && form.cursor > 0 {
-                                form.cursor -= 1;
-                                let text = match form.active_field {
-                                    3 => &mut form.title,
-                                    4 => &mut form.detail,
-                                    5 => &mut form.evidence,
-                                    _ => &mut form.title,
-                                };
-                                let bp = text
-                                    .char_indices()
-                                    .nth(form.cursor)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(text.len());
-                                text.remove(bp);
-                            }
-                        }
-                        KeyCode::Char(c) => {
-                            if form.active_field >= 3 {
-                                let text = match form.active_field {
-                                    3 => &mut form.title,
-                                    4 => &mut form.detail,
-                                    5 => &mut form.evidence,
-                                    _ => &mut form.title,
-                                };
-                                let bp = text
-                                    .char_indices()
-                                    .nth(form.cursor)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or(text.len());
-                                text.insert(bp, c);
-                                form.cursor += 1;
-                            }
-                        }
-                        _ => {}
-                    }
                 } else {
                     match app.modal {
                         Modal::WorkComment => match key.code {
@@ -4703,109 +4052,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             _ => {}
                         },
-                        Modal::VerificationStatus => match key.code {
-                            KeyCode::Esc => app.modal = Modal::None,
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                if app.transition_selected > 0 {
-                                    app.transition_selected -= 1;
-                                }
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.transition_selected + 1 < app.transition_options.len() {
-                                    app.transition_selected += 1;
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if let Some(new_status) =
-                                    app.transition_options.get(app.transition_selected).cloned()
-                                {
-                                    let filtered = app.filtered_verifications();
-                                    if let Some(v) =
-                                        app.selected_verification.and_then(|i| filtered.get(i))
-                                    {
-                                        let vid = v.id;
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        let pid = app.current_project;
-                                        tokio::spawn(async move {
-                                            let body = serde_json::json!({"status": new_status});
-                                            if let Err(e) = api.update_verification(vid, body).await
-                                            {
-                                                let _ = tx
-                                                    .send(ApiMsg::Error(format!("Status: {e}")))
-                                                    .await;
-                                            } else if let Some(pid) = pid {
-                                                if let Ok(vs) = api
-                                                    .list_verifications(
-                                                        pid, None, None, None, 100, 0,
-                                                    )
-                                                    .await
-                                                {
-                                                    let _ =
-                                                        tx.send(ApiMsg::Verifications(vs)).await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-                                app.modal = Modal::None;
-                            }
-                            _ => {}
-                        },
-                        Modal::VerificationKindFilter => match key.code {
-                            KeyCode::Esc => app.modal = Modal::None,
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                if app.transition_selected > 0 {
-                                    app.transition_selected -= 1;
-                                }
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.transition_selected + 1 < app.transition_options.len() {
-                                    app.transition_selected += 1;
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if let Some(selected) =
-                                    app.transition_options.get(app.transition_selected).cloned()
-                                {
-                                    if selected == "all" {
-                                        app.verification_kind_filter = None;
-                                    } else {
-                                        app.verification_kind_filter = Some(selected);
-                                    }
-                                    app.selected_verification = None;
-                                }
-                                app.modal = Modal::None;
-                            }
-                            _ => {}
-                        },
-                        Modal::VerificationStatusFilter => match key.code {
-                            KeyCode::Esc => app.modal = Modal::None,
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                if app.transition_selected > 0 {
-                                    app.transition_selected -= 1;
-                                }
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.transition_selected + 1 < app.transition_options.len() {
-                                    app.transition_selected += 1;
-                                }
-                            }
-                            KeyCode::Enter => {
-                                if let Some(selected) =
-                                    app.transition_options.get(app.transition_selected).cloned()
-                                {
-                                    if selected == "all" {
-                                        app.verification_status_filter = None;
-                                    } else {
-                                        app.verification_status_filter = Some(selected);
-                                    }
-                                    app.selected_verification = None;
-                                }
-                                app.modal = Modal::None;
-                            }
-                            _ => {}
-                        },
                         Modal::EventKindFilter => match key.code {
                             KeyCode::Esc => app.modal = Modal::None,
                             KeyCode::Up | KeyCode::Char('k') => {
@@ -5098,7 +4344,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         blocks: vec![],
                                     };
                                     app.search_query.clear();
-                                    app.knowledge.clear();
                                     app.decisions.clear();
                                     app.work_items.clear();
                                     app.done_work_items.clear();
@@ -5118,8 +4363,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.work_task_comments.clear();
                                     app.work_task_detail_scroll = 0;
                                     app.observations.clear();
-                                    app.roles.clear();
-                                    app.members.clear();
                                     app.integrations.clear();
                                     app.audit_log.clear();
                                     app.log_entries.clear();
@@ -5132,8 +4375,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.selected_done_work = None;
                                     app.done_work_list_state.select(None);
                                     app.selected_observation = None;
-                                    app.selected_role = None;
-                                    app.selected_member = None;
                                     app.selected_integration = None;
                                     app.selected_audit = None;
                                     app.detail_scroll = 0;
@@ -5179,18 +4420,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             KeyCode::Char('5') => {
                                 app.view = View::Observations;
-                                app.detail_scroll = 0;
-                            }
-                            KeyCode::Char('6') => {
-                                app.view = View::Team;
-                                app.detail_scroll = 0;
-                            }
-                            KeyCode::Char('7') => {
-                                app.view = View::Knowledge;
-                                app.detail_scroll = 0;
-                            }
-                            KeyCode::Char('8') => {
-                                app.view = View::Verifications;
                                 app.detail_scroll = 0;
                             }
                             // 'l' — Logs view, except in views where 'l' is an action (Work).
@@ -5278,9 +4507,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             KeyCode::Tab => {
-                                if app.view == View::Team {
-                                    app.team_focus = (app.team_focus + 1) % 3;
-                                } else if app.view == View::Work {
+                                if app.view == View::Work {
                                     // Cycle: 0=work list, 1=task list
                                     app.work_focus = (app.work_focus + 1) % 2;
                                 } else {
@@ -5474,16 +4701,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 app.show_help = true;
                             }
                             KeyCode::Char('n') => {
-                                if app.view == View::Verifications {
-                                    app.verification_form = Some(VerificationForm::default());
-                                } else if app.view == View::Work {
+                                if app.view == View::Work {
                                     app.work_form = Some(app::WorkForm::default());
                                 } else if app.view == View::Observations {
                                     app.observation_form = Some(app::ObservationForm::default());
                                 } else if app.view == View::Decisions {
                                     app.decision_form = Some(app::DecisionForm::default());
-                                } else if app.view == View::Knowledge {
-                                    app.knowledge_form = Some(app::KnowledgeForm::default());
                                 } else if app.view == View::Integrations {
                                     app.integration_form = Some(app::IntegrationForm::default());
                                 } else if app.view == View::Reports {
@@ -5554,22 +4777,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             app.modal = Modal::ObservationStatus;
                                         }
                                     }
-                                } else if app.view == View::Verifications {
-                                    let filtered = app.filtered_verifications();
-                                    if let Some(v) =
-                                        app.selected_verification.and_then(|i| filtered.get(i))
-                                    {
-                                        let opts: Vec<String> = VERIFICATION_STATUSES
-                                            .iter()
-                                            .filter(|s| **s != v.status)
-                                            .map(|s| s.to_string())
-                                            .collect();
-                                        if !opts.is_empty() {
-                                            app.transition_options = opts;
-                                            app.transition_selected = 0;
-                                            app.modal = Modal::VerificationStatus;
-                                        }
-                                    }
                                 }
                             }
                             // Work view: done section pagination
@@ -5637,26 +4844,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 app.transition_selected = 0;
                                 app.modal = Modal::EventKindFilter;
                             }
-                            // Verifications view: K = kind filter, S = status filter
-                            KeyCode::Char('K') => {
-                                if app.view == View::Verifications {
-                                    let mut opts: Vec<String> = vec!["all".into()];
-                                    opts.extend(VERIFICATION_KINDS.iter().map(|k| k.to_string()));
-                                    app.transition_options = opts;
-                                    app.transition_selected = 0;
-                                    app.modal = Modal::VerificationKindFilter;
-                                }
-                            }
                             KeyCode::Char('S') => {
-                                if app.view == View::Verifications {
-                                    let mut opts: Vec<String> = vec!["all".into()];
-                                    opts.extend(
-                                        VERIFICATION_STATUSES.iter().map(|s| s.to_string()),
-                                    );
-                                    app.transition_options = opts;
-                                    app.transition_selected = 0;
-                                    app.modal = Modal::VerificationStatusFilter;
-                                } else if app.view == View::Decisions {
+                                if app.view == View::Decisions {
                                     if let Some(dec) =
                                         app.selected_decision.and_then(|i| app.decisions.get(i))
                                     {
@@ -6081,28 +5270,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                             editing_id: Some(goal.id),
                                         });
                                     }
-                                } else if app.view == View::Knowledge {
-                                    if let Some(k) =
-                                        app.selected_knowledge.and_then(|i| app.knowledge.get(i))
-                                    {
-                                        let cat_idx = KNOWLEDGE_CATEGORIES
-                                            .iter()
-                                            .position(|c| Some(*c) == k.category.as_deref())
-                                            .unwrap_or(0);
-                                        app.knowledge_form = Some(app::KnowledgeForm {
-                                            title: k.title.clone(),
-                                            category_index: cat_idx,
-                                            content: k.content.clone().unwrap_or_default(),
-                                            tags: k
-                                                .tags
-                                                .as_ref()
-                                                .map(|t| t.join(", "))
-                                                .unwrap_or_default(),
-                                            active_field: 0,
-                                            cursor: k.title.chars().count(),
-                                            editing_id: Some(k.id),
-                                        });
-                                    }
                                 } else if app.view == View::Integrations {
                                     if let Some(intg) = app
                                         .selected_integration
@@ -6206,67 +5373,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 }
                                             }
                                         });
-                                    }
-                                } else if app.view == View::Knowledge {
-                                    if let Some(k) =
-                                        app.selected_knowledge.and_then(|i| app.knowledge.get(i))
-                                    {
-                                        let k_id = k.id;
-                                        let api = api.clone();
-                                        let tx = tx.clone();
-                                        let pid = app.current_project;
-                                        tokio::spawn(async move {
-                                            if let Err(e) = api.delete_knowledge(k_id).await {
-                                                let _ = tx
-                                                    .send(ApiMsg::Error(format!("Delete: {e}")))
-                                                    .await;
-                                            } else if let Some(pid) = pid {
-                                                if let Ok(knowledge) = api.list_knowledge(pid).await
-                                                {
-                                                    let _ =
-                                                        tx.send(ApiMsg::Knowledge(knowledge)).await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                } else if app.view == View::Team {
-                                    if app.team_focus == 0 {
-                                        // Delete role
-                                        if let Some(role) =
-                                            app.selected_role.and_then(|i| app.roles.get(i))
-                                        {
-                                            let role_id = role.id;
-                                            let api = api.clone();
-                                            let tx = tx.clone();
-                                            tokio::spawn(async move {
-                                                if let Err(e) = api.delete_role(role_id).await {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!("Delete: {e}")))
-                                                        .await;
-                                                } else if let Ok(roles) = api.list_roles().await {
-                                                    let _ = tx.send(ApiMsg::Roles(roles)).await;
-                                                }
-                                            });
-                                        }
-                                    } else if app.team_focus == 1 {
-                                        // Delete member
-                                        if let Some(member) =
-                                            app.selected_member.and_then(|i| app.members.get(i))
-                                        {
-                                            let member_id = member.id;
-                                            let api = api.clone();
-                                            let tx = tx.clone();
-                                            tokio::spawn(async move {
-                                                if let Err(e) = api.delete_member(member_id).await {
-                                                    let _ = tx
-                                                        .send(ApiMsg::Error(format!("Delete: {e}")))
-                                                        .await;
-                                                } else if let Ok(members) = api.list_members().await
-                                                {
-                                                    let _ = tx.send(ApiMsg::Members(members)).await;
-                                                }
-                                            });
-                                        }
                                     }
                                 } else if app.view == View::Integrations {
                                     if let Some(intg) = app
