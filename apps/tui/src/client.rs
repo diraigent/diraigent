@@ -1919,12 +1919,17 @@ impl ApiClient {
         &self,
         project_id: Uuid,
         messages: &[ChatMessage],
+        model: Option<&str>,
         tx: &tokio::sync::mpsc::Sender<super::ApiMsg>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let mut body = serde_json::json!({"messages": messages});
+        if let Some(m) = model {
+            body["model"] = serde_json::json!(m);
+        }
         let req = self
             .client
             .post(format!("{}/{}/chat", self.base_url, project_id))
-            .json(&serde_json::json!({"messages": messages}));
+            .json(&body);
         let resp = self.auth(req).send().await?.error_for_status()?;
 
         // Read the body incrementally via chunk()

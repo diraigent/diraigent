@@ -898,7 +898,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     View::Integrations => "[n]New [e]Edit [a]Access [D]Delete",
                     View::Webhooks => "[n]New [e]Edit [d]Deliveries [t]Test [D]Delete",
                     View::Logs => "[/]Filter [T]Tail [Y]Yank",
-                    View::Chat => "[i]Type",
+                    View::Chat => "[i]Type [m]Model",
                     _ => "",
                 };
                 if !action_hint.is_empty() {
@@ -4478,8 +4478,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     if let Some(pid) = app.current_project {
                                         let api = api.clone();
                                         let tx = tx.clone();
+                                        let model = app::CHAT_MODELS
+                                            .get(app.chat_model_index)
+                                            .copied()
+                                            .unwrap_or("sonnet")
+                                            .to_string();
                                         tokio::spawn(async move {
-                                            match api.send_chat_stream(pid, &messages, &tx).await {
+                                            match api
+                                                .send_chat_stream(pid, &messages, Some(&model), &tx)
+                                                .await
+                                            {
                                                 Ok(()) => {
                                                     let _ = tx.send(ApiMsg::ChatResponse).await;
                                                 }
@@ -6036,6 +6044,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             KeyCode::Char('i') => {
                                 if app.view == View::Chat {
                                     app.modal = Modal::ChatInput;
+                                }
+                            }
+                            // m = cycle chat model
+                            KeyCode::Char('m') => {
+                                if app.view == View::Chat {
+                                    app.chat_model_index =
+                                        (app.chat_model_index + 1) % app::CHAT_MODELS.len();
                                 }
                             }
                             KeyCode::Char('w') => {}

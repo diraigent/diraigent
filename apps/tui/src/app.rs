@@ -367,6 +367,8 @@ impl Default for WorkForm {
     }
 }
 
+pub const CHAT_MODELS: &[&str] = &["sonnet", "opus", "haiku"];
+
 pub const OBSERVATION_KINDS: &[&str] = &[
     "insight",
     "risk",
@@ -596,6 +598,7 @@ pub struct App {
     pub chat_input: String,
     pub chat_streaming: bool,
     pub chat_scroll: u16,
+    pub chat_model_index: usize, // index into CHAT_MODELS
 
     // Source browser
     pub source_entries: Vec<TreeEntry>,
@@ -730,6 +733,7 @@ impl App {
             chat_input: String::new(),
             chat_streaming: false,
             chat_scroll: 0,
+            chat_model_index: 0, // default to "sonnet"
             source_entries: vec![],
             source_current_path: String::new(),
             source_selected: None,
