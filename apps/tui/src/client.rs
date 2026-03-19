@@ -98,15 +98,6 @@ pub struct Agent {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct KnowledgeEntry {
-    pub id: Uuid,
-    pub title: String,
-    pub category: Option<String>,
-    pub content: Option<String>,
-    pub tags: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Decision {
     pub id: Uuid,
     pub title: String,
@@ -258,29 +249,6 @@ pub struct Integration {
     pub capabilities: Option<Vec<String>>,
     #[serde(default)]
     pub enabled: bool,
-    #[serde(default)]
-    pub created_at: Option<String>,
-    #[serde(default)]
-    pub updated_at: Option<String>,
-}
-
-// ── Verification types ────────────────────────────────────
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Verification {
-    pub id: Uuid,
-    #[serde(default)]
-    pub task_id: Option<Uuid>,
-    #[serde(default)]
-    pub project_id: Option<Uuid>,
-    pub kind: String,
-    pub status: String,
-    pub title: String,
-    #[serde(default)]
-    pub detail: Option<String>,
-    #[serde(default)]
-    pub evidence: Option<serde_json::Value>,
-    #[serde(default)]
-    pub created_by_agent_id: Option<Uuid>,
     #[serde(default)]
     pub created_at: Option<String>,
     #[serde(default)]
@@ -556,76 +524,6 @@ pub struct WebhookDelivery {
     pub attempt_number: i32,
 }
 
-// ── Step Template types ──────────────────────────────────────
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct StepTemplate {
-    pub id: Uuid,
-    #[serde(default)]
-    pub tenant_id: Option<Uuid>,
-    #[serde(default)]
-    pub name: String,
-    #[serde(default)]
-    pub description: Option<String>,
-    #[serde(default)]
-    pub model: Option<String>,
-    #[serde(default)]
-    pub budget: Option<f64>,
-    #[serde(default)]
-    pub allowed_tools: Option<String>,
-    #[serde(default)]
-    pub context_level: Option<String>,
-    #[serde(default)]
-    pub on_complete: Option<String>,
-    #[serde(default)]
-    pub retriable: Option<bool>,
-    #[serde(default)]
-    pub max_cycles: Option<i32>,
-    #[serde(default)]
-    pub timeout_minutes: Option<i32>,
-    #[serde(default)]
-    pub mcp_servers: Option<serde_json::Value>,
-    #[serde(default)]
-    pub agents: Option<serde_json::Value>,
-    #[serde(default)]
-    pub agent: Option<String>,
-    #[serde(default)]
-    pub settings: Option<serde_json::Value>,
-    #[serde(default)]
-    pub env: Option<serde_json::Value>,
-    #[serde(default)]
-    pub vars: Option<serde_json::Value>,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    #[serde(default)]
-    pub metadata: serde_json::Value,
-    #[serde(default)]
-    pub created_by: Option<Uuid>,
-    #[serde(default)]
-    pub created_at: Option<String>,
-    #[serde(default)]
-    pub updated_at: Option<String>,
-}
-
-// ── Task Log types ───────────────────────────────────────────
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct TaskLog {
-    pub id: Uuid,
-    #[serde(default)]
-    pub task_id: Option<Uuid>,
-    #[serde(default)]
-    pub project_id: Option<Uuid>,
-    #[serde(default)]
-    pub agent_id: Option<Uuid>,
-    #[serde(default)]
-    pub step_name: String,
-    #[serde(default)]
-    pub content: Option<String>,
-    #[serde(default)]
-    pub metadata: serde_json::Value,
-    #[serde(default)]
-    pub created_at: Option<String>,
-}
-
 // ── Metrics types ────────────────────────────────────────────
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProjectMetrics {
@@ -891,36 +789,21 @@ impl ApiClient {
         resp.json().await
     }
 
-    pub async fn post_comment(&self, task_id: Uuid, content: &str) -> Result<(), reqwest::Error> {
-        let req = self
-            .client
-            .post(format!("{}/tasks/{}/comments", self.base_url, task_id))
-            .json(&serde_json::json!({"content": content}));
-        self.auth(req).send().await?.error_for_status()?;
-        Ok(())
-    }
-
-    pub async fn transition_task(&self, task_id: Uuid, state: &str) -> Result<(), reqwest::Error> {
-        let req = self
-            .client
-            .post(format!("{}/tasks/{}/transition", self.base_url, task_id))
-            .json(&serde_json::json!({"state": state}));
-        self.auth(req).send().await?.error_for_status()?;
-        Ok(())
-    }
-
-    pub async fn post_update(
+    pub async fn update_task(
         &self,
         task_id: Uuid,
-        content: &str,
-        kind: &str,
-    ) -> Result<(), reqwest::Error> {
+        body: serde_json::Value,
+    ) -> Result<Task, reqwest::Error> {
         let req = self
             .client
-            .post(format!("{}/tasks/{}/updates", self.base_url, task_id))
-            .json(&serde_json::json!({"content": content, "kind": kind}));
-        self.auth(req).send().await?.error_for_status()?;
-        Ok(())
+            .put(format!("{}/tasks/{}", self.base_url, task_id));
+        let resp = self
+            .auth(req)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+        resp.json().await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -954,23 +837,6 @@ impl ApiClient {
         resp.json().await
     }
 
-    pub async fn update_task(
-        &self,
-        task_id: Uuid,
-        body: serde_json::Value,
-    ) -> Result<Task, reqwest::Error> {
-        let req = self
-            .client
-            .put(format!("{}/tasks/{}", self.base_url, task_id));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
-    }
-
     pub async fn list_subtasks(&self, task_id: Uuid) -> Result<Vec<Task>, reqwest::Error> {
         let req = self
             .client
@@ -985,17 +851,6 @@ impl ApiClient {
         resp.json().await
     }
 
-    pub async fn list_knowledge(
-        &self,
-        project_id: Uuid,
-    ) -> Result<Vec<KnowledgeEntry>, reqwest::Error> {
-        let req = self
-            .client
-            .get(format!("{}/{}/knowledge", self.base_url, project_id));
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
     pub async fn list_decisions(&self, project_id: Uuid) -> Result<Vec<Decision>, reqwest::Error> {
         let req = self
             .client
@@ -1006,11 +861,53 @@ impl ApiClient {
 
     // ── Work operations ──────────────────────────────────────
 
-    pub async fn list_work(&self, project_id: Uuid) -> Result<Vec<Work>, reqwest::Error> {
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_work(
+        &self,
+        project_id: Uuid,
+        title: &str,
+        description: &str,
+        work_type: &str,
+        priority: i32,
+        parent_work_id: Option<Uuid>,
+        auto_status: bool,
+    ) -> Result<Work, reqwest::Error> {
+        let mut body = serde_json::json!({
+            "title": title,
+            "description": description,
+            "work_type": work_type,
+            "priority": priority,
+            "auto_status": auto_status,
+        });
+        if let Some(pid) = parent_work_id {
+            body["parent_work_id"] = serde_json::json!(pid);
+        }
         let req = self
             .client
-            .get(format!("{}/{}/work", self.base_url, project_id));
-        let resp = self.auth(req).send().await?.error_for_status()?;
+            .post(format!("{}/{}/work", self.base_url, project_id));
+        let resp = self
+            .auth(req)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+        resp.json().await
+    }
+
+    pub async fn create_work_comment(
+        &self,
+        work_id: Uuid,
+        body: serde_json::Value,
+    ) -> Result<WorkComment, reqwest::Error> {
+        let req = self
+            .client
+            .post(format!("{}/work/{}/comments", self.base_url, work_id));
+        let resp = self
+            .auth(req)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
         resp.json().await
     }
 
@@ -1066,38 +963,6 @@ impl ApiClient {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn create_work(
-        &self,
-        project_id: Uuid,
-        title: &str,
-        description: &str,
-        work_type: &str,
-        priority: i32,
-        parent_work_id: Option<Uuid>,
-        auto_status: bool,
-    ) -> Result<Work, reqwest::Error> {
-        let mut body = serde_json::json!({
-            "title": title,
-            "description": description,
-            "work_type": work_type,
-            "priority": priority,
-            "auto_status": auto_status,
-        });
-        if let Some(pid) = parent_work_id {
-            body["parent_work_id"] = serde_json::json!(pid);
-        }
-        let req = self
-            .client
-            .post(format!("{}/{}/work", self.base_url, project_id));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
-    }
-
     pub async fn update_work(
         &self,
         work_id: Uuid,
@@ -1109,24 +974,6 @@ impl ApiClient {
         let resp = self
             .auth(req)
             .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn activate_work(
-        &self,
-        project_id: Uuid,
-        work_id: Uuid,
-    ) -> Result<Work, reqwest::Error> {
-        let req = self.client.post(format!(
-            "{}/{}/work/{}/activate",
-            self.base_url, project_id, work_id
-        ));
-        let resp = self
-            .auth(req)
-            .json(&serde_json::json!({}))
             .send()
             .await?
             .error_for_status()?;
@@ -1236,23 +1083,6 @@ impl ApiClient {
 
     // ── Knowledge/Decision create & edit operations ─────────────────────
 
-    pub async fn create_knowledge(
-        &self,
-        project_id: Uuid,
-        body: serde_json::Value,
-    ) -> Result<KnowledgeEntry, reqwest::Error> {
-        let req = self
-            .client
-            .post(format!("{}/{}/knowledge", self.base_url, project_id));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
-    }
-
     pub async fn create_decision(
         &self,
         project_id: Uuid,
@@ -1268,30 +1098,6 @@ impl ApiClient {
             .await?
             .error_for_status()?;
         resp.json().await
-    }
-
-    pub async fn update_knowledge(
-        &self,
-        id: Uuid,
-        body: serde_json::Value,
-    ) -> Result<(), reqwest::Error> {
-        let req = self
-            .client
-            .put(format!("{}/knowledge/{}", self.base_url, id));
-        self.auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        Ok(())
-    }
-
-    pub async fn delete_knowledge(&self, id: Uuid) -> Result<(), reqwest::Error> {
-        let req = self
-            .client
-            .delete(format!("{}/knowledge/{}", self.base_url, id));
-        self.auth(req).send().await?.error_for_status()?;
-        Ok(())
     }
 
     pub async fn update_decision(
@@ -1340,19 +1146,6 @@ impl ApiClient {
             .client
             .post(format!("{}/tasks/{}/dependencies", self.base_url, task_id))
             .json(&serde_json::json!({"depends_on": depends_on}));
-        self.auth(req).send().await?.error_for_status()?;
-        Ok(())
-    }
-
-    pub async fn remove_dependency(
-        &self,
-        task_id: Uuid,
-        dep_id: Uuid,
-    ) -> Result<(), reqwest::Error> {
-        let req = self.client.delete(format!(
-            "{}/tasks/{}/dependencies/{}",
-            self.base_url, task_id, dep_id
-        ));
         self.auth(req).send().await?.error_for_status()?;
         Ok(())
     }
@@ -1441,77 +1234,6 @@ impl ApiClient {
         Ok(())
     }
 
-    // ── Verification operations ────────────────────────────────
-
-    pub async fn list_verifications(
-        &self,
-        project_id: Uuid,
-        task_id: Option<Uuid>,
-        kind: Option<&str>,
-        status: Option<&str>,
-        limit: u32,
-        offset: u32,
-    ) -> Result<Vec<Verification>, reqwest::Error> {
-        let mut url = format!(
-            "{}/{}/verifications?limit={}&offset={}",
-            self.base_url, project_id, limit, offset,
-        );
-        if let Some(tid) = task_id {
-            url.push_str(&format!("&task_id={}", tid));
-        }
-        if let Some(k) = kind {
-            url.push_str(&format!("&kind={}", urlencoding::encode(k)));
-        }
-        if let Some(s) = status {
-            url.push_str(&format!("&status={}", urlencoding::encode(s)));
-        }
-        let req = self.client.get(&url);
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn get_verification(&self, id: Uuid) -> Result<Verification, reqwest::Error> {
-        let req = self
-            .client
-            .get(format!("{}/verifications/{}", self.base_url, id));
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn create_verification(
-        &self,
-        project_id: Uuid,
-        body: serde_json::Value,
-    ) -> Result<Verification, reqwest::Error> {
-        let req = self
-            .client
-            .post(format!("{}/{}/verifications", self.base_url, project_id));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn update_verification(
-        &self,
-        id: Uuid,
-        body: serde_json::Value,
-    ) -> Result<Verification, reqwest::Error> {
-        let req = self
-            .client
-            .put(format!("{}/verifications/{}", self.base_url, id));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
-    }
-
     // ── Audit operations ──────────────────────────────────────
 
     pub async fn list_audit(&self, project_id: Uuid) -> Result<Vec<AuditEntry>, reqwest::Error> {
@@ -1556,17 +1278,6 @@ impl ApiClient {
         resp.json().await
     }
 
-    pub async fn list_log_label_values(
-        &self,
-        label: &str,
-    ) -> Result<LokiLabelsResponse, reqwest::Error> {
-        let req = self
-            .client
-            .get(format!("{}/logs/labels/{}/values", self.base_url, label));
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
     pub async fn entity_history(
         &self,
         entity_type: &str,
@@ -1580,90 +1291,6 @@ impl ApiClient {
         resp.json().await
     }
 
-    // ── Task management operations ───────────────────────────
-
-    pub async fn claim_task(
-        &self,
-        task_id: Uuid,
-        agent_id: Option<Uuid>,
-    ) -> Result<Task, reqwest::Error> {
-        let mut body = serde_json::json!({});
-        if let Some(aid) = agent_id {
-            body["agent_id"] = serde_json::json!(aid);
-        }
-        let req = self
-            .client
-            .post(format!("{}/tasks/{}/claim", self.base_url, task_id))
-            .json(&body);
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn release_task(&self, task_id: Uuid) -> Result<Task, reqwest::Error> {
-        let req = self
-            .client
-            .post(format!("{}/tasks/{}/release", self.base_url, task_id))
-            .json(&serde_json::json!({}));
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn delegate_task(
-        &self,
-        task_id: Uuid,
-        agent_id: Option<Uuid>,
-        role_id: Option<Uuid>,
-    ) -> Result<Task, reqwest::Error> {
-        let mut body = serde_json::json!({});
-        if let Some(aid) = agent_id {
-            body["agent_id"] = serde_json::json!(aid);
-        }
-        if let Some(rid) = role_id {
-            body["role_id"] = serde_json::json!(rid);
-        }
-        let req = self
-            .client
-            .post(format!("{}/tasks/{}/delegate", self.base_url, task_id))
-            .json(&body);
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
-    // ── Bulk operations ──────────────────────────────────────
-
-    pub async fn bulk_transition(
-        &self,
-        project_id: Uuid,
-        task_ids: Vec<Uuid>,
-        state: &str,
-    ) -> Result<(), reqwest::Error> {
-        let req = self
-            .client
-            .post(format!(
-                "{}/{}/tasks/bulk/transition",
-                self.base_url, project_id
-            ))
-            .json(&serde_json::json!({"task_ids": task_ids, "state": state}));
-        self.auth(req).send().await?.error_for_status()?;
-        Ok(())
-    }
-
-    pub async fn bulk_delete(
-        &self,
-        project_id: Uuid,
-        task_ids: Vec<Uuid>,
-    ) -> Result<(), reqwest::Error> {
-        let req = self
-            .client
-            .post(format!(
-                "{}/{}/tasks/bulk/delete",
-                self.base_url, project_id
-            ))
-            .json(&serde_json::json!({"task_ids": task_ids}));
-        self.auth(req).send().await?.error_for_status()?;
-        Ok(())
-    }
-
     // ── Git integration ──────────────────────────────────────
 
     pub async fn get_git_task_status(
@@ -1673,17 +1300,6 @@ impl ApiClient {
         let req = self
             .client
             .get(format!("{}/git/tasks/{}/status", self.base_url, task_id));
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn get_changed_files(
-        &self,
-        task_id: Uuid,
-    ) -> Result<Vec<ChangedFile>, reqwest::Error> {
-        let req = self
-            .client
-            .get(format!("{}/tasks/{}/changed-files", self.base_url, task_id));
         let resp = self.auth(req).send().await?.error_for_status()?;
         resp.json().await
     }
@@ -1741,19 +1357,6 @@ impl ApiClient {
             .client
             .post(format!("{}/{}/git/push", self.base_url, project_id))
             .json(&serde_json::json!({"branch": branch}));
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn revert_task(
-        &self,
-        project_id: Uuid,
-        task_id: Uuid,
-    ) -> Result<PushResponse, reqwest::Error> {
-        let req = self.client.post(format!(
-            "{}/{}/git/revert-task/{}",
-            self.base_url, project_id, task_id
-        ));
         let resp = self.auth(req).send().await?.error_for_status()?;
         resp.json().await
     }
@@ -1893,52 +1496,12 @@ impl ApiClient {
         resp.json().await
     }
 
-    pub async fn get_report(&self, id: Uuid) -> Result<Report, reqwest::Error> {
-        let req = self.client.get(format!("{}/reports/{}", self.base_url, id));
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn update_report(
-        &self,
-        id: Uuid,
-        body: serde_json::Value,
-    ) -> Result<Report, reqwest::Error> {
-        let req = self.client.put(format!("{}/reports/{}", self.base_url, id));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
-    }
-
     pub async fn delete_report(&self, id: Uuid) -> Result<(), reqwest::Error> {
         let req = self
             .client
             .delete(format!("{}/reports/{}", self.base_url, id));
         self.auth(req).send().await?.error_for_status()?;
         Ok(())
-    }
-
-    pub async fn complete_report(
-        &self,
-        project_id: Uuid,
-        id: Uuid,
-        body: serde_json::Value,
-    ) -> Result<Report, reqwest::Error> {
-        let req = self.client.post(format!(
-            "{}/{}/reports/{}/complete",
-            self.base_url, project_id, id
-        ));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
     }
 
     // ── Event operations ────────────────────────────────────────
@@ -2065,125 +1628,7 @@ impl ApiClient {
 
     // ── Step Template operations ────────────────────────────────
 
-    pub async fn list_step_templates(
-        &self,
-        project_id: Uuid,
-    ) -> Result<Vec<StepTemplate>, reqwest::Error> {
-        let req = self
-            .client
-            .get(format!("{}/{}/step-templates", self.base_url, project_id));
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn create_step_template(
-        &self,
-        project_id: Uuid,
-        body: serde_json::Value,
-    ) -> Result<StepTemplate, reqwest::Error> {
-        let req = self
-            .client
-            .post(format!("{}/{}/step-templates", self.base_url, project_id));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn update_step_template(
-        &self,
-        project_id: Uuid,
-        id: Uuid,
-        body: serde_json::Value,
-    ) -> Result<StepTemplate, reqwest::Error> {
-        let req = self.client.put(format!(
-            "{}/{}/step-templates/{}",
-            self.base_url, project_id, id
-        ));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn delete_step_template(
-        &self,
-        project_id: Uuid,
-        id: Uuid,
-    ) -> Result<(), reqwest::Error> {
-        let req = self.client.delete(format!(
-            "{}/{}/step-templates/{}",
-            self.base_url, project_id, id
-        ));
-        self.auth(req).send().await?.error_for_status()?;
-        Ok(())
-    }
-
-    pub async fn fork_step_template(
-        &self,
-        project_id: Uuid,
-        id: Uuid,
-    ) -> Result<StepTemplate, reqwest::Error> {
-        let req = self.client.post(format!(
-            "{}/{}/step-templates/{}/fork",
-            self.base_url, project_id, id
-        ));
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
     // ── Task Log operations ─────────────────────────────────────
-
-    pub async fn list_task_logs(
-        &self,
-        project_id: Uuid,
-        task_id: Option<Uuid>,
-    ) -> Result<Vec<TaskLog>, reqwest::Error> {
-        let mut url = format!("{}/{}/task-logs", self.base_url, project_id);
-        if let Some(tid) = task_id {
-            url.push_str(&format!("?task_id={}", tid));
-        }
-        let req = self.client.get(&url);
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        let body: serde_json::Value = resp.json().await?;
-        Ok(serde_json::from_value(
-            body.get("data")
-                .cloned()
-                .unwrap_or(serde_json::Value::Array(vec![])),
-        )
-        .unwrap_or_default())
-    }
-
-    pub async fn create_task_log(
-        &self,
-        project_id: Uuid,
-        body: serde_json::Value,
-    ) -> Result<TaskLog, reqwest::Error> {
-        let req = self
-            .client
-            .post(format!("{}/{}/task-logs", self.base_url, project_id));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn get_task_log(&self, id: Uuid) -> Result<TaskLog, reqwest::Error> {
-        let req = self
-            .client
-            .get(format!("{}/task-logs/{}", self.base_url, id));
-        let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
 
     // ── Metrics operations ──────────────────────────────────────
 
@@ -2211,23 +1656,6 @@ impl ApiClient {
             .client
             .get(format!("{}/work/{}/comments", self.base_url, work_id));
         let resp = self.auth(req).send().await?.error_for_status()?;
-        resp.json().await
-    }
-
-    pub async fn create_work_comment(
-        &self,
-        work_id: Uuid,
-        body: serde_json::Value,
-    ) -> Result<WorkComment, reqwest::Error> {
-        let req = self
-            .client
-            .post(format!("{}/work/{}/comments", self.base_url, work_id));
-        let resp = self
-            .auth(req)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
         resp.json().await
     }
 
