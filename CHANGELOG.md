@@ -1,5 +1,20 @@
 # Changelog
 
+## v20260319-1103 (2026-03-19)
+
+### Added
+- **Web**: Logout page with session cleanup
+
+### Changed
+- **TUI**: Simplified view layout and reordered navigation
+- **Web**: Streamlined dashboard view
+
+### Removed
+- **API**: Removed unused query methods from tasks and work repositories
+- **TUI**: Removed dead code and redundant imports
+
+---
+
 
 ## v20260318-2155 (2026-03-18)
 

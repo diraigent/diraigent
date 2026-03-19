@@ -4391,58 +4391,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 app.detail_scroll = 0;
                             }
                             KeyCode::Char('2') => {
-                                app.view = View::Decisions;
+                                app.view = View::Dashboard;
                                 app.detail_scroll = 0;
                             }
                             KeyCode::Char('3') => {
-                                app.view = View::Dashboard;
+                                app.view = View::Decisions;
                                 app.detail_scroll = 0;
-                                if let Some(pid) = app.current_project {
-                                    let api2 = api.clone();
-                                    let tx2 = tx.clone();
-                                    tokio::spawn(async move {
-                                        if let Ok(m) = api2.get_project_metrics(pid, None).await {
-                                            let _ = tx2.send(ApiMsg::DashboardMetrics(m)).await;
-                                        }
-                                    });
-                                    let api3 = api.clone();
-                                    let tx3 = tx.clone();
-                                    tokio::spawn(async move {
-                                        if let Ok(ev) = api3.list_recent_events(pid).await {
-                                            let _ = tx3.send(ApiMsg::DashboardEvents(ev)).await;
-                                        }
-                                    });
-                                }
                             }
                             KeyCode::Char('4') => {
-                                app.view = View::Agents;
+                                app.view = View::Observations;
                                 app.detail_scroll = 0;
                             }
                             KeyCode::Char('5') => {
-                                app.view = View::Observations;
+                                app.view = View::Agents;
                                 app.detail_scroll = 0;
                             }
                             // 'l' — Logs view, except in views where 'l' is an action (Work).
                             KeyCode::Home => {
-                                // Home key is an alias for Dashboard (primary: '3')
+                                // Home key is an alias for Dashboard (primary: '2')
                                 app.view = View::Dashboard;
                                 app.detail_scroll = 0;
-                                if let Some(pid) = app.current_project {
-                                    let api2 = api.clone();
-                                    let tx2 = tx.clone();
-                                    tokio::spawn(async move {
-                                        if let Ok(m) = api2.get_project_metrics(pid, None).await {
-                                            let _ = tx2.send(ApiMsg::DashboardMetrics(m)).await;
-                                        }
-                                    });
-                                    let api3 = api.clone();
-                                    let tx3 = tx.clone();
-                                    tokio::spawn(async move {
-                                        if let Ok(ev) = api3.list_recent_events(pid).await {
-                                            let _ = tx3.send(ApiMsg::DashboardEvents(ev)).await;
-                                        }
-                                    });
-                                }
                             }
                             KeyCode::Char('A') => {
                                 app.view = View::Audit;

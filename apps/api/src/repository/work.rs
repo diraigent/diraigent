@@ -452,14 +452,6 @@ pub async fn list_work_tasks(
     Ok(tasks)
 }
 
-pub async fn count_work_tasks(pool: &PgPool, work_id: Uuid) -> Result<i64, AppError> {
-    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM diraigent.task_work WHERE work_id = $1")
-        .bind(work_id)
-        .fetch_one(pool)
-        .await?;
-    Ok(row.0)
-}
-
 pub async fn bulk_link_tasks(
     pool: &PgPool,
     work_id: Uuid,
@@ -577,20 +569,6 @@ pub async fn list_work_comments(
     .await?;
 
     Ok(comments)
-}
-
-pub async fn list_works_for_task(pool: &PgPool, task_id: Uuid) -> Result<Vec<Work>, AppError> {
-    let works = sqlx::query_as::<_, Work>(
-        "SELECT w.* FROM diraigent.work w
-         JOIN diraigent.task_work tw ON tw.work_id = w.id
-         WHERE tw.task_id = $1
-         ORDER BY w.sort_order ASC, w.created_at ASC",
-    )
-    .bind(task_id)
-    .fetch_all(pool)
-    .await?;
-
-    Ok(works)
 }
 
 pub async fn list_auto_status_work_ids_for_task(
