@@ -12,6 +12,7 @@ import {
 } from '../../core/services/verifications-api.service';
 import { TasksApiService, SpTask } from '../../core/services/tasks-api.service';
 import { CrudFeatureBase } from '../../shared/crud-feature-base';
+import { ModalWrapperComponent } from '../../shared/components/modal-wrapper/modal-wrapper';
 import {
   VERIFICATION_STATUS_COLORS, VERIFICATION_KIND_COLORS,
 } from '../../shared/ui-constants';
@@ -25,7 +26,7 @@ const KIND_COLORS = VERIFICATION_KIND_COLORS;
 @Component({
   selector: 'app-verifications',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, DatePipe, JsonPipe, SlicePipe],
+  imports: [TranslocoModule, FormsModule, DatePipe, JsonPipe, SlicePipe, ModalWrapperComponent],
   template: `
     <div class="p-3 sm:p-6" *transloco="let t">
       <!-- Header -->
@@ -206,11 +207,7 @@ const KIND_COLORS = VERIFICATION_KIND_COLORS;
 
       <!-- Create modal -->
       @if (showForm()) {
-        <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]"
-             role="button" tabindex="0" aria-label="Close modal"
-             (click)="closeForm()" (keydown.enter)="closeForm()" (keydown.escape)="closeForm()">
-          <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
-               tabindex="-1" (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()">
+        <app-modal-wrapper (closed)="closeForm()" maxWidth="max-w-lg" [scrollable]="true">
             <h2 class="text-lg font-semibold text-text-primary mb-4">{{ t('verifications.createTitle') }}</h2>
             <div class="space-y-4">
               <div>
@@ -260,17 +257,12 @@ const KIND_COLORS = VERIFICATION_KIND_COLORS;
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </app-modal-wrapper>
       }
 
       <!-- Task preview modal -->
       @if (previewTask()) {
-        <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]"
-             role="button" tabindex="0" aria-label="Close preview"
-             (click)="closeTaskPreview()" (keydown.escape)="closeTaskPreview()">
-          <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events, @angular-eslint/template/interactive-supports-focus -->
-          <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto" (click)="$event.stopPropagation()">
+        <app-modal-wrapper (closed)="closeTaskPreview()" maxWidth="max-w-lg" [scrollable]="true">
             @if (previewTaskLoading()) {
               <p class="text-text-secondary text-sm">{{ t('common.loading') }}</p>
             } @else {
@@ -313,8 +305,7 @@ const KIND_COLORS = VERIFICATION_KIND_COLORS;
                 </button>
               </div>
             }
-          </div>
-        </div>
+        </app-modal-wrapper>
       }
     </div>
   `,

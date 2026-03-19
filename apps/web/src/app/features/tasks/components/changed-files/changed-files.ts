@@ -2,6 +2,7 @@ import { Component, input, signal, inject, OnChanges, SimpleChanges } from '@ang
 import { TranslocoModule } from '@jsverse/transloco';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { TasksApiService, ChangedFileSummary, ChangedFile } from '../../../../core/services/tasks-api.service';
+import { ModalWrapperComponent } from '../../../../shared/components/modal-wrapper/modal-wrapper';
 import * as Diff2Html from 'diff2html';
 
 const CHANGE_BADGE: Record<string, { bg: string; text: string; label: string }> = {
@@ -13,7 +14,7 @@ const CHANGE_BADGE: Record<string, { bg: string; text: string; label: string }> 
 @Component({
   selector: 'app-changed-files',
   standalone: true,
-  imports: [TranslocoModule],
+  imports: [TranslocoModule, ModalWrapperComponent],
   styles: `
     :host {
       --d2h-del-bg-color: color-mix(in srgb, var(--catppuccin-color-red) 15%, var(--color-bg));
@@ -120,13 +121,8 @@ const CHANGE_BADGE: Record<string, { bg: string; text: string; label: string }> 
 
     <!-- Diff modal -->
     @if (selectedFileId()) {
-      <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-[70]"
-           role="dialog" aria-modal="true" tabindex="-1"
-           (click)="closePanel()" (keydown.escape)="closePanel()">
-        <div class="bg-bg border border-border rounded-xl w-[95vw] max-w-7xl max-h-[90vh] flex flex-col overflow-hidden"
-             role="document"
-             (click)="$event.stopPropagation()"
-             (keydown.escape)="closePanel()">
+      <app-modal-wrapper (closed)="closePanel()" maxWidth="max-w-7xl">
+        <div class="-m-6 max-h-[calc(90vh-3rem)] flex flex-col overflow-hidden rounded-xl">
           <!-- Modal header -->
           <div class="flex items-center justify-between px-4 py-3 border-b border-border bg-surface shrink-0">
             <div class="flex items-center gap-2 min-w-0">
@@ -154,7 +150,7 @@ const CHANGE_BADGE: Record<string, { bg: string; text: string; label: string }> 
             }
           </div>
         </div>
-      </div>
+      </app-modal-wrapper>
     }
   `,
 })
