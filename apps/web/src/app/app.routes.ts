@@ -157,5 +157,9 @@ export const routes: Routes = [
     loadComponent: () => import('./features/tenant-settings/tenant-settings').then(m => m.TenantSettingsPage),
   },
   { path: 'auth/callback', component: AuthCallbackPage },
+  {
+    path: 'auth/logout',
+    loadComponent: () => import('./features/auth/pages/logout/logout').then(m => m.LogoutPage),
+  },
   { path: '**', redirectTo: '' },
 ];
