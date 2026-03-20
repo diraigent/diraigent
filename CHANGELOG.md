@@ -1,5 +1,39 @@
 # Changelog
 
+## v20260320-0041 (2026-03-20)
+
+### Added
+- **Web**: CI pipelines page with Forgejo and GitHub integration setup wizards
+- **Web**: Provider configuration UI in project settings (API keys, models, base URLs)
+- **Web**: OpenAPI/Swagger documentation UI for the Diraigent API
+- **Web**: Global keyboard shortcuts with help overlay
+- **Web**: Onboarding modal and API token management in account settings
+- **Web**: Active Work dashboard section with cross-project work items
+- **API**: Forgejo webhook integration with HMAC-SHA256 validation
+- **API**: GitHub CI integration backend with webhooks and sync
+- **API**: Multi-provider support (OpenAI, Ollama) with encrypted API key storage
+- **Orchestra**: Codebase static analyzer with dependency graphs and module summaries
+- **Orchestra**: Composite task scoring for smarter task prioritization
+- **TUI**: API token management for streamlined onboarding
+
+### Changed
+- **Web**: Merged work and tasks into a unified work view with integrated task detail
+- **Web**: Streamlined work item UI: inline title editing, editable type badge, reorganized action buttons
+- **Orchestra**: Work planning now routed through orchestra with configurable per-project providers
+- **TUI**: Simplified navigation by removing playbooks, verify, knowledge, and teams views
+
+### Fixed
+- **Web**: Light mode background, dropdown clipping, mobile horizontal scrolling
+- **Orchestra**: Deterministic graph cycle detection, merge rollback on push failure
+- **API**: Authorization checks on global provider config endpoints
+- Various UI and stability fixes
+
+### Removed
+- **TUI**: Standalone tasks, playbooks, verify, knowledge, and teams views
+- **Web**: Manual link-to-work functionality and redundant status filters
+
+---
+
 ## v20260319-1103 (2026-03-19)
 
 ### Added
