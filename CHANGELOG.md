@@ -1,5 +1,36 @@
 # Changelog
 
+## v20260320-0042 (2026-03-20)
+
+### Added
+- **API**: Multi-provider support — configure OpenAI and Ollama alongside Anthropic
+- **API**: Forgejo and GitHub CI integrations with webhook sync
+- **API**: OpenAPI/Swagger documentation endpoint
+- **API**: AI-powered work planning with task generation
+- **Orchestra**: Codebase static analyzer with dependency graphs and API surface mapping
+- **Orchestra**: Scheduled repository re-indexing via cron
+- **Orchestra**: Composite task scoring for smarter prioritization
+- **Web**: CI pipelines page with run details, filters, and auto-polling
+- **Web**: Provider configuration UI in project settings
+- **Web**: Execute and Plan & Execute actions on work items
+- **Web**: Global keyboard shortcuts with help overlay
+- **Web**: Onboarding wizard and API token management in account settings
+- **Web**: Active Work dashboard section across projects
+- **TUI**: Unified work + tasks split view with progress indicators
+
+### Changed
+- **All**: Goals renamed to Work across the entire stack
+- **TUI**: Removed playbooks, verify, knowledge, and teams views
+- **Web**: Streamlined work detail layout — inline title editing, movable type badge
+- **CI/CD**: Binaries and containers are now signed with cosign
+
+### Fixed
+- **Web**: Mobile horizontal scrolling, dropdown clipping, and light-mode background
+- **Orchestra**: Deterministic graph cycle detection, merge rollback on push failure
+- Various UI and stability fixes across Web and TUI
+
+---
+
 ## v20260320-0041 (2026-03-20)
 
 ### Added
