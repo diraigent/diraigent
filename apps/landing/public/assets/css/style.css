@@ -139,6 +139,8 @@ body {
 
 .hero-screenshot img {
   width: 100%;
+  max-width: 100%;
+  height: auto;
   display: block;
   border-radius: 16px;
   border: 1px solid var(--ctp-surface0);
@@ -395,6 +397,8 @@ body {
 
 .diff-image img {
   width: 100%;
+  max-width: 100%;
+  height: auto;
   display: block;
   border-radius: 12px;
   border: 1px solid var(--ctp-surface0);
