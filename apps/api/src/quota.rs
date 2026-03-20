@@ -121,8 +121,8 @@ async fn count_resource(
         Resource::Agents => {
             sqlx::query_as(
                 "SELECT COUNT(*) FROM diraigent.agent a
-                 JOIN diraigent.auth_user au ON a.owner_id = au.id
-                 JOIN diraigent.tenant_member tm ON au.id = tm.user_id
+                 JOIN diraigent.auth_user au ON a.owner_id = au.user_id
+                 JOIN diraigent.tenant_member tm ON au.user_id = tm.user_id
                  WHERE tm.tenant_id = $1 AND a.status != 'revoked'",
             )
             .bind(tenant_id)

@@ -3,17 +3,28 @@
  *
  * Usage:
  *   cd apps/web
- *   npx ng serve &          # start dev server
- *   npx playwright test e2e/screenshots.spec.ts
+ *   npm run e2e:landing
  *
- * Screenshots are saved to ../landing/public/assets/images/
+ * Screenshots are saved to ../landing/public/assets/images/ as both PNG and WebP.
  */
 import { test, type Page, type Route } from '@playwright/test';
+import { execSync } from 'child_process';
 import * as mock from './fixtures/mock-data';
 
 const API = 'http://localhost:8082/v1';
 const SCREENSHOT_DIR = '../landing/public/assets/images';
 const PROJECT_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+
+/** Take a PNG screenshot and convert to WebP via cwebp. */
+async function screenshot(page: Page, name: string) {
+  const png = `${SCREENSHOT_DIR}/${name}.png`;
+  await page.screenshot({ path: png, fullPage: false });
+  try {
+    execSync(`cwebp -q 80 "${png}" -o "${SCREENSHOT_DIR}/${name}.webp"`, { stdio: 'pipe' });
+  } catch {
+    console.warn(`cwebp not found — skipping WebP for ${name}`);
+  }
+}
 
 async function setupMocks(page: Page) {
   // Single catch-all route handler for all API requests.
@@ -188,30 +199,21 @@ test.describe('Landing page screenshots', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1500); // let charts render
-    await page.screenshot({
-      path: `${SCREENSHOT_DIR}/screenshot-dashboard.png`,
-      fullPage: false,
-    });
+    await screenshot(page, 'screenshot-dashboard');
   });
 
   test('goals / work', async ({ page }) => {
     await page.goto('/work');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
-    await page.screenshot({
-      path: `${SCREENSHOT_DIR}/screenshot-goals.png`,
-      fullPage: false,
-    });
+    await screenshot(page, 'screenshot-goals');
   });
 
   test('review queue', async ({ page }) => {
     await page.goto('/review');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
-    await page.screenshot({
-      path: `${SCREENSHOT_DIR}/screenshot-review.png`,
-      fullPage: false,
-    });
+    await screenshot(page, 'screenshot-review');
   });
 
   test('chat panel', async ({ page }) => {
@@ -239,10 +241,7 @@ test.describe('Landing page screenshots', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
-    await page.screenshot({
-      path: `${SCREENSHOT_DIR}/screenshot-chat.png`,
-      fullPage: false,
-    });
+    await screenshot(page, 'screenshot-chat');
   });
 
   test('playbook builder', async ({ page }) => {
@@ -250,9 +249,6 @@ test.describe('Landing page screenshots', () => {
     await page.goto('/playbooks/pb-001/edit');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
-    await page.screenshot({
-      path: `${SCREENSHOT_DIR}/screenshot-playbook.png`,
-      fullPage: false,
-    });
+    await screenshot(page, 'screenshot-playbook');
   });
 });
