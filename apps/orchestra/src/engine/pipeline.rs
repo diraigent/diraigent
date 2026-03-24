@@ -338,6 +338,175 @@ async fn resolve_step_template(api: &ProjectsApi, step: &Value) -> Value {
     }
 }
 
+/// Sync repo-based playbooks to the API for a given project.
+///
+/// Discovers YAML playbooks in `.diraigent/playbooks/` and syncs them to the API.
+/// Uses `metadata.source = "repo"` and `metadata.repo_file` for identification.
+/// Failures are non-fatal: errors are logged but do not prevent task execution.
+pub async fn sync_project_playbooks(api: &ProjectsApi, repo_root: &std::path::Path) {
+    let dir = repo_root.join(".diraigent").join("playbooks");
+    if !dir.is_dir() {
+        return; // No playbooks directory — nothing to do
+    }
+
+    // Discover YAML files
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(e) => {
+            warn!("pipeline: failed to read {}: {e}", dir.display());
+            return;
+        }
+    };
+
+    let mut yaml_paths: Vec<std::path::PathBuf> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file()
+            && path
+                .extension()
+                .is_some_and(|ext| ext == "yaml" || ext == "yml")
+        {
+            yaml_paths.push(path);
+        }
+    }
+    yaml_paths.sort();
+
+    if yaml_paths.is_empty() {
+        return;
+    }
+
+    // Parse each YAML file into a JSON value
+    let mut repo_playbooks: Vec<(String, serde_json::Value)> = Vec::new();
+    for path in &yaml_paths {
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        match std::fs::read_to_string(path) {
+            Ok(content) => {
+                // Parse YAML → serde_yaml::Value → serde_json::Value
+                match serde_yaml::from_str::<serde_yaml::Value>(&content) {
+                    Ok(yaml_val) => match serde_json::to_value(&yaml_val) {
+                        Ok(json_val) => repo_playbooks.push((name, json_val)),
+                        Err(e) => warn!(
+                            "pipeline: YAML→JSON conversion failed for {}: {e}",
+                            path.display()
+                        ),
+                    },
+                    Err(e) => warn!("pipeline: invalid YAML in {}: {e}", path.display()),
+                }
+            }
+            Err(e) => warn!("pipeline: failed to read {}: {e}", path.display()),
+        }
+    }
+
+    if repo_playbooks.is_empty() {
+        return;
+    }
+
+    // Fetch existing playbooks from the API
+    let existing = api.list_playbooks().await.unwrap_or_default();
+
+    // Index existing repo-sourced playbooks by repo_file
+    let mut repo_sourced: std::collections::HashMap<String, serde_json::Value> =
+        std::collections::HashMap::new();
+    for pb in &existing {
+        if pb["metadata"]["source"].as_str() == Some("repo")
+            && let Some(repo_file) = pb["metadata"]["repo_file"].as_str()
+        {
+            repo_sourced.insert(repo_file.to_string(), pb.clone());
+        }
+    }
+
+    let mut created = 0u32;
+    let mut updated = 0u32;
+    let mut unchanged = 0u32;
+
+    for (name, json_val) in &repo_playbooks {
+        let repo_file = format!("{name}.yaml");
+        let title = json_val["title"].as_str().unwrap_or(name);
+        let trigger_description = json_val["trigger_description"].as_str();
+        let steps = &json_val["steps"];
+        let initial_state = json_val["initial_state"].as_str().unwrap_or("ready");
+        let tags = &json_val["tags"];
+        let raw_metadata = &json_val["metadata"];
+
+        // Build metadata with source=repo and repo_file markers
+        let mut metadata = if raw_metadata.is_object() {
+            raw_metadata.clone()
+        } else {
+            serde_json::json!({})
+        };
+        if let Some(obj) = metadata.as_object_mut() {
+            obj.insert("source".to_string(), serde_json::json!("repo"));
+            obj.insert("repo_file".to_string(), serde_json::json!(repo_file));
+        }
+
+        if let Some(existing_pb) = repo_sourced.remove(&repo_file) {
+            // Check if content changed
+            let content_changed = existing_pb["title"].as_str().unwrap_or("") != title
+                || existing_pb["initial_state"].as_str().unwrap_or("ready") != initial_state
+                || existing_pb["trigger_description"].as_str() != trigger_description
+                || existing_pb["steps"] != *steps;
+
+            if content_changed {
+                let playbook_id = existing_pb["id"].as_str().unwrap_or("");
+                let body = serde_json::json!({
+                    "title": title,
+                    "trigger_description": trigger_description,
+                    "steps": steps,
+                    "tags": tags,
+                    "metadata": metadata,
+                    "initial_state": initial_state,
+                });
+                match api.update_playbook(playbook_id, &body).await {
+                    Ok(_) => {
+                        info!("pipeline: updated repo playbook '{name}' (id={playbook_id})");
+                        updated += 1;
+                    }
+                    Err(e) => warn!("pipeline: failed to update repo playbook '{name}': {e}"),
+                }
+            } else {
+                unchanged += 1;
+            }
+        } else {
+            // Create new playbook
+            let body = serde_json::json!({
+                "title": title,
+                "trigger_description": trigger_description,
+                "steps": steps,
+                "tags": tags,
+                "metadata": metadata,
+                "initial_state": initial_state,
+            });
+            match api.create_playbook(&body).await {
+                Ok(_) => {
+                    info!("pipeline: created repo playbook '{name}'");
+                    created += 1;
+                }
+                Err(e) => warn!("pipeline: failed to create repo playbook '{name}': {e}"),
+            }
+        }
+    }
+
+    // Warn about orphaned repo-sourced playbooks
+    for (repo_file, pb) in &repo_sourced {
+        let title = pb["title"].as_str().unwrap_or("unknown");
+        warn!(
+            "pipeline: API playbook '{title}' (repo_file={repo_file}) \
+             has no matching file in repo — consider removing it"
+        );
+    }
+
+    let total = created + updated + unchanged;
+    if total > 0 {
+        info!(
+            "pipeline: synced {total} repo playbook(s) ({created} created, {updated} updated, {unchanged} unchanged)"
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

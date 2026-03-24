@@ -288,6 +288,14 @@ impl ProjectsApi {
         Ok(as_array(&val))
     }
 
+    pub async fn create_playbook(&self, body: &Value) -> Result<Value> {
+        self.post("/playbooks", body).await
+    }
+
+    pub async fn update_playbook(&self, playbook_id: &str, body: &Value) -> Result<Value> {
+        self.put(&format!("/playbooks/{playbook_id}"), body).await
+    }
+
     pub async fn get_step_template(&self, template_id: &str) -> Result<Value> {
         self.get(&format!("/step-templates/{template_id}")).await
     }

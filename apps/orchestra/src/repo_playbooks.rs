@@ -7,7 +7,7 @@
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use tracing::warn;
+use tracing::{info, warn};
 
 /// A playbook definition parsed from a repo YAML file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -156,6 +156,172 @@ pub fn load_repo_playbooks(repo_root: &Path) -> Result<Vec<RepoPlaybook>> {
     }
 
     Ok(playbooks)
+}
+
+/// Result of syncing a single repo playbook to the API.
+#[derive(Debug)]
+pub enum SyncAction {
+    /// Playbook was newly created in the API.
+    Created,
+    /// Playbook was updated in the API (content changed).
+    Updated,
+    /// Playbook was unchanged, no API call needed.
+    Unchanged,
+}
+
+/// Result of syncing a single repo playbook.
+#[derive(Debug)]
+pub struct SyncResult {
+    pub name: String,
+    pub action: SyncAction,
+}
+
+/// Sync repo playbooks to the API. Creates new playbooks or updates existing ones.
+///
+/// Uses `metadata.source = "repo"` and `metadata.repo_file` to identify repo-sourced
+/// playbooks. Sync is idempotent: unchanged playbooks are skipped.
+///
+/// Orphaned API playbooks (source=repo but no matching repo file) are logged as
+/// warnings but not auto-deleted.
+pub async fn sync_repo_playbooks(
+    api: &crate::project::api::ProjectsApi,
+    repo_root: &Path,
+    _tenant_id: Option<&str>,
+) -> Result<Vec<SyncResult>> {
+    let repo_playbooks = load_repo_playbooks(repo_root)?;
+    if repo_playbooks.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Fetch existing playbooks from the API
+    let existing = api.list_playbooks().await.unwrap_or_default();
+
+    // Index existing repo-sourced playbooks by their repo_file metadata
+    let mut repo_sourced: std::collections::HashMap<String, serde_json::Value> =
+        std::collections::HashMap::new();
+    for pb in &existing {
+        if pb["metadata"]["source"].as_str() == Some("repo")
+            && let Some(repo_file) = pb["metadata"]["repo_file"].as_str()
+        {
+            repo_sourced.insert(repo_file.to_string(), pb.clone());
+        }
+    }
+
+    let mut results = Vec::with_capacity(repo_playbooks.len());
+
+    for repo_pb in &repo_playbooks {
+        let repo_file = format!("{}.yaml", repo_pb.name);
+
+        if let Some(existing_pb) = repo_sourced.remove(&repo_file) {
+            // Check if content changed by comparing key fields
+            let existing_steps = &existing_pb["steps"];
+            let existing_title = existing_pb["title"].as_str().unwrap_or("");
+            let existing_initial_state = existing_pb["initial_state"].as_str().unwrap_or("ready");
+            let existing_trigger = existing_pb["trigger_description"].as_str();
+
+            let content_changed = existing_title != repo_pb.title
+                || existing_initial_state != repo_pb.initial_state
+                || existing_trigger != repo_pb.trigger_description.as_deref()
+                || *existing_steps != repo_pb.steps;
+
+            if content_changed {
+                // Update existing playbook
+                let playbook_id = existing_pb["id"].as_str().unwrap_or("");
+                let mut metadata = repo_pb.metadata.clone();
+                if let Some(obj) = metadata.as_object_mut() {
+                    obj.insert("source".to_string(), serde_json::json!("repo"));
+                    obj.insert("repo_file".to_string(), serde_json::json!(repo_file));
+                }
+
+                let body = serde_json::json!({
+                    "title": repo_pb.title,
+                    "trigger_description": repo_pb.trigger_description,
+                    "steps": repo_pb.steps,
+                    "tags": repo_pb.tags,
+                    "metadata": metadata,
+                    "initial_state": repo_pb.initial_state,
+                });
+
+                match api.update_playbook(playbook_id, &body).await {
+                    Ok(_) => {
+                        info!(
+                            "repo_playbooks: updated '{}' (id={})",
+                            repo_pb.name, playbook_id
+                        );
+                        results.push(SyncResult {
+                            name: repo_pb.name.clone(),
+                            action: SyncAction::Updated,
+                        });
+                    }
+                    Err(e) => {
+                        warn!("repo_playbooks: failed to update '{}': {e}", repo_pb.name);
+                    }
+                }
+            } else {
+                results.push(SyncResult {
+                    name: repo_pb.name.clone(),
+                    action: SyncAction::Unchanged,
+                });
+            }
+        } else {
+            // Create new playbook
+            let mut metadata = repo_pb.metadata.clone();
+            if let Some(obj) = metadata.as_object_mut() {
+                obj.insert("source".to_string(), serde_json::json!("repo"));
+                obj.insert("repo_file".to_string(), serde_json::json!(repo_file));
+            }
+
+            let body = serde_json::json!({
+                "title": repo_pb.title,
+                "trigger_description": repo_pb.trigger_description,
+                "steps": repo_pb.steps,
+                "tags": repo_pb.tags,
+                "metadata": metadata,
+                "initial_state": repo_pb.initial_state,
+            });
+
+            match api.create_playbook(&body).await {
+                Ok(_) => {
+                    info!("repo_playbooks: created '{}'", repo_pb.name);
+                    results.push(SyncResult {
+                        name: repo_pb.name.clone(),
+                        action: SyncAction::Created,
+                    });
+                }
+                Err(e) => {
+                    warn!("repo_playbooks: failed to create '{}': {e}", repo_pb.name);
+                }
+            }
+        }
+    }
+
+    // Warn about orphaned repo-sourced playbooks (in API but no longer in repo)
+    for (repo_file, pb) in &repo_sourced {
+        let title = pb["title"].as_str().unwrap_or("unknown");
+        warn!(
+            "repo_playbooks: API playbook '{title}' (repo_file={repo_file}) \
+             has no matching file in repo — consider removing it"
+        );
+    }
+
+    let created = results
+        .iter()
+        .filter(|r| matches!(r.action, SyncAction::Created))
+        .count();
+    let updated = results
+        .iter()
+        .filter(|r| matches!(r.action, SyncAction::Updated))
+        .count();
+    let unchanged = results
+        .iter()
+        .filter(|r| matches!(r.action, SyncAction::Unchanged))
+        .count();
+    info!(
+        "repo_playbooks: synced {} playbook(s) ({created} created, {updated} updated, {unchanged} unchanged)",
+        results.len()
+    );
+
+    Ok(results)
 }
 
 #[cfg(test)]
