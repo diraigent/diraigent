@@ -12,6 +12,9 @@ final class AppState {
     let agentsService: AgentsService
     let decisionsService: DecisionsService
     let observationsService: ObservationsService
+    let workService: WorkService
+    let gitService: GitService
+    let searchService: SearchService
 
     var selectedProjectId: UUID? {
         didSet {
@@ -45,6 +48,9 @@ final class AppState {
         self.agentsService = AgentsService(apiClient: apiClient)
         self.decisionsService = DecisionsService(apiClient: apiClient)
         self.observationsService = ObservationsService(apiClient: apiClient)
+        self.workService = WorkService(apiClient: apiClient)
+        self.gitService = GitService(apiClient: apiClient)
+        self.searchService = SearchService(apiClient: apiClient)
 
         // Restore last selected project
         if let saved = UserDefaults.standard.string(forKey: Self.selectedProjectKey),
