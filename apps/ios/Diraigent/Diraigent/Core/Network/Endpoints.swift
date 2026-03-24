@@ -89,4 +89,9 @@ public enum Endpoints {
 
     static func sourceTree(_ projectId: UUID) -> String { "/\(projectId)/source/tree" }
     static func sourceBlob(_ projectId: UUID) -> String { "/\(projectId)/source/blob" }
+
+    // MARK: - Integrations
+
+    static func integrations(_ projectId: UUID) -> String { "/\(projectId)/integrations" }
+    static func integration(_ integrationId: UUID) -> String { "/integrations/\(integrationId)" }
 }

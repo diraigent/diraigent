@@ -105,6 +105,12 @@ struct MoreMenuView: View {
                 } label: {
                     Label("Source", systemImage: "filemenu.and.cursorarrow")
                 }
+
+                NavigationLink {
+                    IntegrationListView()
+                } label: {
+                    Label("Integrations", systemImage: "puzzlepiece.extension")
+                }
             }
 
             Section("App") {
