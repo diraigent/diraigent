@@ -60,6 +60,12 @@ struct MoreMenuView: View {
                 }
 
                 NavigationLink {
+                    EventListView()
+                } label: {
+                    Label("Events", systemImage: "bell")
+                }
+
+                NavigationLink {
                     GitView()
                 } label: {
                     Label("Git", systemImage: "arrow.triangle.branch")
