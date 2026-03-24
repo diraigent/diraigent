@@ -499,7 +499,15 @@ pub async fn sync_project_playbooks(api: &ProjectsApi, repo_root: &std::path::Pa
                 // Parse YAML → serde_yaml::Value → serde_json::Value
                 match serde_yaml::from_str::<serde_yaml::Value>(&content) {
                     Ok(yaml_val) => match serde_json::to_value(&yaml_val) {
-                        Ok(json_val) => repo_playbooks.push((name, json_val)),
+                        Ok(mut json_val) => {
+                            // Resolve description_file references in steps
+                            if let Some(steps) = json_val.get_mut("steps")
+                                && let Some(parent) = path.parent()
+                            {
+                                crate::repo_playbooks::resolve_description_files(steps, parent);
+                            }
+                            repo_playbooks.push((name, json_val));
+                        }
                         Err(e) => warn!(
                             "pipeline: YAML→JSON conversion failed for {}: {e}",
                             path.display()

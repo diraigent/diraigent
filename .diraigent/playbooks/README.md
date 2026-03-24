@@ -76,6 +76,7 @@ have sensible defaults inferred by the orchestra engine.
 |--------------------|----------|----------------------|-----------------------------------------------------------------------|
 | `name`             | string   | *(required)*         | Step name (e.g. `implement`, `review`, `dream`). Used as task state when claimed. |
 | `description`      | string   | —                    | Prompt/instructions for the agent. Supports `{{variable}}` placeholders (see below). |
+| `description_file` | string   | —                    | Path to a markdown file containing the step description (relative to the playbooks directory). See [Markdown Descriptions](#markdown-descriptions). |
 | `budget`           | number   | varies by step type  | Max dollar budget for this step (e.g. `12.0`).                        |
 | `model`            | string   | inherited            | Claude model override (e.g. `claude-sonnet-4-6`, `claude-opus-4-6`).  |
 | `allowed_tools`    | string   | inferred             | Tool access: `full` (all tools) or `readonly` (no writes).           |
@@ -91,6 +92,52 @@ have sensible defaults inferred by the orchestra engine.
 | `agents`           | object   | —                    | Custom sub-agent definitions passed via `--agents`.                  |
 | `agent`            | string   | —                    | Specific agent to activate via `--agent <name>`.                     |
 | `settings`         | object   | —                    | Additional Claude Code settings (skills, etc.) passed via `--settings`. |
+
+## Markdown Descriptions
+
+Instead of writing step descriptions inline in YAML, you can store them as separate
+markdown files. This is useful for long prompts, makes them easier to edit, and gives
+compatibility with standard prompt workflows.
+
+Use the `description_file` field to reference a markdown file relative to the
+`.diraigent/playbooks/` directory:
+
+```yaml
+steps:
+  - name: implement
+    description_file: steps/implement.md
+    budget: 12.0
+    allowed_tools: full
+  - name: review
+    description_file: steps/review.md
+    model: claude-sonnet-4-6
+    budget: 5.0
+    allowed_tools: readonly
+```
+
+### Directory Layout with Markdown Descriptions
+
+```
+.diraigent/
+  playbooks/
+    standard.yaml
+    steps/
+      implement.md       # step description for implement
+      review.md          # step description for review
+      dream.md           # step description for dream
+```
+
+### Rules
+
+- File paths are relative to the `.diraigent/playbooks/` directory.
+- If both `description` and `description_file` are present, `description_file` takes
+  precedence (the inline `description` is overwritten).
+- If the referenced file cannot be read, a warning is logged and the step falls back
+  to the inline `description` (if any).
+- Markdown files support the same `{{variable}}` placeholders as inline descriptions
+  (see [Template Variables](#template-variables) below).
+- Any file format is supported (`.md`, `.txt`, etc.) — the content is treated as plain
+  text and injected as the step description.
 
 ## Template Variables
 

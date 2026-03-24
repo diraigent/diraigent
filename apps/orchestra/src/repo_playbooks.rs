@@ -77,6 +77,9 @@ pub fn discover_playbooks(repo_root: &Path) -> Result<Vec<PathBuf>> {
 /// - `steps` must be a non-empty array.
 /// - Each step must have a `name` field (string).
 /// - `initial_state` must be `"ready"` or `"backlog"` (defaults to `"ready"` if omitted).
+///
+/// After parsing, resolves any `description_file` references in steps by reading
+/// the referenced files and setting the `description` field.
 pub fn parse_playbook(path: &Path) -> Result<RepoPlaybook> {
     let display_path = path.display().to_string();
 
@@ -134,7 +137,88 @@ pub fn parse_playbook(path: &Path) -> Result<RepoPlaybook> {
         }
     }
 
+    // Resolve description_file references in steps.
+    // The base directory for relative paths is the directory containing the YAML file.
+    if let Some(parent) = path.parent() {
+        resolve_description_files(&mut playbook.steps, parent);
+    }
+
     Ok(playbook)
+}
+
+/// Resolve `description_file` references in playbook steps.
+///
+/// For each step that has a `description_file` field, reads the referenced file
+/// (relative to `base_dir`) and sets the step's `description` to the file content.
+/// The `description_file` field is then removed from the step JSON.
+///
+/// This allows step descriptions to be authored as standalone markdown files,
+/// giving compatibility with standard prompt workflows:
+///
+/// ```yaml
+/// steps:
+///   - name: implement
+///     description_file: steps/implement.md
+///     budget: 12.0
+/// ```
+///
+/// If both `description` and `description_file` are present, `description_file`
+/// takes precedence and `description` is overwritten.
+///
+/// Failures (missing file, read errors) are logged as warnings and the step
+/// is left unchanged (falls back to inline `description` if present).
+pub fn resolve_description_files(steps: &mut serde_json::Value, base_dir: &Path) {
+    let steps_arr = match steps.as_array_mut() {
+        Some(arr) => arr,
+        None => return,
+    };
+
+    for step in steps_arr.iter_mut() {
+        let obj = match step.as_object_mut() {
+            Some(o) => o,
+            None => continue,
+        };
+
+        let file_ref = match obj.get("description_file").and_then(|v| v.as_str()) {
+            Some(f) => f.to_string(),
+            None => continue,
+        };
+
+        // Extract step_name as owned String to avoid borrow conflicts.
+        let step_name = obj
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let had_description = obj.contains_key("description");
+
+        let file_path = base_dir.join(&file_ref);
+        match std::fs::read_to_string(&file_path) {
+            Ok(content) => {
+                if had_description {
+                    info!(
+                        "Step '{}': description_file overrides inline description (file: {})",
+                        step_name, file_ref
+                    );
+                }
+                obj.insert(
+                    "description".to_string(),
+                    serde_json::Value::String(content),
+                );
+                obj.remove("description_file");
+                info!("Step '{}': loaded description from {}", step_name, file_ref);
+            }
+            Err(e) => {
+                warn!(
+                    "Step '{}': failed to read description_file '{}' (resolved to {}): {e}",
+                    step_name,
+                    file_ref,
+                    file_path.display()
+                );
+                // Leave step as-is; inline description (if any) will be used.
+            }
+        }
+    }
 }
 
 /// Load all playbooks from a repo's `.diraigent/playbooks/` directory.
@@ -608,5 +692,123 @@ steps:
 
         let found = find_repo_playbook_for_api(&playbooks, "Standard Lifecycle", None);
         assert!(found.is_none());
+    }
+
+    #[test]
+    fn parse_resolves_description_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let playbooks_dir = tmp.path().join(".diraigent/playbooks");
+        fs::create_dir_all(playbooks_dir.join("steps")).unwrap();
+
+        // Write a markdown description file
+        fs::write(
+            playbooks_dir.join("steps/implement.md"),
+            "## Your Job\n\nDo the implementation work.\n",
+        )
+        .unwrap();
+
+        let yaml = r#"
+title: With Markdown
+steps:
+  - name: implement
+    description_file: steps/implement.md
+    budget: 12.0
+"#;
+        fs::write(playbooks_dir.join("with-md.yaml"), yaml).unwrap();
+
+        let path = playbooks_dir.join("with-md.yaml");
+        let pb = parse_playbook(&path).unwrap();
+        let steps = pb.steps.as_array().unwrap();
+        assert_eq!(steps.len(), 1);
+        assert_eq!(
+            steps[0]["description"].as_str().unwrap(),
+            "## Your Job\n\nDo the implementation work.\n"
+        );
+        // description_file should be removed after resolution
+        assert!(steps[0].get("description_file").is_none());
+    }
+
+    #[test]
+    fn parse_description_file_overrides_inline() {
+        let tmp = tempfile::tempdir().unwrap();
+        let playbooks_dir = tmp.path().join(".diraigent/playbooks");
+        fs::create_dir_all(&playbooks_dir).unwrap();
+
+        // Write a markdown description file
+        fs::write(playbooks_dir.join("review.md"), "Review from file\n").unwrap();
+
+        let yaml = r#"
+title: Override Test
+steps:
+  - name: review
+    description: "Inline description that should be overridden"
+    description_file: review.md
+    budget: 5.0
+"#;
+        fs::write(playbooks_dir.join("override.yaml"), yaml).unwrap();
+
+        let path = playbooks_dir.join("override.yaml");
+        let pb = parse_playbook(&path).unwrap();
+        let steps = pb.steps.as_array().unwrap();
+        // description_file should win over inline description
+        assert_eq!(
+            steps[0]["description"].as_str().unwrap(),
+            "Review from file\n"
+        );
+    }
+
+    #[test]
+    fn parse_description_file_missing_falls_back() {
+        let tmp = tempfile::tempdir().unwrap();
+        let playbooks_dir = tmp.path().join(".diraigent/playbooks");
+        fs::create_dir_all(&playbooks_dir).unwrap();
+
+        let yaml = r#"
+title: Missing File
+steps:
+  - name: implement
+    description: "Fallback inline description"
+    description_file: nonexistent.md
+"#;
+        fs::write(playbooks_dir.join("fallback.yaml"), yaml).unwrap();
+
+        let path = playbooks_dir.join("fallback.yaml");
+        let pb = parse_playbook(&path).unwrap();
+        let steps = pb.steps.as_array().unwrap();
+        // File not found, so inline description should remain
+        assert_eq!(
+            steps[0]["description"].as_str().unwrap(),
+            "Fallback inline description"
+        );
+        // description_file should still be present since resolution failed
+        assert!(steps[0].get("description_file").is_some());
+    }
+
+    #[test]
+    fn resolve_description_files_no_steps() {
+        // Should not panic when steps is not an array
+        let mut steps = serde_json::json!("not an array");
+        resolve_description_files(&mut steps, Path::new("/tmp"));
+        assert_eq!(steps, serde_json::json!("not an array"));
+    }
+
+    #[test]
+    fn resolve_description_files_mixed_steps() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("step1.md"), "Content from file").unwrap();
+
+        let mut steps = serde_json::json!([
+            { "name": "implement", "description_file": "step1.md" },
+            { "name": "review", "description": "Inline only" }
+        ]);
+
+        resolve_description_files(&mut steps, tmp.path());
+
+        let arr = steps.as_array().unwrap();
+        // First step: description loaded from file
+        assert_eq!(arr[0]["description"].as_str().unwrap(), "Content from file");
+        assert!(arr[0].get("description_file").is_none());
+        // Second step: unchanged
+        assert_eq!(arr[1]["description"].as_str().unwrap(), "Inline only");
     }
 }
