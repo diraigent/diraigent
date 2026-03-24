@@ -7,6 +7,7 @@ import SwiftUI
 final class AppState {
     let apiClient: APIClient
     let authService: AuthService
+    let tasksService: TasksService
     var selectedProjectId: UUID?
 
     init() {
@@ -22,6 +23,8 @@ final class AppState {
             ),
             apiClient: apiClient
         )
+
+        self.tasksService = TasksService(apiClient: apiClient)
 
         // Wire up 401 handler so unauthorized responses trigger logout
         let authService = self.authService

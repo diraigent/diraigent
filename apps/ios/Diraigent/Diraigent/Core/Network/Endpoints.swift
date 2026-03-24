@@ -18,6 +18,7 @@ public enum Endpoints {
     static func taskUpdates(_ projectId: UUID, taskId: UUID) -> String { "/projects/\(projectId)/tasks/\(taskId)/updates" }
     static func taskComments(_ projectId: UUID, taskId: UUID) -> String { "/projects/\(projectId)/tasks/\(taskId)/comments" }
     static func taskDependencies(_ projectId: UUID, taskId: UUID) -> String { "/projects/\(projectId)/tasks/\(taskId)/dependencies" }
+    static func taskSubtasks(_ projectId: UUID, taskId: UUID) -> String { "/projects/\(projectId)/tasks/\(taskId)/subtasks" }
 
     // MARK: - Agents
 

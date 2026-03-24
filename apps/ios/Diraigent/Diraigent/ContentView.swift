@@ -51,16 +51,7 @@ struct MainTabView: View {
             .tabItem { Label("Projects", systemImage: "folder.fill") }
 
             NavigationStack {
-                VStack(spacing: 16) {
-                    Image(systemName: "checklist")
-                        .font(.system(size: 48))
-                        .foregroundStyle(.tint)
-                    Text("Tasks")
-                        .font(.title2.bold())
-                    Text("Coming soon")
-                        .foregroundStyle(.secondary)
-                }
-                .navigationTitle("Tasks")
+                TaskListView()
             }
             .tabItem { Label("Tasks", systemImage: "checklist") }
 
