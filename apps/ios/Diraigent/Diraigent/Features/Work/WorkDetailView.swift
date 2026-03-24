@@ -9,12 +9,21 @@ struct WorkDetailView: View {
     @State private var linkedTasks: [DgTask] = []
     @State private var progress: WorkProgress?
     @State private var isLoadingTasks = false
+    @State private var currentStatus: String?
+    @State private var isUpdatingStatus = false
+    @State private var showStatusConfirmation = false
+    @State private var pendingStatus: String?
+
+    private static let allStatuses = ["active", "achieved", "paused", "abandoned"]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DiraigentTheme.spacingLG) {
                 // Header
                 headerSection
+
+                // Status actions
+                statusActionsSection
 
                 // Progress indicator
                 if let progress {
@@ -43,7 +52,27 @@ struct WorkDetailView: View {
         }
         .navigationTitle(work.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                statusMenu
+            }
+        }
+        .alert("Change Status", isPresented: $showStatusConfirmation) {
+            Button("Cancel", role: .cancel) {
+                pendingStatus = nil
+            }
+            Button("Confirm") {
+                if let status = pendingStatus {
+                    Task { await changeStatus(to: status) }
+                }
+            }
+        } message: {
+            if let status = pendingStatus {
+                Text("Change status to \"\(status)\"?")
+            }
+        }
         .task {
+            currentStatus = work.status
             await loadLinkedData()
         }
     }
@@ -58,6 +87,96 @@ struct WorkDetailView: View {
         isLoadingTasks = false
     }
 
+    // MARK: - Status Change
+
+    private var statusMenu: some View {
+        Menu {
+            ForEach(Self.allStatuses, id: \.self) { status in
+                Button {
+                    pendingStatus = status
+                    showStatusConfirmation = true
+                } label: {
+                    Label(status.capitalized, systemImage: statusIcon(status))
+                }
+                .disabled(status == (currentStatus ?? work.status))
+            }
+        } label: {
+            if isUpdatingStatus {
+                ProgressView()
+            } else {
+                Label("Status", systemImage: "arrow.triangle.2.circlepath")
+            }
+        }
+        .disabled(isUpdatingStatus)
+    }
+
+    private var statusActionsSection: some View {
+        VStack(spacing: DiraigentTheme.spacingSM) {
+            HStack(spacing: DiraigentTheme.spacingSM) {
+                ForEach(Self.allStatuses, id: \.self) { status in
+                    let isCurrent = status == (currentStatus ?? work.status)
+                    Button {
+                        guard !isCurrent else { return }
+                        pendingStatus = status
+                        showStatusConfirmation = true
+                    } label: {
+                        Label(status.capitalized, systemImage: statusIcon(status))
+                            .font(.caption.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, DiraigentTheme.spacingSM)
+                            .background(isCurrent ? statusColor(status).opacity(0.2) : Color.secondary.opacity(0.08))
+                            .foregroundStyle(isCurrent ? statusColor(status) : .secondary)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isUpdatingStatus || isCurrent)
+                }
+            }
+        }
+    }
+
+    private func changeStatus(to newStatus: String) async {
+        guard let projectId = appState.selectedProjectId else { return }
+        isUpdatingStatus = true
+        let update = UpdateWorkRequest(
+            title: nil,
+            workType: nil,
+            status: newStatus,
+            priority: nil,
+            description: nil
+        )
+        let result = await appState.workService.updateWork(
+            projectId: projectId,
+            workId: work.id,
+            update: update
+        )
+        if result != nil {
+            currentStatus = newStatus
+        }
+        isUpdatingStatus = false
+        pendingStatus = nil
+    }
+
+    private func statusIcon(_ status: String) -> String {
+        switch status.lowercased() {
+        case "active": return "play.circle.fill"
+        case "achieved": return "checkmark.circle.fill"
+        case "paused": return "pause.circle.fill"
+        case "abandoned": return "xmark.circle.fill"
+        default: return "circle"
+        }
+    }
+
+    private func statusColor(_ status: String) -> Color {
+        switch status.lowercased() {
+        case "active": return .green
+        case "achieved": return .blue
+        case "paused": return .orange
+        case "abandoned": return .red
+        default: return .secondary
+        }
+    }
+
     // MARK: - Sections
 
     private var headerSection: some View {
@@ -69,9 +188,7 @@ struct WorkDetailView: View {
                 if let kind = work.workType {
                     WorkKindBadge(kind: kind)
                 }
-                if let status = work.status {
-                    WorkStatusBadge(status: status)
-                }
+                WorkStatusBadge(status: currentStatus ?? work.status ?? "active")
                 if let priority = work.priority {
                     PriorityIndicator(priority: priority)
                 }
