@@ -27,6 +27,11 @@ struct MainTabView: View {
             .tabItem { Label("Agents", systemImage: "cpu") }
 
             NavigationStack {
+                ChatView()
+            }
+            .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
+
+            NavigationStack {
                 MoreMenuView()
             }
             .tabItem { Label("More", systemImage: "ellipsis.circle") }

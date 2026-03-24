@@ -19,6 +19,7 @@ final class AppState {
     let eventsService: EventsService
     let auditService: AuditService
     let reportsService: ReportsService
+    let chatService: ChatService
 
     var selectedProjectId: UUID? {
         didSet {
@@ -59,6 +60,7 @@ final class AppState {
         self.eventsService = EventsService(apiClient: apiClient)
         self.auditService = AuditService(apiClient: apiClient)
         self.reportsService = ReportsService(apiClient: apiClient)
+        self.chatService = ChatService(apiClient: apiClient)
 
         // Restore last selected project
         if let saved = UserDefaults.standard.string(forKey: Self.selectedProjectKey),
