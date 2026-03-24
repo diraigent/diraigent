@@ -1,5 +1,10 @@
 import SwiftUI
 
+/// Typed navigation wrapper to avoid UUID-based navigationDestination conflicts.
+struct ObservationID: Hashable {
+    let id: UUID
+}
+
 /// List of observations with kind/severity filtering and swipe actions.
 struct ObservationListView: View {
     @Environment(AppState.self) private var appState
@@ -65,7 +70,7 @@ struct ObservationListView: View {
                     .padding(.vertical, DiraigentTheme.spacingSM)
 
                     List(filteredObservations) { observation in
-                        NavigationLink(value: observation.id) {
+                        NavigationLink(value: ObservationID(id: observation.id)) {
                             ObservationRowView(observation: observation)
                         }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -91,8 +96,8 @@ struct ObservationListView: View {
             }
         }
         .navigationTitle("Observations")
-        .navigationDestination(for: UUID.self) { obsId in
-            if let obs = observationsService.observations.first(where: { $0.id == obsId }) {
+        .navigationDestination(for: ObservationID.self) { obsId in
+            if let obs = observationsService.observations.first(where: { $0.id == obsId.id }) {
                 ObservationDetailView(observation: obs)
             }
         }

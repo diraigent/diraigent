@@ -1,5 +1,10 @@
 import SwiftUI
 
+/// Typed navigation wrapper to avoid UUID-based navigationDestination conflicts.
+struct DecisionID: Hashable {
+    let id: UUID
+}
+
 /// List of decisions with status filtering.
 struct DecisionListView: View {
     @Environment(AppState.self) private var appState
@@ -50,7 +55,7 @@ struct DecisionListView: View {
                     .padding(.vertical, DiraigentTheme.spacingSM)
 
                     List(filteredDecisions) { decision in
-                        NavigationLink(value: decision.id) {
+                        NavigationLink(value: DecisionID(id: decision.id)) {
                             DecisionRowView(decision: decision)
                         }
                     }
@@ -58,8 +63,8 @@ struct DecisionListView: View {
             }
         }
         .navigationTitle("Decisions")
-        .navigationDestination(for: UUID.self) { decisionId in
-            if let decision = decisionsService.decisions.first(where: { $0.id == decisionId }) {
+        .navigationDestination(for: DecisionID.self) { decisionId in
+            if let decision = decisionsService.decisions.first(where: { $0.id == decisionId.id }) {
                 DecisionDetailView(decision: decision)
             }
         }
