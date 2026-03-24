@@ -42,6 +42,7 @@ final class WorkService {
             workItems = result
         } catch {
             self.error = error.localizedDescription
+            print("[WorkService] fetchWork failed: \(error)")
         }
         isLoading = false
     }

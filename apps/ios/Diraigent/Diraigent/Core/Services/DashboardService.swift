@@ -45,11 +45,11 @@ final class DashboardService {
 
     private func fetchEvents(projectId: UUID) async -> [Event] {
         do {
-            let result: [Event] = try await apiClient.get(
+            let result: PaginatedResponse<Event> = try await apiClient.get(
                 Endpoints.events(projectId),
                 query: ["limit": "10"]
             )
-            return result
+            return result.data
         } catch {
             return []
         }

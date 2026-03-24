@@ -29,8 +29,8 @@ struct WorkDetailView: View {
                 }
 
                 // Success criteria
-                if let criteria = work.successCriteria, !criteria.isEmpty {
-                    successCriteriaSection(criteria)
+                if let criteria = work.successCriteria {
+                    successCriteriaSection(criteria.displayText)
                 }
 
                 // Linked tasks
@@ -90,29 +90,14 @@ struct WorkDetailView: View {
         }
     }
 
-    private func successCriteriaSection(_ criteria: [String: AnyCodable]) -> some View {
+    private func successCriteriaSection(_ criteria: String) -> some View {
         VStack(alignment: .leading, spacing: DiraigentTheme.spacingSM) {
             Label("Success Criteria", systemImage: "checkmark.circle")
                 .font(DiraigentTheme.headlineFont)
 
-            ForEach(Array(criteria.keys.sorted()), id: \.self) { key in
-                HStack(alignment: .top, spacing: DiraigentTheme.spacingSM) {
-                    Image(systemName: "circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 3)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(key)
-                            .font(DiraigentTheme.bodyFont)
-                        if let value = criteria[key] {
-                            Text(String(describing: value.value))
-                                .font(DiraigentTheme.captionFont)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
+            Text(criteria)
+                .font(DiraigentTheme.bodyFont)
+                .foregroundStyle(.secondary)
         }
     }
 

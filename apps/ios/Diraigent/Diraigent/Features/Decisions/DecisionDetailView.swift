@@ -22,8 +22,8 @@ struct DecisionDetailView: View {
                         }
                     }
 
-                    if let description = decision.description, !description.isEmpty {
-                        Text(description)
+                    if let context = decision.context, !context.isEmpty {
+                        Text(context)
                             .font(DiraigentTheme.bodyFont)
                     }
                 }
@@ -46,35 +46,45 @@ struct DecisionDetailView: View {
             }
 
             // MARK: - Alternatives
-            if let alternatives = decision.alternatives, !alternatives.isEmpty {
-                Section("Alternatives") {
-                    ForEach(alternatives, id: \.name) { alt in
-                        VStack(alignment: .leading, spacing: DiraigentTheme.spacingXS) {
-                            Text(alt.name)
-                                .font(DiraigentTheme.headlineFont)
+            if let alternatives = decision.alternatives {
+                switch alternatives {
+                case .structured(let items) where !items.isEmpty:
+                    Section("Alternatives") {
+                        ForEach(items, id: \.name) { alt in
+                            VStack(alignment: .leading, spacing: DiraigentTheme.spacingXS) {
+                                Text(alt.name)
+                                    .font(DiraigentTheme.headlineFont)
 
-                            if let pros = alt.pros, !pros.isEmpty {
-                                HStack(alignment: .top, spacing: DiraigentTheme.spacingXS) {
-                                    Image(systemName: "plus.circle.fill")
-                                        .foregroundStyle(.green)
-                                        .font(.caption)
-                                    Text(pros)
-                                        .font(.callout)
+                                if let pros = alt.pros, !pros.isEmpty {
+                                    HStack(alignment: .top, spacing: DiraigentTheme.spacingXS) {
+                                        Image(systemName: "plus.circle.fill")
+                                            .foregroundStyle(.green)
+                                            .font(.caption)
+                                        Text(pros)
+                                            .font(.callout)
+                                    }
+                                }
+
+                                if let cons = alt.cons, !cons.isEmpty {
+                                    HStack(alignment: .top, spacing: DiraigentTheme.spacingXS) {
+                                        Image(systemName: "minus.circle.fill")
+                                            .foregroundStyle(.red)
+                                            .font(.caption)
+                                        Text(cons)
+                                            .font(.callout)
+                                    }
                                 }
                             }
-
-                            if let cons = alt.cons, !cons.isEmpty {
-                                HStack(alignment: .top, spacing: DiraigentTheme.spacingXS) {
-                                    Image(systemName: "minus.circle.fill")
-                                        .foregroundStyle(.red)
-                                        .font(.caption)
-                                    Text(cons)
-                                        .font(.callout)
-                                }
-                            }
+                            .padding(.vertical, DiraigentTheme.spacingXS)
                         }
-                        .padding(.vertical, DiraigentTheme.spacingXS)
                     }
+                case .plain(let text) where !text.isEmpty:
+                    Section("Alternatives") {
+                        Text(text)
+                            .font(DiraigentTheme.bodyFont)
+                    }
+                default:
+                    EmptyView()
                 }
             }
 
@@ -83,23 +93,6 @@ struct DecisionDetailView: View {
                 Section("Consequences") {
                     Text(consequences)
                         .font(DiraigentTheme.bodyFont)
-                }
-            }
-
-            // MARK: - Tags
-            if let tags = decision.tags, !tags.isEmpty {
-                Section("Tags") {
-                    FlowLayout(spacing: DiraigentTheme.spacingSM) {
-                        ForEach(tags, id: \.self) { tag in
-                            Text(tag)
-                                .font(.caption)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.secondary.opacity(0.12))
-                                .clipShape(Capsule())
-                        }
-                    }
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 }
             }
 
@@ -152,7 +145,7 @@ struct DecisionDetailView: View {
         _ = await appState.decisionsService.updateDecision(
             projectId: projectId,
             decisionId: decision.id,
-            update: UpdateDecisionRequest(title: nil, status: newStatus, description: nil, rationale: nil, consequences: nil)
+            update: UpdateDecisionRequest(title: nil, status: newStatus, context: nil, decision: nil, rationale: nil, consequences: nil)
         )
         isTransitioning = false
     }

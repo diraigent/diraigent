@@ -28,8 +28,8 @@ final class ObservationsService {
         isLoading = true
         error = nil
         do {
-            let result: [DgObservation] = try await apiClient.get(Endpoints.observations(projectId))
-            observations = result
+            let result: PaginatedResponse<DgObservation> = try await apiClient.get(Endpoints.observations(projectId))
+            observations = result.data
         } catch {
             self.error = error.localizedDescription
         }

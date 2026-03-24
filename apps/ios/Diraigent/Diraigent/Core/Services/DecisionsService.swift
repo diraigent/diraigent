@@ -4,7 +4,8 @@ import SwiftUI
 /// Request body for creating a decision.
 struct CreateDecisionRequest: Encodable, Sendable {
     let title: String
-    let description: String?
+    let context: String?
+    let decision: String?
     let rationale: String?
     let alternatives: [DecisionAlternative]?
     let consequences: String?
@@ -14,7 +15,8 @@ struct CreateDecisionRequest: Encodable, Sendable {
 struct UpdateDecisionRequest: Encodable, Sendable {
     let title: String?
     let status: String?
-    let description: String?
+    let context: String?
+    let decision: String?
     let rationale: String?
     let consequences: String?
 }
@@ -38,8 +40,8 @@ final class DecisionsService {
         isLoading = true
         error = nil
         do {
-            let result: [Decision] = try await apiClient.get(Endpoints.decisions(projectId))
-            decisions = result
+            let result: PaginatedResponse<Decision> = try await apiClient.get(Endpoints.decisions(projectId))
+            decisions = result.data
         } catch {
             self.error = error.localizedDescription
         }

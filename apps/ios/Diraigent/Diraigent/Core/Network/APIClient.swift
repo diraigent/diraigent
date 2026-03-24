@@ -158,6 +158,9 @@ public actor APIClient {
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
+            #if DEBUG
+            print("[APIClient] decode \(T.self) failed: \(error)")
+            #endif
             throw APIError.decodingError(error)
         }
     }
