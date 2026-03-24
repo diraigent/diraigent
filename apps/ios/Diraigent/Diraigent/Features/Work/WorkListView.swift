@@ -1,16 +1,12 @@
 import SwiftUI
 
-/// Typed navigation wrapper to avoid UUID-based navigationDestination conflicts.
-struct WorkID: Hashable {
-    let id: UUID
-}
-
 /// List of work items with kind and status filtering.
 struct WorkListView: View {
     @Environment(AppState.self) private var appState
 
     @State private var kindFilter: String = "all"
     @State private var statusFilter: String = "all"
+    @State private var showingCreateSheet = false
 
     private static let kindFilters = ["all", "epic", "feature", "milestone", "sprint", "initiative"]
     private static let statusFilters = ["all", "active", "achieved", "paused", "abandoned"]
@@ -68,7 +64,7 @@ struct WorkListView: View {
                     .padding(.bottom, DiraigentTheme.spacingSM)
 
                     List(filteredItems) { work in
-                        NavigationLink(value: WorkID(id: work.id)) {
+                        NavigationLink(value: work.id) {
                             WorkRowView(work: work)
                         }
                     }
@@ -79,6 +75,23 @@ struct WorkListView: View {
             }
         }
         .navigationTitle("Work")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingCreateSheet = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .sheet(isPresented: $showingCreateSheet) {
+            CreateWorkView()
+        }
+        .navigationDestination(for: UUID.self) { workId in
+            if let work = workService.workItems.first(where: { $0.id == workId }) {
+                WorkDetailView(work: work)
+            }
+        }
         .task {
             await loadWork()
         }
