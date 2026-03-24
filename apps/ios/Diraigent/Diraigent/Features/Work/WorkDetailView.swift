@@ -6,11 +6,20 @@ struct WorkDetailView: View {
 
     let work: Work
 
+    @State private var linkedTasks: [DgTask] = []
+    @State private var progress: WorkProgress?
+    @State private var isLoadingTasks = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DiraigentTheme.spacingLG) {
                 // Header
                 headerSection
+
+                // Progress indicator
+                if let progress {
+                    progressSection(progress)
+                }
 
                 Divider()
 
@@ -24,6 +33,9 @@ struct WorkDetailView: View {
                     successCriteriaSection(criteria)
                 }
 
+                // Linked tasks
+                linkedTasksSection
+
                 // Metadata
                 metadataSection
             }
@@ -31,6 +43,19 @@ struct WorkDetailView: View {
         }
         .navigationTitle(work.title)
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadLinkedData()
+        }
+    }
+
+    private func loadLinkedData() async {
+        guard let projectId = appState.selectedProjectId else { return }
+        isLoadingTasks = true
+        async let tasksResult = appState.workService.fetchWorkTasks(projectId: projectId, workId: work.id)
+        async let progressResult = appState.workService.fetchWorkProgress(projectId: projectId, workId: work.id)
+        linkedTasks = await tasksResult
+        progress = await progressResult
+        isLoadingTasks = false
     }
 
     // MARK: - Sections
@@ -88,6 +113,102 @@ struct WorkDetailView: View {
                     }
                 }
             }
+        }
+    }
+
+    private func progressSection(_ progress: WorkProgress) -> some View {
+        VStack(alignment: .leading, spacing: DiraigentTheme.spacingSM) {
+            HStack {
+                Label("Progress", systemImage: "chart.bar")
+                    .font(DiraigentTheme.headlineFont)
+
+                Spacer()
+
+                Text("\(progress.doneTasks)/\(progress.totalTasks)")
+                    .font(DiraigentTheme.captionFont.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            if progress.totalTasks > 0 {
+                ProgressView(value: Double(progress.doneTasks), total: Double(progress.totalTasks))
+                    .tint(progress.doneTasks == progress.totalTasks ? .green : .blue)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var linkedTasksSection: some View {
+        VStack(alignment: .leading, spacing: DiraigentTheme.spacingSM) {
+            Label("Linked Tasks", systemImage: "checklist")
+                .font(DiraigentTheme.headlineFont)
+
+            if isLoadingTasks {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                    Spacer()
+                }
+                .padding(.vertical, DiraigentTheme.spacingSM)
+            } else if linkedTasks.isEmpty {
+                Text("No tasks linked to this work item.")
+                    .font(DiraigentTheme.captionFont)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(linkedTasks) { task in
+                    HStack(spacing: DiraigentTheme.spacingSM) {
+                        Image(systemName: taskStateIcon(task.state))
+                            .foregroundStyle(taskStateColor(task.state))
+                            .frame(width: 20)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(task.title)
+                                .font(DiraigentTheme.bodyFont)
+                                .lineLimit(1)
+
+                            HStack(spacing: DiraigentTheme.spacingXS) {
+                                Text(task.state)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+
+                                if let kind = task.kind {
+                                    Text("·")
+                                        .foregroundStyle(.secondary)
+                                    Text(kind)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+
+                        Spacer()
+
+                        if let priority = task.priority {
+                            PriorityIndicator(priority: priority)
+                        }
+                    }
+                    .padding(.vertical, DiraigentTheme.spacingXS)
+                }
+            }
+        }
+    }
+
+    private func taskStateIcon(_ state: String) -> String {
+        switch state.lowercased() {
+        case "done": "checkmark.circle.fill"
+        case "cancelled": "xmark.circle.fill"
+        case "ready": "circle"
+        case "backlog": "circle.dashed"
+        default: "gearshape" // working/implement/review etc
+        }
+    }
+
+    private func taskStateColor(_ state: String) -> Color {
+        switch state.lowercased() {
+        case "done": .green
+        case "cancelled": .secondary
+        case "ready": .blue
+        case "backlog": .secondary
+        default: .orange
         }
     }
 

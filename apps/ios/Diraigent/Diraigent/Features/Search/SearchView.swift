@@ -40,7 +40,11 @@ struct SearchView: View {
                     ForEach(groupedResults, id: \.0) { entityType, results in
                         Section {
                             ForEach(results) { result in
-                                SearchResultRowView(result: result)
+                                NavigationLink {
+                                    SearchResultDestinationView(result: result)
+                                } label: {
+                                    SearchResultRowView(result: result)
+                                }
                             }
                         } header: {
                             HStack {
@@ -146,5 +150,267 @@ struct SearchResultRowView: View {
             }
         }
         .padding(.vertical, DiraigentTheme.spacingXS)
+    }
+}
+
+/// Destination view that fetches and displays the appropriate detail view for a search result.
+struct SearchResultDestinationView: View {
+    @Environment(AppState.self) private var appState
+
+    let result: SearchResult
+
+    @State private var decision: Decision?
+    @State private var observation: DgObservation?
+    @State private var work: Work?
+    @State private var task: DgTask?
+    @State private var isLoading = true
+    @State private var error: String?
+
+    var body: some View {
+        Group {
+            if isLoading {
+                LoadingView("Loading...")
+            } else if let error {
+                ErrorView(error) {
+                    Task { await loadEntity() }
+                }
+            } else {
+                destinationContent
+            }
+        }
+        .task {
+            await loadEntity()
+        }
+    }
+
+    @ViewBuilder
+    private var destinationContent: some View {
+        switch result.entityType.lowercased() {
+        case "decision":
+            if let decision {
+                DecisionDetailView(decision: decision)
+            } else {
+                fallbackView
+            }
+        case "observation":
+            if let observation {
+                ObservationDetailView(observation: observation)
+            } else {
+                fallbackView
+            }
+        case "work":
+            if let work {
+                WorkDetailView(work: work)
+            } else {
+                fallbackView
+            }
+        case "task":
+            if let task {
+                TaskSearchDetailView(task: task)
+            } else {
+                fallbackView
+            }
+        default:
+            fallbackView
+        }
+    }
+
+    private var fallbackView: some View {
+        VStack(alignment: .leading, spacing: DiraigentTheme.spacingLG) {
+            Text(result.title)
+                .font(DiraigentTheme.titleFont)
+
+            if let snippet = result.snippet, !snippet.isEmpty {
+                Text(snippet)
+                    .font(DiraigentTheme.bodyFont)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Text(result.entityType.capitalized)
+                    .font(DiraigentTheme.captionFont)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.secondary.opacity(0.12))
+                    .clipShape(Capsule())
+                Spacer()
+            }
+
+            Spacer()
+        }
+        .padding()
+        .navigationTitle(result.title)
+    }
+
+    private func loadEntity() async {
+        guard let projectId = appState.selectedProjectId else {
+            error = "No project selected"
+            isLoading = false
+            return
+        }
+
+        isLoading = true
+        error = nil
+
+        do {
+            switch result.entityType.lowercased() {
+            case "decision":
+                let d: Decision = try await appState.apiClient.get(
+                    Endpoints.decision(projectId, decisionId: result.entityId)
+                )
+                decision = d
+            case "observation":
+                let o: DgObservation = try await appState.apiClient.get(
+                    Endpoints.observation(projectId, observationId: result.entityId)
+                )
+                observation = o
+            case "work":
+                let w: Work = try await appState.apiClient.get(
+                    Endpoints.workItem(projectId, workId: result.entityId)
+                )
+                work = w
+            case "task":
+                let t: DgTask = try await appState.apiClient.get(
+                    Endpoints.task(projectId, taskId: result.entityId)
+                )
+                task = t
+            default:
+                break // fallback view used
+            }
+        } catch {
+            self.error = error.localizedDescription
+        }
+        isLoading = false
+    }
+}
+
+/// Basic detail view for a task found via search.
+struct TaskSearchDetailView: View {
+    let task: DgTask
+
+    var body: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: DiraigentTheme.spacingSM) {
+                    HStack(spacing: DiraigentTheme.spacingSM) {
+                        Text(task.state)
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(stateColor.opacity(0.15))
+                            .foregroundStyle(stateColor)
+                            .clipShape(Capsule())
+
+                        if let kind = task.kind {
+                            Text(kind)
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.secondary.opacity(0.12))
+                                .clipShape(Capsule())
+                        }
+
+                        if task.urgent == true {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.red)
+                                .font(.caption)
+                        }
+
+                        Spacer()
+
+                        if let priority = task.priority {
+                            PriorityIndicator(priority: priority)
+                        }
+                    }
+                }
+            }
+
+            if let spec = task.context?.spec, !spec.isEmpty {
+                Section("Spec") {
+                    Text(spec)
+                        .font(DiraigentTheme.bodyFont)
+                }
+            }
+
+            if let files = task.context?.files, !files.isEmpty {
+                Section("Files") {
+                    ForEach(files, id: \.self) { file in
+                        Text(file)
+                            .font(.caption.monospaced())
+                    }
+                }
+            }
+
+            if let criteria = task.context?.acceptanceCriteria, !criteria.isEmpty {
+                Section("Acceptance Criteria") {
+                    ForEach(criteria, id: \.self) { criterion in
+                        HStack(alignment: .top, spacing: DiraigentTheme.spacingSM) {
+                            Image(systemName: task.state == "done" ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(task.state == "done" ? .green : .secondary)
+                                .font(.caption)
+                                .padding(.top, 2)
+                            Text(criterion)
+                                .font(DiraigentTheme.bodyFont)
+                        }
+                    }
+                }
+            }
+
+            Section("Details") {
+                if let number = task.number {
+                    HStack {
+                        Text("Number")
+                        Spacer()
+                        Text("#\(number)")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if let cost = task.costUsd {
+                    HStack {
+                        Text("Cost")
+                        Spacer()
+                        Text(String(format: "$%.2f", cost))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if let created = task.createdAt {
+                    HStack {
+                        Text("Created")
+                        Spacer()
+                        Text(formatDate(created))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle(task.title)
+    }
+
+    private var stateColor: Color {
+        switch task.state.lowercased() {
+        case "done": .green
+        case "cancelled": .secondary
+        case "ready": .blue
+        case "backlog": .secondary
+        default: .orange
+        }
+    }
+
+    private func formatDate(_ isoString: String) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = formatter.date(from: isoString) else {
+            formatter.formatOptions = [.withInternetDateTime]
+            guard let date = formatter.date(from: isoString) else { return isoString }
+            return displayFormat(date)
+        }
+        return displayFormat(date)
+    }
+
+    private func displayFormat(_ date: Date) -> String {
+        let display = DateFormatter()
+        display.dateStyle = .medium
+        display.timeStyle = .short
+        return display.string(from: date)
     }
 }

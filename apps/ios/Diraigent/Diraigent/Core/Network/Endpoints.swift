@@ -44,6 +44,9 @@ public enum Endpoints {
     // MARK: - Work
 
     static func work(_ projectId: UUID) -> String { "/projects/\(projectId)/work" }
+    static func workItem(_ projectId: UUID, workId: UUID) -> String { "/projects/\(projectId)/work/\(workId)" }
+    static func workTasks(_ projectId: UUID, workId: UUID) -> String { "/projects/\(projectId)/work/\(workId)/tasks" }
+    static func workProgress(_ projectId: UUID, workId: UUID) -> String { "/projects/\(projectId)/work/\(workId)/progress" }
 
     // MARK: - Git
 

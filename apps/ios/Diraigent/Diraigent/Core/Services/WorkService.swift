@@ -58,11 +58,31 @@ final class WorkService {
         }
     }
 
+    /// Fetch tasks linked to a work item.
+    func fetchWorkTasks(projectId: UUID, workId: UUID) async -> [DgTask] {
+        do {
+            return try await apiClient.get(Endpoints.workTasks(projectId, workId: workId))
+        } catch {
+            self.error = error.localizedDescription
+            return []
+        }
+    }
+
+    /// Fetch progress for a work item.
+    func fetchWorkProgress(projectId: UUID, workId: UUID) async -> WorkProgress? {
+        do {
+            return try await apiClient.get(Endpoints.workProgress(projectId, workId: workId))
+        } catch {
+            self.error = error.localizedDescription
+            return nil
+        }
+    }
+
     /// Update an existing work item.
     func updateWork(projectId: UUID, workId: UUID, update: UpdateWorkRequest) async -> Work? {
         do {
             let result: Work = try await apiClient.put(
-                "\(Endpoints.work(projectId))/\(workId)",
+                Endpoints.workItem(projectId, workId: workId),
                 body: update
             )
             if let idx = workItems.firstIndex(where: { $0.id == workId }) {
