@@ -626,6 +626,234 @@ pub async fn sync_project_playbooks(api: &ProjectsApi, repo_root: &std::path::Pa
     }
 }
 
+/// Sync repo-based decisions (ADRs) to the API for a given project.
+///
+/// Discovers YAML decision files in `.diraigent/decisions/` and syncs them to the API.
+/// Uses `source:repo` and `repo_file:<filename>` tags for identification.
+/// Failures are non-fatal: errors are logged but do not prevent task execution.
+pub async fn sync_project_decisions(api: &ProjectsApi, repo_root: &std::path::Path) {
+    let dir = repo_root.join(".diraigent").join("decisions");
+    if !dir.is_dir() {
+        return; // No decisions directory — nothing to do
+    }
+
+    // Discover YAML files
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(e) => {
+            warn!("pipeline: failed to read {}: {e}", dir.display());
+            return;
+        }
+    };
+
+    let mut yaml_paths: Vec<std::path::PathBuf> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file()
+            && path
+                .extension()
+                .is_some_and(|ext| ext == "yaml" || ext == "yml")
+        {
+            yaml_paths.push(path);
+        }
+    }
+    yaml_paths.sort();
+
+    if yaml_paths.is_empty() {
+        return;
+    }
+
+    // Parse each YAML file into a RepoDecision
+    let mut repo_decisions: Vec<(String, crate::repo_decisions::RepoDecision)> = Vec::new();
+    for path in &yaml_paths {
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        match crate::repo_decisions::parse_decision(path) {
+            Ok(d) => repo_decisions.push((name, d)),
+            Err(e) => warn!(
+                "pipeline: failed to parse decision {}: {e:#}",
+                path.display()
+            ),
+        }
+    }
+
+    if repo_decisions.is_empty() {
+        return;
+    }
+
+    // Fetch project ID from the API using repo_root
+    // We need the project_id to list decisions — derive it from the API context
+    let project_id = match find_project_id_for_repo(api, repo_root).await {
+        Some(id) => id,
+        None => {
+            warn!("pipeline: cannot sync decisions — unable to determine project_id for repo");
+            return;
+        }
+    };
+
+    // Fetch existing decisions from the API
+    let existing = api.list_decisions(&project_id).await.unwrap_or_default();
+
+    // Index existing repo-sourced decisions by their repo_file tag
+    let mut repo_sourced: std::collections::HashMap<String, serde_json::Value> =
+        std::collections::HashMap::new();
+    for d in &existing {
+        let tags = d["tags"].as_array();
+        let is_repo = tags
+            .map(|t| t.iter().any(|v| v.as_str() == Some("source:repo")))
+            .unwrap_or(false);
+        if is_repo
+            && let Some(repo_file_tag) = tags.and_then(|t| {
+                t.iter().find_map(|v| {
+                    v.as_str()
+                        .and_then(|s| s.strip_prefix("repo_file:"))
+                        .map(|s| s.to_string())
+                })
+            })
+        {
+            repo_sourced.insert(repo_file_tag, d.clone());
+        }
+    }
+
+    let mut created = 0u32;
+    let mut updated = 0u32;
+    let mut unchanged = 0u32;
+
+    for (name, decision) in &repo_decisions {
+        let repo_file = format!("{name}.yaml");
+
+        // Build tags: keep user tags and add repo markers
+        let mut tags = decision.tags.clone();
+        if !tags.iter().any(|t| t == "source:repo") {
+            tags.push("source:repo".to_string());
+        }
+        // Remove any existing repo_file: tag and add the current one
+        tags.retain(|t: &String| !t.starts_with("repo_file:"));
+        tags.push(format!("repo_file:{repo_file}"));
+
+        // Build alternatives as JSON
+        let alternatives: Vec<serde_json::Value> = decision
+            .alternatives
+            .iter()
+            .map(|a| {
+                let mut obj = serde_json::json!({"name": a.name});
+                if let Some(ref pros) = a.pros {
+                    obj["pros"] = serde_json::json!(pros);
+                }
+                if let Some(ref cons) = a.cons {
+                    obj["cons"] = serde_json::json!(cons);
+                }
+                obj
+            })
+            .collect();
+
+        if let Some(existing_d) = repo_sourced.remove(&repo_file) {
+            // Check if content changed
+            let content_changed = existing_d["title"].as_str().unwrap_or("") != decision.title
+                || existing_d["status"].as_str().unwrap_or("proposed") != decision.status
+                || existing_d["context"].as_str().unwrap_or("") != decision.context
+                || existing_d["decision"].as_str() != decision.decision.as_deref()
+                || existing_d["rationale"].as_str() != decision.rationale.as_deref()
+                || existing_d["consequences"].as_str() != decision.consequences.as_deref();
+
+            if content_changed {
+                let decision_id = existing_d["id"].as_str().unwrap_or("");
+                let body = serde_json::json!({
+                    "title": decision.title,
+                    "status": decision.status,
+                    "context": decision.context,
+                    "decision": decision.decision,
+                    "rationale": decision.rationale,
+                    "alternatives": alternatives,
+                    "consequences": decision.consequences,
+                    "tags": tags,
+                });
+                match api.update_decision(decision_id, &body).await {
+                    Ok(_) => {
+                        info!("pipeline: updated repo decision '{name}' (id={decision_id})");
+                        updated += 1;
+                    }
+                    Err(e) => warn!("pipeline: failed to update repo decision '{name}': {e}"),
+                }
+            } else {
+                unchanged += 1;
+            }
+        } else {
+            // Create new decision
+            let body = serde_json::json!({
+                "title": decision.title,
+                "context": decision.context,
+                "decision": decision.decision,
+                "rationale": decision.rationale,
+                "alternatives": alternatives,
+                "consequences": decision.consequences,
+                "tags": tags,
+            });
+            match api.post_decision(&project_id, &body).await {
+                Ok(created_d) => {
+                    // After creation, update with status and tags (CreateDecision doesn't have status)
+                    if let Some(id) = created_d["id"].as_str() {
+                        let update_body = serde_json::json!({
+                            "status": decision.status,
+                            "tags": tags,
+                        });
+                        if let Err(e) = api.update_decision(id, &update_body).await {
+                            warn!(
+                                "pipeline: created repo decision '{name}' but failed to set status/tags: {e}"
+                            );
+                        }
+                    }
+                    info!("pipeline: created repo decision '{name}'");
+                    created += 1;
+                }
+                Err(e) => warn!("pipeline: failed to create repo decision '{name}': {e}"),
+            }
+        }
+    }
+
+    // Warn about orphaned repo-sourced decisions
+    for (repo_file, d) in &repo_sourced {
+        let title = d["title"].as_str().unwrap_or("unknown");
+        warn!(
+            "pipeline: API decision '{title}' (repo_file={repo_file}) \
+             has no matching file in repo — consider removing it"
+        );
+    }
+
+    let total = created + updated + unchanged;
+    if total > 0 {
+        info!(
+            "pipeline: synced {total} repo decision(s) ({created} created, {updated} updated, {unchanged} unchanged)"
+        );
+    }
+}
+
+/// Find the project ID for a given repo root by listing projects and matching git_root.
+async fn find_project_id_for_repo(
+    api: &ProjectsApi,
+    repo_root: &std::path::Path,
+) -> Option<String> {
+    let projects = api.list_projects().await.ok()?;
+    let repo_root_str = repo_root.display().to_string();
+    for project in &projects {
+        if let Some(git_root) = project["git_root"].as_str() {
+            // Match by suffix — the repo_root is an absolute path, git_root is typically relative
+            if repo_root_str.ends_with(git_root) || git_root == repo_root_str {
+                return project["id"].as_str().map(|s| s.to_string());
+            }
+        }
+        if let Some(repo_path) = project["repo_path"].as_str()
+            && (repo_root_str.ends_with(repo_path) || repo_path == repo_root_str)
+        {
+            return project["id"].as_str().map(|s| s.to_string());
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

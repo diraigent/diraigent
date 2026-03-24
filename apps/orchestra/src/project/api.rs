@@ -461,6 +461,17 @@ impl ProjectsApi {
         self.post(&format!("/{project_id}/decisions"), body).await
     }
 
+    pub async fn list_decisions(&self, project_id: &str) -> Result<Vec<Value>> {
+        let val = self
+            .get(&format!("/{project_id}/decisions?limit=200"))
+            .await?;
+        Ok(as_array(&val))
+    }
+
+    pub async fn update_decision(&self, decision_id: &str, body: &Value) -> Result<Value> {
+        self.put(&format!("/decisions/{decision_id}"), body).await
+    }
+
     // ── Related items operations ────────────────────────────
 
     /// Fetch related knowledge, decisions, and observations for a task.
