@@ -63,11 +63,6 @@ struct DecisionListView: View {
             }
         }
         .navigationTitle("Decisions")
-        .navigationDestination(for: DecisionID.self) { decisionId in
-            if let decision = decisionsService.decisions.first(where: { $0.id == decisionId.id }) {
-                DecisionDetailView(decision: decision)
-            }
-        }
         .task {
             await loadDecisions()
         }

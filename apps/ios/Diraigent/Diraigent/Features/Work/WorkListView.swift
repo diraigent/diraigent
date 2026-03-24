@@ -79,11 +79,6 @@ struct WorkListView: View {
             }
         }
         .navigationTitle("Work")
-        .navigationDestination(for: WorkID.self) { workId in
-            if let work = workService.workItems.first(where: { $0.id == workId.id }) {
-                WorkDetailView(work: work)
-            }
-        }
         .task {
             await loadWork()
         }

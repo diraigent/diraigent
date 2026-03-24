@@ -96,11 +96,6 @@ struct ObservationListView: View {
             }
         }
         .navigationTitle("Observations")
-        .navigationDestination(for: ObservationID.self) { obsId in
-            if let obs = observationsService.observations.first(where: { $0.id == obsId.id }) {
-                ObservationDetailView(observation: obs)
-            }
-        }
         .task {
             await loadObservations()
         }

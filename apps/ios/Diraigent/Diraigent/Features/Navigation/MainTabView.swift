@@ -86,6 +86,21 @@ struct MoreMenuView: View {
             }
         }
         .navigationTitle("More")
+        .navigationDestination(for: WorkID.self) { workId in
+            if let work = appState.workService.workItems.first(where: { $0.id == workId.id }) {
+                WorkDetailView(work: work)
+            }
+        }
+        .navigationDestination(for: DecisionID.self) { decisionId in
+            if let decision = appState.decisionsService.decisions.first(where: { $0.id == decisionId.id }) {
+                DecisionDetailView(decision: decision)
+            }
+        }
+        .navigationDestination(for: ObservationID.self) { obsId in
+            if let obs = appState.observationsService.observations.first(where: { $0.id == obsId.id }) {
+                ObservationDetailView(observation: obs)
+            }
+        }
     }
 }
 
