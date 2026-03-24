@@ -17,12 +17,7 @@ struct MainTabView: View {
             .tabItem { Label("Dashboard", systemImage: "house.fill") }
 
             NavigationStack {
-                PlaceholderView(title: "Tasks", icon: "checklist")
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            ProjectSelectorButton()
-                        }
-                    }
+                TaskListView()
             }
             .tabItem { Label("Tasks", systemImage: "checklist") }
 
