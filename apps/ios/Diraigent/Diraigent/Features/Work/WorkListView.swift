@@ -1,5 +1,10 @@
 import SwiftUI
 
+/// Typed navigation wrapper to avoid UUID-based navigationDestination conflicts.
+struct WorkID: Hashable {
+    let id: UUID
+}
+
 /// List of work items with kind and status filtering.
 struct WorkListView: View {
     @Environment(AppState.self) private var appState
@@ -63,7 +68,7 @@ struct WorkListView: View {
                     .padding(.bottom, DiraigentTheme.spacingSM)
 
                     List(filteredItems) { work in
-                        NavigationLink(value: work.id) {
+                        NavigationLink(value: WorkID(id: work.id)) {
                             WorkRowView(work: work)
                         }
                     }
@@ -74,8 +79,8 @@ struct WorkListView: View {
             }
         }
         .navigationTitle("Work")
-        .navigationDestination(for: UUID.self) { workId in
-            if let work = workService.workItems.first(where: { $0.id == workId }) {
+        .navigationDestination(for: WorkID.self) { workId in
+            if let work = workService.workItems.first(where: { $0.id == workId.id }) {
                 WorkDetailView(work: work)
             }
         }
