@@ -23,6 +23,7 @@ final class AppState {
     let logsService: LogsService
     let sourceService: SourceService
     let integrationsService: IntegrationsService
+    let webhooksService: WebhooksService
 
     var selectedProjectId: UUID? {
         didSet {
@@ -67,6 +68,7 @@ final class AppState {
         self.logsService = LogsService(apiClient: apiClient)
         self.sourceService = SourceService(apiClient: apiClient)
         self.integrationsService = IntegrationsService(apiClient: apiClient)
+        self.webhooksService = WebhooksService(apiClient: apiClient)
 
         // Restore last selected project
         if let saved = UserDefaults.standard.string(forKey: Self.selectedProjectKey),

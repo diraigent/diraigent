@@ -111,6 +111,12 @@ struct MoreMenuView: View {
                 } label: {
                     Label("Integrations", systemImage: "puzzlepiece.extension")
                 }
+
+                NavigationLink {
+                    WebhookListView()
+                } label: {
+                    Label("Webhooks", systemImage: "link")
+                }
             }
 
             Section("App") {

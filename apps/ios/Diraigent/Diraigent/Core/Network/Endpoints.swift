@@ -94,4 +94,11 @@ public enum Endpoints {
 
     static func integrations(_ projectId: UUID) -> String { "/\(projectId)/integrations" }
     static func integration(_ integrationId: UUID) -> String { "/integrations/\(integrationId)" }
+
+    // MARK: - Webhooks
+
+    static func webhooks(_ projectId: UUID) -> String { "/\(projectId)/webhooks" }
+    static func webhook(_ webhookId: UUID) -> String { "/webhooks/\(webhookId)" }
+    static func webhookTest(_ webhookId: UUID) -> String { "/webhooks/\(webhookId)/test" }
+    static func webhookDeliveries(_ webhookId: UUID) -> String { "/webhooks/\(webhookId)/deliveries" }
 }
