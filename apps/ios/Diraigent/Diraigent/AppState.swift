@@ -7,7 +7,21 @@ import SwiftUI
 final class AppState {
     let apiClient: APIClient
     let authService: AuthService
-    var selectedProjectId: UUID?
+    let projectService: ProjectService
+    let dashboardService: DashboardService
+
+    var selectedProjectId: UUID? {
+        didSet {
+            // Persist selection
+            if let id = selectedProjectId {
+                UserDefaults.standard.set(id.uuidString, forKey: Self.selectedProjectKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.selectedProjectKey)
+            }
+        }
+    }
+
+    private static let selectedProjectKey = "selectedProjectId"
 
     init() {
         let config = AppConfig.current
@@ -23,6 +37,15 @@ final class AppState {
             apiClient: apiClient
         )
 
+        self.projectService = ProjectService(apiClient: apiClient)
+        self.dashboardService = DashboardService(apiClient: apiClient)
+
+        // Restore last selected project
+        if let saved = UserDefaults.standard.string(forKey: Self.selectedProjectKey),
+           let uuid = UUID(uuidString: saved) {
+            self.selectedProjectId = uuid
+        }
+
         // Wire up 401 handler so unauthorized responses trigger logout
         let authService = self.authService
         Task {
@@ -32,5 +55,10 @@ final class AppState {
                 }
             }
         }
+    }
+
+    /// Select a project and persist the choice.
+    func selectProject(_ id: UUID) {
+        selectedProjectId = id
     }
 }
