@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// Main tab bar navigation for the app.
+/// 5 tabs: Dashboard, Tasks, Work, Agents, More
 struct MainTabView: View {
     @Environment(AppState.self) private var appState
 
@@ -14,7 +15,7 @@ struct MainTabView: View {
                         }
                     }
             }
-            .tabItem { Label("Dashboard", systemImage: "house.fill") }
+            .tabItem { Label("Dashboard", systemImage: "chart.bar") }
 
             NavigationStack {
                 TaskListView()
@@ -22,126 +23,19 @@ struct MainTabView: View {
             .tabItem { Label("Tasks", systemImage: "checklist") }
 
             NavigationStack {
+                WorkListView()
+            }
+            .tabItem { Label("Work", systemImage: "hammer") }
+
+            NavigationStack {
                 AgentListView()
             }
             .tabItem { Label("Agents", systemImage: "cpu") }
 
             NavigationStack {
-                ChatView()
-            }
-            .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
-
-            NavigationStack {
                 MoreMenuView()
             }
             .tabItem { Label("More", systemImage: "ellipsis.circle") }
-        }
-    }
-}
-
-/// "More" tab — list of sub-features.
-struct MoreMenuView: View {
-    @Environment(AppState.self) private var appState
-
-    var body: some View {
-        List {
-            Section("Project") {
-                NavigationLink {
-                    DecisionListView()
-                } label: {
-                    Label("Decisions", systemImage: "scale.3d")
-                }
-
-                NavigationLink {
-                    ObservationListView()
-                } label: {
-                    Label("Observations", systemImage: "eye")
-                }
-
-                NavigationLink {
-                    WorkListView()
-                } label: {
-                    Label("Work", systemImage: "hammer")
-                }
-
-                NavigationLink {
-                    EventListView()
-                } label: {
-                    Label("Events", systemImage: "bell")
-                }
-
-                NavigationLink {
-                    AuditListView()
-                } label: {
-                    Label("Audit Log", systemImage: "clock.arrow.circlepath")
-                }
-
-                NavigationLink {
-                    ReportListView()
-                } label: {
-                    Label("Reports", systemImage: "doc.text.magnifyingglass")
-                }
-
-                NavigationLink {
-                    GitView()
-                } label: {
-                    Label("Git", systemImage: "arrow.triangle.branch")
-                }
-
-                NavigationLink {
-                    SearchView()
-                } label: {
-                    Label("Search", systemImage: "magnifyingglass")
-                }
-
-                NavigationLink {
-                    LogsView()
-                } label: {
-                    Label("Logs", systemImage: "doc.text")
-                }
-
-                NavigationLink {
-                    SourceBrowserView()
-                } label: {
-                    Label("Source", systemImage: "filemenu.and.cursorarrow")
-                }
-
-                NavigationLink {
-                    IntegrationListView()
-                } label: {
-                    Label("Integrations", systemImage: "puzzlepiece.extension")
-                }
-
-                NavigationLink {
-                    WebhookListView()
-                } label: {
-                    Label("Webhooks", systemImage: "link")
-                }
-            }
-
-            Section("App") {
-                NavigationLink {
-                    SettingsView()
-                } label: {
-                    Label("Settings", systemImage: "gearshape")
-                }
-            }
-        }
-        .navigationTitle("More")
-        .navigationDestination(for: WorkID.self) { workId in
-            if let work = appState.workService.workItems.first(where: { $0.id == workId.id }) {
-                WorkDetailView(work: work)
-            }
-        }
-        .navigationDestination(for: DecisionID.self) { decisionId in
-            if let decision = appState.decisionsService.decisions.first(where: { $0.id == decisionId.id }) {
-                DecisionDetailView(decision: decision)
-            }
-        }
-        .navigationDestination(for: ObservationID.self) { obsId in
-            if let obs = appState.observationsService.observations.first(where: { $0.id == obsId.id }) {
-                ObservationDetailView(observation: obs)
-            }
         }
     }
 }
