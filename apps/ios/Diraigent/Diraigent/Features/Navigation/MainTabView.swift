@@ -59,19 +59,19 @@ struct MoreMenuView: View {
                 }
 
                 NavigationLink {
-                    PlaceholderView(title: "Work", icon: "hammer")
+                    WorkListView()
                 } label: {
                     Label("Work", systemImage: "hammer")
                 }
 
                 NavigationLink {
-                    PlaceholderView(title: "Git", icon: "arrow.triangle.branch")
+                    GitView()
                 } label: {
                     Label("Git", systemImage: "arrow.triangle.branch")
                 }
 
                 NavigationLink {
-                    PlaceholderView(title: "Search", icon: "magnifyingglass")
+                    SearchView()
                 } label: {
                     Label("Search", systemImage: "magnifyingglass")
                 }
@@ -79,31 +79,13 @@ struct MoreMenuView: View {
 
             Section("App") {
                 NavigationLink {
-                    SettingsPlaceholderView()
+                    SettingsView()
                 } label: {
                     Label("Settings", systemImage: "gearshape")
                 }
             }
         }
         .navigationTitle("More")
-    }
-}
-
-/// Settings placeholder with sign-out button.
-struct SettingsPlaceholderView: View {
-    @Environment(AppState.self) private var appState
-
-    var body: some View {
-        List {
-            Section {
-                Button(role: .destructive) {
-                    appState.authService.logout()
-                } label: {
-                    Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
-                }
-            }
-        }
-        .navigationTitle("Settings")
     }
 }
 
