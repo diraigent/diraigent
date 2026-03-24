@@ -1089,6 +1089,12 @@ pub async fn sync_project_observations(api: &ProjectsApi, repo_root: &std::path:
     for (name, observation) in &repo_observations {
         let repo_file = format!("{name}.yaml");
 
+        // Build tags: keep user tags and add repo marker
+        let mut tags = observation.tags.clone();
+        if !tags.iter().any(|t| t == "source:repo") {
+            tags.push("source:repo".to_string());
+        }
+
         // Build metadata with source=repo and repo_file markers
         let metadata = serde_json::json!({
             "source": "repo",
@@ -1096,18 +1102,30 @@ pub async fn sync_project_observations(api: &ProjectsApi, repo_root: &std::path:
         });
 
         if let Some(existing_o) = repo_sourced.remove(&repo_file) {
-            // Check if content changed
+            // Check if content changed (including kind and tags)
+            let existing_tags: Vec<String> = existing_o["tags"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+
             let content_changed = existing_o["title"].as_str().unwrap_or("") != observation.title
                 || existing_o["kind"].as_str().unwrap_or("insight") != observation.kind
                 || existing_o["severity"].as_str().unwrap_or("info") != observation.severity
-                || existing_o["description"].as_str().unwrap_or("") != observation.description;
+                || existing_o["description"].as_str().unwrap_or("") != observation.description
+                || existing_tags != tags;
 
             if content_changed {
                 let observation_id = existing_o["id"].as_str().unwrap_or("");
                 let body = serde_json::json!({
                     "title": observation.title,
+                    "kind": observation.kind,
                     "description": observation.description,
                     "severity": observation.severity,
+                    "tags": tags,
                     "metadata": metadata,
                 });
                 match api.update_observation(observation_id, &body).await {
@@ -1129,6 +1147,7 @@ pub async fn sync_project_observations(api: &ProjectsApi, repo_root: &std::path:
                 "kind": observation.kind,
                 "severity": observation.severity,
                 "description": observation.description,
+                "tags": tags,
                 "source": "repo",
                 "metadata": metadata,
             });
