@@ -41,6 +41,7 @@ hkdf = "0.12"
 zeroize = { version = "1", features = ["derive"] }
 base64 = "0.22"
 toml = "0.8"
+serde_yaml = "0.9"
 async-trait = "0.1.64"
 thiserror.workspace = true
 
