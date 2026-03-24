@@ -84,4 +84,9 @@ public enum Endpoints {
 
     static let logs = "/logs"
     static let logLabels = "/logs/labels"
+
+    // MARK: - Source
+
+    static func sourceTree(_ projectId: UUID) -> String { "/\(projectId)/source/tree" }
+    static func sourceBlob(_ projectId: UUID) -> String { "/\(projectId)/source/blob" }
 }

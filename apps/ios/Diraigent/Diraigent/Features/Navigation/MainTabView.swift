@@ -99,6 +99,12 @@ struct MoreMenuView: View {
                 } label: {
                     Label("Logs", systemImage: "doc.text")
                 }
+
+                NavigationLink {
+                    SourceBrowserView()
+                } label: {
+                    Label("Source", systemImage: "filemenu.and.cursorarrow")
+                }
             }
 
             Section("App") {
