@@ -318,30 +318,33 @@ struct TaskSearchDetailView: View {
 
                         Spacer()
 
-                        if let priority = task.priority {
-                            PriorityIndicator(priority: priority)
+                        if task.urgent == true {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                                .font(.caption)
                         }
                     }
                 }
             }
 
-            if let spec = task.context?.spec, !spec.isEmpty {
+            if let spec = task.context?["spec"]?.stringValue, !spec.isEmpty {
                 Section("Spec") {
                     Text(spec)
                         .font(DiraigentTheme.bodyFont)
                 }
             }
 
-            if let files = task.context?.files, !files.isEmpty {
+            if let filesValue = task.context?["files"]?.value as? [Any], !filesValue.isEmpty {
                 Section("Files") {
-                    ForEach(files, id: \.self) { file in
+                    ForEach(filesValue.compactMap { $0 as? String }, id: \.self) { file in
                         Text(file)
                             .font(.caption.monospaced())
                     }
                 }
             }
 
-            if let criteria = task.context?.acceptanceCriteria, !criteria.isEmpty {
+            if let criteriaValue = task.context?["acceptance_criteria"]?.value as? [Any], !criteriaValue.isEmpty {
+                let criteria = criteriaValue.compactMap { $0 as? String }
                 Section("Acceptance Criteria") {
                     ForEach(criteria, id: \.self) { criterion in
                         HStack(alignment: .top, spacing: DiraigentTheme.spacingSM) {

@@ -167,8 +167,10 @@ struct WorkDetailView: View {
 
                         Spacer()
 
-                        if let priority = task.priority {
-                            PriorityIndicator(priority: priority)
+                        if task.urgent == true {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                                .font(.caption)
                         }
                     }
                     .padding(.vertical, DiraigentTheme.spacingXS)
