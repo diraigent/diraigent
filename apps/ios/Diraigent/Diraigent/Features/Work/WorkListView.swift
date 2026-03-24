@@ -6,6 +6,7 @@ struct WorkListView: View {
 
     @State private var kindFilter: String = "all"
     @State private var statusFilter: String = "all"
+    @State private var showingCreateSheet = false
 
     private static let kindFilters = ["all", "epic", "feature", "milestone", "sprint", "initiative"]
     private static let statusFilters = ["all", "active", "achieved", "paused", "abandoned"]
@@ -74,6 +75,18 @@ struct WorkListView: View {
             }
         }
         .navigationTitle("Work")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingCreateSheet = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .sheet(isPresented: $showingCreateSheet) {
+            CreateWorkView()
+        }
         .navigationDestination(for: UUID.self) { workId in
             if let work = workService.workItems.first(where: { $0.id == workId }) {
                 WorkDetailView(work: work)
