@@ -457,6 +457,10 @@ impl ProjectsApi {
         Ok(as_array(&val))
     }
 
+    pub async fn update_knowledge(&self, knowledge_id: &str, body: &Value) -> Result<Value> {
+        self.put(&format!("/knowledge/{knowledge_id}"), body).await
+    }
+
     pub async fn post_decision(&self, project_id: &str, body: &Value) -> Result<Value> {
         self.post(&format!("/{project_id}/decisions"), body).await
     }

@@ -196,9 +196,10 @@ pub async fn run_worker(
     let tid = TaskId::new(task_id);
     let branch_name = tid.branch_name();
 
-    // Sync repo playbooks and decisions to the API (non-fatal: log errors and continue)
+    // Sync repo playbooks, decisions, and knowledge to the API (non-fatal: log errors and continue)
     super::pipeline::sync_project_playbooks(api, repo_root).await;
     super::pipeline::sync_project_decisions(api, repo_root).await;
+    super::pipeline::sync_project_knowledge(api, repo_root).await;
 
     // Create worktree
     let worktree_path = worktree_mgr.create_worktree(task_id).map_err(|e| {
