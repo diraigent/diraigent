@@ -17,16 +17,12 @@ struct AppConfig: Sendable {
 
     /// Production config.
     static let production = AppConfig(
-        apiBaseURL: "https://api.diraigent.dev/v1",
+        apiBaseURL: "https://api.diraigent.com/v1",
         authIssuer: "https://auth.diraigent.com/application/o/diraigent/",
         authClientId: "kvuNVJmjVOdhwSfmBDwlSMJw6XxExtjaib5wEDsu",
         authRedirectURI: "diraigent://auth/callback"
     )
 
     /// Active configuration — toggle to `development` for localhost testing.
-    #if DEBUG
-    static let current = development
-    #else
     static let current = production
-    #endif
 }

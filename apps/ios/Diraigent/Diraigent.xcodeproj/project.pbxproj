@@ -72,16 +72,6 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		AA0000102F41668B00000001 = {
-			isa = PBXGroup;
-			children = (
-				AA0000022F41668B00000001 /* Diraigent */,
-				AA0000032F41668C00000001 /* DiraigentTests */,
-				AA0000042F41668C00000001 /* DiraigentUITests */,
-				AA00000A2F41668B00000001 /* Products */,
-			);
-			sourceTree = "<group>";
-		};
 		AA00000A2F41668B00000001 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -90,6 +80,16 @@
 				AA00000C2F41668C00000001 /* DiraigentUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		AA0000102F41668B00000001 = {
+			isa = PBXGroup;
+			children = (
+				AA0000022F41668B00000001 /* Diraigent */,
+				AA0000032F41668C00000001 /* DiraigentTests */,
+				AA0000042F41668C00000001 /* DiraigentUITests */,
+				AA00000A2F41668B00000001 /* Products */,
+			);
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -171,7 +171,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1600;
-				LastUpgradeCheck = 1600;
+				LastUpgradeCheck = 2630;
 				TargetAttributes = {
 					AA0000082F41668B00000001 = {
 						CreatedOnToolsVersion = 16.0;
@@ -327,6 +327,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -382,7 +383,9 @@
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};

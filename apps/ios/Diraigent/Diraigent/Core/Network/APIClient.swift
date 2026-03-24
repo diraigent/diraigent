@@ -97,6 +97,10 @@ public actor APIClient {
         urlRequest.httpMethod = method.rawValue
         urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
 
+        #if DEBUG
+        print("[APIClient] \(method.rawValue) \(url.absoluteString)")
+        #endif
+
         if let token = accessToken {
             urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
@@ -117,6 +121,13 @@ public actor APIClient {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.serverError(0, "Invalid response")
         }
+
+        #if DEBUG
+        if httpResponse.statusCode >= 400 {
+            let body = String(data: data, encoding: .utf8) ?? "<non-utf8>"
+            print("[APIClient] \(method.rawValue) \(path) → \(httpResponse.statusCode): \(body)")
+        }
+        #endif
 
         switch httpResponse.statusCode {
         case 200...299:

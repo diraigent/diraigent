@@ -28,8 +28,10 @@ final class ProjectService {
         do {
             let result: [Project] = try await apiClient.get(Endpoints.projects)
             projects = result
+            print("[ProjectService] fetched \(result.count) projects")
         } catch {
             self.error = error.localizedDescription
+            print("[ProjectService] fetchProjects failed: \(error)")
         }
         isLoading = false
     }
