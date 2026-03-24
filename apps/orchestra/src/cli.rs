@@ -14,6 +14,7 @@ mod project;
 mod providers;
 mod repo_decisions;
 mod repo_knowledge;
+mod repo_observations;
 mod repo_playbooks;
 mod task_id;
 mod util;

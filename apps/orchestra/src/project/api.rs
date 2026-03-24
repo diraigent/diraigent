@@ -438,6 +438,26 @@ impl ProjectsApi {
             .await
     }
 
+    /// List observations for a project, optionally filtered by status.
+    pub async fn list_observations(
+        &self,
+        project_id: &str,
+        status: Option<&str>,
+        limit: Option<i64>,
+    ) -> Result<Vec<Value>> {
+        let mut path = format!("/{project_id}/observations?limit={}", limit.unwrap_or(500));
+        if let Some(s) = status {
+            path.push_str(&format!("&status={s}"));
+        }
+        let val = self.get(&path).await?;
+        Ok(as_array(&val))
+    }
+
+    pub async fn update_observation(&self, observation_id: &str, body: &Value) -> Result<Value> {
+        self.put(&format!("/observations/{observation_id}"), body)
+            .await
+    }
+
     pub async fn post_knowledge(&self, project_id: &str, body: &Value) -> Result<Value> {
         self.post(&format!("/{project_id}/knowledge"), body).await
     }

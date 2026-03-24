@@ -997,6 +997,168 @@ pub async fn sync_project_knowledge(api: &ProjectsApi, repo_root: &std::path::Pa
     }
 }
 
+/// Sync repo-based observations to the API for a given project.
+///
+/// Discovers YAML observation files in `.diraigent/observations/` and syncs them to the API.
+/// Uses `source = "repo"` and `metadata.repo_file` for identification.
+/// Failures are non-fatal: errors are logged but do not prevent task execution.
+pub async fn sync_project_observations(api: &ProjectsApi, repo_root: &std::path::Path) {
+    let dir = repo_root.join(".diraigent").join("observations");
+    if !dir.is_dir() {
+        return; // No observations directory — nothing to do
+    }
+
+    // Discover YAML files
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(e) => {
+            warn!("pipeline: failed to read {}: {e}", dir.display());
+            return;
+        }
+    };
+
+    let mut yaml_paths: Vec<std::path::PathBuf> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file()
+            && path
+                .extension()
+                .is_some_and(|ext| ext == "yaml" || ext == "yml")
+        {
+            yaml_paths.push(path);
+        }
+    }
+    yaml_paths.sort();
+
+    if yaml_paths.is_empty() {
+        return;
+    }
+
+    // Parse each YAML file into a RepoObservation
+    let mut repo_observations: Vec<(String, crate::repo_observations::RepoObservation)> =
+        Vec::new();
+    for path in &yaml_paths {
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        match crate::repo_observations::parse_observation(path) {
+            Ok(o) => repo_observations.push((name, o)),
+            Err(e) => warn!(
+                "pipeline: failed to parse observation {}: {e:#}",
+                path.display()
+            ),
+        }
+    }
+
+    if repo_observations.is_empty() {
+        return;
+    }
+
+    // Fetch project ID from the API using repo_root
+    let project_id = match find_project_id_for_repo(api, repo_root).await {
+        Some(id) => id,
+        None => {
+            warn!("pipeline: cannot sync observations — unable to determine project_id for repo");
+            return;
+        }
+    };
+
+    // Fetch existing observations from the API (all statuses, high limit)
+    let existing = api
+        .list_observations(&project_id, None, Some(500))
+        .await
+        .unwrap_or_default();
+
+    // Index existing repo-sourced observations by their metadata.repo_file
+    let mut repo_sourced: std::collections::HashMap<String, serde_json::Value> =
+        std::collections::HashMap::new();
+    for o in &existing {
+        let is_repo = o["source"].as_str() == Some("repo")
+            || o["metadata"]["source"].as_str() == Some("repo");
+        if is_repo && let Some(repo_file) = o["metadata"]["repo_file"].as_str() {
+            repo_sourced.insert(repo_file.to_string(), o.clone());
+        }
+    }
+
+    let mut created = 0u32;
+    let mut updated = 0u32;
+    let mut unchanged = 0u32;
+
+    for (name, observation) in &repo_observations {
+        let repo_file = format!("{name}.yaml");
+
+        // Build metadata with source=repo and repo_file markers
+        let metadata = serde_json::json!({
+            "source": "repo",
+            "repo_file": repo_file,
+        });
+
+        if let Some(existing_o) = repo_sourced.remove(&repo_file) {
+            // Check if content changed
+            let content_changed = existing_o["title"].as_str().unwrap_or("") != observation.title
+                || existing_o["kind"].as_str().unwrap_or("insight") != observation.kind
+                || existing_o["severity"].as_str().unwrap_or("info") != observation.severity
+                || existing_o["description"].as_str().unwrap_or("") != observation.description;
+
+            if content_changed {
+                let observation_id = existing_o["id"].as_str().unwrap_or("");
+                let body = serde_json::json!({
+                    "title": observation.title,
+                    "description": observation.description,
+                    "severity": observation.severity,
+                    "metadata": metadata,
+                });
+                match api.update_observation(observation_id, &body).await {
+                    Ok(_) => {
+                        info!("pipeline: updated repo observation '{name}' (id={observation_id})");
+                        updated += 1;
+                    }
+                    Err(e) => {
+                        warn!("pipeline: failed to update repo observation '{name}': {e}");
+                    }
+                }
+            } else {
+                unchanged += 1;
+            }
+        } else {
+            // Create new observation
+            let body = serde_json::json!({
+                "title": observation.title,
+                "kind": observation.kind,
+                "severity": observation.severity,
+                "description": observation.description,
+                "source": "repo",
+                "metadata": metadata,
+            });
+            match api.post_observation(&project_id, &body).await {
+                Ok(_) => {
+                    info!("pipeline: created repo observation '{name}'");
+                    created += 1;
+                }
+                Err(e) => warn!("pipeline: failed to create repo observation '{name}': {e}"),
+            }
+        }
+    }
+
+    // Warn about orphaned repo-sourced observations
+    for (repo_file, o) in &repo_sourced {
+        let title = o["title"].as_str().unwrap_or("unknown");
+        warn!(
+            "pipeline: API observation '{title}' (repo_file={repo_file}) \
+             has no matching file in repo — consider removing it"
+        );
+    }
+
+    let total = created + updated + unchanged;
+    if total > 0 {
+        info!(
+            "pipeline: synced {total} repo observation(s) ({created} created, {updated} updated, {unchanged} unchanged)"
+        );
+    }
+}
+
 /// Find the project ID for a given repo root by listing projects and matching git_root.
 async fn find_project_id_for_repo(
     api: &ProjectsApi,
