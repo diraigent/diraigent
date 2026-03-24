@@ -72,6 +72,12 @@ struct MoreMenuView: View {
                 }
 
                 NavigationLink {
+                    ReportListView()
+                } label: {
+                    Label("Reports", systemImage: "doc.text.magnifyingglass")
+                }
+
+                NavigationLink {
                     GitView()
                 } label: {
                     Label("Git", systemImage: "arrow.triangle.branch")
