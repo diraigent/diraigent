@@ -4,6 +4,8 @@
 //! whether to merge (all steps done), continue the pipeline (more steps),
 //! or clean up (cancelled).
 
+use std::path::Path;
+
 use anyhow::Result;
 use serde_json::Value;
 use tracing::{info, warn};
@@ -12,6 +14,7 @@ use crate::constants::TaskState;
 use crate::engine::step_profile;
 use crate::git::strategy::{self as git_strategy, GitAction, GitStrategy};
 use crate::project::api::{ProjectsApi, retry_api_call};
+use crate::repo_playbooks;
 use crate::task_id::TaskId;
 
 /// Outcome of checking the post-worker task state.
@@ -54,7 +57,14 @@ impl StepOutcome {
 /// - `done` → all steps truly completed → AllDone (trigger merge-to-main)
 /// - `cancelled` → task was cancelled mid-pipeline → Cancelled
 /// - other → unexpected state → UnexpectedState
-pub async fn check_next_step(api: &ProjectsApi, task_id: &str) -> Result<StepOutcome> {
+///
+/// When `git_root` is provided, repo playbook overrides are used for consistency
+/// with `resolve_step()`.
+pub async fn check_next_step(
+    api: &ProjectsApi,
+    task_id: &str,
+    git_root: Option<&Path>,
+) -> Result<StepOutcome> {
     let tid = TaskId::new(task_id);
     let task = retry_api_call("get_task", &tid, || api.get_task(task_id)).await?;
     let state_str = task["state"].as_str().unwrap_or("");
@@ -68,12 +78,13 @@ pub async fn check_next_step(api: &ProjectsApi, task_id: &str) -> Result<StepOut
         let playbook_id = task["playbook_id"].as_str().unwrap_or("");
         let current_step = task["playbook_step"].as_i64().unwrap_or(0);
         if !playbook_id.is_empty() {
-            let playbook =
-                retry_api_call("get_playbook", &tid, || api.get_playbook(playbook_id)).await?;
-            // Prefer resolved_steps (templates expanded) over raw steps
-            let steps_value = playbook["resolved_steps"]
-                .as_array()
-                .or_else(|| playbook["steps"].as_array());
+            let (_playbook, steps_vec) =
+                resolve_playbook_steps(api, playbook_id, git_root, &tid).await?;
+            let steps_value: Option<&[Value]> = if !steps_vec.is_empty() {
+                Some(&steps_vec)
+            } else {
+                None
+            };
             if let Some(steps) = steps_value {
                 // Check if the *completed* step (current_step - 1) has a git_action.
                 // The API advanced playbook_step already, so the just-finished step is one back.
@@ -234,7 +245,16 @@ pub async fn resolve_max_implement_cycles(
 /// were expanded by the API), uses those. Otherwise falls back to raw `steps`.
 /// If a step has a `step_template_id` but the API didn't resolve it (e.g. older
 /// API version), the orchestra fetches the template directly and merges inline.
-pub async fn resolve_step(api: &ProjectsApi, task_data: Option<&Value>) -> (String, Option<Value>) {
+///
+/// When `git_root` is provided, also checks `.diraigent/playbooks/` for a
+/// matching repo playbook. If found, the repo version's steps override the
+/// API version (repo is source of truth). If the API fetch fails entirely,
+/// the repo playbook is used as a fallback.
+pub async fn resolve_step(
+    api: &ProjectsApi,
+    task_data: Option<&Value>,
+    git_root: Option<&Path>,
+) -> (String, Option<Value>) {
     let Some(task) = task_data else {
         return ("implement".to_string(), None);
     };
@@ -246,33 +266,124 @@ pub async fn resolve_step(api: &ProjectsApi, task_data: Option<&Value>) -> (Stri
         return ("implement".to_string(), None);
     }
 
-    if let Ok(playbook) = api.get_playbook(playbook_id).await {
-        // Prefer resolved_steps (templates already expanded by API) over raw steps
-        let steps = playbook["resolved_steps"]
-            .as_array()
-            .or_else(|| playbook["steps"].as_array());
+    match api.get_playbook(playbook_id).await {
+        Ok(playbook) => {
+            // Try to find a repo override for this playbook
+            let repo_steps = git_root.and_then(|root| {
+                let api_title = playbook["title"].as_str().unwrap_or("");
+                let api_metadata = playbook.get("metadata");
+                match repo_playbooks::find_repo_override(root, api_title, api_metadata) {
+                    Some(repo_pb) => {
+                        info!(
+                            "Using repo playbook override: {} (matches API playbook '{}')",
+                            repo_pb.name, api_title
+                        );
+                        repo_pb.steps.as_array().cloned()
+                    }
+                    None => None,
+                }
+            });
 
-        if let Some(steps) = steps
-            && let Some(step) = steps.get(current_step as usize)
-        {
-            // If the step still has an unresolved step_template_id (API didn't expand),
-            // try to resolve it client-side as a fallback.
-            let resolved = if step.get("step_template_id").is_some_and(|v| v.is_string())
-                && playbook["resolved_steps"].is_null()
-            {
-                resolve_step_template(api, step).await
+            // Use repo steps if available, otherwise API steps
+            let using_repo = repo_steps.is_some();
+            let steps: Option<Vec<Value>> = if let Some(repo) = repo_steps {
+                Some(repo)
             } else {
-                step.clone()
+                playbook["resolved_steps"]
+                    .as_array()
+                    .or_else(|| playbook["steps"].as_array())
+                    .cloned()
             };
 
-            let name = resolved["name"].as_str().unwrap_or("implement").to_string();
-            (name, Some(resolved))
-        } else {
+            if let Some(ref steps) = steps
+                && let Some(step) = steps.get(current_step as usize)
+            {
+                // If the step still has an unresolved step_template_id (API didn't expand),
+                // try to resolve it client-side as a fallback.
+                // Only do this for API steps (not repo overrides).
+                let resolved: Value = if !using_repo
+                    && step
+                        .get("step_template_id")
+                        .is_some_and(|v: &Value| v.is_string())
+                    && playbook["resolved_steps"].is_null()
+                {
+                    resolve_step_template(api, step).await
+                } else {
+                    step.clone()
+                };
+
+                let name = resolved["name"].as_str().unwrap_or("implement").to_string();
+                (name, Some(resolved))
+            } else {
+                ("implement".to_string(), None)
+            }
+        }
+        Err(e) => {
+            // API playbook fetch failed — try repo fallback
+            if let Some(root) = git_root {
+                warn!("resolve_step: API playbook fetch failed ({e}), trying repo fallback");
+                if let Ok(loaded_playbooks) = repo_playbooks::load_repo_playbooks(root) {
+                    // Try to find any repo playbook (we don't know the title since API failed)
+                    // Use the first one that has enough steps, or just the first one
+                    for repo_pb in &loaded_playbooks {
+                        if let Some(steps) = repo_pb.steps.as_array() {
+                            let step: Option<&Value> = steps.get(current_step as usize);
+                            if let Some(step) = step {
+                                info!(
+                                    "Using repo playbook fallback: {} (API fetch failed)",
+                                    repo_pb.name
+                                );
+                                let name = step["name"].as_str().unwrap_or("implement").to_string();
+                                return (name, Some(step.clone()));
+                            }
+                        }
+                    }
+                }
+            }
             ("implement".to_string(), None)
         }
-    } else {
-        ("implement".to_string(), None)
     }
+}
+
+/// Resolve playbook steps from API with repo playbook override support.
+///
+/// Used by `check_next_step()` to get steps for regression logic and git actions.
+/// If `git_root` is provided, checks for repo playbook overrides.
+async fn resolve_playbook_steps(
+    api: &ProjectsApi,
+    playbook_id: &str,
+    git_root: Option<&Path>,
+    tid: &TaskId,
+) -> Result<(Value, Vec<Value>)> {
+    let playbook = retry_api_call("get_playbook", tid, || api.get_playbook(playbook_id)).await?;
+
+    // Check for repo playbook override
+    let repo_steps = git_root.and_then(|root| {
+        let api_title = playbook["title"].as_str().unwrap_or("");
+        let api_metadata = playbook.get("metadata");
+        match repo_playbooks::find_repo_override(root, api_title, api_metadata) {
+            Some(repo_pb) => {
+                info!(
+                    "Using repo playbook override for check_next_step: {} (matches '{}')",
+                    repo_pb.name, api_title
+                );
+                repo_pb.steps.as_array().cloned()
+            }
+            None => None,
+        }
+    });
+
+    let steps = if let Some(repo) = repo_steps {
+        repo
+    } else {
+        playbook["resolved_steps"]
+            .as_array()
+            .or_else(|| playbook["steps"].as_array())
+            .cloned()
+            .unwrap_or_default()
+    };
+
+    Ok((playbook, steps))
 }
 
 /// Client-side fallback: resolve a single step's step_template_id by fetching
@@ -564,7 +675,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "agent-1");
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert!(result.is_ok());
     }
 
@@ -592,7 +703,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "agent-1");
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert!(result.is_ok());
     }
 
@@ -621,7 +732,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "agent-1");
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert!(result.is_err());
     }
 
@@ -643,7 +754,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "agent-1");
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert!(result.is_ok());
         assert!(matches!(result.unwrap(), StepOutcome::AllDone { .. }));
     }
@@ -663,7 +774,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "agent-1");
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert_eq!(result.unwrap(), StepOutcome::Continue);
     }
 
@@ -692,7 +803,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "agent-1");
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert!(result.is_err());
     }
 
@@ -728,7 +839,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "agent-1");
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert!(result.is_ok());
     }
 
@@ -750,7 +861,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "agent-1");
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert!(result.is_ok());
         assert!(matches!(result.unwrap(), StepOutcome::AllDone { .. }));
     }
@@ -773,7 +884,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "agent-1");
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert!(result.is_ok());
     }
 
@@ -883,7 +994,7 @@ mod tests {
 
         let api = test_api(&server.uri());
         assert!(matches!(
-            check_next_step(&api, task_id).await.unwrap(),
+            check_next_step(&api, task_id, None).await.unwrap(),
             StepOutcome::Cancelled { .. }
         ));
     }
@@ -903,7 +1014,7 @@ mod tests {
 
         let api = test_api(&server.uri());
         assert_eq!(
-            check_next_step(&api, task_id).await.unwrap(),
+            check_next_step(&api, task_id, None).await.unwrap(),
             StepOutcome::AlreadyReady
         );
     }
@@ -923,7 +1034,7 @@ mod tests {
 
         let api = test_api(&server.uri());
         assert_eq!(
-            check_next_step(&api, task_id).await.unwrap(),
+            check_next_step(&api, task_id, None).await.unwrap(),
             StepOutcome::AlreadyReady
         );
     }
@@ -943,7 +1054,7 @@ mod tests {
 
         let api = test_api(&server.uri());
         assert_eq!(
-            check_next_step(&api, task_id).await.unwrap(),
+            check_next_step(&api, task_id, None).await.unwrap(),
             StepOutcome::Continue
         );
     }
@@ -963,7 +1074,7 @@ mod tests {
 
         let api = test_api(&server.uri());
         assert!(matches!(
-            check_next_step(&api, task_id).await.unwrap(),
+            check_next_step(&api, task_id, None).await.unwrap(),
             StepOutcome::AllDone { .. }
         ));
     }
@@ -985,7 +1096,7 @@ mod tests {
 
         let api = test_api(&server.uri());
         assert_eq!(
-            check_next_step(&api, task_id).await.unwrap(),
+            check_next_step(&api, task_id, None).await.unwrap(),
             StepOutcome::AlreadyReady
         );
     }
@@ -1006,7 +1117,7 @@ mod tests {
 
         let api = test_api(&server.uri());
         assert_eq!(
-            check_next_step(&api, task_id).await.unwrap(),
+            check_next_step(&api, task_id, None).await.unwrap(),
             StepOutcome::UnexpectedState("".to_string())
         );
     }
@@ -1138,7 +1249,7 @@ mod tests {
             "playbook_step": 0
         });
 
-        let (name, step_json) = resolve_step(&api, Some(&task)).await;
+        let (name, step_json) = resolve_step(&api, Some(&task), None).await;
         assert_eq!(name, "implement");
         let step = step_json.unwrap();
         assert_eq!(step["model"].as_str(), Some("opus"));
@@ -1171,7 +1282,7 @@ mod tests {
             "playbook_step": 0
         });
 
-        let (name, step_json) = resolve_step(&api, Some(&task)).await;
+        let (name, step_json) = resolve_step(&api, Some(&task), None).await;
         assert_eq!(name, "implement");
         let step = step_json.unwrap();
         assert_eq!(step["budget"].as_f64(), Some(5.0));
@@ -1218,7 +1329,7 @@ mod tests {
             "playbook_step": 0
         });
 
-        let (name, step_json) = resolve_step(&api, Some(&task)).await;
+        let (name, step_json) = resolve_step(&api, Some(&task), None).await;
         // Inline "name" overrides template "name"
         assert_eq!(name, "my-impl");
         let step = step_json.unwrap();
@@ -1262,7 +1373,7 @@ mod tests {
             "playbook_step": 0
         });
 
-        let (name, step_json) = resolve_step(&api, Some(&task)).await;
+        let (name, step_json) = resolve_step(&api, Some(&task), None).await;
         // Falls back to inline properties
         assert_eq!(name, "implement");
         let step = step_json.unwrap();
@@ -1293,7 +1404,7 @@ mod tests {
             "playbook_step": 0
         });
 
-        let (name, step_json) = resolve_step(&api, Some(&task)).await;
+        let (name, step_json) = resolve_step(&api, Some(&task), None).await;
         assert_eq!(name, "implement");
         let step = step_json.unwrap();
         assert_eq!(step["budget"].as_f64(), Some(12.0));
@@ -1339,7 +1450,7 @@ mod tests {
             .await;
 
         let api = test_api(&server.uri());
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert!(result.is_ok());
     }
 }

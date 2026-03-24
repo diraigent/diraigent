@@ -74,7 +74,7 @@ async fn process_reaped_task(
     }
 
     // Check if there's a next pipeline step
-    let outcome = match pipeline::check_next_step(api, &task_id).await {
+    let outcome = match pipeline::check_next_step(api, &task_id, None).await {
         Ok(outcome) => outcome,
         Err(e) => {
             error!(

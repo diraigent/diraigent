@@ -324,6 +324,88 @@ pub async fn sync_repo_playbooks(
     Ok(results)
 }
 
+/// Slugify a playbook title for matching against repo filenames.
+///
+/// Converts "Standard Lifecycle" → "standard-lifecycle", "My Playbook" → "my-playbook".
+/// Strips non-alphanumeric characters and replaces spaces/underscores with hyphens.
+pub fn slugify_title(title: &str) -> String {
+    let mut slug = String::with_capacity(title.len());
+    for ch in title.chars() {
+        if ch.is_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+        } else if (ch == ' ' || ch == '_' || ch == '-') && !slug.ends_with('-') {
+            slug.push('-');
+        }
+    }
+    slug.trim_matches('-').to_string()
+}
+
+/// Try to find a matching repo playbook for an API playbook.
+///
+/// Matching strategy:
+/// 1. Exact match: API playbook title slugified matches a repo playbook name
+/// 2. Prefix match: repo playbook name is a prefix of the slugified API title
+///    (e.g. "standard" matches "Standard Lifecycle" → "standard-lifecycle")
+/// 3. API playbook metadata `repo_name` matches repo playbook name
+///
+/// Returns the matching [`RepoPlaybook`] if found, or `None`.
+pub fn find_repo_playbook_for_api(
+    repo_playbooks: &[RepoPlaybook],
+    api_title: &str,
+    api_metadata: Option<&serde_json::Value>,
+) -> Option<RepoPlaybook> {
+    if repo_playbooks.is_empty() {
+        return None;
+    }
+
+    let slug = slugify_title(api_title);
+
+    // 1. Exact match on slugified title
+    if let Some(pb) = repo_playbooks.iter().find(|pb| pb.name == slug) {
+        return Some(pb.clone());
+    }
+
+    // 2. Prefix match: repo name is a prefix of the slugified title
+    //    e.g. "standard" matches "standard-lifecycle"
+    if let Some(pb) = repo_playbooks.iter().find(|pb| slug.starts_with(&pb.name)) {
+        return Some(pb.clone());
+    }
+
+    // 3. API metadata repo_name match
+    if let Some(meta) = api_metadata
+        && let Some(repo_name) = meta["repo_name"].as_str()
+        && let Some(pb) = repo_playbooks.iter().find(|pb| pb.name == repo_name)
+    {
+        return Some(pb.clone());
+    }
+
+    None
+}
+
+/// Load repo playbooks and try to find one matching the given API playbook.
+///
+/// This is a convenience function that combines `load_repo_playbooks` + `find_repo_playbook_for_api`.
+/// Returns `None` if:
+/// - The repo_root has no `.diraigent/playbooks/` directory
+/// - No playbooks match
+/// - Any I/O error occurs (logged as warning)
+pub fn find_repo_override(
+    repo_root: &Path,
+    api_title: &str,
+    api_metadata: Option<&serde_json::Value>,
+) -> Option<RepoPlaybook> {
+    match load_repo_playbooks(repo_root) {
+        Ok(playbooks) => find_repo_playbook_for_api(&playbooks, api_title, api_metadata),
+        Err(e) => {
+            warn!(
+                "repo_playbooks: failed to load from {}: {e:#}",
+                repo_root.display()
+            );
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -470,5 +552,61 @@ steps:
         let playbooks = load_repo_playbooks(tmp.path()).unwrap();
         assert_eq!(playbooks.len(), 1);
         assert_eq!(playbooks[0].title, "Good");
+    }
+
+    #[test]
+    fn slugify_title_basic() {
+        assert_eq!(slugify_title("Standard Lifecycle"), "standard-lifecycle");
+        assert_eq!(slugify_title("My_Playbook"), "my-playbook");
+        assert_eq!(slugify_title("simple"), "simple");
+        assert_eq!(slugify_title("  Spaces  "), "spaces");
+    }
+
+    #[test]
+    fn find_repo_playbook_exact_match() {
+        let tmp = tempfile::tempdir().unwrap();
+        let yaml = r#"
+title: Standard Lifecycle
+steps:
+  - name: implement
+"#;
+        write_yaml(tmp.path(), "standard-lifecycle.yaml", yaml);
+        let playbooks = load_repo_playbooks(tmp.path()).unwrap();
+
+        let found = find_repo_playbook_for_api(&playbooks, "Standard Lifecycle", None);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().name, "standard-lifecycle");
+    }
+
+    #[test]
+    fn find_repo_playbook_prefix_match() {
+        let tmp = tempfile::tempdir().unwrap();
+        let yaml = r#"
+title: Standard
+steps:
+  - name: implement
+"#;
+        write_yaml(tmp.path(), "standard.yaml", yaml);
+        let playbooks = load_repo_playbooks(tmp.path()).unwrap();
+
+        // "standard" should match "Standard Lifecycle" via prefix
+        let found = find_repo_playbook_for_api(&playbooks, "Standard Lifecycle", None);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().name, "standard");
+    }
+
+    #[test]
+    fn find_repo_playbook_no_match() {
+        let tmp = tempfile::tempdir().unwrap();
+        let yaml = r#"
+title: Custom
+steps:
+  - name: implement
+"#;
+        write_yaml(tmp.path(), "custom.yaml", yaml);
+        let playbooks = load_repo_playbooks(tmp.path()).unwrap();
+
+        let found = find_repo_playbook_for_api(&playbooks, "Standard Lifecycle", None);
+        assert!(found.is_none());
     }
 }

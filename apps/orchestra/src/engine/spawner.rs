@@ -129,8 +129,35 @@ pub async fn spawn_worker(
         .and_then(|t| t["title"].as_str().map(|s| s.to_string()))
         .unwrap_or_default();
 
-    // Resolve playbook step (name + full JSONB config)
-    let (step_name, step_json) = pipeline::resolve_step(api, task_data.as_ref()).await;
+    // Resolve per-project paths early so we can use git_root for repo playbook resolution.
+    let (git_mode, git_root, working_dir, auto_push, default_branch, upload_logs, store_diffs) =
+        match project_paths::resolve_project_paths(api, project_id, &config.projects_path).await {
+            Ok(paths) => (
+                paths.git_mode,
+                paths.git_root,
+                paths.working_dir,
+                paths.auto_push,
+                paths.default_branch,
+                paths.upload_logs,
+                paths.store_diffs,
+            ),
+            Err(e) => {
+                warn!("spawn {tid}: failed to resolve project paths: {e}");
+                (
+                    "standalone".to_string(),
+                    Some(config.projects_path.clone()),
+                    config.projects_path.clone(),
+                    false,
+                    "main".to_string(),
+                    false,
+                    false,
+                )
+            }
+        };
+
+    // Resolve playbook step (name + full JSONB config), with repo playbook override support
+    let (step_name, step_json) =
+        pipeline::resolve_step(api, task_data.as_ref(), git_root.as_deref()).await;
 
     // Resolve effective max_cycles: step JSON > project metadata > global config.
     let project_max_cycles =
@@ -236,32 +263,6 @@ pub async fn spawn_worker(
         task_model.as_deref(),
         config.worker_model.as_deref(),
     );
-
-    // Resolve per-project paths from the API.
-    let (git_mode, git_root, working_dir, auto_push, default_branch, upload_logs, store_diffs) =
-        match project_paths::resolve_project_paths(api, project_id, &config.projects_path).await {
-            Ok(paths) => (
-                paths.git_mode,
-                paths.git_root,
-                paths.working_dir,
-                paths.auto_push,
-                paths.default_branch,
-                paths.upload_logs,
-                paths.store_diffs,
-            ),
-            Err(e) => {
-                warn!("spawn {tid}: failed to resolve project paths: {e}");
-                (
-                    "standalone".to_string(),
-                    Some(config.projects_path.clone()),
-                    config.projects_path.clone(),
-                    false,
-                    "main".to_string(),
-                    false,
-                    false,
-                )
-            }
-        };
 
     // Resolve git strategy from playbook metadata
     let git_strategy = git_strategy::resolve_strategy(api, task_data.as_ref(), &git_mode).await;
