@@ -30,6 +30,18 @@ struct AnyCodable: Codable, Sendable {
         }
     }
 
+    /// Best-effort string representation of the wrapped value.
+    var stringValue: String {
+        switch value {
+        case is NSNull: return "null"
+        case let bool as Bool: return bool ? "true" : "false"
+        case let int as Int: return String(int)
+        case let double as Double: return String(double)
+        case let string as String: return string
+        default: return String(describing: value)
+        }
+    }
+
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
 

@@ -9,6 +9,9 @@ final class AppState {
     let authService: AuthService
     let projectService: ProjectService
     let dashboardService: DashboardService
+    let agentsService: AgentsService
+    let decisionsService: DecisionsService
+    let observationsService: ObservationsService
 
     var selectedProjectId: UUID? {
         didSet {
@@ -39,6 +42,9 @@ final class AppState {
 
         self.projectService = ProjectService(apiClient: apiClient)
         self.dashboardService = DashboardService(apiClient: apiClient)
+        self.agentsService = AgentsService(apiClient: apiClient)
+        self.decisionsService = DecisionsService(apiClient: apiClient)
+        self.observationsService = ObservationsService(apiClient: apiClient)
 
         // Restore last selected project
         if let saved = UserDefaults.standard.string(forKey: Self.selectedProjectKey),

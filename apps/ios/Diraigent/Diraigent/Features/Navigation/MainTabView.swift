@@ -27,7 +27,7 @@ struct MainTabView: View {
             .tabItem { Label("Tasks", systemImage: "checklist") }
 
             NavigationStack {
-                PlaceholderView(title: "Agents", icon: "cpu")
+                AgentListView()
             }
             .tabItem { Label("Agents", systemImage: "cpu") }
 
@@ -47,13 +47,13 @@ struct MoreMenuView: View {
         List {
             Section("Project") {
                 NavigationLink {
-                    PlaceholderView(title: "Decisions", icon: "scale.3d")
+                    DecisionListView()
                 } label: {
                     Label("Decisions", systemImage: "scale.3d")
                 }
 
                 NavigationLink {
-                    PlaceholderView(title: "Observations", icon: "eye")
+                    ObservationListView()
                 } label: {
                     Label("Observations", systemImage: "eye")
                 }

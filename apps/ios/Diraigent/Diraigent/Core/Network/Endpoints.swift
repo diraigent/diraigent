@@ -28,10 +28,14 @@ public enum Endpoints {
     // MARK: - Decisions
 
     static func decisions(_ projectId: UUID) -> String { "/projects/\(projectId)/decisions" }
+    static func decision(_ projectId: UUID, decisionId: UUID) -> String { "/projects/\(projectId)/decisions/\(decisionId)" }
 
     // MARK: - Observations
 
     static func observations(_ projectId: UUID) -> String { "/projects/\(projectId)/observations" }
+    static func observation(_ projectId: UUID, observationId: UUID) -> String { "/projects/\(projectId)/observations/\(observationId)" }
+    static func dismissObservation(_ projectId: UUID, observationId: UUID) -> String { "/projects/\(projectId)/observations/\(observationId)/dismiss" }
+    static func promoteObservation(_ projectId: UUID, observationId: UUID) -> String { "/projects/\(projectId)/observations/\(observationId)/promote" }
 
     // MARK: - Knowledge
 
