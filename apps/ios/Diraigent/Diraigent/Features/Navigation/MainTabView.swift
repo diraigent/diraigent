@@ -66,6 +66,12 @@ struct MoreMenuView: View {
                 }
 
                 NavigationLink {
+                    AuditListView()
+                } label: {
+                    Label("Audit Log", systemImage: "clock.arrow.circlepath")
+                }
+
+                NavigationLink {
                     GitView()
                 } label: {
                     Label("Git", systemImage: "arrow.triangle.branch")
