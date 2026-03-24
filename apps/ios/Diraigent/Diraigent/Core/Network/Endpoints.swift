@@ -79,4 +79,9 @@ public enum Endpoints {
     // MARK: - Audit
 
     static func audit(_ projectId: UUID) -> String { "/\(projectId)/audit" }
+
+    // MARK: - Logs
+
+    static let logs = "/logs"
+    static let logLabels = "/logs/labels"
 }

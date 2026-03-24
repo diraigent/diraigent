@@ -93,6 +93,12 @@ struct MoreMenuView: View {
                 } label: {
                     Label("Search", systemImage: "magnifyingglass")
                 }
+
+                NavigationLink {
+                    LogsView()
+                } label: {
+                    Label("Logs", systemImage: "doc.text")
+                }
             }
 
             Section("App") {
