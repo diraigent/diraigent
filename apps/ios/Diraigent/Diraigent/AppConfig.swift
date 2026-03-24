@@ -10,16 +10,16 @@ struct AppConfig: Sendable {
     /// Development config (localhost).
     static let development = AppConfig(
         apiBaseURL: "http://localhost:3000/v1",
-        authIssuer: "https://auth.faua.at/application/o/diraigent/",
-        authClientId: "PLACEHOLDER_CLIENT_ID",
+        authIssuer: "https://auth.diraigent.com/application/o/diraigent/",
+        authClientId: "kvuNVJmjVOdhwSfmBDwlSMJw6XxExtjaib5wEDsu",
         authRedirectURI: "diraigent://auth/callback"
     )
 
     /// Production config.
     static let production = AppConfig(
         apiBaseURL: "https://api.diraigent.dev/v1",
-        authIssuer: "https://auth.faua.at/application/o/diraigent/",
-        authClientId: "PLACEHOLDER_CLIENT_ID",
+        authIssuer: "https://auth.diraigent.com/application/o/diraigent/",
+        authClientId: "kvuNVJmjVOdhwSfmBDwlSMJw6XxExtjaib5wEDsu",
         authRedirectURI: "diraigent://auth/callback"
     )
 
