@@ -6,15 +6,15 @@ use tracing::{error, info, warn};
 
 use crate::config::{ActiveTasks, LockQueue};
 use crate::engine::pipeline::{self, StepOutcome};
+use crate::engine::task_source::TaskSource;
 use crate::git::strategy::GitAction;
-use crate::project::api::ProjectsApi;
 use crate::project::paths as project_paths;
 use crate::task_id::TaskId;
 
 /// Collect finished tasks and process them (check pipeline state, merge/cleanup).
 /// Returns `true` if any file locks were released (triggers immediate re-poll for queued tasks).
 pub async fn reap_finished(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     projects_path: &Path,
     active: &ActiveTasks,
     lock_queue: &LockQueue,
@@ -48,7 +48,7 @@ pub async fn reap_finished(
 /// Process a single reaped task: join the handle, check pipeline state, and merge/cleanup.
 /// Returns `true` if file locks were released (so queued tasks can be retried).
 async fn process_reaped_task(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     projects_path: &Path,
     task_id: String,
     handle: JoinHandle<()>,
@@ -358,7 +358,7 @@ async fn process_reaped_task(
 /// Emit a merge success event with file stats.
 #[allow(clippy::too_many_arguments)]
 async fn emit_merge_event(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     project_id: &str,
     task_id: &str,
     branch: &str,
@@ -391,7 +391,7 @@ async fn emit_merge_event(
 
 /// Emit an error event for a failed merge (conflict).
 async fn emit_merge_error_event(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     project_id: &str,
     task_id: &str,
     branch: &str,
@@ -421,7 +421,7 @@ async fn emit_merge_error_event(
 mod tests {
     use super::*;
     use crate::config::{ActiveTasks, LockQueue};
-    use crate::project::api::ProjectsApi;
+    use crate::engine::task_source::TaskSource;
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::Mutex;

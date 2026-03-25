@@ -1,8 +1,8 @@
 use crate::crypto::Dek;
 use crate::engine::prompt;
 use crate::engine::step_profile::StepProfile;
+use crate::engine::task_source::TaskSource;
 use crate::git::WorktreeManager;
-use crate::project::api::ProjectsApi;
 use crate::providers::{
     ProviderConfig as ProviderCfg, ProviderFactory, ResolvedStep,
     TaskContext as ProviderTaskContext,
@@ -181,7 +181,7 @@ pub struct WorkerResult {
 /// Spawn a Claude Code worker for a task. Runs to completion.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_worker(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     worktree_mgr: &WorktreeManager,
     task_id: &str,
     project_id: &str,
@@ -487,7 +487,7 @@ pub async fn run_worker(
 /// object.  Any posting failure is logged as a warning so callers do not need
 /// to handle the error themselves.
 pub async fn post_worker_event(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     project_id: &str,
     task_id: &str,
     title: &str,
@@ -522,7 +522,7 @@ pub async fn post_worker_event(
 /// stop_reason, is_error) for post-processing (commit, audit events, cost metrics).
 #[allow(clippy::too_many_arguments)]
 async fn execute_via_provider(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     provider_name: &str,
     project_id: &str,
     task_id: &str,
@@ -676,7 +676,7 @@ async fn execute_via_provider(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::project::api::ProjectsApi;
+    use crate::engine::task_source::TaskSource;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 

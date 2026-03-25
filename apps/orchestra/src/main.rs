@@ -88,6 +88,8 @@ async fn main() -> Result<()> {
 
     let config = Config::from_env()?;
     let api = ProjectsApi::new(&config.diraigent_api, &config.agent_id);
+    let task_source: std::sync::Arc<dyn engine::task_source::TaskSource> =
+        std::sync::Arc::new(api.clone());
 
     info!(
         "projects_path={} project_id={}",
@@ -180,7 +182,7 @@ async fn main() -> Result<()> {
     {
         let projects = api.list_projects().await.unwrap_or_default();
         engine::spawner::poll_ready_tasks_with_projects(
-            &api,
+            &task_source,
             &config,
             &active,
             &lock_queue,
@@ -204,9 +206,13 @@ async fn main() -> Result<()> {
         }
 
         // Reap finished tasks — returns true if file locks were released.
-        let locks_released =
-            engine::scheduler::reap_finished(&api, &config.projects_path, &active, &lock_queue)
-                .await;
+        let locks_released = engine::scheduler::reap_finished(
+            task_source.as_ref(),
+            &config.projects_path,
+            &active,
+            &lock_queue,
+        )
+        .await;
 
         // Heartbeat every 60s
         if last_heartbeat.elapsed().as_secs() >= 60 {
@@ -221,7 +227,7 @@ async fn main() -> Result<()> {
             // Fetch projects once and share across spawner + work item processing.
             let projects = api.list_projects().await.unwrap_or_default();
             engine::spawner::poll_ready_tasks_with_projects(
-                &api,
+                &task_source,
                 &config,
                 &active,
                 &lock_queue,
@@ -254,7 +260,13 @@ async fn main() -> Result<()> {
     // Wait for active workers to finish (children should exit from SIGTERM)
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
-        engine::scheduler::reap_finished(&api, &config.projects_path, &active, &lock_queue).await;
+        engine::scheduler::reap_finished(
+            task_source.as_ref(),
+            &config.projects_path,
+            &active,
+            &lock_queue,
+        )
+        .await;
         if active.lock().await.is_empty() {
             break;
         }

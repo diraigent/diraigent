@@ -1,6 +1,6 @@
 use crate::crypto::Dek;
 use crate::engine::step_profile::StepProfile;
-use crate::project::api::ProjectsApi;
+use crate::engine::task_source::TaskSource;
 use crate::task_id::TaskId;
 use std::path::Path;
 use tracing::{debug, info};
@@ -46,7 +46,7 @@ pub fn build_static_system_prompt(repo_root: &Path) -> String {
 /// 6. General Rules
 #[allow(clippy::too_many_arguments)]
 pub async fn build_user_prompt(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     task_id: &str,
     project_id: &str,
     worktree_path: &Path,
@@ -683,7 +683,7 @@ fn build_generated_context(task_files: &[&str], autodocs: Option<&[serde_json::V
 ///
 /// Work item progress calls are parallelized using `join_all` to avoid the N+1
 /// sequential API call problem (one call per active work item).
-async fn build_work_section(api: &ProjectsApi, project_id: &str) -> String {
+async fn build_work_section(api: &dyn TaskSource, project_id: &str) -> String {
     let work_items = api.get_work_items(project_id).await.unwrap_or_default();
     let active_work: Vec<_> = work_items
         .iter()

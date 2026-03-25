@@ -12,8 +12,9 @@ use tracing::{info, warn};
 
 use crate::constants::TaskState;
 use crate::engine::step_profile;
+use crate::engine::task_source::TaskSource;
 use crate::git::strategy::{self as git_strategy, GitAction, GitStrategy};
-use crate::project::api::{ProjectsApi, retry_api_call};
+use crate::project::api::retry_api_call;
 use crate::repo_playbooks;
 use crate::task_id::TaskId;
 
@@ -61,7 +62,7 @@ impl StepOutcome {
 /// When `git_root` is provided, repo playbook overrides are used for consistency
 /// with `resolve_step()`.
 pub async fn check_next_step(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     task_id: &str,
     git_root: Option<&Path>,
 ) -> Result<StepOutcome> {
@@ -202,7 +203,7 @@ pub async fn check_next_step(
 ///
 /// Used for loop detection: each failed implement cycle posts a blocker before
 /// releasing the task back to `ready`.
-pub async fn count_blocker_cycles(api: &ProjectsApi, task_id: &str) -> u32 {
+pub async fn count_blocker_cycles(api: &dyn TaskSource, task_id: &str) -> u32 {
     match api.get_task_updates(task_id).await {
         Ok(updates) => updates
             .iter()
@@ -218,7 +219,7 @@ pub async fn count_blocker_cycles(api: &ProjectsApi, task_id: &str) -> u32 {
 
 /// Resolve the effective max_implement_cycles for a task's project.
 pub async fn resolve_max_implement_cycles(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     project_id: &str,
     global_max: u32,
 ) -> u32 {
@@ -251,7 +252,7 @@ pub async fn resolve_max_implement_cycles(
 /// API version (repo is source of truth). If the API fetch fails entirely,
 /// the repo playbook is used as a fallback.
 pub async fn resolve_step(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     task_data: Option<&Value>,
     git_root: Option<&Path>,
 ) -> (String, Option<Value>) {
@@ -350,7 +351,7 @@ pub async fn resolve_step(
 /// Used by `check_next_step()` to get steps for regression logic and git actions.
 /// If `git_root` is provided, checks for repo playbook overrides.
 async fn resolve_playbook_steps(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     playbook_id: &str,
     git_root: Option<&Path>,
     tid: &TaskId,
@@ -389,7 +390,7 @@ async fn resolve_playbook_steps(
 /// Client-side fallback: resolve a single step's step_template_id by fetching
 /// the template from the API and merging its properties as defaults.
 /// Inline step properties take precedence over template defaults.
-async fn resolve_step_template(api: &ProjectsApi, step: &Value) -> Value {
+async fn resolve_step_template(api: &dyn TaskSource, step: &Value) -> Value {
     let template_id = match step["step_template_id"].as_str() {
         Some(id) => id,
         None => return step.clone(),
@@ -454,7 +455,7 @@ async fn resolve_step_template(api: &ProjectsApi, step: &Value) -> Value {
 /// Discovers YAML playbooks in `.diraigent/playbooks/` and syncs them to the API.
 /// Uses `metadata.source = "repo"` and `metadata.repo_file` for identification.
 /// Failures are non-fatal: errors are logged but do not prevent task execution.
-pub async fn sync_project_playbooks(api: &ProjectsApi, repo_root: &std::path::Path) {
+pub async fn sync_project_playbooks(api: &dyn TaskSource, repo_root: &std::path::Path) {
     let dir = repo_root.join(".diraigent").join("playbooks");
     if !dir.is_dir() {
         return; // No playbooks directory — nothing to do
@@ -631,7 +632,7 @@ pub async fn sync_project_playbooks(api: &ProjectsApi, repo_root: &std::path::Pa
 /// Discovers YAML decision files in `.diraigent/decisions/` and syncs them to the API.
 /// Uses `source:repo` and `repo_file:<filename>` tags for identification.
 /// Failures are non-fatal: errors are logged but do not prevent task execution.
-pub async fn sync_project_decisions(api: &ProjectsApi, repo_root: &std::path::Path) {
+pub async fn sync_project_decisions(api: &dyn TaskSource, repo_root: &std::path::Path) {
     let dir = repo_root.join(".diraigent").join("decisions");
     if !dir.is_dir() {
         return; // No decisions directory — nothing to do
@@ -836,7 +837,7 @@ pub async fn sync_project_decisions(api: &ProjectsApi, repo_root: &std::path::Pa
 /// Discovers YAML knowledge files in `.diraigent/knowledge/` and syncs them to the API.
 /// Uses `metadata.source = "repo"` and `metadata.repo_file` for identification.
 /// Failures are non-fatal: errors are logged but do not prevent task execution.
-pub async fn sync_project_knowledge(api: &ProjectsApi, repo_root: &std::path::Path) {
+pub async fn sync_project_knowledge(api: &dyn TaskSource, repo_root: &std::path::Path) {
     let dir = repo_root.join(".diraigent").join("knowledge");
     if !dir.is_dir() {
         return; // No knowledge directory — nothing to do
@@ -1002,7 +1003,7 @@ pub async fn sync_project_knowledge(api: &ProjectsApi, repo_root: &std::path::Pa
 /// Discovers YAML observation files in `.diraigent/observations/` and syncs them to the API.
 /// Uses `source = "repo"` and `metadata.repo_file` for identification.
 /// Failures are non-fatal: errors are logged but do not prevent task execution.
-pub async fn sync_project_observations(api: &ProjectsApi, repo_root: &std::path::Path) {
+pub async fn sync_project_observations(api: &dyn TaskSource, repo_root: &std::path::Path) {
     let dir = repo_root.join(".diraigent").join("observations");
     if !dir.is_dir() {
         return; // No observations directory — nothing to do
@@ -1180,7 +1181,7 @@ pub async fn sync_project_observations(api: &ProjectsApi, repo_root: &std::path:
 
 /// Find the project ID for a given repo root by listing projects and matching git_root.
 async fn find_project_id_for_repo(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     repo_root: &std::path::Path,
 ) -> Option<String> {
     let projects = api.list_projects().await.ok()?;

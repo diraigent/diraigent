@@ -621,6 +621,198 @@ fn as_array(val: &Value) -> Vec<Value> {
     }
 }
 
+// ── TaskSource implementation ────────────────────────────────────
+//
+// Delegates every trait method to the existing `ProjectsApi` method.
+
+#[async_trait::async_trait]
+impl crate::engine::task_source::TaskSource for ProjectsApi {
+    fn agent_id(&self) -> &str {
+        self.agent_id.as_deref().unwrap_or("")
+    }
+    fn base_url(&self) -> &str {
+        &self.base_url
+    }
+    fn api_token(&self) -> &str {
+        self.api_token.as_deref().unwrap_or("")
+    }
+
+    async fn get_task(&self, task_id: &str) -> Result<Value> {
+        ProjectsApi::get_task(self, task_id).await
+    }
+    async fn get_ready_tasks(&self, project_id: &str) -> Result<Vec<Value>> {
+        ProjectsApi::get_ready_tasks(self, project_id).await
+    }
+    async fn claim_task(&self, task_id: &str) -> Result<Value> {
+        ProjectsApi::claim_task(self, task_id).await
+    }
+    async fn transition_task(&self, task_id: &str, state: &str) -> Result<Value> {
+        ProjectsApi::transition_task(self, task_id, state).await
+    }
+    async fn transition_task_with_step(
+        &self,
+        task_id: &str,
+        state: &str,
+        playbook_step: u64,
+    ) -> Result<Value> {
+        ProjectsApi::transition_task_with_step(self, task_id, state, playbook_step).await
+    }
+    async fn update_task(&self, task_id: &str, body: &Value) -> Result<Value> {
+        ProjectsApi::update_task(self, task_id, body).await
+    }
+    async fn create_task(&self, project_id: &str, body: &Value) -> Result<Value> {
+        ProjectsApi::create_task(self, project_id, body).await
+    }
+    async fn add_dependency(&self, task_id: &str, depends_on: &str) -> Result<Value> {
+        ProjectsApi::add_dependency(self, task_id, depends_on).await
+    }
+
+    async fn post_task_update(&self, task_id: &str, kind: &str, content: &str) -> Result<Value> {
+        ProjectsApi::post_task_update(self, task_id, kind, content).await
+    }
+    async fn get_task_updates(&self, task_id: &str) -> Result<Vec<Value>> {
+        ProjectsApi::get_task_updates(self, task_id).await
+    }
+    async fn get_task_comments(&self, task_id: &str) -> Result<Vec<Value>> {
+        ProjectsApi::get_task_comments(self, task_id).await
+    }
+    async fn post_comment(&self, task_id: &str, content: &str) -> Result<Value> {
+        ProjectsApi::post_comment(self, task_id, content).await
+    }
+    async fn post_task_cost(
+        &self,
+        task_id: &str,
+        input_tokens: i64,
+        output_tokens: i64,
+        cost_usd: f64,
+    ) -> Result<Value> {
+        ProjectsApi::post_task_cost(self, task_id, input_tokens, output_tokens, cost_usd).await
+    }
+    async fn post_changed_files(
+        &self,
+        task_id: &str,
+        files: &[crate::git::ChangedFile],
+    ) -> Result<Value> {
+        ProjectsApi::post_changed_files(self, task_id, files).await
+    }
+
+    async fn get_project(&self, project_id: &str) -> Result<Value> {
+        ProjectsApi::get_project(self, project_id).await
+    }
+    async fn list_projects(&self) -> Result<Vec<Value>> {
+        ProjectsApi::list_projects(self).await
+    }
+
+    async fn get_context_for_task(&self, project_id: &str, task_id: &str) -> Result<Value> {
+        ProjectsApi::get_context_for_task(self, project_id, task_id).await
+    }
+    async fn get_verifications(&self, project_id: &str, task_id: &str) -> Result<Vec<Value>> {
+        ProjectsApi::get_verifications(self, project_id, task_id).await
+    }
+    async fn get_related_items(&self, task_id: &str) -> Result<Value> {
+        ProjectsApi::get_related_items(self, task_id).await
+    }
+
+    async fn get_playbook(&self, playbook_id: &str) -> Result<Value> {
+        ProjectsApi::get_playbook(self, playbook_id).await
+    }
+    async fn list_playbooks(&self) -> Result<Vec<Value>> {
+        ProjectsApi::list_playbooks(self).await
+    }
+    async fn create_playbook(&self, body: &Value) -> Result<Value> {
+        ProjectsApi::create_playbook(self, body).await
+    }
+    async fn update_playbook(&self, playbook_id: &str, body: &Value) -> Result<Value> {
+        ProjectsApi::update_playbook(self, playbook_id, body).await
+    }
+    async fn get_step_template(&self, template_id: &str) -> Result<Value> {
+        ProjectsApi::get_step_template(self, template_id).await
+    }
+
+    async fn get_work_items(&self, project_id: &str) -> Result<Vec<Value>> {
+        ProjectsApi::get_work_items(self, project_id).await
+    }
+    async fn get_work_item_progress(&self, work_id: &str) -> Result<Value> {
+        ProjectsApi::get_work_item_progress(self, work_id).await
+    }
+    async fn get_task_work_items(&self, task_id: &str) -> Result<Vec<Value>> {
+        ProjectsApi::get_task_work_items(self, task_id).await
+    }
+    async fn get_work_item(&self, work_id: &str) -> Result<Value> {
+        ProjectsApi::get_work_item(self, work_id).await
+    }
+
+    async fn post_event(&self, project_id: &str, body: &Value) -> Result<Value> {
+        ProjectsApi::post_event(self, project_id, body).await
+    }
+    async fn post_observation(&self, project_id: &str, body: &Value) -> Result<Value> {
+        ProjectsApi::post_observation(self, project_id, body).await
+    }
+    async fn list_observations(
+        &self,
+        project_id: &str,
+        status: Option<&str>,
+        limit: Option<i64>,
+    ) -> Result<Vec<Value>> {
+        ProjectsApi::list_observations(self, project_id, status, limit).await
+    }
+    async fn update_observation(&self, observation_id: &str, body: &Value) -> Result<Value> {
+        ProjectsApi::update_observation(self, observation_id, body).await
+    }
+
+    async fn post_knowledge(&self, project_id: &str, body: &Value) -> Result<Value> {
+        ProjectsApi::post_knowledge(self, project_id, body).await
+    }
+    async fn list_knowledge(
+        &self,
+        project_id: &str,
+        tag: Option<&str>,
+        limit: Option<i64>,
+    ) -> Result<Vec<Value>> {
+        ProjectsApi::list_knowledge(self, project_id, tag, limit).await
+    }
+    async fn update_knowledge(&self, knowledge_id: &str, body: &Value) -> Result<Value> {
+        ProjectsApi::update_knowledge(self, knowledge_id, body).await
+    }
+
+    async fn post_decision(&self, project_id: &str, body: &Value) -> Result<Value> {
+        ProjectsApi::post_decision(self, project_id, body).await
+    }
+    async fn list_decisions(&self, project_id: &str) -> Result<Vec<Value>> {
+        ProjectsApi::list_decisions(self, project_id).await
+    }
+    async fn update_decision(&self, decision_id: &str, body: &Value) -> Result<Value> {
+        ProjectsApi::update_decision(self, decision_id, body).await
+    }
+
+    async fn acquire_file_locks(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        paths: &[String],
+    ) -> Result<Value> {
+        ProjectsApi::acquire_file_locks(self, project_id, task_id, paths).await
+    }
+    async fn release_file_locks(&self, project_id: &str, task_id: &str) -> Result<Value> {
+        ProjectsApi::release_file_locks(self, project_id, task_id).await
+    }
+
+    async fn resolve_provider_config(&self, project_id: &str, provider: &str) -> Result<Value> {
+        ProjectsApi::resolve_provider_config(self, project_id, provider).await
+    }
+
+    async fn upload_task_log(
+        &self,
+        project_id: &str,
+        task_id: &str,
+        step_name: &str,
+        content: &str,
+        metadata: &Value,
+    ) -> Result<Value> {
+        ProjectsApi::upload_task_log(self, project_id, task_id, step_name, content, metadata).await
+    }
+}
+
 /// Retry an async operation up to 4 times with exponential backoff (1s, 2s, 4s).
 /// Guards against transient API errors (503, network blips) that would otherwise
 /// cause premature merge or stuck tasks. See observations 27a11e49 and f2c5f77c.
