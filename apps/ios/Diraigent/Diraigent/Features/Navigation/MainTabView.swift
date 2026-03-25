@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Main tab bar navigation for the app.
-/// 5 tabs: Dashboard, Tasks, Work, Agents, More
+/// 5 tabs: Dashboard, Work, Chat, Agents, More
 struct MainTabView: View {
     @Environment(AppState.self) private var appState
 
@@ -18,14 +18,14 @@ struct MainTabView: View {
             .tabItem { Label("Dashboard", systemImage: "chart.bar") }
 
             NavigationStack {
-                TaskListView()
-            }
-            .tabItem { Label("Tasks", systemImage: "checklist") }
-
-            NavigationStack {
                 WorkListView()
             }
             .tabItem { Label("Work", systemImage: "hammer") }
+
+            NavigationStack {
+                ChatView()
+            }
+            .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
 
             NavigationStack {
                 AgentListView()

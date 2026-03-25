@@ -78,15 +78,17 @@ struct CreateTaskView: View {
         isSubmitting = true
         errorMessage = nil
 
-        let context = spec.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let trimmedSpec = spec.trimmingCharacters(in: .whitespacesAndNewlines)
+        let context: [String: AnyCodable]? = trimmedSpec.isEmpty
             ? nil
-            : CreateTaskContext(spec: spec.trimmingCharacters(in: .whitespacesAndNewlines))
+            : ["spec": AnyCodable(trimmedSpec)]
 
         let request = CreateTaskRequest(
             title: trimmedTitle,
             kind: kind,
             urgent: urgent ? true : nil,
-            context: context
+            context: context,
+            workId: nil
         )
 
         let result = await appState.tasksService.createTask(projectId: projectId, request: request)

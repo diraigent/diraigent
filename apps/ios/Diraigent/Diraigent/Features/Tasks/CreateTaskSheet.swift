@@ -120,20 +120,18 @@ struct CreateTaskSheet: View {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
 
-        let context = CreateTaskContext(
-            spec: spec.isEmpty ? nil : spec,
-            files: files.isEmpty ? nil : files,
-            testCmd: testCmd.isEmpty ? nil : testCmd,
-            acceptanceCriteria: acceptanceCriteria.isEmpty ? nil : acceptanceCriteria
-        )
+        var context: [String: AnyCodable] = [:]
+        if !spec.isEmpty { context["spec"] = AnyCodable(spec) }
+        if !files.isEmpty { context["files"] = AnyCodable(files) }
+        if !testCmd.isEmpty { context["test_cmd"] = AnyCodable(testCmd) }
+        if !acceptanceCriteria.isEmpty { context["acceptance_criteria"] = AnyCodable(acceptanceCriteria) }
 
         let request = CreateTaskRequest(
             title: title.trimmingCharacters(in: .whitespaces),
             kind: kind,
-            priority: Int(priority),
             urgent: urgent,
-            context: context,
-            playbookId: nil
+            context: context.isEmpty ? nil : context,
+            workId: nil
         )
 
         let _ = await tasksService.createTask(projectId: projectId, request: request)

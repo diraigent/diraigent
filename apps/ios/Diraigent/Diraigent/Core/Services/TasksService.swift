@@ -6,12 +6,8 @@ struct CreateTaskRequest: Encodable, Sendable {
     let title: String
     let kind: String?
     let urgent: Bool?
-    let context: CreateTaskContext?
-}
-
-/// Context payload for task creation.
-struct CreateTaskContext: Encodable, Sendable {
-    let spec: String?
+    let context: [String: AnyCodable]?
+    let workId: UUID?
 }
 
 /// Request body for adding a task comment.

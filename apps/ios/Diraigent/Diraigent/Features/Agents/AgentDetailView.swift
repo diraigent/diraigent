@@ -119,22 +119,6 @@ struct AgentDetailView: View {
     }
 }
 
-/// Simple state badge (also used by tasks feature).
-struct StateBadge: View {
-    let state: String
-
-    var body: some View {
-        Text(state)
-            .font(.caption2.weight(.semibold))
-            .textCase(.none)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(DiraigentTheme.taskStateColor(state).opacity(0.15))
-            .foregroundStyle(DiraigentTheme.taskStateColor(state))
-            .clipShape(Capsule())
-    }
-}
-
 /// Simple flow layout for tags/chips.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8

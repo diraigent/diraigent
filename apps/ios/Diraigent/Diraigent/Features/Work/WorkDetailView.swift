@@ -13,6 +13,8 @@ struct WorkDetailView: View {
     @State private var isUpdatingStatus = false
     @State private var showStatusConfirmation = false
     @State private var pendingStatus: String?
+    @State private var isExecuting = false
+    @State private var isPlanExecuting = false
 
     private static let allStatuses = ["active", "achieved", "paused", "abandoned"]
 
@@ -24,6 +26,9 @@ struct WorkDetailView: View {
 
                 // Status actions
                 statusActionsSection
+
+                // Execute actions
+                executeButtons
 
                 // Progress indicator
                 if let progress {
@@ -175,6 +180,74 @@ struct WorkDetailView: View {
         case "abandoned": return .red
         default: return .secondary
         }
+    }
+
+    // MARK: - Execute Actions
+
+    private var executeButtons: some View {
+        HStack(spacing: DiraigentTheme.spacingSM) {
+            Button {
+                Task { await executeWork(decompose: false) }
+            } label: {
+                HStack(spacing: 6) {
+                    if isExecuting {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "play.fill")
+                    }
+                    Text("Execute")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isExecuting || isPlanExecuting)
+
+            Button {
+                Task { await executeWork(decompose: true) }
+            } label: {
+                HStack(spacing: 6) {
+                    if isPlanExecuting {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "list.bullet.rectangle")
+                    }
+                    Text("Plan & Execute")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(isExecuting || isPlanExecuting)
+        }
+    }
+
+    private func executeWork(decompose: Bool) async {
+        guard let projectId = appState.selectedProjectId else { return }
+
+        if decompose { isPlanExecuting = true } else { isExecuting = true }
+
+        var context: [String: AnyCodable] = [:]
+        if let desc = work.description, !desc.isEmpty {
+            context["spec"] = AnyCodable(desc)
+        }
+        if let criteria = work.successCriteria {
+            context["acceptance_criteria"] = AnyCodable(criteria.displayText)
+        }
+        if decompose {
+            context["decompose"] = AnyCodable(true)
+        }
+
+        let request = CreateTaskRequest(
+            title: work.title,
+            kind: nil,
+            urgent: nil,
+            context: context.isEmpty ? nil : context,
+            workId: work.id
+        )
+
+        _ = await appState.tasksService.createTask(projectId: projectId, request: request)
+        await loadLinkedData()
+
+        if decompose { isPlanExecuting = false } else { isExecuting = false }
     }
 
     // MARK: - Sections
