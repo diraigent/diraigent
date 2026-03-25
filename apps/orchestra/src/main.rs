@@ -41,6 +41,12 @@ async fn main() -> Result<()> {
         .install_default()
         .expect("failed to install rustls CryptoProvider");
 
+    // Check for `orchestra run <file>` subcommand before full init.
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() >= 2 && args[1] == "run" {
+        return run_headless(&args[2..]).await;
+    }
+
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| "info,tracing_loki=warn".into());
 
@@ -418,5 +424,147 @@ async fn process_single_work_item(
         work_id, intent_type, task_id
     );
 
+    Ok(())
+}
+
+// ── Headless mode ─────────────────────────────────────────────────
+
+/// Run a single work file without an API connection.
+///
+/// Usage: `orchestra run <file> [--project-path <path>]`
+async fn run_headless(args: &[String]) -> Result<()> {
+    use engine::local_source::LocalTaskSource;
+    use engine::task_source::TaskSource;
+
+    // Init tracing (simple, no Loki)
+    tracing_subscriber::fmt()
+        .with_target(false)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
+        .init();
+
+    // Parse args
+    if args.is_empty() {
+        anyhow::bail!("usage: orchestra run <file.yaml> [--project-path <path>]");
+    }
+    let file_path = std::path::Path::new(&args[0]);
+    let mut project_path = std::env::current_dir()?;
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--project-path" | "-p" => {
+                i += 1;
+                if i < args.len() {
+                    project_path = std::path::PathBuf::from(&args[i]);
+                }
+            }
+            other => {
+                anyhow::bail!("unknown argument: {other}");
+            }
+        }
+        i += 1;
+    }
+
+    let source = LocalTaskSource::from_file(file_path, &project_path)?;
+    let task_ids = source.task_ids().to_vec();
+    let project_id = source.project_id().to_string();
+    let repo_root = source.project_path().to_path_buf();
+
+    if task_ids.is_empty() {
+        info!("no tasks to run");
+        return Ok(());
+    }
+
+    info!(
+        "headless: {} task(s), project_path={}",
+        task_ids.len(),
+        repo_root.display()
+    );
+
+    let source: Arc<dyn TaskSource> = Arc::new(source);
+
+    // Determine agent-cli path and log dir
+    let agent_cli = std::env::var("AGENT_CLI").unwrap_or_else(|_| "agent-cli".to_string());
+    let log_dir = std::env::temp_dir().join("orchestra-run");
+    std::fs::create_dir_all(&log_dir).ok();
+
+    let worker_model = std::env::var("WORKER_MODEL").ok();
+
+    // Process each task sequentially
+    for task_id in &task_ids {
+        let tid = task_id::TaskId::new(task_id);
+        info!("headless: starting task {tid}");
+
+        // Claim
+        if let Err(e) = source.claim_task(task_id).await {
+            error!("headless: failed to claim {tid}: {e}");
+            continue;
+        }
+
+        // Resolve step
+        let task_data = source.get_task(task_id).await.ok();
+        let (step_name, step_json) =
+            engine::pipeline::resolve_step(source.as_ref(), task_data.as_ref(), Some(&repo_root))
+                .await;
+
+        let step_config = engine::worker::StepConfig::for_step(
+            &step_name,
+            step_json.as_ref(),
+            None,
+            worker_model.as_deref(),
+        );
+
+        info!(
+            "headless: step={step_name} model={}",
+            step_config.model.as_deref().unwrap_or("default")
+        );
+
+        // Create worktree manager
+        let wm = if repo_root.join(".git").exists() {
+            git::WorktreeManager::with_branch(&repo_root, "main")
+        } else {
+            git::WorktreeManager::disabled(&repo_root)
+        };
+
+        // Run worker
+        match engine::worker::run_worker(
+            source.as_ref(),
+            &wm,
+            task_id,
+            &project_id,
+            &repo_root,
+            &agent_cli,
+            &log_dir,
+            &step_config,
+            None,  // no encryption in headless mode
+            false, // don't upload logs
+            false, // don't store diffs
+        )
+        .await
+        {
+            Ok(result) => {
+                info!(
+                    "headless: task {tid} done — cost=${:.4} tokens={}in/{}out duration={}s",
+                    result.cost_usd,
+                    result.input_tokens,
+                    result.output_tokens,
+                    result.duration_seconds,
+                );
+                // Transition to done
+                if let Err(e) = source.transition_task(task_id, "done").await {
+                    warn!("headless: failed to transition {tid} to done: {e}");
+                }
+            }
+            Err(e) => {
+                error!("headless: task {tid} failed: {e:#}");
+                if let Err(te) = source.transition_task(task_id, "cancelled").await {
+                    warn!("headless: failed to cancel {tid}: {te}");
+                }
+            }
+        }
+    }
+
+    info!("headless: all tasks complete");
     Ok(())
 }
