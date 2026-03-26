@@ -84,7 +84,7 @@ impl LocalTaskSource {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("reading work file {}", path.display()))?;
 
-        let work: WorkFile = if path.extension().map_or(false, |e| e == "json") {
+        let work: WorkFile = if path.extension().is_some_and(|e| e == "json") {
             serde_json::from_str(&content)?
         } else {
             serde_yaml::from_str(&content)?
