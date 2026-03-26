@@ -5,6 +5,10 @@ import { AuthCallbackPage } from './features/auth/pages/auth-callback/auth-callb
 export const routes: Routes = [
   {
     path: '',
+    loadComponent: () => import('./features/landing/landing').then(m => m.LandingPage),
+  },
+  {
+    path: 'dashboard',
     canActivate: [AuthGuard],
     loadComponent: () => import('./features/dashboard/dashboard').then(m => m.DashboardPage),
   },

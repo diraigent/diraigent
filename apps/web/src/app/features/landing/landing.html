@@ -1,79 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>diraigent — your codebase deserves a system, not a suggestion</title>
-  <meta name="description" content="A self-hosted software factory with enforced pipelines, goal decomposition, and human-in-the-loop review. Multi-agent orchestration without the chaos.">
-  <meta name="author" content="Zivue AS">
-  <meta name="theme-color" content="#1e1e2e">
-
-  <!-- Canonical -->
-  <link rel="canonical" href="https://www.diraigent.com/">
-
-  <!-- Open Graph -->
-  <meta property="og:type" content="website">
-  <meta property="og:site_name" content="diraigent">
-  <meta property="og:title" content="diraigent — your codebase deserves a system, not a suggestion">
-  <meta property="og:description" content="A self-hosted software factory with enforced pipelines, goal decomposition, and human-in-the-loop review. Multi-agent orchestration without the chaos.">
-  <meta property="og:url" content="https://www.diraigent.com/">
-  <meta property="og:locale" content="en_US">
-  <meta property="og:image" content="https://www.diraigent.com/assets/images/og-image.png">
-  <meta property="og:image:width" content="1200">
-  <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="diraigent — your codebase deserves a system, not a suggestion">
-
-  <!-- Twitter Card -->
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="diraigent — your codebase deserves a system, not a suggestion">
-  <meta name="twitter:description" content="A self-hosted software factory with enforced pipelines, goal decomposition, and human-in-the-loop review. Multi-agent orchestration without the chaos.">
-  <meta name="twitter:image" content="https://www.diraigent.com/assets/images/og-image.png">
-  <meta name="twitter:image:alt" content="diraigent — your codebase deserves a system, not a suggestion">
-
-  <!-- Favicon -->
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png">
-  <link rel="icon" href="/favicon.ico" sizes="48x48">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-
-  <!-- Structured Data -->
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "diraigent",
-    "url": "https://www.diraigent.com",
-    "description": "A self-hosted software factory with enforced pipelines, goal decomposition, and human-in-the-loop review. Multi-agent orchestration without the chaos.",
-    "applicationCategory": "DeveloperApplication",
-    "operatingSystem": "Linux, macOS, Windows",
-    "author": {
-      "@type": "Organization",
-      "name": "Zivue AS",
-      "url": "https://zivue.com"
-    },
-    "offers": {
-      "@type": "Offer",
-      "price": "0",
-      "priceCurrency": "USD"
-    },
-    "sameAs": [
-      "https://github.com/diraigent/diraigent",
-      "https://discord.gg/tfaYmvTw"
-    ]
-  }
-  </script>
-
-  <link rel="stylesheet" href="assets/css/style.css">
-</head>
-<body>
-
 <div class="page">
 
   <!-- Header -->
   <header class="header">
     <div class="header-brand">
-      <img src="assets/images/logo-diraigent.svg" alt="diraigent" class="header-logo">
+      <img src="landing/logo-diraigent.svg" alt="diraigent" class="header-logo">
       <span class="header-name">diraigent</span>
     </div>
     <nav class="header-nav">
@@ -83,6 +13,7 @@
       <a href="#get-started">get started</a>
       <a href="https://github.com/diraigent/diraigent" target="_blank" rel="noopener">github</a>
       <a href="https://discord.gg/tfaYmvTw" target="_blank" rel="noopener">discord</a>
+      <a routerLink="/dashboard" class="nav-login">open app</a>
     </nav>
   </header>
 
@@ -106,8 +37,8 @@
     </div>
     <div class="hero-screenshot">
       <picture>
-        <source srcset="assets/images/screenshot-dashboard.webp" type="image/webp">
-        <img src="assets/images/screenshot-dashboard.png" alt="Diraigent dashboard" width="1280" height="800">
+        <source srcset="landing/screenshot-dashboard.webp" type="image/webp">
+        <img src="landing/screenshot-dashboard.png" alt="Diraigent dashboard" width="1280" height="800">
       </picture>
     </div>
   </section>
@@ -148,8 +79,8 @@
       </div>
       <div class="diff-image">
         <picture>
-          <source srcset="assets/images/screenshot-playbook.webp" type="image/webp">
-          <img src="assets/images/screenshot-playbook.png" alt="Playbook pipeline view" width="1280" height="800" loading="lazy">
+          <source srcset="landing/screenshot-playbook.webp" type="image/webp">
+          <img src="landing/screenshot-playbook.png" alt="Playbook pipeline view" width="1280" height="800" loading="lazy">
         </picture>
       </div>
     </div>
@@ -162,8 +93,8 @@
       </div>
       <div class="diff-image">
         <picture>
-          <source srcset="assets/images/screenshot-goals.webp" type="image/webp">
-          <img src="assets/images/screenshot-goals.png" alt="Goal decomposition view" width="1280" height="800" loading="lazy">
+          <source srcset="landing/screenshot-goals.webp" type="image/webp">
+          <img src="landing/screenshot-goals.png" alt="Goal decomposition view" width="1280" height="800" loading="lazy">
         </picture>
       </div>
     </div>
@@ -176,8 +107,8 @@
       </div>
       <div class="diff-image">
         <picture>
-          <source srcset="assets/images/screenshot-review.webp" type="image/webp">
-          <img src="assets/images/screenshot-review.png" alt="Review queue view" width="1280" height="800" loading="lazy">
+          <source srcset="landing/screenshot-review.webp" type="image/webp">
+          <img src="landing/screenshot-review.png" alt="Review queue view" width="1280" height="800" loading="lazy">
         </picture>
       </div>
     </div>
@@ -190,8 +121,8 @@
       </div>
       <div class="diff-image">
         <picture>
-          <source srcset="assets/images/screenshot-chat.webp" type="image/webp">
-          <img src="assets/images/screenshot-chat.png" alt="Project knowledge view" width="1280" height="800" loading="lazy">
+          <source srcset="landing/screenshot-chat.webp" type="image/webp">
+          <img src="landing/screenshot-chat.png" alt="Project knowledge view" width="1280" height="800" loading="lazy">
         </picture>
       </div>
     </div>
@@ -419,7 +350,7 @@ chmod +x start.sh
   <!-- Footer -->
   <footer class="footer">
     <div class="footer-brand">
-      <img src="assets/images/logo-diraigent.svg" alt="diraigent" class="footer-logo">
+      <img src="landing/logo-diraigent.svg" alt="diraigent" class="footer-logo">
       <span>diraigent</span>
     </div>
     <p class="footer-copy">
@@ -429,6 +360,3 @@ chmod +x start.sh
   </footer>
 
 </div>
-
-</body>
-</html>

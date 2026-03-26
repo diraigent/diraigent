@@ -1981,7 +1981,6 @@ export class WorkPage {
       description: this.formDescription,
       success_criteria: this.formCriteria,
       work_type: this.formWorkType,
-      priority: this.formPriority,
       auto_status: this.formAutoStatus,
     };
     this.createAndExecuteLoading.set(true);
@@ -2019,7 +2018,6 @@ export class WorkPage {
       description: this.formDescription,
       success_criteria: this.formCriteria,
       work_type: this.formWorkType,
-      priority: this.formPriority,
       auto_status: this.formAutoStatus,
     };
     this.createAndPlanExecuteLoading.set(true);
