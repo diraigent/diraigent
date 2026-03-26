@@ -269,7 +269,7 @@ CREATE TABLE diraigent.membership (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     tenant_id uuid NOT NULL,
     CONSTRAINT membership_status_check CHECK ((status = ANY (ARRAY['active'::text, 'inactive'::text, 'suspended'::text]))),
-    CONSTRAINT membership_agent_id_role_id_key UNIQUE (agent_id, role_id)
+    CONSTRAINT membership_tenant_agent_role_key UNIQUE (tenant_id, agent_id, role_id)
 );
 
 CREATE TABLE diraigent.agent_integration (

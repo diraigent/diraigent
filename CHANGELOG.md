@@ -1,5 +1,28 @@
 # Changelog
 
+
+## v20260326-0929 (2026-03-26)
+
+### Added
+- **iOS**: Native iOS app with full feature coverage: dashboard, work items, tasks, agents, chat, events, reports, observations, decisions, integrations, webhooks, logs, source browser, search, git status, and settings
+- **iOS**: OIDC/PKCE authentication with keychain token storage
+- **Orchestra**: Repo-as-code support — sync playbooks, decisions, knowledge, and observations from `.diraigent/` directory
+- **Orchestra**: Headless mode for CLI-driven pipeline execution without API
+- **TUI**: Model selector in chat (cycle between sonnet/opus/haiku)
+- **TUI**: Global keyboard shortcuts with help overlay
+- **TUI**: API token management in account settings
+
+### Changed
+- **TUI**: Merged work and tasks into a single unified work view
+- **TUI**: Work items sorted by status (active → paused → achieved → abandoned)
+- **TUI**: Simplified navigation by removing standalone playbooks, tasks, verify, knowledge, and teams views
+
+### Fixed
+- **API**: Membership unique constraint now scoped to tenant, preventing onboarding conflicts
+- **Orchestra**: Various pipeline resolution and task sourcing improvements
+
+---
+
 ## v20260320-0042 (2026-03-20)
 
 ### Added

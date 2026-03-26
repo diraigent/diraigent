@@ -15,20 +15,16 @@ pub async fn create_membership(
 
     let m = sqlx::query_as::<_, Membership>(
         "INSERT INTO diraigent.membership (tenant_id, agent_id, role_id, config)
-         VALUES ($1, $2, $3, $4) RETURNING *",
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (agent_id, role_id) DO UPDATE SET updated_at = now()
+         RETURNING *",
     )
     .bind(tenant_id)
     .bind(req.agent_id)
     .bind(req.role_id)
     .bind(&config)
     .fetch_one(pool)
-    .await
-    .map_err(|e| match &e {
-        sqlx::Error::Database(db) if db.constraint().is_some() => {
-            AppError::Conflict("Membership already exists".into())
-        }
-        _ => e.into(),
-    })?;
+    .await?;
 
     Ok(m)
 }

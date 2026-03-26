@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 
-use crate::app::App;
+use crate::app::{App, CHAT_MODELS};
 use crate::theme;
 
 pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
@@ -13,9 +13,10 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
         .constraints([Constraint::Min(5), Constraint::Length(3)])
         .split(area);
 
-    // Messages area
+    // Messages area — show current model in title
+    let model_name = CHAT_MODELS.get(app.chat_model_index).unwrap_or(&"sonnet");
     let msg_block = Block::default()
-        .title(" Chat ")
+        .title(format!(" Chat — model: {} ", model_name))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme::yellow()));
 
