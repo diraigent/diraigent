@@ -663,7 +663,6 @@ pub struct Work {
     pub description: Option<String>,
     pub status: String,
     pub work_type: String,
-    pub priority: i32,
     pub parent_work_id: Option<Uuid>,
     pub auto_status: bool,
     pub intent_type: Option<String>,
@@ -810,7 +809,6 @@ pub struct CreateWork {
     pub title: String,
     pub description: Option<String>,
     pub work_type: Option<String>,
-    pub priority: Option<i32>,
     pub parent_work_id: Option<Uuid>,
     pub auto_status: Option<bool>,
     pub intent_type: Option<String>,
@@ -824,7 +822,6 @@ pub struct UpdateWork {
     pub description: Option<String>,
     pub status: Option<String>,
     pub work_type: Option<String>,
-    pub priority: Option<i32>,
     #[serde(default, deserialize_with = "deserialize_double_option")]
     pub parent_work_id: Option<Option<Uuid>>,
     pub auto_status: Option<bool>,

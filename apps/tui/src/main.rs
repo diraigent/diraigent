@@ -1592,7 +1592,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Constraint::Length(2), // Description
                         Constraint::Length(2), // Success criteria
                         Constraint::Length(2), // Work type
-                        Constraint::Length(2), // Priority
                         Constraint::Length(2), // Auto status
                         Constraint::Length(1), // Footer
                     ])
@@ -1704,47 +1703,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let val = format!("◀ {} ▶", WORK_TYPES[form.work_type_index]);
                     render_gf(f, field_chunks[4], "Type:", &val, form.active_field == 4);
                 }
-                // Priority with cursor (field 5)
-                {
-                    let val = if form.active_field == 5 {
-                        let bp = form
-                            .priority
-                            .char_indices()
-                            .nth(form.cursor)
-                            .map(|(i, _)| i)
-                            .unwrap_or(form.priority.len());
-                        if bp < form.priority.len() {
-                            format!("{}│{}", &form.priority[..bp], &form.priority[bp..])
-                        } else {
-                            format!("{}│", &form.priority)
-                        }
-                    } else {
-                        form.priority.clone()
-                    };
-                    render_gf(
-                        f,
-                        field_chunks[5],
-                        "Priority:",
-                        &val,
-                        form.active_field == 5,
-                    );
-                }
-                // Auto status toggle (field 6)
+                // Auto status toggle (field 5)
                 {
                     let val = if form.auto_status { "ON" } else { "OFF" };
                     render_gf(
                         f,
-                        field_chunks[6],
+                        field_chunks[5],
                         "Auto Status:",
                         val,
-                        form.active_field == 6,
+                        form.active_field == 5,
                     );
                 }
                 let hint = Paragraph::new(Line::styled(
                     " Tab: next | Enter/^S: save | ^E: execute | ^P: plan+exec | Esc: cancel",
                     Style::default().fg(theme::overlay0()),
                 ));
-                f.render_widget(hint, field_chunks[7]);
+                f.render_widget(hint, field_chunks[6]);
             }
 
             // Observation creation form
@@ -2397,7 +2371,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let success_criteria = form.success_criteria.clone();
                             let status = WORK_STATUSES[form.status_index].to_string();
                             let work_type = WORK_TYPES[form.work_type_index].to_string();
-                            let priority: i32 = form.priority.parse().unwrap_or(0);
                             let auto_status = form.auto_status;
                             let editing_id = form.editing_id;
                             let pid = app.current_project;
@@ -2412,7 +2385,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         "description": description,
                                         "status": status,
                                         "work_type": work_type,
-                                        "priority": priority,
                                         "auto_status": auto_status,
                                     });
                                     if !success_criteria.is_empty() {
@@ -2430,7 +2402,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     &title,
                                                     &description,
                                                     &work_type,
-                                                    priority,
                                                     None,
                                                     auto_status,
                                                 )
@@ -2532,12 +2503,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 app.work_form = None;
                             }
                             KeyCode::Tab => {
-                                form.active_field = (form.active_field + 1) % 7;
+                                form.active_field = (form.active_field + 1) % 6;
                                 form.cursor = match form.active_field {
                                     1 => form.title.chars().count(),
                                     2 => form.description.chars().count(),
                                     3 => form.success_criteria.chars().count(),
-                                    5 => form.priority.chars().count(),
                                     _ => 0,
                                 };
                             }
@@ -2556,7 +2526,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         form.work_type_index = WORK_TYPES.len() - 1;
                                     }
                                 }
-                                6 => {
+                                5 => {
                                     form.auto_status = !form.auto_status;
                                 }
                                 _ => {
@@ -2574,7 +2544,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     form.work_type_index =
                                         (form.work_type_index + 1) % WORK_TYPES.len();
                                 }
-                                6 => {
+                                5 => {
                                     form.auto_status = !form.auto_status;
                                 }
                                 _ => {
@@ -2582,7 +2552,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         1 => form.title.chars().count(),
                                         2 => form.description.chars().count(),
                                         3 => form.success_criteria.chars().count(),
-                                        5 => form.priority.chars().count(),
                                         _ => 0,
                                     };
                                     if form.cursor < len {
@@ -2593,7 +2562,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             KeyCode::Backspace => {
                                 if form.active_field == 0
                                     || form.active_field == 4
-                                    || form.active_field == 6
+                                    || form.active_field == 5
                                 {
                                     // selectors/toggle, ignore backspace
                                 } else if form.cursor > 0 {
@@ -2602,7 +2571,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         1 => &mut form.title,
                                         2 => &mut form.description,
                                         3 => &mut form.success_criteria,
-                                        5 => &mut form.priority,
                                         _ => &mut form.title,
                                     };
                                     let bp = text
@@ -2616,7 +2584,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             KeyCode::Char(c) => {
                                 if form.active_field == 0
                                     || form.active_field == 4
-                                    || form.active_field == 6
+                                    || form.active_field == 5
                                 {
                                     // selectors/toggle, ignore chars
                                 } else {
@@ -2624,7 +2592,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         1 => &mut form.title,
                                         2 => &mut form.description,
                                         3 => &mut form.success_criteria,
-                                        5 => &mut form.priority,
                                         _ => &mut form.title,
                                     };
                                     let bp = text
@@ -5243,10 +5210,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 .unwrap_or_default(),
                                             status_index: status_idx,
                                             work_type_index: work_type_idx,
-                                            priority: goal
-                                                .priority
-                                                .map(|p| p.to_string())
-                                                .unwrap_or_else(|| "0".to_string()),
                                             auto_status: goal.auto_status.unwrap_or(false),
                                             active_field: 0,
                                             cursor: 0,

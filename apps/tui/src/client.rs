@@ -139,8 +139,6 @@ pub struct Work {
     #[serde(default)]
     pub work_type: Option<String>,
     #[serde(default)]
-    pub priority: Option<i32>,
-    #[serde(default)]
     pub parent_work_id: Option<Uuid>,
     #[serde(default)]
     pub auto_status: Option<bool>,
@@ -868,7 +866,6 @@ impl ApiClient {
         title: &str,
         description: &str,
         work_type: &str,
-        priority: i32,
         parent_work_id: Option<Uuid>,
         auto_status: bool,
     ) -> Result<Work, reqwest::Error> {
@@ -876,7 +873,6 @@ impl ApiClient {
             "title": title,
             "description": description,
             "work_type": work_type,
-            "priority": priority,
             "auto_status": auto_status,
         });
         if let Some(pid) = parent_work_id {

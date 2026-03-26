@@ -325,7 +325,6 @@ export interface TaskScoreComponents {
   age_score: number;
   urgent_score: number;
   dependency_score: number;
-  work_score: number;
 }
 
 export interface ScoredTask extends SpTask {

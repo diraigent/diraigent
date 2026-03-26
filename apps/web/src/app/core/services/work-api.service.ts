@@ -15,7 +15,6 @@ export interface SpWork {
   description: string;
   status: WorkStatus;
   work_type: WorkType;
-  priority: number;
   parent_work_id: string | null;
   auto_status: boolean;
   success_criteria: string;
@@ -81,7 +80,6 @@ export interface SpWorkCreate {
   description: string;
   success_criteria: string;
   work_type?: WorkType;
-  priority?: number;
   parent_work_id?: string | null;
   auto_status?: boolean;
 }
@@ -98,7 +96,6 @@ export interface SpWorkUpdate {
   status?: WorkStatus;
   success_criteria?: string;
   work_type?: WorkType;
-  priority?: number;
   parent_work_id?: string | null;
   auto_status?: boolean;
   metadata?: Record<string, unknown>;

@@ -301,7 +301,6 @@
     },
     "allTypes": "Alle Typen",
     "fieldType": "Typ",
-    "fieldPriority": "Priorität",
     "type": {
       "epic": "Epic",
       "feature": "Feature",
@@ -808,7 +807,6 @@
     "ageScore": "Alter",
     "urgentScore": "Dringend",
     "dependencyScore": "Abhängigkeiten",
-    "workScore": "Zielausrichtung",
     "hierarchyView": "Hierarchie",
     "flatView": "Flach",
     "hierarchyToggle": "Hierarchische Ansicht umschalten",

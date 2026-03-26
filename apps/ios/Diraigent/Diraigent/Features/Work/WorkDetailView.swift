@@ -147,7 +147,6 @@ struct WorkDetailView: View {
             title: nil,
             workType: nil,
             status: newStatus,
-            priority: nil,
             description: nil
         )
         let result = await appState.workService.updateWork(
@@ -262,9 +261,6 @@ struct WorkDetailView: View {
                     WorkKindBadge(kind: kind)
                 }
                 WorkStatusBadge(status: currentStatus ?? work.status ?? "active")
-                if let priority = work.priority {
-                    PriorityIndicator(priority: priority)
-                }
             }
         }
     }
@@ -403,9 +399,6 @@ struct WorkDetailView: View {
                 }
                 if let updated = work.updatedAt {
                     MetadataItem(label: "Updated", value: formatDate(updated))
-                }
-                if let priority = work.priority {
-                    MetadataItem(label: "Priority", value: "\(priority)")
                 }
                 if work.autoStatus == true {
                     MetadataItem(label: "Auto Status", value: "Enabled")

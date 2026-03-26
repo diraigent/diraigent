@@ -126,10 +126,6 @@ struct WorkRowView: View {
             }
 
             Spacer()
-
-            if let priority = work.priority {
-                PriorityIndicator(priority: priority)
-            }
         }
         .padding(.vertical, DiraigentTheme.spacingXS)
     }
@@ -197,25 +193,6 @@ struct WorkStatusBadge: View {
     }
 }
 
-/// Priority indicator showing numeric priority with color coding.
-struct PriorityIndicator: View {
-    let priority: Int
-
-    private var color: Color {
-        switch priority {
-        case 8...10: .red
-        case 5...7: .orange
-        case 3...4: .blue
-        default: .secondary
-        }
-    }
-
-    var body: some View {
-        Text("P\(priority)")
-            .font(.caption.weight(.bold).monospacedDigit())
-            .foregroundStyle(color)
-    }
-}
 
 /// Reusable filter chip button.
 struct FilterChip: View {

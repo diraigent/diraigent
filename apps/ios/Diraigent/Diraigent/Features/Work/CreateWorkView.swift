@@ -8,7 +8,6 @@ struct CreateWorkView: View {
     @State private var title = ""
     @State private var workType = "feature"
     @State private var status = "active"
-    @State private var priority = 5
     @State private var description = ""
     @State private var isCreating = false
     @State private var errorMessage: String?
@@ -39,8 +38,6 @@ struct CreateWorkView: View {
                             Text(s.capitalized).tag(s)
                         }
                     }
-
-                    Stepper("Priority: \(priority)", value: $priority, in: 1...10)
                 }
 
                 Section("Description") {
@@ -84,7 +81,6 @@ struct CreateWorkView: View {
             title: title.trimmingCharacters(in: .whitespaces),
             workType: workType,
             status: status,
-            priority: priority,
             description: description.isEmpty ? nil : description
         )
 
