@@ -148,8 +148,8 @@ pub async fn promote_observation(
 
     // 1. Create a Work item from the observation.
     let work = sqlx::query_as::<_, Work>(
-        "INSERT INTO diraigent.work (project_id, title, description, work_type, priority, auto_status, success_criteria, metadata, created_by, sort_order)
-         VALUES ($1, $2, $3, 'epic', 0, true, $4, $5, $6,
+        "INSERT INTO diraigent.work (project_id, title, description, work_type, auto_status, success_criteria, metadata, created_by, sort_order)
+         VALUES ($1, $2, $3, 'epic', true, $4, $5, $6,
                  (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM diraigent.work WHERE project_id = $1))
          RETURNING *",
     )

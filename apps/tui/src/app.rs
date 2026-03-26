@@ -290,34 +290,20 @@ impl Default for EventForm {
 pub const WORK_STATUSES: &[&str] = &["active", "achieved", "paused", "abandoned"];
 pub const WORK_TYPES: &[&str] = &["epic", "feature", "milestone", "sprint", "initiative"];
 
+#[derive(Default)]
 pub struct WorkForm {
     pub title: String,
     pub description: String,
     pub success_criteria: String,
     pub status_index: usize,    // index into WORK_STATUSES
     pub work_type_index: usize, // index into WORK_TYPES
-    pub priority: String,       // numeric string
     pub auto_status: bool,
-    pub active_field: usize, // 0=title, 1=desc, 2=criteria, 3=status, 4=type, 5=priority, 6=auto_status
+    pub active_field: usize, // 0=status, 1=title, 2=desc, 3=criteria, 4=type, 5=auto_status
     pub cursor: usize,
     pub editing_id: Option<Uuid>, // None for create, Some for edit
 }
 
-impl Default for WorkForm {
-    fn default() -> Self {
-        Self {
-            title: String::new(),
-            description: String::new(),
-            success_criteria: String::new(),
-            status_index: 0,
-            work_type_index: 0,
-            priority: "0".to_string(),
-            auto_status: false,
-            active_field: 0,
-            cursor: 0,
-            editing_id: None,
-        }
-    }
+impl WorkForm {
 }
 
 pub const CHAT_MODELS: &[&str] = &["sonnet", "opus", "haiku"];

@@ -590,7 +590,6 @@ impl DiraigentDb for CryptoDb {
                     .map(|d| dek.encrypt_str(d, "work.description"))
                     .transpose()?,
                 work_type: req.work_type.clone(),
-                priority: req.priority,
                 parent_work_id: req.parent_work_id,
                 auto_status: req.auto_status,
                 intent_type: req.intent_type.clone(),
@@ -657,7 +656,6 @@ impl DiraigentDb for CryptoDb {
                     .transpose()?,
                 status: req.status.clone(),
                 work_type: req.work_type.clone(),
-                priority: req.priority,
                 parent_work_id: req.parent_work_id,
                 auto_status: req.auto_status,
                 intent_type: req.intent_type.clone(),

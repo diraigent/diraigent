@@ -392,12 +392,6 @@ function parseCriteria(value: unknown): string[] {
                     {{ t('goals.status.' + goal.status) }}
                   </span>
                 }
-                <div class="flex items-center gap-1">
-                  <span class="text-xs text-text-secondary">{{ t('goals.fieldPriority') }}</span>
-                  <input type="number" [(ngModel)]="formPriority" (blur)="saveInlineField()"
-                    class="w-14 text-xs rounded-lg px-2 py-1 border border-border bg-surface text-text-primary
-                           focus:outline-none focus:ring-1 focus:ring-accent" />
-                </div>
                 <label class="flex items-center gap-1 text-xs text-text-secondary cursor-pointer">
                   <input type="checkbox" [(ngModel)]="formAutoStatus" (change)="saveInlineField()"
                     class="rounded border-border text-accent focus:ring-accent" />
@@ -1025,12 +1019,6 @@ function parseCriteria(value: unknown): string[] {
                   }
                 </select>
               </div>
-              <div>
-                <label for="goal-priority" class="block text-sm text-text-secondary mb-1">{{ t('goals.fieldPriority') }}</label>
-                <input id="goal-priority" type="number" [(ngModel)]="formPriority"
-                  class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                         focus:outline-none focus:ring-1 focus:ring-accent" />
-              </div>
               <div class="flex items-center gap-2">
                 <input id="goal-auto-status" type="checkbox" [(ngModel)]="formAutoStatus"
                   class="rounded border-border text-accent focus:ring-accent" />
@@ -1142,7 +1130,6 @@ export class WorkPage {
   formDescription = '';
   formCriteria = '';
   formWorkType: WorkType = 'epic';
-  formPriority = 0;
   formAutoStatus = false;
 
   // Todos
@@ -1749,7 +1736,6 @@ export class WorkPage {
       this.formDescription = goal.description;
       this.formCriteria = goal.success_criteria;
       this.formWorkType = goal.work_type;
-      this.formPriority = goal.priority;
       this.formAutoStatus = goal.auto_status;
       this.loadTodos(goal);
       this.loadStatsAndChildren(goal.id);
@@ -1923,7 +1909,6 @@ export class WorkPage {
     this.formDescription = '';
     this.formCriteria = '';
     this.formWorkType = 'epic';
-    this.formPriority = 0;
     this.formAutoStatus = false;
     this.showForm.set(true);
   }
@@ -1936,7 +1921,6 @@ export class WorkPage {
       sel.description === this.formDescription &&
       sel.success_criteria === this.formCriteria &&
       sel.work_type === this.formWorkType &&
-      sel.priority === this.formPriority &&
       sel.auto_status === this.formAutoStatus
     ) {
       return;
@@ -1947,7 +1931,6 @@ export class WorkPage {
         description: this.formDescription,
         success_criteria: this.formCriteria,
         work_type: this.formWorkType,
-        priority: this.formPriority,
         auto_status: this.formAutoStatus,
       })
       .subscribe({
@@ -1968,7 +1951,6 @@ export class WorkPage {
         description: this.formDescription,
         success_criteria: this.formCriteria,
         work_type: this.formWorkType,
-        priority: this.formPriority,
         auto_status: this.formAutoStatus,
       }).subscribe({
         next: () => {
@@ -1982,7 +1964,6 @@ export class WorkPage {
         description: this.formDescription,
         success_criteria: this.formCriteria,
         work_type: this.formWorkType,
-        priority: this.formPriority,
         auto_status: this.formAutoStatus,
       };
       this.api.create(data).subscribe({

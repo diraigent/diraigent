@@ -22,12 +22,11 @@ pub async fn create_work(
         .unwrap_or(serde_json::json!([]));
     let metadata = req.metadata.clone().unwrap_or(serde_json::json!({}));
     let work_type = req.work_type.as_deref().unwrap_or("epic");
-    let priority = req.priority.unwrap_or(0);
     let auto_status = req.auto_status.unwrap_or(false);
 
     let work = sqlx::query_as::<_, Work>(
-        "INSERT INTO diraigent.work (project_id, title, description, work_type, priority, parent_work_id, auto_status, intent_type, success_criteria, metadata, created_by, sort_order)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+        "INSERT INTO diraigent.work (project_id, title, description, work_type, parent_work_id, auto_status, intent_type, success_criteria, metadata, created_by, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                  (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM diraigent.work WHERE project_id = $1))
          RETURNING *",
     )
@@ -35,7 +34,6 @@ pub async fn create_work(
     .bind(&req.title)
     .bind(&req.description)
     .bind(work_type)
-    .bind(priority)
     .bind(req.parent_work_id)
     .bind(auto_status)
     .bind(&req.intent_type)
@@ -159,7 +157,6 @@ pub async fn update_work(pool: &PgPool, id: Uuid, req: &UpdateWork) -> Result<Wo
         .or(existing.description.as_deref());
     let status = req.status.as_deref().unwrap_or(&existing.status);
     let work_type = req.work_type.as_deref().unwrap_or(&existing.work_type);
-    let priority = req.priority.unwrap_or(existing.priority);
     let auto_status = req.auto_status.unwrap_or(existing.auto_status);
     let parent_work_id = match req.parent_work_id {
         None => existing.parent_work_id, // no change
@@ -180,9 +177,9 @@ pub async fn update_work(pool: &PgPool, id: Uuid, req: &UpdateWork) -> Result<Wo
 
     let work = sqlx::query_as::<_, Work>(
         "UPDATE diraigent.work
-         SET title = $2, description = $3, status = $4, work_type = $5, priority = $6,
-             parent_work_id = $7, auto_status = $8, intent_type = $9,
-             success_criteria = $10, metadata = $11, sort_order = $12
+         SET title = $2, description = $3, status = $4, work_type = $5,
+             parent_work_id = $6, auto_status = $7, intent_type = $8,
+             success_criteria = $9, metadata = $10, sort_order = $11
          WHERE id = $1 RETURNING *",
     )
     .bind(id)
@@ -190,7 +187,6 @@ pub async fn update_work(pool: &PgPool, id: Uuid, req: &UpdateWork) -> Result<Wo
     .bind(description)
     .bind(status)
     .bind(work_type)
-    .bind(priority)
     .bind(parent_work_id)
     .bind(auto_status)
     .bind(intent_type)

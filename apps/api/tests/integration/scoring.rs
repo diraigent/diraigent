@@ -95,7 +95,6 @@ async fn ready_tasks_ordered_by_composite_score() {
             &format!("/v1/{project_id}/work"),
             serde_json::json!({
                 "title": "Top priority work",
-                "priority": 1,
             }),
         ))
         .await;
@@ -212,10 +211,6 @@ async fn ready_tasks_ordered_by_composite_score() {
         components.get("dependency_score").is_some(),
         "dependency_score component missing"
     );
-    assert!(
-        components.get("work_score").is_some(),
-        "work_score component missing"
-    );
     assert!(components.get("total").is_some(), "total component missing");
 
     app.cleanup().await;
@@ -254,10 +249,9 @@ async fn score_components_sum_to_total() {
         let age = components["age_score"].as_f64().unwrap();
         let urgent = components["urgent_score"].as_f64().unwrap();
         let dep = components["dependency_score"].as_f64().unwrap();
-        let work = components["work_score"].as_f64().unwrap();
         let total = components["total"].as_f64().unwrap();
 
-        let component_sum = age + urgent + dep + work;
+        let component_sum = age + urgent + dep;
         assert!(
             (component_sum - total).abs() < 0.01,
             "Components sum ({component_sum}) != total ({total})"
