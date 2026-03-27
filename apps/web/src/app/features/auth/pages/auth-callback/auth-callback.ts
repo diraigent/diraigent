@@ -44,6 +44,6 @@ export class AuthCallbackPage {
     } else {
       this.message = 'Completing sign-in...';
     }
-    this.router.navigate(['/']);
+    this.router.navigate(['/dashboard']);
   }
 }

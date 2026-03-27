@@ -200,9 +200,6 @@ async fn list_ready_tasks(
     // Batch-load blocking counts: how many tasks each ready task blocks
     let blocking_counts = batch_blocking_counts(&state.pool, &task_ids).await?;
 
-    // Batch-load active work priorities linked to each task
-    let work_priorities = batch_work_priorities(&state.pool, &task_ids).await?;
-
     let now = chrono::Utc::now();
     let weights = crate::scoring::ScoreWeights::default();
 
@@ -214,7 +211,6 @@ async fn list_ready_tasks(
                 created_at: task.created_at,
                 urgent: task.urgent,
                 blocking_count: *blocking_counts.get(&task.id).unwrap_or(&0),
-                work_priorities: work_priorities.get(&task.id).cloned().unwrap_or_default(),
             };
             let score = crate::scoring::compute_score(&input, now, &weights);
             ScoredTask {
@@ -255,30 +251,6 @@ async fn batch_blocking_counts(
     .await?;
 
     Ok(rows.into_iter().collect())
-}
-
-/// Batch-fetch active work item priorities linked to each task.
-/// Returns a map of task_id → list of work priorities.
-async fn batch_work_priorities(
-    pool: &sqlx::PgPool,
-    task_ids: &[Uuid],
-) -> Result<HashMap<Uuid, Vec<i32>>, AppError> {
-    let rows: Vec<(Uuid, i32)> = sqlx::query_as(
-        "SELECT tw.task_id, w.priority
-         FROM diraigent.task_work tw
-         JOIN diraigent.work w ON tw.work_id = w.id
-         WHERE tw.task_id = ANY($1)
-           AND w.status IN ('active', 'ready', 'processing')",
-    )
-    .bind(task_ids)
-    .fetch_all(pool)
-    .await?;
-
-    let mut map: HashMap<Uuid, Vec<i32>> = HashMap::new();
-    for (task_id, priority) in rows {
-        map.entry(task_id).or_default().push(priority);
-    }
-    Ok(map)
 }
 
 async fn list_blocked_task_ids(

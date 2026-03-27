@@ -39,7 +39,6 @@ struct Work: Codable, Identifiable, Sendable {
     let description: String?
     let workType: String?
     let status: String?
-    let priority: Int?
     let parentWorkId: UUID?
     let autoStatus: Bool?
     let successCriteria: FlexibleString?

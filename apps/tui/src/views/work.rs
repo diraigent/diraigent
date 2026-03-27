@@ -28,7 +28,6 @@ fn make_work_item(
 ) -> ListItem<'static> {
     let status = g.status.as_deref().unwrap_or("active");
     let work_type = g.work_type.as_deref().unwrap_or("epic");
-    let priority = g.priority.unwrap_or(0);
     let color = match status {
         "active" => theme::green(),
         "achieved" => theme::blue(),
@@ -41,11 +40,6 @@ fn make_work_item(
     } else {
         Style::default().fg(color)
     };
-    let prio_str = if priority != 0 {
-        format!(" P:{}", priority)
-    } else {
-        String::new()
-    };
     let progress_str = app
         .work_progress_map
         .get(&g.id)
@@ -53,10 +47,9 @@ fn make_work_item(
         .unwrap_or_default();
     ListItem::new(Line::styled(
         format!(
-            " [{}:{}]{} {}{}",
+            " [{}:{}] {}{}",
             work_type,
             work_status_label(status),
-            prio_str,
             g.title,
             progress_str
         ),
@@ -179,7 +172,6 @@ fn render_work_info(f: &mut Frame, area: Rect, app: &mut App) {
         .map(|g| {
             let status = g.status.as_deref().unwrap_or("active");
             let work_type = g.work_type.as_deref().unwrap_or("epic");
-            let priority = g.priority.unwrap_or(0);
             let auto_status = g.auto_status.unwrap_or(false);
             let status_color = match status {
                 "active" => theme::green(),
@@ -191,12 +183,7 @@ fn render_work_info(f: &mut Frame, area: Rect, app: &mut App) {
             let mut lines = vec![
                 Line::styled(g.title.clone(), Style::default().fg(theme::green())),
                 Line::styled(
-                    format!(
-                        "Type: {}  Status: {}  Priority: {}",
-                        work_type,
-                        work_status_label(status),
-                        priority
-                    ),
+                    format!("Type: {}  Status: {}", work_type, work_status_label(status),),
                     Style::default().fg(status_color),
                 ),
             ];

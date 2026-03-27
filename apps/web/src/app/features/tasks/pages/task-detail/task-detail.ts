@@ -508,10 +508,6 @@ import { ChangedFilesComponent } from '../../components/changed-files/changed-fi
                 <span class="text-text-muted">{{ t('tasks.dependencyScore') }}</span>
                 <span class="text-text-primary font-mono">{{ sc.dependency_score.toFixed(1) }}</span>
               </div>
-              <div class="flex items-center justify-between text-xs">
-                <span class="text-text-muted">{{ t('tasks.workScore') }}</span>
-                <span class="text-text-primary font-mono">{{ sc.work_score.toFixed(1) }}</span>
-              </div>
             </div>
           </div>
         </div>

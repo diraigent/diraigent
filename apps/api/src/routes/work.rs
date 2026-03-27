@@ -474,7 +474,6 @@ pub(crate) async fn refresh_auto_status_works(
             description: None,
             status: Some(derived.clone()),
             work_type: None,
-            priority: None,
             parent_work_id: None,
             auto_status: None,
             intent_type: None,

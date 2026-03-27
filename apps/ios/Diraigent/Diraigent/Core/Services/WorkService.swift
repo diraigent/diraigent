@@ -6,7 +6,6 @@ struct CreateWorkRequest: Encodable, Sendable {
     let title: String
     let workType: String?
     let status: String?
-    let priority: Int?
     let description: String?
 }
 
@@ -15,7 +14,6 @@ struct UpdateWorkRequest: Encodable, Sendable {
     let title: String?
     let workType: String?
     let status: String?
-    let priority: Int?
     let description: String?
 }
 
