@@ -487,6 +487,8 @@ mod tests {
             dek: None,
             max_implement_cycles: 3,
             indexer_interval: 120,
+            orchestration_mode: crate::config::OrchestrationMode::Api,
+            data_dir: std::env::temp_dir(),
         };
         let pp = config.projects_path.clone();
         let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));

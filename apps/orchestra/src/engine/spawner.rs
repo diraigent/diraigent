@@ -464,6 +464,8 @@ mod tests {
             dek: None,
             max_implement_cycles,
             indexer_interval: 120,
+            orchestration_mode: crate::config::OrchestrationMode::Api,
+            data_dir: std::env::temp_dir(),
         }
     }
 

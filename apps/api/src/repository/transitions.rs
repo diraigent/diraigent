@@ -1,5 +1,4 @@
 use chrono::Utc;
-use diraigent_types::StepProfile;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -184,18 +183,7 @@ pub async fn transition_task(
     Ok(task)
 }
 
-/// Check if a playbook step is retriable (can be regressed to on rejection).
-///
-/// Reads `"retriable"` from the step JSON if present, otherwise falls back
-/// to name-prefix classification (implement-like steps are retriable).
-fn is_retriable_step(step: &serde_json::Value) -> bool {
-    if let Some(v) = step.get("retriable").and_then(|v| v.as_bool()) {
-        return v;
-    }
-    // Fallback: classify by name prefix (backward compat for steps without the field)
-    let name = step["name"].as_str().unwrap_or("");
-    StepProfile::for_step(name).is_implement()
-}
+use diraigent_types::state_machine::is_retriable_step;
 
 pub async fn claim_task(pool: &PgPool, task_id: Uuid, agent_id: Uuid) -> Result<Task, AppError> {
     // Look up the task to determine the step name from its playbook
