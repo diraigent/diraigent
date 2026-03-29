@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use tracing::info;
 
 use crate::db::{self, Db};
+use crate::engine::context::ContextAssembler;
 use crate::engine::task_source::TaskSource;
 use crate::git::ChangedFile;
 use crate::project::api::ProjectsApi;
@@ -20,11 +21,13 @@ use crate::project::api::ProjectsApi;
 pub struct OrchestraTaskSource {
     db: Db,
     api: ProjectsApi,
+    context: ContextAssembler,
 }
 
 impl OrchestraTaskSource {
     pub fn new(db: Db, api: ProjectsApi) -> Self {
-        Self { db, api }
+        let context = ContextAssembler::new(api.clone());
+        Self { db, api, context }
     }
 
     /// Resolve the playbook step name for a task (from API playbook data).
@@ -265,7 +268,7 @@ impl TaskSource for OrchestraTaskSource {
     // ── Context (API read-through) ──
 
     async fn get_context_for_task(&self, project_id: &str, task_id: &str) -> Result<Value> {
-        self.api.get_context_for_task(project_id, task_id).await
+        self.context.assemble(project_id, Some(task_id)).await
     }
 
     async fn get_verifications(&self, project_id: &str, task_id: &str) -> Result<Vec<Value>> {
@@ -352,6 +355,7 @@ impl TaskSource for OrchestraTaskSource {
     // ── Knowledge (API read-through) ──
 
     async fn post_knowledge(&self, project_id: &str, body: &Value) -> Result<Value> {
+        self.context.invalidate(project_id);
         self.api.post_knowledge(project_id, body).await
     }
 
@@ -371,6 +375,7 @@ impl TaskSource for OrchestraTaskSource {
     // ── Decisions (API read-through) ──
 
     async fn post_decision(&self, project_id: &str, body: &Value) -> Result<Value> {
+        self.context.invalidate(project_id);
         self.api.post_decision(project_id, body).await
     }
 

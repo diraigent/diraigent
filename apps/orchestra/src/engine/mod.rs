@@ -1,3 +1,4 @@
+pub mod context;
 pub mod local_source;
 pub mod orchestra_source;
 pub mod pipeline;
