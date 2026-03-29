@@ -4,7 +4,7 @@ use crate::client::{
     Agent, AuditEntry, BranchInfo, ChangedFile, ChatMessage, Decision, GitTaskStatus, Integration,
     IntegrationAccess, LogEntry, MainPushStatus, Observation, Project, ProjectEvent,
     ProjectMetrics, Report, SearchResult, Task, TaskComment, TaskDependencies, TaskUpdate,
-    TreeEntry, Webhook, WebhookDelivery, Work, WorkComment, WorkProgress, WorkStats,
+    TreeEntry, Webhook, WebhookDelivery, Work, WorkComment, WorkProgress,
 };
 use ratatui::widgets::ListState;
 use uuid::Uuid;
@@ -397,7 +397,6 @@ pub struct App {
     pub done_work_list_state: ListState,
     pub work_progress: Option<WorkProgress>,
     pub work_progress_map: HashMap<Uuid, WorkProgress>,
-    pub work_stats: Option<WorkStats>,
     pub work_children: Vec<Work>,
     pub observations: Vec<Observation>,
     pub integrations: Vec<Integration>,
@@ -549,7 +548,6 @@ impl App {
             done_work_list_state: ListState::default(),
             work_progress: None,
             work_progress_map: HashMap::new(),
-            work_stats: None,
             work_children: vec![],
             observations: vec![],
             integrations: vec![],
