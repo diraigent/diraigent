@@ -303,9 +303,6 @@ pub struct WorkForm {
     pub editing_id: Option<Uuid>, // None for create, Some for edit
 }
 
-impl WorkForm {
-}
-
 pub const CHAT_MODELS: &[&str] = &["sonnet", "opus", "haiku"];
 
 pub const OBSERVATION_KINDS: &[&str] = &[
