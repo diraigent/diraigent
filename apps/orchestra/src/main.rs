@@ -96,16 +96,22 @@ async fn main() -> Result<()> {
 
     let config = Config::from_env()?;
     let api = ProjectsApi::new(&config.diraigent_api, &config.agent_id);
-    let task_source: std::sync::Arc<dyn engine::task_source::TaskSource> =
-        std::sync::Arc::new(api.clone());
 
-    // Init local SQLite database (used when orchestration_mode = local).
-    let local_db = if config.orchestration_mode == config::OrchestrationMode::Local {
+    // Init task source based on orchestration mode.
+    let local_db;
+    let task_source: Arc<dyn engine::task_source::TaskSource>;
+
+    if config.orchestration_mode == config::OrchestrationMode::Local {
         let db = db::open(&config.data_dir)?;
         info!("orchestration_mode=local — state machine owned by orchestra");
-        Some(db)
+        local_db = Some(db.clone());
+        task_source = Arc::new(engine::orchestra_source::OrchestraTaskSource::new(
+            db,
+            api.clone(),
+        ));
     } else {
-        None
+        local_db = None;
+        task_source = Arc::new(api.clone());
     };
 
     info!(
