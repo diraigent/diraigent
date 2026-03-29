@@ -5,6 +5,7 @@
 mod config;
 mod constants;
 mod crypto;
+mod db;
 mod engine;
 mod git;
 mod handlers;
@@ -17,6 +18,7 @@ mod repo_decisions;
 mod repo_knowledge;
 mod repo_observations;
 mod repo_playbooks;
+mod sync;
 mod task_id;
 mod util;
 mod ws;
@@ -97,6 +99,15 @@ async fn main() -> Result<()> {
     let task_source: std::sync::Arc<dyn engine::task_source::TaskSource> =
         std::sync::Arc::new(api.clone());
 
+    // Init local SQLite database (used when orchestration_mode = local).
+    let local_db = if config.orchestration_mode == config::OrchestrationMode::Local {
+        let db = db::open(&config.data_dir)?;
+        info!("orchestration_mode=local — state machine owned by orchestra");
+        Some(db)
+    } else {
+        None
+    };
+
     info!(
         "projects_path={} project_id={}",
         config.projects_path.display(),
@@ -133,6 +144,11 @@ async fn main() -> Result<()> {
         warn!("force exit");
         std::process::exit(1);
     });
+
+    // Start background sync loop (local mode only)
+    if let Some(ref db) = local_db {
+        sync::spawn(db.clone(), Arc::new(api.clone()), shutdown.clone());
+    }
 
     // Report orchestra version in agent metadata
     {

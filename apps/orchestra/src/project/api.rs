@@ -605,6 +605,11 @@ impl ProjectsApi {
     pub async fn add_member(&self, body: &Value) -> Result<Value> {
         self.post("/members", body).await
     }
+
+    /// Push a sync batch from the orchestra to the API.
+    pub async fn post_sync_batch(&self, batch: &Value) -> Result<Value> {
+        self.post("/orchestra/sync", batch).await
+    }
 }
 
 fn as_array(val: &Value) -> Vec<Value> {
