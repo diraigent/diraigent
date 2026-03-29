@@ -888,7 +888,7 @@ mod tests {
 
         mount_project_mock(&server, None).await;
 
-        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let api: Arc<dyn TaskSource> = Arc::new(ProjectsApi::new(&server.uri(), "test-agent"));
         let config = test_config(&server.uri(), 3);
         let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
         let lock_queue = new_lock_queue();

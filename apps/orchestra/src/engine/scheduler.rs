@@ -420,8 +420,8 @@ async fn emit_merge_error_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ProjectsApi;
     use crate::config::{ActiveTasks, LockQueue};
-    use crate::engine::task_source::TaskSource;
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::Mutex;
@@ -472,7 +472,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let api = Arc::new(ProjectsApi::new(&server.uri(), "test-agent"));
+        let api: Arc<dyn TaskSource> = Arc::new(ProjectsApi::new(&server.uri(), "test-agent"));
         let config = crate::config::Config {
             agent_id: "test-agent".to_string(),
             project_id: Some("proj-1".to_string()),
@@ -500,7 +500,7 @@ mod tests {
         let reap_api = Arc::clone(&api);
         let reap_active = Arc::clone(&active);
         let reap_handle = tokio::spawn(async move {
-            reap_finished(&reap_api, &pp, &reap_active, &new_lock_queue()).await;
+            reap_finished(reap_api.as_ref(), &pp, &reap_active, &new_lock_queue()).await;
         });
 
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
