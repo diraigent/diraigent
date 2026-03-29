@@ -455,6 +455,19 @@ async fn transition_task(
     Path(task_id): Path<Uuid>,
     Json(req): Json<TransitionTask>,
 ) -> Result<Json<Task>, AppError> {
+    // Guard: orchestra-managed tasks reject direct API mutations (except human_review).
+    {
+        let task = state.db.get_task_by_id(task_id).await?;
+        if task.state_managed_by == "orchestra"
+            && task.state != "human_review"
+            && agent_id.is_some()
+        {
+            return Err(AppError::Conflict(
+                "Task state is managed by orchestra — use orchestra sync".into(),
+            ));
+        }
+    }
+
     // Capture before-state for audit; also verifies execute authority.
     let before = ensure_authority_on(
         state.db.as_ref(),
@@ -535,9 +548,15 @@ async fn claim_task(
     Path(task_id): Path<Uuid>,
     Json(req): Json<ClaimTask>,
 ) -> Result<Json<Task>, AppError> {
+    // Guard: orchestra-managed tasks cannot be claimed via API.
+    let before = state.db.get_task_by_id(task_id).await?;
+    if before.state_managed_by == "orchestra" && agent_id.is_some() {
+        return Err(AppError::Conflict(
+            "Task state is managed by orchestra — claim via orchestra".into(),
+        ));
+    }
     // Fetch task, then check authority for the playbook step being entered.
     // "review" step accepts either execute or review authority.
-    let before = state.db.get_task_by_id(task_id).await?;
     let step_name = state.db.resolve_claim_step_name(&before).await?;
     let allowed = authorities_for_claim(&step_name);
     ensure_any_authority_on(state.db.as_ref(), agent_id, user_id, before, &allowed).await?;
@@ -563,6 +582,15 @@ async fn release_task(
     OptionalAgentId(agent_id): OptionalAgentId,
     Path(task_id): Path<Uuid>,
 ) -> Result<Json<Task>, AppError> {
+    // Guard: orchestra-managed tasks cannot be released via API.
+    {
+        let task = state.db.get_task_by_id(task_id).await?;
+        if task.state_managed_by == "orchestra" && agent_id.is_some() {
+            return Err(AppError::Conflict(
+                "Task state is managed by orchestra — release via orchestra".into(),
+            ));
+        }
+    }
     ensure_authority_on(
         state.db.as_ref(),
         agent_id,
@@ -1118,6 +1146,12 @@ async fn record_task_cost(
 ) -> Result<Json<Task>, AppError> {
     // Resolve project_id for the membership check
     let task = state.db.get_task_by_id(task_id).await?;
+    // Guard: orchestra-managed tasks track cost locally.
+    if task.state_managed_by == "orchestra" && agent_id.is_some() {
+        return Err(AppError::Conflict(
+            "Task cost is managed by orchestra — use orchestra sync".into(),
+        ));
+    }
     ensure_member(state.db.as_ref(), agent_id, user_id, task).await?;
 
     let updated = state

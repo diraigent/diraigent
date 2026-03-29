@@ -33,6 +33,20 @@ pub struct Config {
     /// Interval in seconds between indexer runs (0 = disabled).
     /// Defaults to 120 (2 minutes).  Set via INDEXER_INTERVAL env var.
     pub indexer_interval: u64,
+    /// Orchestration mode: `"api"` (default, current behavior — API is source of truth)
+    /// or `"local"` (orchestra owns task state machine, syncs summaries to API).
+    pub orchestration_mode: OrchestrationMode,
+    /// Directory for orchestra's local SQLite database (used in local orchestration mode).
+    pub data_dir: PathBuf,
+}
+
+/// How the orchestra manages task state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrchestrationMode {
+    /// API is the source of truth. Orchestra calls API for all state transitions.
+    Api,
+    /// Orchestra owns the task state machine locally. Syncs summaries to API.
+    Local,
 }
 
 pub type ActiveTasks = Arc<Mutex<HashMap<String, JoinHandle<()>>>>;
@@ -102,6 +116,15 @@ impl Config {
             .parse()
             .unwrap_or(120);
 
+        let orchestration_mode = match std::env::var("ORCHESTRATION_MODE")
+            .unwrap_or_else(|_| "api".into())
+            .to_lowercase()
+            .as_str()
+        {
+            "local" => OrchestrationMode::Local,
+            _ => OrchestrationMode::Api,
+        };
+
         // Resolve DEK for client-side encryption/decryption.
         let dek = if let Ok(dek_b64) = std::env::var("DIRAIGENT_DEK") {
             match crypto::Dek::from_base64(&dek_b64) {
@@ -169,6 +192,8 @@ impl Config {
             dek,
             max_implement_cycles,
             indexer_interval,
+            orchestration_mode,
+            data_dir,
         })
     }
 }

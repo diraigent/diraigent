@@ -5,6 +5,7 @@
 mod config;
 mod constants;
 mod crypto;
+mod db;
 mod engine;
 mod git;
 mod handlers;
@@ -16,6 +17,7 @@ mod repo_decisions;
 mod repo_knowledge;
 mod repo_observations;
 mod repo_playbooks;
+mod sync;
 mod task_id;
 mod util;
 mod ws;

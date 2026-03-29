@@ -676,7 +676,7 @@ async fn execute_via_provider(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::task_source::TaskSource;
+    use crate::ProjectsApi;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 

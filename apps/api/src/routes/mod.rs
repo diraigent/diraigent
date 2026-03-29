@@ -21,6 +21,7 @@ mod logs;
 mod members;
 mod metrics;
 mod observations;
+mod orchestra_sync;
 mod packages;
 mod playbooks;
 mod projects;
@@ -116,5 +117,6 @@ pub fn router() -> Router<AppState> {
         .merge(account::routes())
         .merge(dashboard::routes())
         .merge(authentik_webhooks::routes())
+        .merge(orchestra_sync::routes())
         .merge(ws::routes())
 }

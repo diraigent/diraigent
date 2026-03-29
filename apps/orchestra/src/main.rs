@@ -5,6 +5,7 @@
 mod config;
 mod constants;
 mod crypto;
+mod db;
 mod engine;
 mod git;
 mod handlers;
@@ -17,6 +18,7 @@ mod repo_decisions;
 mod repo_knowledge;
 mod repo_observations;
 mod repo_playbooks;
+mod sync;
 mod task_id;
 mod util;
 mod ws;
@@ -94,8 +96,23 @@ async fn main() -> Result<()> {
 
     let config = Config::from_env()?;
     let api = ProjectsApi::new(&config.diraigent_api, &config.agent_id);
-    let task_source: std::sync::Arc<dyn engine::task_source::TaskSource> =
-        std::sync::Arc::new(api.clone());
+
+    // Init task source based on orchestration mode.
+    let local_db;
+    let task_source: Arc<dyn engine::task_source::TaskSource>;
+
+    if config.orchestration_mode == config::OrchestrationMode::Local {
+        let db = db::open(&config.data_dir)?;
+        info!("orchestration_mode=local — state machine owned by orchestra");
+        local_db = Some(db.clone());
+        task_source = Arc::new(engine::orchestra_source::OrchestraTaskSource::new(
+            db,
+            api.clone(),
+        ));
+    } else {
+        local_db = None;
+        task_source = Arc::new(api.clone());
+    };
 
     info!(
         "projects_path={} project_id={}",
@@ -133,6 +150,11 @@ async fn main() -> Result<()> {
         warn!("force exit");
         std::process::exit(1);
     });
+
+    // Start background sync loop (local mode only)
+    if let Some(ref db) = local_db {
+        sync::spawn(db.clone(), Arc::new(api.clone()), shutdown.clone());
+    }
 
     // Report orchestra version in agent metadata
     {
