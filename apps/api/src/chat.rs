@@ -13,6 +13,8 @@ use crate::ws_registry::WsRegistry;
 pub enum ChatSseEvent {
     #[serde(rename = "text")]
     Text { content: String },
+    #[serde(rename = "thinking")]
+    Thinking { content: String },
     #[serde(rename = "tool_start")]
     ToolStart { tool_name: String, tool_id: String },
     #[serde(rename = "tool_end")]
