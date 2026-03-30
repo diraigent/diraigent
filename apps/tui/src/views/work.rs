@@ -235,28 +235,6 @@ fn render_work_info(f: &mut Frame, area: Rect, app: &mut App) {
                 }
             }
 
-            // Stats (compact)
-            if let Some(ref stats) = app.work_stats {
-                if stats.work_id == g.id {
-                    lines.push(Line::styled(
-                        format!(
-                            "B:{} R:{} W:{} D:{} C:{}{}",
-                            stats.backlog_count,
-                            stats.ready_count,
-                            stats.working_count,
-                            stats.done_count,
-                            stats.cancelled_count,
-                            if stats.blocked_count > 0 {
-                                format!(" Blocked:{}", stats.blocked_count)
-                            } else {
-                                String::new()
-                            },
-                        ),
-                        Style::default().fg(theme::subtext0()),
-                    ));
-                }
-            }
-
             lines.push(Line::styled(
                 "[n]New [t]Task [c]Cmt [s]Status [e]Edit [</>page]",
                 Style::default().fg(theme::overlay0()),

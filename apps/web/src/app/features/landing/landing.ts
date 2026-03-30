@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
 @Component({
@@ -8,4 +8,14 @@ import { RouterLink } from '@angular/router';
   templateUrl: './landing.html',
   styleUrl: './landing.css',
 })
-export class LandingPage {}
+export class LandingPage {
+  menuOpen = signal(false);
+
+  toggleMenu(): void {
+    this.menuOpen.update(v => !v);
+  }
+
+  closeMenu(): void {
+    this.menuOpen.set(false);
+  }
+}

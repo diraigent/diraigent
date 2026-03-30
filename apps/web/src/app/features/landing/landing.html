@@ -2,18 +2,25 @@
 
   <!-- Header -->
   <header class="header">
-    <div class="header-brand">
-      <img src="landing/logo-diraigent.svg" alt="diraigent" class="header-logo">
-      <span class="header-name">diraigent</span>
+    <div class="header-top">
+      <div class="header-brand">
+        <img src="landing/logo-diraigent.svg" alt="diraigent" class="header-logo">
+        <span class="header-name">diraigent</span>
+      </div>
+      <button class="menu-toggle" (click)="toggleMenu()" [attr.aria-expanded]="menuOpen()" aria-label="Toggle navigation">
+        <span class="menu-bar"></span>
+        <span class="menu-bar"></span>
+        <span class="menu-bar"></span>
+      </button>
     </div>
-    <nav class="header-nav">
-      <a href="#features">features</a>
-      <a href="#how-it-works">how it works</a>
-      <a href="#compare">compare</a>
-      <a href="#get-started">get started</a>
-      <a href="https://github.com/diraigent/diraigent" target="_blank" rel="noopener">github</a>
-      <a href="https://discord.gg/tfaYmvTw" target="_blank" rel="noopener">discord</a>
-      <a routerLink="/dashboard" class="nav-login">open app</a>
+    <nav class="header-nav" [class.open]="menuOpen()">
+      <a href="#features" (click)="closeMenu()">features</a>
+      <a href="#how-it-works" (click)="closeMenu()">how it works</a>
+      <a href="#compare" (click)="closeMenu()">compare</a>
+      <a href="#get-started" (click)="closeMenu()">get started</a>
+      <a href="https://github.com/diraigent/diraigent" target="_blank" rel="noopener" (click)="closeMenu()">github</a>
+      <a href="https://discord.gg/tfaYmvTw" target="_blank" rel="noopener" (click)="closeMenu()">discord</a>
+      <a routerLink="/dashboard" class="nav-login" (click)="closeMenu()">open app</a>
     </nav>
   </header>
 

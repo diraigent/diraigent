@@ -46,7 +46,6 @@ enum ApiMsg {
     DoneWorkItems(Vec<client::Work>),
     WorkProgress(client::WorkProgress),
     AllWorkProgress(Vec<client::WorkProgress>),
-    WorkStats(client::WorkStats),
     WorkChildren(Vec<client::Work>),
     Observations(Vec<client::Observation>),
     Integrations(Vec<client::Integration>),
@@ -578,7 +577,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         app.work_progress_map.insert(p.work_id, p);
                     }
                 }
-                ApiMsg::WorkStats(s) => app.work_stats = Some(s),
                 ApiMsg::WorkChildren(c) => app.work_children = c,
                 ApiMsg::Observations(o) => app.observations = o,
                 ApiMsg::Integrations(intg) => app.integrations = intg,
@@ -4328,7 +4326,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     app.selected_done_work = None;
                                     app.work_progress = None;
                                     app.work_progress_map.clear();
-                                    app.work_stats = None;
                                     app.work_children.clear();
                                     app.work_comments.clear();
                                     app.work_focus = 0;
@@ -5534,9 +5531,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let api = api.clone();
                             let tx = tx.clone();
                             tokio::spawn(async move {
-                                if let Ok(stats) = api.get_work_stats(gid).await {
-                                    let _ = tx.send(ApiMsg::WorkStats(stats)).await;
-                                }
                                 if let Ok(children) = api.list_work_children(gid).await {
                                     let _ = tx.send(ApiMsg::WorkChildren(children)).await;
                                 }

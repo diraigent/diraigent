@@ -30,24 +30,7 @@ export interface SpWorkProgress {
   percentage: number;
 }
 
-export interface SpWorkStats {
-  work_id: string;
-  backlog_count: number;
-  ready_count: number;
-  working_count: number;
-  done_count: number;
-  cancelled_count: number;
-  total_count: number;
-  kind_breakdown: Record<string, number>;
-  total_cost_usd: number;
-  total_input_tokens: number;
-  total_output_tokens: number;
-  blocked_count: number;
-  avg_completion_hours: number | null;
-  oldest_open_task_date: string | null;
-}
-
-/** Bulk progress+stats for all work items in a project (single API call). */
+/** Bulk progress summary for all work items in a project (single API call). */
 export interface SpWorkSummary {
   work_id: string;
   total_tasks: number;
@@ -123,10 +106,6 @@ export class WorkApiService extends BaseCrudApiService<SpWork, SpWorkCreate, SpW
 
   progress(id: string): Observable<SpWorkProgress> {
     return this.http.get<SpWorkProgress>(`${this.baseUrl}/work/${id}/progress`);
-  }
-
-  stats(id: string): Observable<SpWorkStats> {
-    return this.http.get<SpWorkStats>(`${this.baseUrl}/work/${id}/stats`);
   }
 
   children(id: string): Observable<SpWork[]> {

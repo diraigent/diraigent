@@ -23,7 +23,6 @@ import {
   WorkTodo,
   SpWorkCreate,
   SpWorkProgress,
-  SpWorkStats,
   SpWorkSummary,
 } from '../../core/services/work-api.service';
 import {
@@ -252,34 +251,12 @@ function parseCriteria(value: unknown): string[] {
               @if (progressMap().get(goal.id); as prog) {
                 <div class="mt-2 ml-6">
                   <div class="flex items-center justify-between text-xs text-text-secondary mb-1">
-                    <span class="flex items-center gap-2">
-                      <span>{{ prog.done_tasks }}/{{ prog.total_tasks }} {{ t('goals.tasks') }}</span>
-                      @if (statsMap().get(goal.id); as stats) {
-                        @if (stats.working_count > 0) {
-                          <span class="inline-flex items-center gap-1 text-ctp-yellow">
-                            <span class="relative flex h-2 w-2">
-                              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-ctp-yellow opacity-75"></span>
-                              <span class="relative inline-flex rounded-full h-2 w-2 bg-ctp-yellow"></span>
-                            </span>
-                            {{ stats.working_count }} in progress
-                          </span>
-                        }
-                      }
-                    </span>
+                    <span>{{ prog.done_tasks }}/{{ prog.total_tasks }} {{ t('goals.tasks') }}</span>
                     <span>{{ prog.percentage }}%</span>
                   </div>
-                  <div class="h-1.5 bg-surface-hover rounded-full overflow-hidden flex">
-                    <div class="h-full transition-all {{ progressColor(goal.status) }}"
-                         [class.rounded-l-full]="true"
-                         [class.rounded-r-full]="!statsMap().get(goal.id)?.working_count"
+                  <div class="h-1.5 bg-surface-hover rounded-full overflow-hidden">
+                    <div class="h-full transition-all rounded-full {{ progressColor(goal.status) }}"
                          [style.width.%]="prog.percentage"></div>
-                    @if (statsMap().get(goal.id); as stats) {
-                      @if (stats.working_count > 0 && stats.total_count > 0) {
-                        <div class="h-full bg-ctp-yellow/60 transition-all"
-                             [class.rounded-r-full]="true"
-                             [style.width.%]="(stats.working_count / stats.total_count) * 100"></div>
-                      }
-                    }
                   </div>
                 </div>
               }
@@ -403,34 +380,12 @@ function parseCriteria(value: unknown): string[] {
               @if (progressMap().get(goal.id); as prog) {
                 <div class="mb-4">
                   <div class="flex items-center justify-between text-sm text-text-secondary mb-1">
-                    <span class="flex items-center gap-2">
-                      <span>{{ t('goals.progress') }}</span>
-                      @if (statsMap().get(goal.id); as stats) {
-                        @if (stats.working_count > 0) {
-                          <span class="inline-flex items-center gap-1 text-ctp-yellow text-xs">
-                            <span class="relative flex h-2 w-2">
-                              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-ctp-yellow opacity-75"></span>
-                              <span class="relative inline-flex rounded-full h-2 w-2 bg-ctp-yellow"></span>
-                            </span>
-                            {{ stats.working_count }} in progress
-                          </span>
-                        }
-                      }
-                    </span>
+                    <span>{{ t('goals.progress') }}</span>
                     <span>{{ prog.done_tasks }}/{{ prog.total_tasks }} ({{ prog.percentage }}%)</span>
                   </div>
-                  <div class="h-2 bg-surface-hover rounded-full overflow-hidden flex">
-                    <div class="h-full transition-all {{ progressColor(goal.status) }}"
-                         [class.rounded-l-full]="true"
-                         [class.rounded-r-full]="!statsMap().get(goal.id)?.working_count"
+                  <div class="h-2 bg-surface-hover rounded-full overflow-hidden">
+                    <div class="h-full transition-all rounded-full {{ progressColor(goal.status) }}"
                          [style.width.%]="prog.percentage"></div>
-                    @if (statsMap().get(goal.id); as stats) {
-                      @if (stats.working_count > 0 && stats.total_count > 0) {
-                        <div class="h-full bg-ctp-yellow/60 transition-all"
-                             [class.rounded-r-full]="true"
-                             [style.width.%]="(stats.working_count / stats.total_count) * 100"></div>
-                      }
-                    }
                   </div>
                 </div>
               }
@@ -514,110 +469,16 @@ function parseCriteria(value: unknown): string[] {
                   [placeholder]="t('goals.fieldCriteria')"></textarea>
               </div>
 
-              <!-- Stats (clickable to filter linked tasks) -->
-              @if (statsMap().get(goal.id); as stats) {
-                <div class="mb-4">
-                  <div class="flex items-center justify-between mb-2">
-                    <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider">{{ t('goals.stats') }}</h3>
-                    <div class="flex items-center gap-2">
-                      @if (stats.total_cost_usd > 0) {
-                        <span class="text-xs text-text-secondary">{{ '$' + stats.total_cost_usd.toFixed(2) }}</span>
-                      }
-                      @if (statsFilter()) {
-                        <button (click)="clearStatsFilter()" class="text-xs text-accent hover:underline">
-                          {{ t('common.clearFilter') || 'Clear' }}
-                        </button>
-                      }
-                    </div>
-                  </div>
-                  <div class="flex flex-wrap gap-1.5 text-xs">
-                    <button (click)="setStatsFilter('backlog')"
-                      class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 transition-colors cursor-pointer"
-                      [class]="statsFilter() === 'backlog'
-                        ? 'bg-accent/20 ring-1 ring-accent'
-                        : 'bg-surface-hover hover:bg-accent/10'">
-                      <span class="text-text-secondary">Backlog</span>
-                      <span class="text-text-primary font-medium">{{ stats.backlog_count }}</span>
-                    </button>
-                    <button (click)="setStatsFilter('ready')"
-                      class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 transition-colors cursor-pointer"
-                      [class]="statsFilter() === 'ready'
-                        ? 'bg-ctp-blue/20 ring-1 ring-ctp-blue'
-                        : stats.ready_count > 0
-                          ? 'bg-ctp-blue/10 hover:bg-ctp-blue/20'
-                          : 'bg-surface-hover hover:bg-accent/10'">
-                      <span [class]="stats.ready_count > 0 ? 'text-ctp-blue' : 'text-text-secondary'">Ready</span>
-                      <span class="font-medium" [class]="stats.ready_count > 0 ? 'text-ctp-blue' : 'text-text-primary'">{{ stats.ready_count }}</span>
-                    </button>
-                    <button (click)="setStatsFilter('working')"
-                      class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 transition-colors cursor-pointer"
-                      [class]="statsFilter() === 'working'
-                        ? 'bg-ctp-yellow/20 ring-1 ring-ctp-yellow'
-                        : stats.working_count > 0
-                          ? 'bg-ctp-yellow/10 hover:bg-ctp-yellow/20'
-                          : 'bg-surface-hover hover:bg-accent/10'">
-                      <span [class]="stats.working_count > 0 ? 'text-ctp-yellow' : 'text-text-secondary'">Working</span>
-                      <span class="font-medium" [class]="stats.working_count > 0 ? 'text-ctp-yellow' : 'text-text-primary'">
-                        {{ stats.working_count }}
-                        @if (stats.working_count > 0) {
-                          <span class="relative inline-flex h-1.5 w-1.5 ml-0.5 -translate-y-px">
-                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-ctp-yellow opacity-75"></span>
-                            <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-ctp-yellow"></span>
-                          </span>
-                        }
-                      </span>
-                    </button>
-                    <button (click)="setStatsFilter('done')"
-                      class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 transition-colors cursor-pointer"
-                      [class]="statsFilter() === 'done'
-                        ? 'bg-ctp-green/20 ring-1 ring-ctp-green'
-                        : 'bg-surface-hover hover:bg-accent/10'">
-                      <span class="text-text-secondary">Done</span>
-                      <span class="text-ctp-green font-medium">{{ stats.done_count }}</span>
-                    </button>
-                    <button (click)="setStatsFilter('cancelled')"
-                      class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 transition-colors cursor-pointer"
-                      [class]="statsFilter() === 'cancelled'
-                        ? 'bg-accent/20 ring-1 ring-accent'
-                        : 'bg-surface-hover hover:bg-accent/10'">
-                      <span class="text-text-secondary">Cancelled</span>
-                      <span class="text-text-primary font-medium">{{ stats.cancelled_count }}</span>
-                    </button>
-                    @if (stats.blocked_count > 0) {
-                      <button (click)="setStatsFilter('blocked')"
-                        class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 transition-colors cursor-pointer"
-                        [class]="statsFilter() === 'blocked'
-                          ? 'bg-ctp-red/20 ring-1 ring-ctp-red'
-                          : 'bg-ctp-red/10 hover:bg-ctp-red/20'">
-                        <span class="text-ctp-red">Blocked</span>
-                        <span class="text-ctp-red font-medium">{{ stats.blocked_count }}</span>
-                      </button>
-                    }
-                  </div>
-                </div>
-              }
-
               <!-- Linked Tasks -->
               <div class="pt-3 border-t border-border mb-3">
                 <div class="flex items-center justify-between mb-2">
                   <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider">{{ t('goals.linkedTasks') }}</h3>
-                  @if (statsMap().get(selected()!.id)?.backlog_count) {
-                    <button (click)="startAllBacklogTasks()" class="px-3 py-1.5 text-xs bg-ctp-blue text-bg rounded hover:opacity-90">
-                      {{ t('goals.startAllBtn') }}
-                    </button>
-                  }
                 </div>
                 @if (linkedTasksLoading()) {
                   <p class="text-xs text-text-secondary">{{ t('common.loading') }}</p>
                 } @else if (linkedTasks().length === 0) {
                   <p class="text-xs text-text-secondary">{{ t('goals.noLinkedTasks') }}</p>
                 } @else {
-                  @if (statsFilter()) {
-                    <p class="text-xs text-text-secondary mb-1">
-                      {{ t('goals.filteredBy') || 'Filtered by' }}: <span class="font-medium text-accent">{{ statsFilter() }}</span>
-                      ({{ filteredLinkedTasks().length }}/{{ linkedTasks().length }})
-                    </p>
-                  }
                   <div class="max-h-[600px] overflow-y-auto">
                     @if (selectedLinkedTask()) {
                       <div class="flex items-center gap-1 mb-2">
@@ -645,7 +506,7 @@ function parseCriteria(value: unknown): string[] {
                     }
                     <app-task-list
                       [compact]="true"
-                      [tasks]="filteredLinkedTasks()"
+                      [tasks]="sortedLinkedTasks()"
                       [loading]="linkedTasksLoading()"
                       [selectedId]="selectedLinkedTask()?.id ?? null"
                       [branchMap]="branchMap()"
@@ -1118,7 +979,6 @@ export class WorkPage {
   searchQuery = signal('');
   selectedWorkType = '';
   progressMap = signal<Map<string, SpWorkProgress>>(new Map());
-  statsMap = signal<Map<string, SpWorkStats>>(new Map());
   childrenMap = signal<Map<string, SpWork[]>>(new Map());
   conflictMap = signal<Map<string, string[]>>(new Map());
   unmergedMap = signal<Map<string, string[]>>(new Map());
@@ -1141,7 +1001,6 @@ export class WorkPage {
   // Linked tasks (for selected goal)
   linkedTasks = signal<SpTask[]>([]);
   linkedTasksLoading = signal(false);
-  statsFilter = signal<string>('');
 
   // Unlinked tasks
   unlinkedTasks = signal<SpTask[]>([]);
@@ -1253,19 +1112,6 @@ export class WorkPage {
     const sel = this.selected();
     if (!sel || sel.auto_status) return [];
     return MANUAL_STATUSES.filter(s => s !== sel.status);
-  });
-
-  private static readonly NON_WORKING_STATES = new Set(['backlog', 'ready', 'done', 'cancelled']);
-
-  filteredLinkedTasks = computed(() => {
-    const filter = this.statsFilter();
-    const tasks = this.sortedLinkedTasks();
-    if (!filter) return tasks;
-    if (filter === 'working') {
-      return tasks.filter(t => !WorkPage.NON_WORKING_STATES.has(t.state));
-    }
-    if (filter === 'blocked') return tasks;
-    return tasks.filter(t => t.state === filter);
   });
 
   sortedLinkedTasks = computed(() => {
@@ -1632,18 +1478,16 @@ export class WorkPage {
   private loadAllProgress(goals: SpWork[]): void {
     if (goals.length === 0) {
       this.progressMap.set(new Map());
-      this.statsMap.set(new Map());
       this.loadConflictStatuses(goals);
       return;
     }
 
-    // Single bulk request replaces 2N individual calls (progress + stats per goal)
+    // Single bulk request for progress data
     this.api.summaries().pipe(
       catchError(() => of([] as SpWorkSummary[])),
     ).subscribe({
       next: summaries => {
         const progMap = new Map<string, SpWorkProgress>();
-        const statMap = new Map<string, SpWorkStats>(this.statsMap());
         for (const s of summaries) {
           const total = s.total_tasks;
           const done = s.done_tasks;
@@ -1652,25 +1496,8 @@ export class WorkPage {
             done_tasks: done,
             percentage: total > 0 ? Math.round((done / total) * 100) : 0,
           });
-          statMap.set(s.work_id, {
-            work_id: s.work_id,
-            backlog_count: s.backlog_count,
-            ready_count: s.ready_count,
-            working_count: s.working_count,
-            done_count: s.done_count,
-            cancelled_count: s.cancelled_count,
-            total_count: s.total_count,
-            kind_breakdown: {},
-            total_cost_usd: s.total_cost_usd,
-            total_input_tokens: s.total_input_tokens,
-            total_output_tokens: s.total_output_tokens,
-            blocked_count: s.blocked_count,
-            avg_completion_hours: null,
-            oldest_open_task_date: null,
-          });
         }
         this.progressMap.set(progMap);
-        this.statsMap.set(statMap);
       },
     });
     this.loadConflictStatuses(goals);
@@ -1729,7 +1556,6 @@ export class WorkPage {
 
   selectItem(goal: SpWork): void {
     this.selected.set(goal.id === this.selected()?.id ? null : goal);
-    this.statsFilter.set('');
     this.selectedLinkedTask.set(null);
     if (this.selected()) {
       this.formTitle = goal.title;
@@ -1738,7 +1564,7 @@ export class WorkPage {
       this.formWorkType = goal.work_type;
       this.formAutoStatus = goal.auto_status;
       this.loadTodos(goal);
-      this.loadStatsAndChildren(goal.id);
+      this.loadChildren(goal.id);
       this.loadLinkedTasks(goal.id);
       this.loadMarkedTasks(goal.id);
     } else {
@@ -1786,14 +1612,7 @@ export class WorkPage {
     }
   }
 
-  private loadStatsAndChildren(goalId: string): void {
-    this.api.stats(goalId).subscribe({
-      next: (stats) => {
-        const map = new Map(this.statsMap());
-        map.set(goalId, stats);
-        this.statsMap.set(map);
-      },
-    });
+  private loadChildren(goalId: string): void {
     this.api.children(goalId).subscribe({
       next: (children) => {
         const map = new Map(this.childrenMap());
@@ -1827,14 +1646,6 @@ export class WorkPage {
 
   typeColor(type: WorkType): string {
     return TYPE_COLORS[type] ?? '';
-  }
-
-  setStatsFilter(state: string): void {
-    this.statsFilter.set(this.statsFilter() === state ? '' : state);
-  }
-
-  clearStatsFilter(): void {
-    this.statsFilter.set('');
   }
 
   startHeaderTitleEdit(goalId: string, event: Event): void {
@@ -2128,7 +1939,7 @@ export class WorkPage {
       next: () => {
         this.loadLinkedTasks(sel.id);
         this.loadAllProgress([sel]);
-        this.loadStatsAndChildren(sel.id);
+        this.loadChildren(sel.id);
       },
     });
   }
@@ -2183,24 +1994,7 @@ export class WorkPage {
         if (sel) {
           this.loadLinkedTasks(sel.id);
           this.loadAllProgress([sel]);
-          this.loadStatsAndChildren(sel.id);
-        }
-      },
-    });
-  }
-
-  startAllBacklogTasks(): void {
-    const backlogIds = this.linkedTasks()
-      .filter(t => t.state === 'backlog')
-      .map(t => t.id);
-    if (backlogIds.length === 0) return;
-    this.tasksApi.bulkTransition(backlogIds, 'ready').subscribe({
-      next: () => {
-        const sel = this.selected();
-        if (sel) {
-          this.loadLinkedTasks(sel.id);
-          this.loadAllProgress([sel]);
-          this.loadStatsAndChildren(sel.id);
+          this.loadChildren(sel.id);
         }
       },
     });
@@ -2232,7 +2026,7 @@ export class WorkPage {
         if (sel) {
           this.loadLinkedTasks(sel.id);
           this.loadAllProgress([sel]);
-          this.loadStatsAndChildren(sel.id);
+          this.loadChildren(sel.id);
         }
       },
     });
@@ -2435,7 +2229,7 @@ export class WorkPage {
         this.closeTaskForm();
         this.loadLinkedTasks(sel.id);
         this.loadAllProgress([sel]);
-        this.loadStatsAndChildren(sel.id);
+        this.loadChildren(sel.id);
       },
     });
   }
@@ -2461,7 +2255,7 @@ export class WorkPage {
         this.executeLoading.set(false);
         this.loadLinkedTasks(sel.id);
         this.loadAllProgress([sel]);
-        this.loadStatsAndChildren(sel.id);
+        this.loadChildren(sel.id);
       },
       error: () => {
         this.executeLoading.set(false);
@@ -2491,7 +2285,7 @@ export class WorkPage {
         this.planExecuteLoading.set(false);
         this.loadLinkedTasks(sel.id);
         this.loadAllProgress([sel]);
-        this.loadStatsAndChildren(sel.id);
+        this.loadChildren(sel.id);
       },
       error: () => {
         this.planExecuteLoading.set(false);
