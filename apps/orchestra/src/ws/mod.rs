@@ -6,13 +6,57 @@ use crate::handlers::chat;
 use crate::project::api::ProjectsApi;
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex, mpsc, watch};
 use tracing::{error, info, warn};
 
 pub type WsSender = mpsc::UnboundedSender<WsMessage>;
+
+/// Registry of active chat sessions that can be cancelled.
+/// Maps session_id to a cancel sender. Sending `true` signals the chat
+/// handler to kill its subprocess and stop.
+#[derive(Clone)]
+pub struct ChatSessions {
+    inner: Arc<Mutex<HashMap<String, watch::Sender<bool>>>>,
+}
+
+impl Default for ChatSessions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ChatSessions {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// Register a new chat session. Returns a receiver that resolves when
+    /// the session should be cancelled.
+    pub async fn register(&self, session_id: &str) -> watch::Receiver<bool> {
+        let (tx, rx) = watch::channel(false);
+        self.inner.lock().await.insert(session_id.to_string(), tx);
+        rx
+    }
+
+    /// Cancel a chat session. The handler will kill its subprocess.
+    pub async fn cancel(&self, session_id: &str) {
+        if let Some(tx) = self.inner.lock().await.remove(session_id) {
+            let _ = tx.send(true);
+            info!(session_id, "chat session cancelled");
+        }
+    }
+
+    /// Remove a completed session (no cancel signal sent).
+    pub async fn remove(&self, session_id: &str) {
+        self.inner.lock().await.remove(session_id);
+    }
+}
 
 /// Run the WebSocket client loop with automatic reconnection.
 ///
@@ -157,6 +201,9 @@ async fn connect_and_run(
         }
     });
 
+    // Registry for cancellable chat sessions
+    let chat_sessions = ChatSessions::new();
+
     // Reader loop — dispatch incoming messages to handlers
     while let Some(msg) = ws_source.next().await {
         if shutdown.load(Ordering::SeqCst) {
@@ -193,6 +240,9 @@ async fn connect_and_run(
                         let sender = tx.clone();
                         let api_clone = api.clone();
                         let pp = projects_path.to_path_buf();
+                        let cancel_rx = chat_sessions.register(&session_id).await;
+                        let sessions = chat_sessions.clone();
+                        let sid = session_id.clone();
                         tokio::spawn(async move {
                             let chat_messages: Vec<chat::Message> = messages
                                 .into_iter()
@@ -211,9 +261,14 @@ async fn connect_and_run(
                                 &model,
                                 &api_clone,
                                 &pp,
+                                cancel_rx,
                             )
                             .await;
+                            sessions.remove(&sid).await;
                         });
+                    }
+                    WsMessage::ChatCancel { session_id } => {
+                        chat_sessions.cancel(&session_id).await;
                     }
                     WsMessage::GitRequest {
                         request_id,

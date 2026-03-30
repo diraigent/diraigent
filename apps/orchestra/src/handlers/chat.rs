@@ -9,7 +9,7 @@ use std::sync::LazyLock;
 use std::time::Instant;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{RwLock, mpsc, watch};
 use tracing::{debug, error, info, warn};
 
 /// Default max tokens for message history before compression kicks in.
@@ -121,6 +121,7 @@ pub async fn handle_chat_request_ws(
     model: &str,
     api: &ProjectsApi,
     projects_path: &Path,
+    cancel_rx: watch::Receiver<bool>,
 ) {
     let session_id = session_id.to_string();
 
@@ -164,30 +165,35 @@ pub async fn handle_chat_request_ws(
         return;
     }
 
-    // Spawn Claude Code CLI
-    let mut child = match Command::new("claude")
-        .args([
-            "-p",
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            "--include-partial-messages",
-            "--no-session-persistence",
-            "--model",
-            &resolved_model,
-            "--system-prompt",
-            system_prompt,
-            "--tools",
-            "Bash,Read,WebFetch,WebSearch",
-            "--permission-mode",
-            "bypassPermissions",
-        ])
-        .current_dir(&working_dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
+    // Spawn Claude Code CLI in its own process group so we can kill the
+    // entire tree (claude + any child processes) on cancellation.
+    let mut cmd = Command::new("claude");
+    cmd.args([
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--include-partial-messages",
+        "--no-session-persistence",
+        "--model",
+        &resolved_model,
+        "--system-prompt",
+        system_prompt,
+        "--tools",
+        "Bash,Read,WebFetch,WebSearch",
+        "--permission-mode",
+        "bypassPermissions",
+    ])
+    .current_dir(&working_dir)
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+
+    // Create a new process group so we can signal the entire tree
+    #[cfg(unix)]
+    cmd.process_group(0);
+
+    let mut child = match cmd.spawn() {
         Ok(child) => child,
         Err(e) => {
             send_event(
@@ -237,151 +243,213 @@ pub async fn handle_chat_request_ws(
     let reader = BufReader::new(stdout);
     let mut lines = reader.lines();
     let mut accumulated_text = String::new();
+    let mut cancel_rx = cancel_rx;
+    let mut cancelled = false;
 
-    while let Ok(Some(line)) = lines.next_line().await {
-        if line.trim().is_empty() {
-            continue;
-        }
+    loop {
+        tokio::select! {
+            line_result = lines.next_line() => {
+                let line = match line_result {
+                    Ok(Some(line)) => line,
+                    Ok(None) => break, // EOF
+                    Err(_) => break,
+                };
 
-        let event: serde_json::Value = match serde_json::from_str(&line) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
+                if line.trim().is_empty() {
+                    continue;
+                }
 
-        let event_type = event["type"].as_str().unwrap_or("");
+                let event: serde_json::Value = match serde_json::from_str(&line) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
 
-        match event_type {
-            "stream_event" => {
-                let inner = &event["event"];
-                let inner_type = inner["type"].as_str().unwrap_or("");
+                let event_type = event["type"].as_str().unwrap_or("");
 
-                match inner_type {
-                    "content_block_delta" => {
-                        let delta_type = inner["delta"]["type"].as_str().unwrap_or("");
-                        if delta_type == "text_delta"
-                            && let Some(text) = inner["delta"]["text"].as_str()
+                match event_type {
+                    "stream_event" => {
+                        let inner = &event["event"];
+                        let inner_type = inner["type"].as_str().unwrap_or("");
+
+                        match inner_type {
+                            "content_block_delta" => {
+                                let delta_type = inner["delta"]["type"].as_str().unwrap_or("");
+                                if delta_type == "text_delta"
+                                    && let Some(text) = inner["delta"]["text"].as_str()
+                                {
+                                    accumulated_text.push_str(text);
+                                    send_event(
+                                        sender.clone(),
+                                        session_id.clone(),
+                                        ChatSseEvent::Text {
+                                            content: text.to_string(),
+                                        },
+                                    )
+                                    .await;
+                                }
+                            }
+                            "content_block_start" => {
+                                let block_type = inner["content_block"]["type"].as_str().unwrap_or("");
+                                if block_type == "tool_use" {
+                                    let tool_name = inner["content_block"]["name"]
+                                        .as_str()
+                                        .unwrap_or("unknown")
+                                        .to_string();
+                                    let tool_id = inner["content_block"]["id"]
+                                        .as_str()
+                                        .unwrap_or("")
+                                        .to_string();
+                                    send_event(
+                                        sender.clone(),
+                                        session_id.clone(),
+                                        ChatSseEvent::ToolStart { tool_name, tool_id },
+                                    )
+                                    .await;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    "tool_use" => {
+                        let tool_name = event["tool"].as_str().unwrap_or("unknown").to_string();
+                        let tool_id = event["uuid"].as_str().unwrap_or("").to_string();
+                        send_event(
+                            sender.clone(),
+                            session_id.clone(),
+                            ChatSseEvent::ToolStart { tool_name, tool_id },
+                        )
+                        .await;
+                    }
+
+                    "tool_result" => {
+                        let tool_id = event["uuid"].as_str().unwrap_or("").to_string();
+                        let is_error = event["is_error"].as_bool().unwrap_or(false);
+                        send_event(
+                            sender.clone(),
+                            session_id.clone(),
+                            ChatSseEvent::ToolEnd {
+                                tool_id,
+                                success: !is_error,
+                            },
+                        )
+                        .await;
+                    }
+
+                    "assistant" => {
+                        // Only set accumulated_text from the assistant event if we haven't
+                        // already accumulated text from streaming deltas. The assistant event
+                        // joins text blocks with "\n" which can differ from the delta-accumulated
+                        // text, causing the frontend to treat them as different messages.
+                        if accumulated_text.is_empty()
+                            && let Some(content) = event["message"]["content"].as_array()
                         {
-                            accumulated_text.push_str(text);
+                            let full_text: String = content
+                                .iter()
+                                .filter_map(|block| {
+                                    if block["type"].as_str() == Some("text") {
+                                        block["text"].as_str().map(String::from)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            if !full_text.is_empty() {
+                                accumulated_text = full_text;
+                            }
+                        }
+                    }
+
+                    "result" => {
+                        let is_error = event["is_error"].as_bool().unwrap_or(false);
+                        if is_error {
+                            let error_msg = event["result"]
+                                .as_str()
+                                .unwrap_or("Unknown error")
+                                .to_string();
                             send_event(
                                 sender.clone(),
                                 session_id.clone(),
-                                ChatSseEvent::Text {
+                                ChatSseEvent::Error { message: error_msg },
+                            )
+                            .await;
+                        } else {
+                            let final_text = if accumulated_text.is_empty() {
+                                event["result"].as_str().unwrap_or("").to_string()
+                            } else {
+                                accumulated_text.clone()
+                            };
+
+                            send_event(
+                                sender.clone(),
+                                session_id.clone(),
+                                ChatSseEvent::Done {
+                                    message: DoneMessage {
+                                        role: "assistant".into(),
+                                        content: final_text,
+                                    },
+                                },
+                            )
+                            .await;
+                        } else if delta_type == "thinking_delta"
+                            && let Some(text) = inner["delta"]["thinking"].as_str()
+                        {
+                            send_event(
+                                sender.clone(),
+                                session_id.clone(),
+                                ChatSseEvent::Thinking {
                                     content: text.to_string(),
                                 },
                             )
                             .await;
                         }
+                        break;
                     }
-                    "content_block_start" => {
-                        let block_type = inner["content_block"]["type"].as_str().unwrap_or("");
-                        if block_type == "tool_use" {
-                            let tool_name = inner["content_block"]["name"]
-                                .as_str()
-                                .unwrap_or("unknown")
-                                .to_string();
-                            let tool_id = inner["content_block"]["id"]
-                                .as_str()
-                                .unwrap_or("")
-                                .to_string();
-                            send_event(
-                                sender.clone(),
-                                session_id.clone(),
-                                ChatSseEvent::ToolStart { tool_name, tool_id },
-                            )
-                            .await;
-                        }
-                    }
+
                     _ => {}
                 }
             }
-
-            "tool_use" => {
-                let tool_name = event["tool"].as_str().unwrap_or("unknown").to_string();
-                let tool_id = event["uuid"].as_str().unwrap_or("").to_string();
-                send_event(
-                    sender.clone(),
-                    session_id.clone(),
-                    ChatSseEvent::ToolStart { tool_name, tool_id },
-                )
-                .await;
-            }
-
-            "tool_result" => {
-                let tool_id = event["uuid"].as_str().unwrap_or("").to_string();
-                let is_error = event["is_error"].as_bool().unwrap_or(false);
-                send_event(
-                    sender.clone(),
-                    session_id.clone(),
-                    ChatSseEvent::ToolEnd {
-                        tool_id,
-                        success: !is_error,
-                    },
-                )
-                .await;
-            }
-
-            "assistant" => {
-                // Only set accumulated_text from the assistant event if we haven't
-                // already accumulated text from streaming deltas. The assistant event
-                // joins text blocks with "\n" which can differ from the delta-accumulated
-                // text, causing the frontend to treat them as different messages.
-                if accumulated_text.is_empty()
-                    && let Some(content) = event["message"]["content"].as_array()
-                {
-                    let full_text: String = content
-                        .iter()
-                        .filter_map(|block| {
-                            if block["type"].as_str() == Some("text") {
-                                block["text"].as_str().map(String::from)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    if !full_text.is_empty() {
-                        accumulated_text = full_text;
-                    }
+            _ = cancel_rx.changed() => {
+                if *cancel_rx.borrow() {
+                    info!("chat session {session_id} cancelled by client");
+                    cancelled = true;
+                    break;
                 }
             }
-
-            "result" => {
-                let is_error = event["is_error"].as_bool().unwrap_or(false);
-                if is_error {
-                    let error_msg = event["result"]
-                        .as_str()
-                        .unwrap_or("Unknown error")
-                        .to_string();
-                    send_event(
-                        sender.clone(),
-                        session_id.clone(),
-                        ChatSseEvent::Error { message: error_msg },
-                    )
-                    .await;
-                } else {
-                    let final_text = if accumulated_text.is_empty() {
-                        event["result"].as_str().unwrap_or("").to_string()
-                    } else {
-                        accumulated_text.clone()
-                    };
-
-                    send_event(
-                        sender.clone(),
-                        session_id.clone(),
-                        ChatSseEvent::Done {
-                            message: DoneMessage {
-                                role: "assistant".into(),
-                                content: final_text,
-                            },
-                        },
-                    )
-                    .await;
-                }
-                break;
-            }
-
-            _ => {}
         }
+    }
+
+    if cancelled {
+        // Kill the subprocess and its entire process group
+        if let Some(pid) = child.id() {
+            // Send SIGTERM to the process group (negative PID) to kill
+            // the claude process and any child processes it spawned.
+            #[cfg(unix)]
+            {
+                unsafe {
+                    libc::kill(-(pid as i32), libc::SIGTERM);
+                }
+                // Give it a moment to clean up, then force-kill
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                let _ = child.kill().await;
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = child.kill().await;
+            }
+        } else {
+            let _ = child.kill().await;
+        }
+
+        send_event(
+            sender.clone(),
+            session_id.clone(),
+            ChatSseEvent::Error {
+                message: "Chat cancelled by user".into(),
+            },
+        )
+        .await;
     }
 
     // Wait for process to finish
@@ -616,8 +684,9 @@ async fn summarize_via_provider(
 
 /// Handle a chat request via a non-claude-code provider (anthropic, openai, ollama, etc.).
 ///
-/// Uses the provider abstraction for a single-shot completion, then streams
-/// the result back as chat events.
+/// Makes streaming HTTP requests directly to each provider's API, forwarding
+/// text chunks as real-time `ChatSseEvent::Text` events. This gives the user
+/// immediate feedback instead of waiting for the full response.
 #[allow(clippy::too_many_arguments)]
 async fn handle_chat_via_provider(
     sender: mpsc::UnboundedSender<WsMessage>,
@@ -630,30 +699,6 @@ async fn handle_chat_via_provider(
     api: &ProjectsApi,
 ) {
     let session_id = session_id.to_string();
-
-    let send_event = |sender: mpsc::UnboundedSender<WsMessage>,
-                      session_id: String,
-                      event: ChatSseEvent| async move {
-        let ws_msg = WsMessage::ChatEvent { session_id, event };
-        if let Err(e) = sender.send(ws_msg) {
-            error!("failed to send chat event via WS: {e}");
-        }
-    };
-
-    let provider = match ProviderFactory::create(provider_name) {
-        Ok(p) => p,
-        Err(e) => {
-            send_event(
-                sender,
-                session_id,
-                ChatSseEvent::Error {
-                    message: format!("Failed to create provider '{provider_name}': {e}"),
-                },
-            )
-            .await;
-            return;
-        }
-    };
 
     let provider_cfg = match api.resolve_provider_config(project_id, provider_name).await {
         Ok(cfg) => ProviderConfig {
@@ -671,15 +716,596 @@ async fn handle_chat_via_provider(
         }
     };
 
+    let resolved_model = provider_cfg
+        .model
+        .clone()
+        .unwrap_or_else(|| model.to_string());
+
+    info!(
+        provider = provider_name,
+        model = %resolved_model,
+        "chat: streaming via provider"
+    );
+
+    match provider_name {
+        "anthropic" => {
+            stream_anthropic_chat(
+                sender,
+                &session_id,
+                user_prompt,
+                system_prompt,
+                &resolved_model,
+                &provider_cfg,
+            )
+            .await;
+        }
+        "openai" => {
+            stream_openai_chat(
+                sender,
+                &session_id,
+                user_prompt,
+                system_prompt,
+                &resolved_model,
+                &provider_cfg,
+                "openai",
+            )
+            .await;
+        }
+        "copilot" => {
+            stream_openai_chat(
+                sender,
+                &session_id,
+                user_prompt,
+                system_prompt,
+                &resolved_model,
+                &provider_cfg,
+                "copilot",
+            )
+            .await;
+        }
+        "ollama" => {
+            stream_ollama_chat(
+                sender,
+                &session_id,
+                user_prompt,
+                system_prompt,
+                &resolved_model,
+                &provider_cfg,
+            )
+            .await;
+        }
+        _ => {
+            // Unknown provider: fall back to the non-streaming provider abstraction
+            stream_fallback_provider(
+                sender,
+                &session_id,
+                project_id,
+                user_prompt,
+                system_prompt,
+                &resolved_model,
+                provider_name,
+                &provider_cfg,
+            )
+            .await;
+        }
+    }
+}
+
+// ── Streaming helper: send a chat event via WS ────────────────────────────
+
+async fn send_chat_event(
+    sender: &mpsc::UnboundedSender<WsMessage>,
+    session_id: &str,
+    event: ChatSseEvent,
+) {
+    let ws_msg = WsMessage::ChatEvent {
+        session_id: session_id.to_string(),
+        event,
+    };
+    if let Err(e) = sender.send(ws_msg) {
+        error!("failed to send chat event via WS: {e}");
+    }
+}
+
+// ── Streaming: Anthropic Messages API (SSE) ───────────────────────────────
+
+/// Stream from the Anthropic Messages API with `stream: true`.
+///
+/// Reads SSE events, forwards `content_block_delta` text chunks in real-time,
+/// and sends a final `Done` event with the accumulated content.
+async fn stream_anthropic_chat(
+    sender: mpsc::UnboundedSender<WsMessage>,
+    session_id: &str,
+    user_prompt: &str,
+    system_prompt: &str,
+    model: &str,
+    config: &ProviderConfig,
+) {
+    const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
+    const ANTHROPIC_VERSION: &str = "2023-06-01";
+    const DEFAULT_MAX_TOKENS: u32 = 16384;
+
+    let base_url = config
+        .base_url
+        .as_deref()
+        .unwrap_or(DEFAULT_BASE_URL)
+        .trim_end_matches('/');
+
+    let api_key = match config.api_key.as_deref() {
+        Some(key) => key,
+        None => {
+            send_chat_event(
+                &sender,
+                session_id,
+                ChatSseEvent::Error {
+                    message: "Anthropic API key not configured".into(),
+                },
+            )
+            .await;
+            return;
+        }
+    };
+
+    let url = format!("{base_url}/v1/messages");
+    let body = serde_json::json!({
+        "model": model,
+        "max_tokens": DEFAULT_MAX_TOKENS,
+        "system": system_prompt,
+        "stream": true,
+        "messages": [{"role": "user", "content": user_prompt}]
+    });
+
+    let client = reqwest::Client::new();
+    let response = match client
+        .post(&url)
+        .header("x-api-key", api_key)
+        .header("anthropic-version", ANTHROPIC_VERSION)
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            send_chat_event(
+                &sender,
+                session_id,
+                ChatSseEvent::Error {
+                    message: format!("Anthropic request failed: {e}"),
+                },
+            )
+            .await;
+            return;
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_body = response.text().await.unwrap_or_default();
+        send_chat_event(
+            &sender,
+            session_id,
+            ChatSseEvent::Error {
+                message: format!("Anthropic HTTP {status}: {error_body}"),
+            },
+        )
+        .await;
+        return;
+    }
+
+    // Parse SSE stream
+    let mut accumulated = String::new();
+    let mut line_buf = String::new();
+    let mut response = response;
+
+    while let Ok(Some(chunk)) = response.chunk().await {
+        let text = String::from_utf8_lossy(&chunk);
+        line_buf.push_str(&text);
+
+        while let Some(newline_pos) = line_buf.find('\n') {
+            let line = line_buf[..newline_pos].trim_end_matches('\r').to_string();
+            line_buf = line_buf[newline_pos + 1..].to_string();
+
+            if let Some(data) = line.strip_prefix("data: ")
+                && let Ok(event) = serde_json::from_str::<serde_json::Value>(data)
+            {
+                let event_type = event["type"].as_str().unwrap_or("");
+                match event_type {
+                    "content_block_delta" => {
+                        let delta_type = event["delta"]["type"].as_str().unwrap_or("");
+                        if delta_type == "text_delta"
+                            && let Some(text) = event["delta"]["text"].as_str()
+                        {
+                            accumulated.push_str(text);
+                            send_chat_event(
+                                &sender,
+                                session_id,
+                                ChatSseEvent::Text {
+                                    content: text.to_string(),
+                                },
+                            )
+                            .await;
+                        } else if delta_type == "thinking_delta"
+                            && let Some(text) = event["delta"]["thinking"].as_str()
+                        {
+                            send_chat_event(
+                                &sender,
+                                session_id,
+                                ChatSseEvent::Thinking {
+                                    content: text.to_string(),
+                                },
+                            )
+                            .await;
+                        }
+                    }
+                    "message_stop" | "message_delta" => {
+                        // End of message — we'll send Done below
+                    }
+                    "error" => {
+                        let msg = event["error"]["message"]
+                            .as_str()
+                            .unwrap_or("Unknown streaming error");
+                        send_chat_event(
+                            &sender,
+                            session_id,
+                            ChatSseEvent::Error {
+                                message: msg.to_string(),
+                            },
+                        )
+                        .await;
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    // Send done event
+    send_chat_event(
+        &sender,
+        session_id,
+        ChatSseEvent::Done {
+            message: DoneMessage {
+                role: "assistant".into(),
+                content: accumulated,
+            },
+        },
+    )
+    .await;
+    info!("chat session {session_id} completed via streaming anthropic");
+}
+
+// ── Streaming: OpenAI-compatible APIs (SSE) ───────────────────────────────
+
+/// Stream from OpenAI-compatible APIs (OpenAI, Copilot) with `stream: true`.
+///
+/// Reads SSE chunks, forwards `delta.content` text in real-time, and sends
+/// a final `Done` event with the accumulated content.
+#[allow(clippy::too_many_arguments)]
+async fn stream_openai_chat(
+    sender: mpsc::UnboundedSender<WsMessage>,
+    session_id: &str,
+    user_prompt: &str,
+    system_prompt: &str,
+    model: &str,
+    config: &ProviderConfig,
+    variant: &str, // "openai" or "copilot"
+) {
+    let (default_base, completions_path) = match variant {
+        "copilot" => ("https://models.inference.ai.azure.com", "/chat/completions"),
+        _ => ("https://api.openai.com", "/v1/chat/completions"),
+    };
+
+    let base_url = config
+        .base_url
+        .as_deref()
+        .unwrap_or(default_base)
+        .trim_end_matches('/');
+
+    let api_key = match config.api_key.as_deref() {
+        Some(key) => key,
+        None => {
+            send_chat_event(
+                &sender,
+                session_id,
+                ChatSseEvent::Error {
+                    message: format!("{variant} API key not configured"),
+                },
+            )
+            .await;
+            return;
+        }
+    };
+
+    let url = format!("{base_url}{completions_path}");
+    let body = serde_json::json!({
+        "model": model,
+        "stream": true,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+    });
+
+    let client = reqwest::Client::new();
+    let response = match client
+        .post(&url)
+        .header("Authorization", format!("Bearer {api_key}"))
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            send_chat_event(
+                &sender,
+                session_id,
+                ChatSseEvent::Error {
+                    message: format!("{variant} request failed: {e}"),
+                },
+            )
+            .await;
+            return;
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_body = response.text().await.unwrap_or_default();
+        send_chat_event(
+            &sender,
+            session_id,
+            ChatSseEvent::Error {
+                message: format!("{variant} HTTP {status}: {error_body}"),
+            },
+        )
+        .await;
+        return;
+    }
+
+    // Parse SSE stream
+    let mut accumulated = String::new();
+    let mut line_buf = String::new();
+    let mut response = response;
+
+    while let Ok(Some(chunk)) = response.chunk().await {
+        let text = String::from_utf8_lossy(&chunk);
+        line_buf.push_str(&text);
+
+        while let Some(newline_pos) = line_buf.find('\n') {
+            let line = line_buf[..newline_pos].trim_end_matches('\r').to_string();
+            line_buf = line_buf[newline_pos + 1..].to_string();
+
+            if let Some(data) = line.strip_prefix("data: ") {
+                if data == "[DONE]" {
+                    continue;
+                }
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data)
+                    && let Some(choices) = parsed["choices"].as_array()
+                {
+                    for choice in choices {
+                        if let Some(delta_text) = choice["delta"]["content"].as_str()
+                            && !delta_text.is_empty()
+                        {
+                            accumulated.push_str(delta_text);
+                            send_chat_event(
+                                &sender,
+                                session_id,
+                                ChatSseEvent::Text {
+                                    content: delta_text.to_string(),
+                                },
+                            )
+                            .await;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Process remaining buffer
+    if !line_buf.is_empty() {
+        let line = line_buf.trim_end_matches('\r');
+        if let Some(data) = line.strip_prefix("data: ")
+            && data != "[DONE]"
+            && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data)
+            && let Some(choices) = parsed["choices"].as_array()
+        {
+            for choice in choices {
+                if let Some(delta_text) = choice["delta"]["content"].as_str()
+                    && !delta_text.is_empty()
+                {
+                    accumulated.push_str(delta_text);
+                    send_chat_event(
+                        &sender,
+                        session_id,
+                        ChatSseEvent::Text {
+                            content: delta_text.to_string(),
+                        },
+                    )
+                    .await;
+                }
+            }
+        }
+    }
+
+    send_chat_event(
+        &sender,
+        session_id,
+        ChatSseEvent::Done {
+            message: DoneMessage {
+                role: "assistant".into(),
+                content: accumulated,
+            },
+        },
+    )
+    .await;
+    info!("chat session {session_id} completed via streaming {variant}");
+}
+
+// ── Streaming: Ollama chat API (NDJSON) ───────────────────────────────────
+
+/// Stream from the Ollama chat API with `stream: true`.
+///
+/// Reads NDJSON lines, forwards `message.content` text chunks in real-time,
+/// and sends a final `Done` event with the accumulated content.
+async fn stream_ollama_chat(
+    sender: mpsc::UnboundedSender<WsMessage>,
+    session_id: &str,
+    user_prompt: &str,
+    system_prompt: &str,
+    model: &str,
+    config: &ProviderConfig,
+) {
+    let base_url = config
+        .base_url
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("http://localhost:11434")
+        .trim_end_matches('/');
+
+    let url = format!("{base_url}/api/chat");
+    let body = serde_json::json!({
+        "model": model,
+        "stream": true,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+    });
+
+    let client = reqwest::Client::new();
+    let response = match client.post(&url).json(&body).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let msg = if e.is_connect() || e.is_timeout() {
+                format!("Ollama not reachable at {base_url}: {e}")
+            } else {
+                format!("Ollama request failed: {e}")
+            };
+            send_chat_event(&sender, session_id, ChatSseEvent::Error { message: msg }).await;
+            return;
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_body = response.text().await.unwrap_or_default();
+        send_chat_event(
+            &sender,
+            session_id,
+            ChatSseEvent::Error {
+                message: format!("Ollama HTTP {status}: {error_body}"),
+            },
+        )
+        .await;
+        return;
+    }
+
+    // Read NDJSON stream chunk by chunk for real-time streaming
+    let mut accumulated = String::new();
+    let mut line_buf = String::new();
+    let mut response = response;
+
+    while let Ok(Some(chunk)) = response.chunk().await {
+        let text = String::from_utf8_lossy(&chunk);
+        line_buf.push_str(&text);
+
+        // Process complete lines
+        while let Some(newline_pos) = line_buf.find('\n') {
+            let line = line_buf[..newline_pos].trim().to_string();
+            line_buf = line_buf[newline_pos + 1..].to_string();
+
+            if line.is_empty() {
+                continue;
+            }
+
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&line) {
+                // Check for error
+                if let Some(err_msg) = parsed["error"].as_str() {
+                    send_chat_event(
+                        &sender,
+                        session_id,
+                        ChatSseEvent::Error {
+                            message: format!("Ollama error: {err_msg}"),
+                        },
+                    )
+                    .await;
+                    return;
+                }
+
+                // Extract content from message
+                if let Some(content) = parsed["message"]["content"].as_str()
+                    && !content.is_empty()
+                {
+                    accumulated.push_str(content);
+                    send_chat_event(
+                        &sender,
+                        session_id,
+                        ChatSseEvent::Text {
+                            content: content.to_string(),
+                        },
+                    )
+                    .await;
+                }
+
+                // Check if done
+                if parsed["done"].as_bool().unwrap_or(false) {
+                    break;
+                }
+            }
+        }
+    }
+
+    send_chat_event(
+        &sender,
+        session_id,
+        ChatSseEvent::Done {
+            message: DoneMessage {
+                role: "assistant".into(),
+                content: accumulated,
+            },
+        },
+    )
+    .await;
+    info!("chat session {session_id} completed via streaming ollama");
+}
+
+// ── Fallback: non-streaming provider abstraction ──────────────────────────
+
+/// Fallback for unknown provider types: uses the `StepProvider` trait for a
+/// single-shot completion and sends the result as a single text event.
+#[allow(clippy::too_many_arguments)]
+async fn stream_fallback_provider(
+    sender: mpsc::UnboundedSender<WsMessage>,
+    session_id: &str,
+    project_id: &str,
+    user_prompt: &str,
+    system_prompt: &str,
+    model: &str,
+    provider_name: &str,
+    provider_cfg: &ProviderConfig,
+) {
+    let provider = match ProviderFactory::create(provider_name) {
+        Ok(p) => p,
+        Err(e) => {
+            send_chat_event(
+                &sender,
+                session_id,
+                ChatSseEvent::Error {
+                    message: format!("Failed to create provider '{provider_name}': {e}"),
+                },
+            )
+            .await;
+            return;
+        }
+    };
+
     let step = ResolvedStep {
         name: "chat".into(),
         description: system_prompt.to_string(),
-        model: Some(
-            provider_cfg
-                .model
-                .clone()
-                .unwrap_or_else(|| model.to_string()),
-        ),
+        model: Some(model.to_string()),
         allowed_tools: None,
         allowed_tools_list: vec![],
         budget: None,
@@ -701,25 +1327,22 @@ async fn handle_chat_via_provider(
         user_prompt: Some(user_prompt.to_string()),
     };
 
-    info!("chat: calling provider '{provider_name}'");
-
-    match provider.execute(&step, &task_ctx, &provider_cfg).await {
+    match provider.execute(&step, &task_ctx, provider_cfg).await {
         Ok(output) if !output.is_error => {
             let content = output.content.trim().to_string();
-            // Send the full text as a single text event, then done
             if !content.is_empty() {
-                send_event(
-                    sender.clone(),
-                    session_id.clone(),
+                send_chat_event(
+                    &sender,
+                    session_id,
                     ChatSseEvent::Text {
                         content: content.clone(),
                     },
                 )
                 .await;
             }
-            send_event(
-                sender,
-                session_id.clone(),
+            send_chat_event(
+                &sender,
+                session_id,
                 ChatSseEvent::Done {
                     message: DoneMessage {
                         role: "assistant".into(),
@@ -728,11 +1351,11 @@ async fn handle_chat_via_provider(
                 },
             )
             .await;
-            info!("chat session {session_id} completed via provider '{provider_name}'");
+            info!("chat session {session_id} completed via fallback provider '{provider_name}'");
         }
         Ok(output) => {
-            send_event(
-                sender,
+            send_chat_event(
+                &sender,
                 session_id,
                 ChatSseEvent::Error {
                     message: output.content,
@@ -741,8 +1364,8 @@ async fn handle_chat_via_provider(
             .await;
         }
         Err(e) => {
-            send_event(
-                sender,
+            send_chat_event(
+                &sender,
                 session_id,
                 ChatSseEvent::Error {
                     message: format!("Provider error: {e}"),

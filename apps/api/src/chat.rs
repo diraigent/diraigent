@@ -3,31 +3,12 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
+pub use diraigent_types::{ChatSseEvent, DoneMessage};
+
 use crate::db::DiraigentDb;
 use crate::models::*;
 use crate::ws_protocol::WsMessage;
 use crate::ws_registry::WsRegistry;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum ChatSseEvent {
-    #[serde(rename = "text")]
-    Text { content: String },
-    #[serde(rename = "tool_start")]
-    ToolStart { tool_name: String, tool_id: String },
-    #[serde(rename = "tool_end")]
-    ToolEnd { tool_id: String, success: bool },
-    #[serde(rename = "done")]
-    Done { message: DoneMessage },
-    #[serde(rename = "error")]
-    Error { message: String },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DoneMessage {
-    pub role: String,
-    pub content: String,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
@@ -177,7 +158,10 @@ pub struct ChatStreamParams {
     pub auth_header: String,
 }
 
-pub async fn run_chat_stream(p: ChatStreamParams) {
+/// Run the chat stream. Returns the session_id so the caller can set up
+/// cleanup (e.g. cancel on client disconnect). Returns `None` only if the
+/// stream fails before a session is registered with the orchestra.
+pub async fn run_chat_stream(p: ChatStreamParams) -> Option<String> {
     let ChatStreamParams {
         db,
         ws_registry,
@@ -205,7 +189,7 @@ pub async fn run_chat_stream(p: ChatStreamParams) {
                     message: "Failed to find project".into(),
                 })
                 .await;
-            return;
+            return None;
         }
     };
 
@@ -217,7 +201,7 @@ pub async fn run_chat_stream(p: ChatStreamParams) {
                     message: format!("Failed to find agents: {e}"),
                 })
                 .await;
-            return;
+            return None;
         }
     };
 
@@ -229,12 +213,12 @@ pub async fn run_chat_stream(p: ChatStreamParams) {
                     message: "No orchestra agent connected".into(),
                 })
                 .await;
-            return;
+            return None;
         }
     };
 
     // Register chat session to receive events back from orchestra
-    ws_registry.register_chat_session(session_id.clone(), tx.clone());
+    ws_registry.register_chat_session(session_id.clone(), tx.clone(), agent_id);
 
     // Send request via WebSocket
     let ws_msg = WsMessage::ChatRequest {
@@ -253,7 +237,7 @@ pub async fn run_chat_stream(p: ChatStreamParams) {
             })
             .await;
         ws_registry.remove_chat_session(&session_id);
-        return;
+        return None;
     }
 
     // Spawn a timeout watcher so we don't hang forever.
@@ -263,18 +247,19 @@ pub async fn run_chat_stream(p: ChatStreamParams) {
     let tx_clone = tx.clone();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(600)).await;
-        // If session is still active after 600s, send timeout error
+        // If session is still active after 600s, cancel it (also kills orchestra subprocess)
         if registry_clone.is_chat_active(&session_clone) {
             let _ = tx_clone
                 .send(ChatSseEvent::Error {
                     message: "Chat session timed out (no response from worker)".into(),
                 })
                 .await;
-            registry_clone.remove_chat_session(&session_clone);
+            registry_clone.cancel_chat_session(&session_clone);
         }
     });
 
     // Events flow directly from WS reader -> registry -> tx -> SSE stream.
     // This function returns immediately; the session ends when a terminal
     // event (Done/Error) is routed or the timeout fires.
+    Some(session_id)
 }

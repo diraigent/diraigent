@@ -30,6 +30,7 @@ export class ChatService {
   readonly messages = signal<ChatMessage[]>([]);
   readonly streaming = signal(false);
   readonly streamingText = signal('');
+  readonly thinkingText = signal('');
   readonly activeTools = signal<ActiveTool[]>([]);
   readonly toolsCompleted = signal(0);
   readonly error = signal<string | null>(null);
@@ -64,6 +65,7 @@ export class ChatService {
         this.messages.set(msgs);
         this.streaming.set(false);
         this.streamingText.set('');
+        this.thinkingText.set('');
         this.activeTools.set([]);
         this.toolsCompleted.set(0);
         this.error.set(null);
@@ -92,6 +94,7 @@ export class ChatService {
     this.persist();
     this.streaming.set(true);
     this.streamingText.set('');
+    this.thinkingText.set('');
     this.activeTools.set([]);
     this.toolsCompleted.set(0);
     this.error.set(null);
@@ -152,6 +155,10 @@ export class ChatService {
             this.streamingText.set(accumulated);
             break;
 
+          case 'thinking':
+            this.thinkingText.update(t => t + (data['content'] as string));
+            break;
+
           case 'tool_start':
             this.activeTools.update(tools => [
               ...tools,
@@ -179,6 +186,7 @@ export class ChatService {
             ]);
             this.persist();
             this.streamingText.set('');
+            this.thinkingText.set('');
             break;
 
           case 'error':
@@ -225,6 +233,7 @@ export class ChatService {
         }
         this.streaming.set(false);
         this.streamingText.set('');
+        this.thinkingText.set('');
         this.activeTools.set([]);
         this.toolsCompleted.set(0);
         this.abortController = null;
@@ -279,6 +288,7 @@ export class ChatService {
     this.persist();
     this.streaming.set(false);
     this.streamingText.set('');
+    this.thinkingText.set('');
     this.activeTools.set([]);
     this.toolsCompleted.set(0);
     this.error.set(null);

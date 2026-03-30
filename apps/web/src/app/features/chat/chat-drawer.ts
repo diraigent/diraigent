@@ -1,12 +1,130 @@
-import { Component, inject, viewChild, ElementRef, effect, untracked, HostListener } from '@angular/core';
+import { Component, inject, viewChild, ElementRef, effect, untracked, HostListener, Pipe, PipeTransform } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ChatService, CHAT_MODELS } from '../../core/services/chat.service';
+import { Marked, type MarkedExtension } from 'marked';
+import hljs from 'highlight.js/lib/common';
+import DOMPurify from 'dompurify';
+
+/* ── Markdown renderer configuration ─────────────────────── */
+
+const highlightExtension: MarkedExtension = {
+  renderer: {
+    code({ text, lang }: { text: string; lang?: string }) {
+      let highlighted: string;
+      try {
+        if (lang && hljs.getLanguage(lang)) {
+          highlighted = hljs.highlight(text, { language: lang }).value;
+        } else {
+          highlighted = hljs.highlightAuto(text).value;
+        }
+      } catch {
+        highlighted = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+      const langLabel = lang ? `<span class="chat-code-lang">${lang}</span>` : '';
+      return `<pre class="chat-code-block">${langLabel}<code class="hljs">${highlighted}</code></pre>`;
+    },
+  },
+};
+
+const chatMarked = new Marked(highlightExtension);
+
+function renderMarkdown(content: string): string {
+  const raw = chatMarked.parse(content, { async: false }) as string;
+  return DOMPurify.sanitize(raw);
+}
+
+/* ── Pipe: converts markdown string → sanitised HTML ─────── */
+
+@Pipe({ name: 'chatMarkdown', standalone: true })
+export class ChatMarkdownPipe implements PipeTransform {
+  transform(value: string): string {
+    if (!value) return '';
+    return renderMarkdown(value);
+  }
+}
 
 @Component({
   selector: 'app-chat-drawer',
   standalone: true,
-  imports: [FormsModule],
-  styles: [`:host { display: block; height: 100%; }`],
+  imports: [FormsModule, ChatMarkdownPipe],
+  styles: [`
+    :host { display: block; height: 100%; }
+
+    @import 'highlight.js/styles/atom-one-dark.css';
+
+    /* ── Chat markdown prose styles ── */
+    .chat-md :is(h1, h2, h3, h4) {
+      font-weight: 600;
+      margin-top: 0.75rem;
+      margin-bottom: 0.25rem;
+    }
+    .chat-md h1 { font-size: 1.25rem; }
+    .chat-md h2 { font-size: 1.125rem; }
+    .chat-md h3 { font-size: 1rem; }
+    .chat-md p { margin-bottom: 0.5rem; line-height: 1.55; }
+    .chat-md p:last-child { margin-bottom: 0; }
+    .chat-md ul, .chat-md ol { padding-left: 1.25rem; margin-bottom: 0.5rem; }
+    .chat-md ul { list-style-type: disc; }
+    .chat-md ol { list-style-type: decimal; }
+    .chat-md li { margin-bottom: 0.15rem; }
+    .chat-md li > p { margin-bottom: 0.25rem; }
+
+    /* Inline code */
+    .chat-md code {
+      background: rgba(255, 255, 255, 0.07);
+      border-radius: 0.25rem;
+      padding: 0.1rem 0.35rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.85em;
+    }
+
+    /* Code blocks */
+    .chat-md .chat-code-block {
+      position: relative;
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 0.5rem;
+      padding: 0.75rem 1rem;
+      overflow-x: auto;
+      margin: 0.5rem 0;
+      font-size: 0.8125rem;
+      line-height: 1.5;
+    }
+    .chat-md .chat-code-block code {
+      background: transparent;
+      padding: 0;
+      border-radius: 0;
+      font-size: inherit;
+    }
+    .chat-md .chat-code-block code.hljs {
+      background: transparent !important;
+      padding: 0 !important;
+    }
+    .chat-md .chat-code-lang {
+      position: absolute;
+      top: 0.25rem;
+      right: 0.5rem;
+      font-size: 0.625rem;
+      text-transform: uppercase;
+      opacity: 0.4;
+      pointer-events: none;
+    }
+
+    .chat-md blockquote {
+      border-left: 3px solid rgba(255, 255, 255, 0.2);
+      padding-left: 0.75rem;
+      margin: 0.5rem 0;
+      opacity: 0.8;
+    }
+    .chat-md a {
+      color: var(--color-accent, #60a5fa);
+      text-decoration: underline;
+    }
+    .chat-md table { border-collapse: collapse; margin: 0.5rem 0; width: 100%; font-size: 0.8125rem; }
+    .chat-md th, .chat-md td { border: 1px solid rgba(255,255,255,0.1); padding: 0.35rem 0.5rem; text-align: left; }
+    .chat-md th { font-weight: 600; background: rgba(255,255,255,0.04); }
+    .chat-md hr { border-color: rgba(255,255,255,0.1); margin: 0.75rem 0; }
+    .chat-md img { max-width: 100%; border-radius: 0.375rem; }
+  `],
   template: `
       <div class="flex flex-col bg-surface overflow-hidden"
            [class.h-full]="!chat.collapsed()">
@@ -85,7 +203,8 @@ import { ChatService, CHAT_MODELS } from '../../core/services/chat.service';
           <div class="overflow-hidden flex flex-col min-h-0">
 
             <!-- Messages -->
-            <div #messageList class="flex-1 overflow-y-auto min-h-0 p-4 space-y-3" (scroll)="onScroll()">
+            <div #messageList class="flex-1 overflow-y-auto min-h-0 p-4" (scroll)="onScroll()">
+              <div class="max-w-3xl mx-auto space-y-3">
               @if (!chat.canSend()) {
                 <div class="flex flex-col items-center justify-center h-full text-center px-6">
                   <div class="text-text-muted text-sm">
@@ -96,30 +215,55 @@ import { ChatService, CHAT_MODELS } from '../../core/services/chat.service';
               }
               @for (msg of chat.messages(); track $index) {
                 <div [class]="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
-                  <div [class]="msg.role === 'user'
-                    ? 'max-w-[85%] rounded-2xl rounded-br-md px-4 py-2 bg-accent text-bg text-sm'
-                    : 'max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2 bg-bg-subtle text-text-primary text-sm whitespace-pre-wrap'">
-                    {{ msg.content }}
-                  </div>
+                  @if (msg.role === 'user') {
+                    <div class="max-w-[85%] rounded-2xl rounded-br-md px-4 py-2 bg-accent text-bg text-sm whitespace-pre-wrap">
+                      {{ msg.content }}
+                    </div>
+                  } @else {
+                    <div class="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2 bg-bg-subtle text-text-primary text-sm chat-md"
+                         [innerHTML]="msg.content | chatMarkdown">
+                    </div>
+                  }
                 </div>
               }
 
               <!-- Streaming text -->
               @if (chat.streaming() && chat.streamingText()) {
                 <div class="flex justify-start">
-                  <div class="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2 bg-bg-subtle text-text-primary text-sm whitespace-pre-wrap">
-                    {{ chat.streamingText() }}
+                  <div class="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2 bg-bg-subtle text-text-primary text-sm chat-md">
+                    <span [innerHTML]="chat.streamingText() | chatMarkdown"></span>
                     <span class="inline-block w-1.5 h-4 bg-accent animate-pulse ml-0.5 align-text-bottom"></span>
                   </div>
                 </div>
               }
 
-              <!-- Thinking indicator (only before any tools have run) -->
+              <!-- Thinking indicator -->
               @if (chat.streaming() && !chat.streamingText() && chat.activeTools().length === 0 && chat.toolsCompleted() === 0) {
                 <div class="flex justify-start">
-                  <div class="rounded-2xl rounded-bl-md px-4 py-2 bg-bg-subtle text-text-secondary text-sm animate-pulse">
-                    Thinking...
-                  </div>
+                  @if (chat.thinkingText()) {
+                    <details class="max-w-[85%] rounded-2xl rounded-bl-md bg-bg-subtle text-sm group" [attr.open]="thinkingExpanded ? '' : null">
+                      <summary (click)="thinkingExpanded = !thinkingExpanded; $event.preventDefault()"
+                               class="flex items-center gap-2 px-4 py-2 cursor-pointer select-none text-text-secondary list-none">
+                        <svg class="w-3.5 h-3.5 animate-spin text-accent shrink-0" viewBox="0 0 24 24" fill="none">
+                          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Thinking...
+                        <svg class="w-3 h-3 transition-transform" [class.rotate-90]="thinkingExpanded" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </summary>
+                      @if (thinkingExpanded) {
+                        <div class="px-4 pb-3 text-text-muted text-xs whitespace-pre-wrap max-h-48 overflow-y-auto border-t border-border/50 pt-2 mt-1">
+                          {{ chat.thinkingText() }}
+                        </div>
+                      }
+                    </details>
+                  } @else {
+                    <div class="rounded-2xl rounded-bl-md px-4 py-2 bg-bg-subtle text-text-secondary text-sm animate-pulse">
+                      Thinking...
+                    </div>
+                  }
                 </div>
               }
 
@@ -143,11 +287,12 @@ import { ChatService, CHAT_MODELS } from '../../core/services/chat.service';
               @if (chat.error()) {
                 <div class="text-sm text-ctp-red px-1">{{ chat.error() }}</div>
               }
+              </div>
             </div>
 
             <!-- Input -->
             <div class="border-t border-border p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-              <div class="flex gap-2">
+              <div class="max-w-3xl mx-auto flex gap-2">
                 <textarea
                   #inputEl
                   [(ngModel)]="inputText"
@@ -156,7 +301,7 @@ import { ChatService, CHAT_MODELS } from '../../core/services/chat.service';
                   [disabled]="!chat.canSend()"
                   rows="1"
                   class="flex-1 resize-none rounded-xl border border-border bg-bg-subtle px-3 py-2
-                         text-sm text-text-primary placeholder:text-text-secondary
+                         min-h-[44px] text-sm text-text-primary placeholder:text-text-secondary
                          focus:outline-none focus:ring-1 focus:ring-accent"></textarea>
                 @if (chat.streaming()) {
                   <button (click)="chat.cancel()"
@@ -181,6 +326,7 @@ import { ChatService, CHAT_MODELS } from '../../core/services/chat.service';
 export class ChatDrawerComponent {
   chat = inject(ChatService);
   inputText = '';
+  thinkingExpanded = false;
   readonly models = CHAT_MODELS;
 
   private messageList = viewChild<ElementRef<HTMLDivElement>>('messageList');
@@ -200,6 +346,7 @@ export class ChatDrawerComponent {
     effect(() => {
       this.chat.messages();
       this.chat.streamingText();
+      this.chat.thinkingText();
 
       untracked(() => {
         if (!this.userScrolledUp) {

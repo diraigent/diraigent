@@ -1,29 +1,10 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub use diraigent_types::{ChatSseEvent, DoneMessage};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
-    pub role: String,
-    pub content: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum ChatSseEvent {
-    #[serde(rename = "text")]
-    Text { content: String },
-    #[serde(rename = "tool_start")]
-    ToolStart { tool_name: String, tool_id: String },
-    #[serde(rename = "tool_end")]
-    ToolEnd { tool_id: String, success: bool },
-    #[serde(rename = "done")]
-    Done { message: DoneMessage },
-    #[serde(rename = "error")]
-    Error { message: String },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DoneMessage {
     pub role: String,
     pub content: String,
 }
@@ -53,6 +34,10 @@ pub enum WsMessage {
         path: Option<String>,
         git_ref: Option<String>,
     },
+
+    // API -> Orchestra: cancel an active chat session
+    #[serde(rename = "chat.cancel")]
+    ChatCancel { session_id: String },
 
     // Orchestra -> API
     #[serde(rename = "chat.event")]
