@@ -85,7 +85,8 @@ import { ChatService, CHAT_MODELS } from '../../core/services/chat.service';
           <div class="overflow-hidden flex flex-col min-h-0">
 
             <!-- Messages -->
-            <div #messageList class="flex-1 overflow-y-auto min-h-0 p-4 space-y-3" (scroll)="onScroll()">
+            <div #messageList class="flex-1 overflow-y-auto min-h-0 p-4" (scroll)="onScroll()">
+              <div class="max-w-3xl mx-auto space-y-3">
               @if (!chat.canSend()) {
                 <div class="flex flex-col items-center justify-center h-full text-center px-6">
                   <div class="text-text-muted text-sm">
@@ -143,11 +144,12 @@ import { ChatService, CHAT_MODELS } from '../../core/services/chat.service';
               @if (chat.error()) {
                 <div class="text-sm text-ctp-red px-1">{{ chat.error() }}</div>
               }
+              </div>
             </div>
 
             <!-- Input -->
             <div class="border-t border-border p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-              <div class="flex gap-2">
+              <div class="max-w-3xl mx-auto flex gap-2">
                 <textarea
                   #inputEl
                   [(ngModel)]="inputText"
@@ -156,7 +158,7 @@ import { ChatService, CHAT_MODELS } from '../../core/services/chat.service';
                   [disabled]="!chat.canSend()"
                   rows="1"
                   class="flex-1 resize-none rounded-xl border border-border bg-bg-subtle px-3 py-2
-                         text-sm text-text-primary placeholder:text-text-secondary
+                         min-h-[44px] text-sm text-text-primary placeholder:text-text-secondary
                          focus:outline-none focus:ring-1 focus:ring-accent"></textarea>
                 @if (chat.streaming()) {
                   <button (click)="chat.cancel()"
