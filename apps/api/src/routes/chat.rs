@@ -75,6 +75,7 @@ async fn chat_handler(
         let data = serde_json::to_string(&event).unwrap_or_default();
         let event_type = match &event {
             ChatSseEvent::Text { .. } => "text",
+            ChatSseEvent::Thinking { .. } => "thinking",
             ChatSseEvent::ToolStart { .. } => "tool_start",
             ChatSseEvent::ToolEnd { .. } => "tool_end",
             ChatSseEvent::Done { .. } => "done",
