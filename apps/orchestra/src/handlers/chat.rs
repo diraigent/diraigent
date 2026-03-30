@@ -286,6 +286,17 @@ pub async fn handle_chat_request_ws(
                                         },
                                     )
                                     .await;
+                                } else if delta_type == "thinking_delta"
+                                    && let Some(text) = inner["delta"]["thinking"].as_str()
+                                {
+                                    send_event(
+                                        sender.clone(),
+                                        session_id.clone(),
+                                        ChatSseEvent::Thinking {
+                                            content: text.to_string(),
+                                        },
+                                    )
+                                    .await;
                                 }
                             }
                             "content_block_start" => {
@@ -389,17 +400,6 @@ pub async fn handle_chat_request_ws(
                                         role: "assistant".into(),
                                         content: final_text,
                                     },
-                                },
-                            )
-                            .await;
-                        } else if delta_type == "thinking_delta"
-                            && let Some(text) = inner["delta"]["thinking"].as_str()
-                        {
-                            send_event(
-                                sender.clone(),
-                                session_id.clone(),
-                                ChatSseEvent::Thinking {
-                                    content: text.to_string(),
                                 },
                             )
                             .await;
