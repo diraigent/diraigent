@@ -1411,8 +1411,50 @@ impl ApiClient {
                 buf = buf[newline_pos + 1..].to_string();
                 if let Some(data) = line.strip_prefix("data: ") {
                     if let Ok(obj) = serde_json::from_str::<serde_json::Value>(data) {
-                        if let Some(content) = obj.get("content").and_then(|c| c.as_str()) {
-                            let _ = tx.send(super::ApiMsg::ChatChunk(content.to_string())).await;
+                        match obj.get("type").and_then(|t| t.as_str()) {
+                            Some("text") => {
+                                if let Some(content) = obj.get("content").and_then(|c| c.as_str()) {
+                                    let _ = tx
+                                        .send(super::ApiMsg::ChatChunk(content.to_string()))
+                                        .await;
+                                }
+                            }
+                            Some("tool_start") => {
+                                if let (Some(name), Some(id)) = (
+                                    obj.get("tool_name").and_then(|v| v.as_str()),
+                                    obj.get("tool_id").and_then(|v| v.as_str()),
+                                ) {
+                                    let _ = tx
+                                        .send(super::ApiMsg::ChatToolStart {
+                                            tool_name: name.to_string(),
+                                            tool_id: id.to_string(),
+                                        })
+                                        .await;
+                                }
+                            }
+                            Some("tool_end") => {
+                                if let Some(id) = obj.get("tool_id").and_then(|v| v.as_str()) {
+                                    let success = obj
+                                        .get("success")
+                                        .and_then(|v| v.as_bool())
+                                        .unwrap_or(false);
+                                    let _ = tx
+                                        .send(super::ApiMsg::ChatToolEnd {
+                                            tool_id: id.to_string(),
+                                            success,
+                                        })
+                                        .await;
+                                }
+                            }
+                            Some("error") => {
+                                if let Some(msg) = obj.get("message").and_then(|v| v.as_str()) {
+                                    let _ =
+                                        tx.send(super::ApiMsg::ChatError(msg.to_string())).await;
+                                }
+                            }
+                            // "thinking" and "done" are intentionally not forwarded:
+                            // thinking is internal reasoning, done is handled by Ok return
+                            _ => {}
                         }
                     }
                 }

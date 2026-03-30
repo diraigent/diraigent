@@ -72,6 +72,8 @@ enum ApiMsg {
     SearchResults(client::SearchResponse),
     ChatResponse,
     ChatChunk(String),
+    ChatToolStart { tool_name: String, tool_id: String },
+    ChatToolEnd { tool_id: String, success: bool },
     ChatError(String),
     SourceTree(Vec<client::TreeEntry>),
     SourceBlob { path: String, content: String },
@@ -663,11 +665,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
+                ApiMsg::ChatToolStart { tool_name, tool_id } => {
+                    app.chat_tool_map.insert(tool_id, tool_name.clone());
+                    app.chat_active_tool = Some(tool_name);
+                }
+                ApiMsg::ChatToolEnd { tool_id, success } => {
+                    let name = app
+                        .chat_tool_map
+                        .remove(&tool_id)
+                        .unwrap_or_else(|| "tool".into());
+                    app.chat_active_tool = None;
+                    // Append tool result inline in the assistant message
+                    if let Some(last) = app.chat_messages.last_mut() {
+                        if last.role == "assistant" {
+                            let icon = if success { "\u{2713}" } else { "\u{2717}" };
+                            last.content.push_str(&format!(
+                                "\n  {} {} {}\n",
+                                icon,
+                                name,
+                                if success { "" } else { "(failed)" }
+                            ));
+                        }
+                    }
+                }
                 ApiMsg::ChatResponse => {
                     app.chat_streaming = false;
+                    app.chat_active_tool = None;
+                    app.chat_tool_map.clear();
                 }
                 ApiMsg::ChatError(e) => {
                     app.chat_streaming = false;
+                    app.chat_active_tool = None;
+                    app.chat_tool_map.clear();
                     app.chat_messages.push(client::ChatMessage {
                         role: "assistant".into(),
                         content: format!("Error: {}", e),

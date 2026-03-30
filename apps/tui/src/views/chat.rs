@@ -39,18 +39,44 @@ pub fn render(f: &mut Frame, area: Rect, app: &mut App) {
             Style::default().fg(color).add_modifier(Modifier::BOLD),
         )]));
         for line in msg.content.lines() {
-            lines.push(Line::styled(
-                format!("  {}", line),
-                Style::default().fg(theme::text()),
-            ));
+            // Render tool result lines with special styling
+            let trimmed = line.trim();
+            if trimmed.starts_with('\u{2713}') || trimmed.starts_with('\u{2717}') {
+                let (icon_color, rest) = if trimmed.starts_with('\u{2713}') {
+                    (theme::green(), &trimmed['\u{2713}'.len_utf8()..])
+                } else {
+                    (theme::red(), &trimmed['\u{2717}'.len_utf8()..])
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("  {}", &trimmed[..trimmed.len() - rest.len()]),
+                        Style::default().fg(icon_color),
+                    ),
+                    Span::styled(rest.to_string(), Style::default().fg(theme::overlay0())),
+                ]));
+            } else {
+                lines.push(Line::styled(
+                    format!("  {}", line),
+                    Style::default().fg(theme::text()),
+                ));
+            }
         }
     }
     if app.chat_streaming {
         lines.push(Line::raw(""));
-        lines.push(Line::styled(
-            "  Thinking...",
-            Style::default().fg(theme::peach()),
-        ));
+        if let Some(ref tool) = app.chat_active_tool {
+            lines.push(Line::styled(
+                format!("  \u{2699} Running {}...", tool),
+                Style::default()
+                    .fg(theme::teal())
+                    .add_modifier(Modifier::BOLD),
+            ));
+        } else {
+            lines.push(Line::styled(
+                "  Thinking...",
+                Style::default().fg(theme::peach()),
+            ));
+        }
     }
 
     // Auto-scroll: calculate visible height and set scroll
