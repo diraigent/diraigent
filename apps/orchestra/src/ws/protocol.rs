@@ -56,6 +56,10 @@ pub enum WsMessage {
         git_ref: Option<String>,
     },
 
+    // API -> Orchestra: cancel an active chat session
+    #[serde(rename = "chat.cancel")]
+    ChatCancel { session_id: String },
+
     // Orchestra -> API
     #[serde(rename = "chat.event")]
     ChatEvent {

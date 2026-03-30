@@ -9,7 +9,7 @@ use std::sync::LazyLock;
 use std::time::Instant;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{RwLock, mpsc, watch};
 use tracing::{debug, error, info, warn};
 
 /// Default max tokens for message history before compression kicks in.
@@ -121,6 +121,7 @@ pub async fn handle_chat_request_ws(
     model: &str,
     api: &ProjectsApi,
     projects_path: &Path,
+    cancel_rx: watch::Receiver<bool>,
 ) {
     let session_id = session_id.to_string();
 
@@ -164,30 +165,35 @@ pub async fn handle_chat_request_ws(
         return;
     }
 
-    // Spawn Claude Code CLI
-    let mut child = match Command::new("claude")
-        .args([
-            "-p",
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            "--include-partial-messages",
-            "--no-session-persistence",
-            "--model",
-            &resolved_model,
-            "--system-prompt",
-            system_prompt,
-            "--tools",
-            "Bash,Read,WebFetch,WebSearch",
-            "--permission-mode",
-            "bypassPermissions",
-        ])
-        .current_dir(&working_dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
+    // Spawn Claude Code CLI in its own process group so we can kill the
+    // entire tree (claude + any child processes) on cancellation.
+    let mut cmd = Command::new("claude");
+    cmd.args([
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--include-partial-messages",
+        "--no-session-persistence",
+        "--model",
+        &resolved_model,
+        "--system-prompt",
+        system_prompt,
+        "--tools",
+        "Bash,Read,WebFetch,WebSearch",
+        "--permission-mode",
+        "bypassPermissions",
+    ])
+    .current_dir(&working_dir)
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+
+    // Create a new process group so we can signal the entire tree
+    #[cfg(unix)]
+    cmd.process_group(0);
+
+    let mut child = match cmd.spawn() {
         Ok(child) => child,
         Err(e) => {
             send_event(
@@ -237,36 +243,152 @@ pub async fn handle_chat_request_ws(
     let reader = BufReader::new(stdout);
     let mut lines = reader.lines();
     let mut accumulated_text = String::new();
+    let mut cancel_rx = cancel_rx;
+    let mut cancelled = false;
 
-    while let Ok(Some(line)) = lines.next_line().await {
-        if line.trim().is_empty() {
-            continue;
-        }
+    loop {
+        tokio::select! {
+            line_result = lines.next_line() => {
+                let line = match line_result {
+                    Ok(Some(line)) => line,
+                    Ok(None) => break, // EOF
+                    Err(_) => break,
+                };
 
-        let event: serde_json::Value = match serde_json::from_str(&line) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
+                if line.trim().is_empty() {
+                    continue;
+                }
 
-        let event_type = event["type"].as_str().unwrap_or("");
+                let event: serde_json::Value = match serde_json::from_str(&line) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
 
-        match event_type {
-            "stream_event" => {
-                let inner = &event["event"];
-                let inner_type = inner["type"].as_str().unwrap_or("");
+                let event_type = event["type"].as_str().unwrap_or("");
 
-                match inner_type {
-                    "content_block_delta" => {
-                        let delta_type = inner["delta"]["type"].as_str().unwrap_or("");
-                        if delta_type == "text_delta"
-                            && let Some(text) = inner["delta"]["text"].as_str()
+                match event_type {
+                    "stream_event" => {
+                        let inner = &event["event"];
+                        let inner_type = inner["type"].as_str().unwrap_or("");
+
+                        match inner_type {
+                            "content_block_delta" => {
+                                let delta_type = inner["delta"]["type"].as_str().unwrap_or("");
+                                if delta_type == "text_delta"
+                                    && let Some(text) = inner["delta"]["text"].as_str()
+                                {
+                                    accumulated_text.push_str(text);
+                                    send_event(
+                                        sender.clone(),
+                                        session_id.clone(),
+                                        ChatSseEvent::Text {
+                                            content: text.to_string(),
+                                        },
+                                    )
+                                    .await;
+                                }
+                            }
+                            "content_block_start" => {
+                                let block_type = inner["content_block"]["type"].as_str().unwrap_or("");
+                                if block_type == "tool_use" {
+                                    let tool_name = inner["content_block"]["name"]
+                                        .as_str()
+                                        .unwrap_or("unknown")
+                                        .to_string();
+                                    let tool_id = inner["content_block"]["id"]
+                                        .as_str()
+                                        .unwrap_or("")
+                                        .to_string();
+                                    send_event(
+                                        sender.clone(),
+                                        session_id.clone(),
+                                        ChatSseEvent::ToolStart { tool_name, tool_id },
+                                    )
+                                    .await;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    "tool_use" => {
+                        let tool_name = event["tool"].as_str().unwrap_or("unknown").to_string();
+                        let tool_id = event["uuid"].as_str().unwrap_or("").to_string();
+                        send_event(
+                            sender.clone(),
+                            session_id.clone(),
+                            ChatSseEvent::ToolStart { tool_name, tool_id },
+                        )
+                        .await;
+                    }
+
+                    "tool_result" => {
+                        let tool_id = event["uuid"].as_str().unwrap_or("").to_string();
+                        let is_error = event["is_error"].as_bool().unwrap_or(false);
+                        send_event(
+                            sender.clone(),
+                            session_id.clone(),
+                            ChatSseEvent::ToolEnd {
+                                tool_id,
+                                success: !is_error,
+                            },
+                        )
+                        .await;
+                    }
+
+                    "assistant" => {
+                        // Only set accumulated_text from the assistant event if we haven't
+                        // already accumulated text from streaming deltas. The assistant event
+                        // joins text blocks with "\n" which can differ from the delta-accumulated
+                        // text, causing the frontend to treat them as different messages.
+                        if accumulated_text.is_empty()
+                            && let Some(content) = event["message"]["content"].as_array()
                         {
-                            accumulated_text.push_str(text);
+                            let full_text: String = content
+                                .iter()
+                                .filter_map(|block| {
+                                    if block["type"].as_str() == Some("text") {
+                                        block["text"].as_str().map(String::from)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            if !full_text.is_empty() {
+                                accumulated_text = full_text;
+                            }
+                        }
+                    }
+
+                    "result" => {
+                        let is_error = event["is_error"].as_bool().unwrap_or(false);
+                        if is_error {
+                            let error_msg = event["result"]
+                                .as_str()
+                                .unwrap_or("Unknown error")
+                                .to_string();
                             send_event(
                                 sender.clone(),
                                 session_id.clone(),
-                                ChatSseEvent::Text {
-                                    content: text.to_string(),
+                                ChatSseEvent::Error { message: error_msg },
+                            )
+                            .await;
+                        } else {
+                            let final_text = if accumulated_text.is_empty() {
+                                event["result"].as_str().unwrap_or("").to_string()
+                            } else {
+                                accumulated_text.clone()
+                            };
+
+                            send_event(
+                                sender.clone(),
+                                session_id.clone(),
+                                ChatSseEvent::Done {
+                                    message: DoneMessage {
+                                        role: "assistant".into(),
+                                        content: final_text,
+                                    },
                                 },
                             )
                             .await;
@@ -282,117 +404,52 @@ pub async fn handle_chat_request_ws(
                             )
                             .await;
                         }
+                        break;
                     }
-                    "content_block_start" => {
-                        let block_type = inner["content_block"]["type"].as_str().unwrap_or("");
-                        if block_type == "tool_use" {
-                            let tool_name = inner["content_block"]["name"]
-                                .as_str()
-                                .unwrap_or("unknown")
-                                .to_string();
-                            let tool_id = inner["content_block"]["id"]
-                                .as_str()
-                                .unwrap_or("")
-                                .to_string();
-                            send_event(
-                                sender.clone(),
-                                session_id.clone(),
-                                ChatSseEvent::ToolStart { tool_name, tool_id },
-                            )
-                            .await;
-                        }
-                    }
+
                     _ => {}
                 }
             }
-
-            "tool_use" => {
-                let tool_name = event["tool"].as_str().unwrap_or("unknown").to_string();
-                let tool_id = event["uuid"].as_str().unwrap_or("").to_string();
-                send_event(
-                    sender.clone(),
-                    session_id.clone(),
-                    ChatSseEvent::ToolStart { tool_name, tool_id },
-                )
-                .await;
-            }
-
-            "tool_result" => {
-                let tool_id = event["uuid"].as_str().unwrap_or("").to_string();
-                let is_error = event["is_error"].as_bool().unwrap_or(false);
-                send_event(
-                    sender.clone(),
-                    session_id.clone(),
-                    ChatSseEvent::ToolEnd {
-                        tool_id,
-                        success: !is_error,
-                    },
-                )
-                .await;
-            }
-
-            "assistant" => {
-                // Only set accumulated_text from the assistant event if we haven't
-                // already accumulated text from streaming deltas. The assistant event
-                // joins text blocks with "\n" which can differ from the delta-accumulated
-                // text, causing the frontend to treat them as different messages.
-                if accumulated_text.is_empty()
-                    && let Some(content) = event["message"]["content"].as_array()
-                {
-                    let full_text: String = content
-                        .iter()
-                        .filter_map(|block| {
-                            if block["type"].as_str() == Some("text") {
-                                block["text"].as_str().map(String::from)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    if !full_text.is_empty() {
-                        accumulated_text = full_text;
-                    }
+            _ = cancel_rx.changed() => {
+                if *cancel_rx.borrow() {
+                    info!("chat session {session_id} cancelled by client");
+                    cancelled = true;
+                    break;
                 }
             }
-
-            "result" => {
-                let is_error = event["is_error"].as_bool().unwrap_or(false);
-                if is_error {
-                    let error_msg = event["result"]
-                        .as_str()
-                        .unwrap_or("Unknown error")
-                        .to_string();
-                    send_event(
-                        sender.clone(),
-                        session_id.clone(),
-                        ChatSseEvent::Error { message: error_msg },
-                    )
-                    .await;
-                } else {
-                    let final_text = if accumulated_text.is_empty() {
-                        event["result"].as_str().unwrap_or("").to_string()
-                    } else {
-                        accumulated_text.clone()
-                    };
-
-                    send_event(
-                        sender.clone(),
-                        session_id.clone(),
-                        ChatSseEvent::Done {
-                            message: DoneMessage {
-                                role: "assistant".into(),
-                                content: final_text,
-                            },
-                        },
-                    )
-                    .await;
-                }
-                break;
-            }
-
-            _ => {}
         }
+    }
+
+    if cancelled {
+        // Kill the subprocess and its entire process group
+        if let Some(pid) = child.id() {
+            // Send SIGTERM to the process group (negative PID) to kill
+            // the claude process and any child processes it spawned.
+            #[cfg(unix)]
+            {
+                unsafe {
+                    libc::kill(-(pid as i32), libc::SIGTERM);
+                }
+                // Give it a moment to clean up, then force-kill
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                let _ = child.kill().await;
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = child.kill().await;
+            }
+        } else {
+            let _ = child.kill().await;
+        }
+
+        send_event(
+            sender.clone(),
+            session_id.clone(),
+            ChatSseEvent::Error {
+                message: "Chat cancelled by user".into(),
+            },
+        )
+        .await;
     }
 
     // Wait for process to finish

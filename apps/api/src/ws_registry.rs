@@ -18,6 +18,8 @@ pub struct WsRegistry {
     pending_git: DashMap<String, oneshot::Sender<GitResponsePayload>>,
     /// Active chat sessions: session_id -> mpsc sender for SSE events
     active_chats: DashMap<String, mpsc::Sender<ChatSseEvent>>,
+    /// Which agent handles each chat session: session_id -> agent_id
+    session_agents: DashMap<String, Uuid>,
 }
 
 impl Default for WsRegistry {
@@ -32,6 +34,7 @@ impl WsRegistry {
             connections: DashMap::new(),
             pending_git: DashMap::new(),
             active_chats: DashMap::new(),
+            session_agents: DashMap::new(),
         }
     }
 
@@ -84,8 +87,14 @@ impl WsRegistry {
 
     // ── Chat sessions ──
 
-    /// Register an active chat session.
-    pub fn register_chat_session(&self, session_id: String, tx: mpsc::Sender<ChatSseEvent>) {
+    /// Register an active chat session and the agent handling it.
+    pub fn register_chat_session(
+        &self,
+        session_id: String,
+        tx: mpsc::Sender<ChatSseEvent>,
+        agent_id: Uuid,
+    ) {
+        self.session_agents.insert(session_id.clone(), agent_id);
         self.active_chats.insert(session_id, tx);
     }
 
@@ -100,6 +109,7 @@ impl WsRegistry {
         }
         if is_terminal {
             self.active_chats.remove(session_id);
+            self.session_agents.remove(session_id);
         }
     }
 
@@ -111,6 +121,36 @@ impl WsRegistry {
     /// Remove a chat session (e.g. on timeout).
     pub fn remove_chat_session(&self, session_id: &str) {
         self.active_chats.remove(session_id);
+        self.session_agents.remove(session_id);
+    }
+
+    /// Check if the SSE receiver has been dropped (client disconnected).
+    /// Returns true if the sender's receiver is closed.
+    pub fn is_chat_sender_closed(&self, session_id: &str) -> bool {
+        if let Some(tx) = self.active_chats.get(session_id) {
+            tx.is_closed()
+        } else {
+            true // session doesn't exist = effectively closed
+        }
+    }
+
+    /// Cancel an active chat session by sending a ChatCancel message to the
+    /// orchestra agent that is handling it. Returns true if the cancel was sent.
+    pub fn cancel_chat_session(&self, session_id: &str) -> bool {
+        if let Some(agent_id) = self.session_agents.get(session_id).map(|r| *r) {
+            let msg = WsMessage::ChatCancel {
+                session_id: session_id.to_string(),
+            };
+            let sent = self.send_to_agent(agent_id, msg);
+            self.active_chats.remove(session_id);
+            self.session_agents.remove(session_id);
+            if sent {
+                tracing::info!(session_id, %agent_id, "sent chat cancel to orchestra");
+            }
+            sent
+        } else {
+            false
+        }
     }
 
     /// Check if any agent is connected.
