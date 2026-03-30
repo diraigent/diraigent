@@ -286,6 +286,17 @@ pub async fn handle_chat_request_ws(
                                         },
                                     )
                                     .await;
+                                } else if delta_type == "thinking_delta"
+                                    && let Some(text) = inner["delta"]["thinking"].as_str()
+                                {
+                                    send_event(
+                                        sender.clone(),
+                                        session_id.clone(),
+                                        ChatSseEvent::Thinking {
+                                            content: text.to_string(),
+                                        },
+                                    )
+                                    .await;
                                 }
                             }
                             "content_block_start" => {
@@ -389,17 +400,6 @@ pub async fn handle_chat_request_ws(
                                         role: "assistant".into(),
                                         content: final_text,
                                     },
-                                },
-                            )
-                            .await;
-                        } else if delta_type == "thinking_delta"
-                            && let Some(text) = inner["delta"]["thinking"].as_str()
-                        {
-                            send_event(
-                                sender.clone(),
-                                session_id.clone(),
-                                ChatSseEvent::Thinking {
-                                    content: text.to_string(),
                                 },
                             )
                             .await;
@@ -807,6 +807,89 @@ async fn send_chat_event(
     }
 }
 
+/// Extract API key from config, sending an error event if not configured.
+async fn require_api_key(
+    config: &ProviderConfig,
+    provider_label: &str,
+    sender: &mpsc::UnboundedSender<WsMessage>,
+    session_id: &str,
+) -> Option<String> {
+    match config.api_key.as_deref() {
+        Some(key) => Some(key.to_string()),
+        None => {
+            send_chat_event(
+                sender,
+                session_id,
+                ChatSseEvent::Error {
+                    message: format!("{provider_label} API key not configured"),
+                },
+            )
+            .await;
+            None
+        }
+    }
+}
+
+/// Send an HTTP request and validate the response status.
+///
+/// On network error or non-2xx status, sends a `ChatSseEvent::Error` and returns `None`.
+async fn send_streaming_request(
+    request: reqwest::RequestBuilder,
+    provider_label: &str,
+    sender: &mpsc::UnboundedSender<WsMessage>,
+    session_id: &str,
+) -> Option<reqwest::Response> {
+    let response = match request.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let msg = if e.is_connect() || e.is_timeout() {
+                format!("{provider_label} not reachable: {e}")
+            } else {
+                format!("{provider_label} request failed: {e}")
+            };
+            send_chat_event(sender, session_id, ChatSseEvent::Error { message: msg }).await;
+            return None;
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_body = response.text().await.unwrap_or_default();
+        send_chat_event(
+            sender,
+            session_id,
+            ChatSseEvent::Error {
+                message: format!("{provider_label} HTTP {status}: {error_body}"),
+            },
+        )
+        .await;
+        return None;
+    }
+
+    Some(response)
+}
+
+/// Send the final `Done` event with accumulated text and log completion.
+async fn send_done(
+    sender: &mpsc::UnboundedSender<WsMessage>,
+    session_id: &str,
+    accumulated: String,
+    provider_label: &str,
+) {
+    send_chat_event(
+        sender,
+        session_id,
+        ChatSseEvent::Done {
+            message: DoneMessage {
+                role: "assistant".into(),
+                content: accumulated,
+            },
+        },
+    )
+    .await;
+    info!("chat session {session_id} completed via streaming {provider_label}");
+}
+
 // ── Streaming: Anthropic Messages API (SSE) ───────────────────────────────
 
 /// Stream from the Anthropic Messages API with `stream: true`.
@@ -831,19 +914,9 @@ async fn stream_anthropic_chat(
         .unwrap_or(DEFAULT_BASE_URL)
         .trim_end_matches('/');
 
-    let api_key = match config.api_key.as_deref() {
+    let api_key = match require_api_key(config, "Anthropic", &sender, session_id).await {
         Some(key) => key,
-        None => {
-            send_chat_event(
-                &sender,
-                session_id,
-                ChatSseEvent::Error {
-                    message: "Anthropic API key not configured".into(),
-                },
-            )
-            .await;
-            return;
-        }
+        None => return,
     };
 
     let url = format!("{base_url}/v1/messages");
@@ -856,47 +929,22 @@ async fn stream_anthropic_chat(
     });
 
     let client = reqwest::Client::new();
-    let response = match client
+    let request = client
         .post(&url)
-        .header("x-api-key", api_key)
+        .header("x-api-key", &api_key)
         .header("anthropic-version", ANTHROPIC_VERSION)
         .header("content-type", "application/json")
-        .json(&body)
-        .send()
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            send_chat_event(
-                &sender,
-                session_id,
-                ChatSseEvent::Error {
-                    message: format!("Anthropic request failed: {e}"),
-                },
-            )
-            .await;
-            return;
-        }
-    };
+        .json(&body);
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_body = response.text().await.unwrap_or_default();
-        send_chat_event(
-            &sender,
-            session_id,
-            ChatSseEvent::Error {
-                message: format!("Anthropic HTTP {status}: {error_body}"),
-            },
-        )
-        .await;
-        return;
-    }
+    let mut response = match send_streaming_request(request, "Anthropic", &sender, session_id).await
+    {
+        Some(r) => r,
+        None => return,
+    };
 
     // Parse SSE stream
     let mut accumulated = String::new();
     let mut line_buf = String::new();
-    let mut response = response;
 
     while let Ok(Some(chunk)) = response.chunk().await {
         let text = String::from_utf8_lossy(&chunk);
@@ -961,19 +1009,7 @@ async fn stream_anthropic_chat(
         }
     }
 
-    // Send done event
-    send_chat_event(
-        &sender,
-        session_id,
-        ChatSseEvent::Done {
-            message: DoneMessage {
-                role: "assistant".into(),
-                content: accumulated,
-            },
-        },
-    )
-    .await;
-    info!("chat session {session_id} completed via streaming anthropic");
+    send_done(&sender, session_id, accumulated, "anthropic").await;
 }
 
 // ── Streaming: OpenAI-compatible APIs (SSE) ───────────────────────────────
@@ -1003,19 +1039,9 @@ async fn stream_openai_chat(
         .unwrap_or(default_base)
         .trim_end_matches('/');
 
-    let api_key = match config.api_key.as_deref() {
+    let api_key = match require_api_key(config, variant, &sender, session_id).await {
         Some(key) => key,
-        None => {
-            send_chat_event(
-                &sender,
-                session_id,
-                ChatSseEvent::Error {
-                    message: format!("{variant} API key not configured"),
-                },
-            )
-            .await;
-            return;
-        }
+        None => return,
     };
 
     let url = format!("{base_url}{completions_path}");
@@ -1029,45 +1055,19 @@ async fn stream_openai_chat(
     });
 
     let client = reqwest::Client::new();
-    let response = match client
+    let request = client
         .post(&url)
         .header("Authorization", format!("Bearer {api_key}"))
-        .json(&body)
-        .send()
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            send_chat_event(
-                &sender,
-                session_id,
-                ChatSseEvent::Error {
-                    message: format!("{variant} request failed: {e}"),
-                },
-            )
-            .await;
-            return;
-        }
-    };
+        .json(&body);
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_body = response.text().await.unwrap_or_default();
-        send_chat_event(
-            &sender,
-            session_id,
-            ChatSseEvent::Error {
-                message: format!("{variant} HTTP {status}: {error_body}"),
-            },
-        )
-        .await;
-        return;
-    }
+    let mut response = match send_streaming_request(request, variant, &sender, session_id).await {
+        Some(r) => r,
+        None => return,
+    };
 
     // Parse SSE stream
     let mut accumulated = String::new();
     let mut line_buf = String::new();
-    let mut response = response;
 
     while let Ok(Some(chunk)) = response.chunk().await {
         let text = String::from_utf8_lossy(&chunk);
@@ -1130,18 +1130,7 @@ async fn stream_openai_chat(
         }
     }
 
-    send_chat_event(
-        &sender,
-        session_id,
-        ChatSseEvent::Done {
-            message: DoneMessage {
-                role: "assistant".into(),
-                content: accumulated,
-            },
-        },
-    )
-    .await;
-    info!("chat session {session_id} completed via streaming {variant}");
+    send_done(&sender, session_id, accumulated, variant).await;
 }
 
 // ── Streaming: Ollama chat API (NDJSON) ───────────────────────────────────
@@ -1176,37 +1165,16 @@ async fn stream_ollama_chat(
     });
 
     let client = reqwest::Client::new();
-    let response = match client.post(&url).json(&body).send().await {
-        Ok(r) => r,
-        Err(e) => {
-            let msg = if e.is_connect() || e.is_timeout() {
-                format!("Ollama not reachable at {base_url}: {e}")
-            } else {
-                format!("Ollama request failed: {e}")
-            };
-            send_chat_event(&sender, session_id, ChatSseEvent::Error { message: msg }).await;
-            return;
-        }
-    };
+    let request = client.post(&url).json(&body);
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_body = response.text().await.unwrap_or_default();
-        send_chat_event(
-            &sender,
-            session_id,
-            ChatSseEvent::Error {
-                message: format!("Ollama HTTP {status}: {error_body}"),
-            },
-        )
-        .await;
-        return;
-    }
+    let mut response = match send_streaming_request(request, "Ollama", &sender, session_id).await {
+        Some(r) => r,
+        None => return,
+    };
 
     // Read NDJSON stream chunk by chunk for real-time streaming
     let mut accumulated = String::new();
     let mut line_buf = String::new();
-    let mut response = response;
 
     while let Ok(Some(chunk)) = response.chunk().await {
         let text = String::from_utf8_lossy(&chunk);
@@ -1258,18 +1226,7 @@ async fn stream_ollama_chat(
         }
     }
 
-    send_chat_event(
-        &sender,
-        session_id,
-        ChatSseEvent::Done {
-            message: DoneMessage {
-                role: "assistant".into(),
-                content: accumulated,
-            },
-        },
-    )
-    .await;
-    info!("chat session {session_id} completed via streaming ollama");
+    send_done(&sender, session_id, accumulated, "ollama").await;
 }
 
 // ── Fallback: non-streaming provider abstraction ──────────────────────────
