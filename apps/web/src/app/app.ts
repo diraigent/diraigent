@@ -30,7 +30,9 @@ import { KeyboardHelpComponent } from './shared/components/keyboard-help/keyboar
               </svg>
             </button>
           </div>
-          <router-outlet />
+          <div class="w-full max-w-7xl mx-auto">
+            <router-outlet />
+          </div>
         </main>
         <div id="chat-panel" class="overflow-hidden"
              [class.border-t]="!chat.fullscreen()"
