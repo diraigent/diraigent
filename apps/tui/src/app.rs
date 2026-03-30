@@ -496,7 +496,9 @@ pub struct App {
     pub chat_input: String,
     pub chat_streaming: bool,
     pub chat_scroll: u16,
-    pub chat_model_index: usize, // index into CHAT_MODELS
+    pub chat_model_index: usize,                // index into CHAT_MODELS
+    pub chat_active_tool: Option<String>,       // tool currently running
+    pub chat_tool_map: HashMap<String, String>, // tool_id → tool_name
 
     // Source browser
     pub source_entries: Vec<TreeEntry>,
@@ -618,6 +620,8 @@ impl App {
             chat_streaming: false,
             chat_scroll: 0,
             chat_model_index: 0, // default to "sonnet"
+            chat_active_tool: None,
+            chat_tool_map: HashMap::new(),
             source_entries: vec![],
             source_current_path: String::new(),
             source_selected: None,
