@@ -4,14 +4,18 @@
 //! whether to merge (all steps done), continue the pipeline (more steps),
 //! or clean up (cancelled).
 
+use std::path::Path;
+
 use anyhow::Result;
 use serde_json::Value;
 use tracing::{info, warn};
 
 use crate::constants::TaskState;
 use crate::engine::step_profile;
+use crate::engine::task_source::TaskSource;
 use crate::git::strategy::{self as git_strategy, GitAction, GitStrategy};
-use crate::project::api::{ProjectsApi, retry_api_call};
+use crate::project::api::retry_api_call;
+use crate::repo_playbooks;
 use crate::task_id::TaskId;
 
 /// Outcome of checking the post-worker task state.
@@ -54,7 +58,14 @@ impl StepOutcome {
 /// - `done` → all steps truly completed → AllDone (trigger merge-to-main)
 /// - `cancelled` → task was cancelled mid-pipeline → Cancelled
 /// - other → unexpected state → UnexpectedState
-pub async fn check_next_step(api: &ProjectsApi, task_id: &str) -> Result<StepOutcome> {
+///
+/// When `git_root` is provided, repo playbook overrides are used for consistency
+/// with `resolve_step()`.
+pub async fn check_next_step(
+    api: &dyn TaskSource,
+    task_id: &str,
+    git_root: Option<&Path>,
+) -> Result<StepOutcome> {
     let tid = TaskId::new(task_id);
     let task = retry_api_call("get_task", &tid, || api.get_task(task_id)).await?;
     let state_str = task["state"].as_str().unwrap_or("");
@@ -68,12 +79,13 @@ pub async fn check_next_step(api: &ProjectsApi, task_id: &str) -> Result<StepOut
         let playbook_id = task["playbook_id"].as_str().unwrap_or("");
         let current_step = task["playbook_step"].as_i64().unwrap_or(0);
         if !playbook_id.is_empty() {
-            let playbook =
-                retry_api_call("get_playbook", &tid, || api.get_playbook(playbook_id)).await?;
-            // Prefer resolved_steps (templates expanded) over raw steps
-            let steps_value = playbook["resolved_steps"]
-                .as_array()
-                .or_else(|| playbook["steps"].as_array());
+            let (_playbook, steps_vec) =
+                resolve_playbook_steps(api, playbook_id, git_root, &tid).await?;
+            let steps_value: Option<&[Value]> = if !steps_vec.is_empty() {
+                Some(&steps_vec)
+            } else {
+                None
+            };
             if let Some(steps) = steps_value {
                 // Check if the *completed* step (current_step - 1) has a git_action.
                 // The API advanced playbook_step already, so the just-finished step is one back.
@@ -191,7 +203,7 @@ pub async fn check_next_step(api: &ProjectsApi, task_id: &str) -> Result<StepOut
 ///
 /// Used for loop detection: each failed implement cycle posts a blocker before
 /// releasing the task back to `ready`.
-pub async fn count_blocker_cycles(api: &ProjectsApi, task_id: &str) -> u32 {
+pub async fn count_blocker_cycles(api: &dyn TaskSource, task_id: &str) -> u32 {
     match api.get_task_updates(task_id).await {
         Ok(updates) => updates
             .iter()
@@ -207,7 +219,7 @@ pub async fn count_blocker_cycles(api: &ProjectsApi, task_id: &str) -> u32 {
 
 /// Resolve the effective max_implement_cycles for a task's project.
 pub async fn resolve_max_implement_cycles(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     project_id: &str,
     global_max: u32,
 ) -> u32 {
@@ -234,7 +246,16 @@ pub async fn resolve_max_implement_cycles(
 /// were expanded by the API), uses those. Otherwise falls back to raw `steps`.
 /// If a step has a `step_template_id` but the API didn't resolve it (e.g. older
 /// API version), the orchestra fetches the template directly and merges inline.
-pub async fn resolve_step(api: &ProjectsApi, task_data: Option<&Value>) -> (String, Option<Value>) {
+///
+/// When `git_root` is provided, also checks `.diraigent/playbooks/` for a
+/// matching repo playbook. If found, the repo version's steps override the
+/// API version (repo is source of truth). If the API fetch fails entirely,
+/// the repo playbook is used as a fallback.
+pub async fn resolve_step(
+    api: &dyn TaskSource,
+    task_data: Option<&Value>,
+    git_root: Option<&Path>,
+) -> (String, Option<Value>) {
     let Some(task) = task_data else {
         return ("implement".to_string(), None);
     };
@@ -246,39 +267,130 @@ pub async fn resolve_step(api: &ProjectsApi, task_data: Option<&Value>) -> (Stri
         return ("implement".to_string(), None);
     }
 
-    if let Ok(playbook) = api.get_playbook(playbook_id).await {
-        // Prefer resolved_steps (templates already expanded by API) over raw steps
-        let steps = playbook["resolved_steps"]
-            .as_array()
-            .or_else(|| playbook["steps"].as_array());
+    match api.get_playbook(playbook_id).await {
+        Ok(playbook) => {
+            // Try to find a repo override for this playbook
+            let repo_steps = git_root.and_then(|root| {
+                let api_title = playbook["title"].as_str().unwrap_or("");
+                let api_metadata = playbook.get("metadata");
+                match repo_playbooks::find_repo_override(root, api_title, api_metadata) {
+                    Some(repo_pb) => {
+                        info!(
+                            "Using repo playbook override: {} (matches API playbook '{}')",
+                            repo_pb.name, api_title
+                        );
+                        repo_pb.steps.as_array().cloned()
+                    }
+                    None => None,
+                }
+            });
 
-        if let Some(steps) = steps
-            && let Some(step) = steps.get(current_step as usize)
-        {
-            // If the step still has an unresolved step_template_id (API didn't expand),
-            // try to resolve it client-side as a fallback.
-            let resolved = if step.get("step_template_id").is_some_and(|v| v.is_string())
-                && playbook["resolved_steps"].is_null()
-            {
-                resolve_step_template(api, step).await
+            // Use repo steps if available, otherwise API steps
+            let using_repo = repo_steps.is_some();
+            let steps: Option<Vec<Value>> = if let Some(repo) = repo_steps {
+                Some(repo)
             } else {
-                step.clone()
+                playbook["resolved_steps"]
+                    .as_array()
+                    .or_else(|| playbook["steps"].as_array())
+                    .cloned()
             };
 
-            let name = resolved["name"].as_str().unwrap_or("implement").to_string();
-            (name, Some(resolved))
-        } else {
+            if let Some(ref steps) = steps
+                && let Some(step) = steps.get(current_step as usize)
+            {
+                // If the step still has an unresolved step_template_id (API didn't expand),
+                // try to resolve it client-side as a fallback.
+                // Only do this for API steps (not repo overrides).
+                let resolved: Value = if !using_repo
+                    && step
+                        .get("step_template_id")
+                        .is_some_and(|v: &Value| v.is_string())
+                    && playbook["resolved_steps"].is_null()
+                {
+                    resolve_step_template(api, step).await
+                } else {
+                    step.clone()
+                };
+
+                let name = resolved["name"].as_str().unwrap_or("implement").to_string();
+                (name, Some(resolved))
+            } else {
+                ("implement".to_string(), None)
+            }
+        }
+        Err(e) => {
+            // API playbook fetch failed — try repo fallback
+            if let Some(root) = git_root {
+                warn!("resolve_step: API playbook fetch failed ({e}), trying repo fallback");
+                if let Ok(loaded_playbooks) = repo_playbooks::load_repo_playbooks(root) {
+                    // Try to find any repo playbook (we don't know the title since API failed)
+                    // Use the first one that has enough steps, or just the first one
+                    for repo_pb in &loaded_playbooks {
+                        if let Some(steps) = repo_pb.steps.as_array() {
+                            let step: Option<&Value> = steps.get(current_step as usize);
+                            if let Some(step) = step {
+                                info!(
+                                    "Using repo playbook fallback: {} (API fetch failed)",
+                                    repo_pb.name
+                                );
+                                let name = step["name"].as_str().unwrap_or("implement").to_string();
+                                return (name, Some(step.clone()));
+                            }
+                        }
+                    }
+                }
+            }
             ("implement".to_string(), None)
         }
-    } else {
-        ("implement".to_string(), None)
     }
+}
+
+/// Resolve playbook steps from API with repo playbook override support.
+///
+/// Used by `check_next_step()` to get steps for regression logic and git actions.
+/// If `git_root` is provided, checks for repo playbook overrides.
+async fn resolve_playbook_steps(
+    api: &dyn TaskSource,
+    playbook_id: &str,
+    git_root: Option<&Path>,
+    tid: &TaskId,
+) -> Result<(Value, Vec<Value>)> {
+    let playbook = retry_api_call("get_playbook", tid, || api.get_playbook(playbook_id)).await?;
+
+    // Check for repo playbook override
+    let repo_steps = git_root.and_then(|root| {
+        let api_title = playbook["title"].as_str().unwrap_or("");
+        let api_metadata = playbook.get("metadata");
+        match repo_playbooks::find_repo_override(root, api_title, api_metadata) {
+            Some(repo_pb) => {
+                info!(
+                    "Using repo playbook override for check_next_step: {} (matches '{}')",
+                    repo_pb.name, api_title
+                );
+                repo_pb.steps.as_array().cloned()
+            }
+            None => None,
+        }
+    });
+
+    let steps = if let Some(repo) = repo_steps {
+        repo
+    } else {
+        playbook["resolved_steps"]
+            .as_array()
+            .or_else(|| playbook["steps"].as_array())
+            .cloned()
+            .unwrap_or_default()
+    };
+
+    Ok((playbook, steps))
 }
 
 /// Client-side fallback: resolve a single step's step_template_id by fetching
 /// the template from the API and merging its properties as defaults.
 /// Inline step properties take precedence over template defaults.
-async fn resolve_step_template(api: &ProjectsApi, step: &Value) -> Value {
+async fn resolve_step_template(api: &dyn TaskSource, step: &Value) -> Value {
     let template_id = match step["step_template_id"].as_str() {
         Some(id) => id,
         None => return step.clone(),
@@ -338,6 +450,758 @@ async fn resolve_step_template(api: &ProjectsApi, step: &Value) -> Value {
     }
 }
 
+/// Sync repo-based playbooks to the API for a given project.
+///
+/// Discovers YAML playbooks in `.diraigent/playbooks/` and syncs them to the API.
+/// Uses `metadata.source = "repo"` and `metadata.repo_file` for identification.
+/// Failures are non-fatal: errors are logged but do not prevent task execution.
+pub async fn sync_project_playbooks(api: &dyn TaskSource, repo_root: &std::path::Path) {
+    let dir = repo_root.join(".diraigent").join("playbooks");
+    if !dir.is_dir() {
+        return; // No playbooks directory — nothing to do
+    }
+
+    // Discover YAML files
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(e) => {
+            warn!("pipeline: failed to read {}: {e}", dir.display());
+            return;
+        }
+    };
+
+    let mut yaml_paths: Vec<std::path::PathBuf> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file()
+            && path
+                .extension()
+                .is_some_and(|ext| ext == "yaml" || ext == "yml")
+        {
+            yaml_paths.push(path);
+        }
+    }
+    yaml_paths.sort();
+
+    if yaml_paths.is_empty() {
+        return;
+    }
+
+    // Parse each YAML file into a JSON value
+    let mut repo_playbooks: Vec<(String, serde_json::Value)> = Vec::new();
+    for path in &yaml_paths {
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        match std::fs::read_to_string(path) {
+            Ok(content) => {
+                // Parse YAML → serde_yaml::Value → serde_json::Value
+                match serde_yaml::from_str::<serde_yaml::Value>(&content) {
+                    Ok(yaml_val) => match serde_json::to_value(&yaml_val) {
+                        Ok(mut json_val) => {
+                            // Resolve description_file references in steps
+                            if let Some(steps) = json_val.get_mut("steps")
+                                && let Some(parent) = path.parent()
+                            {
+                                crate::repo_playbooks::resolve_description_files(steps, parent);
+                            }
+                            repo_playbooks.push((name, json_val));
+                        }
+                        Err(e) => warn!(
+                            "pipeline: YAML→JSON conversion failed for {}: {e}",
+                            path.display()
+                        ),
+                    },
+                    Err(e) => warn!("pipeline: invalid YAML in {}: {e}", path.display()),
+                }
+            }
+            Err(e) => warn!("pipeline: failed to read {}: {e}", path.display()),
+        }
+    }
+
+    if repo_playbooks.is_empty() {
+        return;
+    }
+
+    // Fetch existing playbooks from the API
+    let existing = api.list_playbooks().await.unwrap_or_default();
+
+    // Index existing repo-sourced playbooks by repo_file
+    let mut repo_sourced: std::collections::HashMap<String, serde_json::Value> =
+        std::collections::HashMap::new();
+    for pb in &existing {
+        if pb["metadata"]["source"].as_str() == Some("repo")
+            && let Some(repo_file) = pb["metadata"]["repo_file"].as_str()
+        {
+            repo_sourced.insert(repo_file.to_string(), pb.clone());
+        }
+    }
+
+    let mut created = 0u32;
+    let mut updated = 0u32;
+    let mut unchanged = 0u32;
+
+    for (name, json_val) in &repo_playbooks {
+        let repo_file = format!("{name}.yaml");
+        let title = json_val["title"].as_str().unwrap_or(name);
+        let trigger_description = json_val["trigger_description"].as_str();
+        let steps = &json_val["steps"];
+        let initial_state = json_val["initial_state"].as_str().unwrap_or("ready");
+        let tags = &json_val["tags"];
+        let raw_metadata = &json_val["metadata"];
+
+        // Build metadata with source=repo and repo_file markers
+        let mut metadata = if raw_metadata.is_object() {
+            raw_metadata.clone()
+        } else {
+            serde_json::json!({})
+        };
+        if let Some(obj) = metadata.as_object_mut() {
+            obj.insert("source".to_string(), serde_json::json!("repo"));
+            obj.insert("repo_file".to_string(), serde_json::json!(repo_file));
+        }
+
+        if let Some(existing_pb) = repo_sourced.remove(&repo_file) {
+            // Check if content changed
+            let content_changed = existing_pb["title"].as_str().unwrap_or("") != title
+                || existing_pb["initial_state"].as_str().unwrap_or("ready") != initial_state
+                || existing_pb["trigger_description"].as_str() != trigger_description
+                || existing_pb["steps"] != *steps;
+
+            if content_changed {
+                let playbook_id = existing_pb["id"].as_str().unwrap_or("");
+                let body = serde_json::json!({
+                    "title": title,
+                    "trigger_description": trigger_description,
+                    "steps": steps,
+                    "tags": tags,
+                    "metadata": metadata,
+                    "initial_state": initial_state,
+                });
+                match api.update_playbook(playbook_id, &body).await {
+                    Ok(_) => {
+                        info!("pipeline: updated repo playbook '{name}' (id={playbook_id})");
+                        updated += 1;
+                    }
+                    Err(e) => warn!("pipeline: failed to update repo playbook '{name}': {e}"),
+                }
+            } else {
+                unchanged += 1;
+            }
+        } else {
+            // Create new playbook
+            let body = serde_json::json!({
+                "title": title,
+                "trigger_description": trigger_description,
+                "steps": steps,
+                "tags": tags,
+                "metadata": metadata,
+                "initial_state": initial_state,
+            });
+            match api.create_playbook(&body).await {
+                Ok(_) => {
+                    info!("pipeline: created repo playbook '{name}'");
+                    created += 1;
+                }
+                Err(e) => warn!("pipeline: failed to create repo playbook '{name}': {e}"),
+            }
+        }
+    }
+
+    // Warn about orphaned repo-sourced playbooks
+    for (repo_file, pb) in &repo_sourced {
+        let title = pb["title"].as_str().unwrap_or("unknown");
+        warn!(
+            "pipeline: API playbook '{title}' (repo_file={repo_file}) \
+             has no matching file in repo — consider removing it"
+        );
+    }
+
+    let total = created + updated + unchanged;
+    if total > 0 {
+        info!(
+            "pipeline: synced {total} repo playbook(s) ({created} created, {updated} updated, {unchanged} unchanged)"
+        );
+    }
+}
+
+/// Sync repo-based decisions (ADRs) to the API for a given project.
+///
+/// Discovers YAML decision files in `.diraigent/decisions/` and syncs them to the API.
+/// Uses `source:repo` and `repo_file:<filename>` tags for identification.
+/// Failures are non-fatal: errors are logged but do not prevent task execution.
+pub async fn sync_project_decisions(api: &dyn TaskSource, repo_root: &std::path::Path) {
+    let dir = repo_root.join(".diraigent").join("decisions");
+    if !dir.is_dir() {
+        return; // No decisions directory — nothing to do
+    }
+
+    // Discover YAML files
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(e) => {
+            warn!("pipeline: failed to read {}: {e}", dir.display());
+            return;
+        }
+    };
+
+    let mut yaml_paths: Vec<std::path::PathBuf> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file()
+            && path
+                .extension()
+                .is_some_and(|ext| ext == "yaml" || ext == "yml")
+        {
+            yaml_paths.push(path);
+        }
+    }
+    yaml_paths.sort();
+
+    if yaml_paths.is_empty() {
+        return;
+    }
+
+    // Parse each YAML file into a RepoDecision
+    let mut repo_decisions: Vec<(String, crate::repo_decisions::RepoDecision)> = Vec::new();
+    for path in &yaml_paths {
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        match crate::repo_decisions::parse_decision(path) {
+            Ok(d) => repo_decisions.push((name, d)),
+            Err(e) => warn!(
+                "pipeline: failed to parse decision {}: {e:#}",
+                path.display()
+            ),
+        }
+    }
+
+    if repo_decisions.is_empty() {
+        return;
+    }
+
+    // Fetch project ID from the API using repo_root
+    // We need the project_id to list decisions — derive it from the API context
+    let project_id = match find_project_id_for_repo(api, repo_root).await {
+        Some(id) => id,
+        None => {
+            warn!("pipeline: cannot sync decisions — unable to determine project_id for repo");
+            return;
+        }
+    };
+
+    // Fetch existing decisions from the API
+    let existing = api.list_decisions(&project_id).await.unwrap_or_default();
+
+    // Index existing repo-sourced decisions by their repo_file tag
+    let mut repo_sourced: std::collections::HashMap<String, serde_json::Value> =
+        std::collections::HashMap::new();
+    for d in &existing {
+        let tags = d["tags"].as_array();
+        let is_repo = tags
+            .map(|t| t.iter().any(|v| v.as_str() == Some("source:repo")))
+            .unwrap_or(false);
+        if is_repo
+            && let Some(repo_file_tag) = tags.and_then(|t| {
+                t.iter().find_map(|v| {
+                    v.as_str()
+                        .and_then(|s| s.strip_prefix("repo_file:"))
+                        .map(|s| s.to_string())
+                })
+            })
+        {
+            repo_sourced.insert(repo_file_tag, d.clone());
+        }
+    }
+
+    let mut created = 0u32;
+    let mut updated = 0u32;
+    let mut unchanged = 0u32;
+
+    for (name, decision) in &repo_decisions {
+        let repo_file = format!("{name}.yaml");
+
+        // Build tags: keep user tags and add repo markers
+        let mut tags = decision.tags.clone();
+        if !tags.iter().any(|t| t == "source:repo") {
+            tags.push("source:repo".to_string());
+        }
+        // Remove any existing repo_file: tag and add the current one
+        tags.retain(|t: &String| !t.starts_with("repo_file:"));
+        tags.push(format!("repo_file:{repo_file}"));
+
+        // Build alternatives as JSON
+        let alternatives: Vec<serde_json::Value> = decision
+            .alternatives
+            .iter()
+            .map(|a| {
+                let mut obj = serde_json::json!({"name": a.name});
+                if let Some(ref pros) = a.pros {
+                    obj["pros"] = serde_json::json!(pros);
+                }
+                if let Some(ref cons) = a.cons {
+                    obj["cons"] = serde_json::json!(cons);
+                }
+                obj
+            })
+            .collect();
+
+        if let Some(existing_d) = repo_sourced.remove(&repo_file) {
+            // Check if content changed
+            let content_changed = existing_d["title"].as_str().unwrap_or("") != decision.title
+                || existing_d["status"].as_str().unwrap_or("proposed") != decision.status
+                || existing_d["context"].as_str().unwrap_or("") != decision.context
+                || existing_d["decision"].as_str() != decision.decision.as_deref()
+                || existing_d["rationale"].as_str() != decision.rationale.as_deref()
+                || existing_d["consequences"].as_str() != decision.consequences.as_deref();
+
+            if content_changed {
+                let decision_id = existing_d["id"].as_str().unwrap_or("");
+                let body = serde_json::json!({
+                    "title": decision.title,
+                    "status": decision.status,
+                    "context": decision.context,
+                    "decision": decision.decision,
+                    "rationale": decision.rationale,
+                    "alternatives": alternatives,
+                    "consequences": decision.consequences,
+                    "tags": tags,
+                });
+                match api.update_decision(decision_id, &body).await {
+                    Ok(_) => {
+                        info!("pipeline: updated repo decision '{name}' (id={decision_id})");
+                        updated += 1;
+                    }
+                    Err(e) => warn!("pipeline: failed to update repo decision '{name}': {e}"),
+                }
+            } else {
+                unchanged += 1;
+            }
+        } else {
+            // Create new decision
+            let body = serde_json::json!({
+                "title": decision.title,
+                "context": decision.context,
+                "decision": decision.decision,
+                "rationale": decision.rationale,
+                "alternatives": alternatives,
+                "consequences": decision.consequences,
+                "tags": tags,
+            });
+            match api.post_decision(&project_id, &body).await {
+                Ok(created_d) => {
+                    // After creation, update with status and tags (CreateDecision doesn't have status)
+                    if let Some(id) = created_d["id"].as_str() {
+                        let update_body = serde_json::json!({
+                            "status": decision.status,
+                            "tags": tags,
+                        });
+                        if let Err(e) = api.update_decision(id, &update_body).await {
+                            warn!(
+                                "pipeline: created repo decision '{name}' but failed to set status/tags: {e}"
+                            );
+                        }
+                    }
+                    info!("pipeline: created repo decision '{name}'");
+                    created += 1;
+                }
+                Err(e) => warn!("pipeline: failed to create repo decision '{name}': {e}"),
+            }
+        }
+    }
+
+    // Warn about orphaned repo-sourced decisions
+    for (repo_file, d) in &repo_sourced {
+        let title = d["title"].as_str().unwrap_or("unknown");
+        warn!(
+            "pipeline: API decision '{title}' (repo_file={repo_file}) \
+             has no matching file in repo — consider removing it"
+        );
+    }
+
+    let total = created + updated + unchanged;
+    if total > 0 {
+        info!(
+            "pipeline: synced {total} repo decision(s) ({created} created, {updated} updated, {unchanged} unchanged)"
+        );
+    }
+}
+
+/// Sync repo-based knowledge entries to the API for a given project.
+///
+/// Discovers YAML knowledge files in `.diraigent/knowledge/` and syncs them to the API.
+/// Uses `metadata.source = "repo"` and `metadata.repo_file` for identification.
+/// Failures are non-fatal: errors are logged but do not prevent task execution.
+pub async fn sync_project_knowledge(api: &dyn TaskSource, repo_root: &std::path::Path) {
+    let dir = repo_root.join(".diraigent").join("knowledge");
+    if !dir.is_dir() {
+        return; // No knowledge directory — nothing to do
+    }
+
+    // Discover YAML files
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(e) => {
+            warn!("pipeline: failed to read {}: {e}", dir.display());
+            return;
+        }
+    };
+
+    let mut yaml_paths: Vec<std::path::PathBuf> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file()
+            && path
+                .extension()
+                .is_some_and(|ext| ext == "yaml" || ext == "yml")
+        {
+            yaml_paths.push(path);
+        }
+    }
+    yaml_paths.sort();
+
+    if yaml_paths.is_empty() {
+        return;
+    }
+
+    // Parse each YAML file into a RepoKnowledge
+    let mut repo_knowledge: Vec<(String, crate::repo_knowledge::RepoKnowledge)> = Vec::new();
+    for path in &yaml_paths {
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        match crate::repo_knowledge::parse_knowledge(path) {
+            Ok(k) => repo_knowledge.push((name, k)),
+            Err(e) => warn!(
+                "pipeline: failed to parse knowledge {}: {e:#}",
+                path.display()
+            ),
+        }
+    }
+
+    if repo_knowledge.is_empty() {
+        return;
+    }
+
+    // Fetch project ID from the API using repo_root
+    let project_id = match find_project_id_for_repo(api, repo_root).await {
+        Some(id) => id,
+        None => {
+            warn!("pipeline: cannot sync knowledge — unable to determine project_id for repo");
+            return;
+        }
+    };
+
+    // Fetch existing knowledge from the API, filtered by source:repo tag
+    let existing = api
+        .list_knowledge(&project_id, Some("source:repo"), Some(500))
+        .await
+        .unwrap_or_default();
+
+    // Index existing repo-sourced knowledge by their metadata.repo_file
+    let mut repo_sourced: std::collections::HashMap<String, serde_json::Value> =
+        std::collections::HashMap::new();
+    for k in &existing {
+        if k["metadata"]["source"].as_str() == Some("repo")
+            && let Some(repo_file) = k["metadata"]["repo_file"].as_str()
+        {
+            repo_sourced.insert(repo_file.to_string(), k.clone());
+        }
+    }
+
+    let mut created = 0u32;
+    let mut updated = 0u32;
+    let mut unchanged = 0u32;
+
+    for (name, knowledge) in &repo_knowledge {
+        let repo_file = format!("{name}.yaml");
+
+        // Build tags: keep user tags and add repo marker
+        let mut tags = knowledge.tags.clone();
+        if !tags.iter().any(|t| t == "source:repo") {
+            tags.push("source:repo".to_string());
+        }
+
+        // Build metadata with source=repo and repo_file markers
+        let metadata = serde_json::json!({
+            "source": "repo",
+            "repo_file": repo_file,
+        });
+
+        if let Some(existing_k) = repo_sourced.remove(&repo_file) {
+            // Check if content changed
+            let content_changed = existing_k["title"].as_str().unwrap_or("") != knowledge.title
+                || existing_k["category"].as_str().unwrap_or("general") != knowledge.category
+                || existing_k["content"].as_str().unwrap_or("") != knowledge.content;
+
+            if content_changed {
+                let knowledge_id = existing_k["id"].as_str().unwrap_or("");
+                let body = serde_json::json!({
+                    "title": knowledge.title,
+                    "category": knowledge.category,
+                    "content": knowledge.content,
+                    "tags": tags,
+                    "metadata": metadata,
+                });
+                match api.update_knowledge(knowledge_id, &body).await {
+                    Ok(_) => {
+                        info!("pipeline: updated repo knowledge '{name}' (id={knowledge_id})");
+                        updated += 1;
+                    }
+                    Err(e) => {
+                        warn!("pipeline: failed to update repo knowledge '{name}': {e}");
+                    }
+                }
+            } else {
+                unchanged += 1;
+            }
+        } else {
+            // Create new knowledge entry
+            let body = serde_json::json!({
+                "title": knowledge.title,
+                "category": knowledge.category,
+                "content": knowledge.content,
+                "tags": tags,
+                "metadata": metadata,
+            });
+            match api.post_knowledge(&project_id, &body).await {
+                Ok(_) => {
+                    info!("pipeline: created repo knowledge '{name}'");
+                    created += 1;
+                }
+                Err(e) => warn!("pipeline: failed to create repo knowledge '{name}': {e}"),
+            }
+        }
+    }
+
+    // Warn about orphaned repo-sourced knowledge
+    for (repo_file, k) in &repo_sourced {
+        let title = k["title"].as_str().unwrap_or("unknown");
+        warn!(
+            "pipeline: API knowledge '{title}' (repo_file={repo_file}) \
+             has no matching file in repo — consider removing it"
+        );
+    }
+
+    let total = created + updated + unchanged;
+    if total > 0 {
+        info!(
+            "pipeline: synced {total} repo knowledge entry/entries ({created} created, {updated} updated, {unchanged} unchanged)"
+        );
+    }
+}
+
+/// Sync repo-based observations to the API for a given project.
+///
+/// Discovers YAML observation files in `.diraigent/observations/` and syncs them to the API.
+/// Uses `source = "repo"` and `metadata.repo_file` for identification.
+/// Failures are non-fatal: errors are logged but do not prevent task execution.
+pub async fn sync_project_observations(api: &dyn TaskSource, repo_root: &std::path::Path) {
+    let dir = repo_root.join(".diraigent").join("observations");
+    if !dir.is_dir() {
+        return; // No observations directory — nothing to do
+    }
+
+    // Discover YAML files
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(e) => {
+            warn!("pipeline: failed to read {}: {e}", dir.display());
+            return;
+        }
+    };
+
+    let mut yaml_paths: Vec<std::path::PathBuf> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file()
+            && path
+                .extension()
+                .is_some_and(|ext| ext == "yaml" || ext == "yml")
+        {
+            yaml_paths.push(path);
+        }
+    }
+    yaml_paths.sort();
+
+    if yaml_paths.is_empty() {
+        return;
+    }
+
+    // Parse each YAML file into a RepoObservation
+    let mut repo_observations: Vec<(String, crate::repo_observations::RepoObservation)> =
+        Vec::new();
+    for path in &yaml_paths {
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        match crate::repo_observations::parse_observation(path) {
+            Ok(o) => repo_observations.push((name, o)),
+            Err(e) => warn!(
+                "pipeline: failed to parse observation {}: {e:#}",
+                path.display()
+            ),
+        }
+    }
+
+    if repo_observations.is_empty() {
+        return;
+    }
+
+    // Fetch project ID from the API using repo_root
+    let project_id = match find_project_id_for_repo(api, repo_root).await {
+        Some(id) => id,
+        None => {
+            warn!("pipeline: cannot sync observations — unable to determine project_id for repo");
+            return;
+        }
+    };
+
+    // Fetch existing observations from the API (all statuses, high limit)
+    let existing = api
+        .list_observations(&project_id, None, Some(500))
+        .await
+        .unwrap_or_default();
+
+    // Index existing repo-sourced observations by their metadata.repo_file
+    let mut repo_sourced: std::collections::HashMap<String, serde_json::Value> =
+        std::collections::HashMap::new();
+    for o in &existing {
+        let is_repo = o["source"].as_str() == Some("repo")
+            || o["metadata"]["source"].as_str() == Some("repo");
+        if is_repo && let Some(repo_file) = o["metadata"]["repo_file"].as_str() {
+            repo_sourced.insert(repo_file.to_string(), o.clone());
+        }
+    }
+
+    let mut created = 0u32;
+    let mut updated = 0u32;
+    let mut unchanged = 0u32;
+
+    for (name, observation) in &repo_observations {
+        let repo_file = format!("{name}.yaml");
+
+        // Build tags: keep user tags and add repo marker
+        let mut tags = observation.tags.clone();
+        if !tags.iter().any(|t| t == "source:repo") {
+            tags.push("source:repo".to_string());
+        }
+
+        // Build metadata with source=repo and repo_file markers
+        let metadata = serde_json::json!({
+            "source": "repo",
+            "repo_file": repo_file,
+        });
+
+        if let Some(existing_o) = repo_sourced.remove(&repo_file) {
+            // Check if content changed (including kind and tags)
+            let existing_tags: Vec<String> = existing_o["tags"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let content_changed = existing_o["title"].as_str().unwrap_or("") != observation.title
+                || existing_o["kind"].as_str().unwrap_or("insight") != observation.kind
+                || existing_o["severity"].as_str().unwrap_or("info") != observation.severity
+                || existing_o["description"].as_str().unwrap_or("") != observation.description
+                || existing_tags != tags;
+
+            if content_changed {
+                let observation_id = existing_o["id"].as_str().unwrap_or("");
+                let body = serde_json::json!({
+                    "title": observation.title,
+                    "kind": observation.kind,
+                    "description": observation.description,
+                    "severity": observation.severity,
+                    "tags": tags,
+                    "metadata": metadata,
+                });
+                match api.update_observation(observation_id, &body).await {
+                    Ok(_) => {
+                        info!("pipeline: updated repo observation '{name}' (id={observation_id})");
+                        updated += 1;
+                    }
+                    Err(e) => {
+                        warn!("pipeline: failed to update repo observation '{name}': {e}");
+                    }
+                }
+            } else {
+                unchanged += 1;
+            }
+        } else {
+            // Create new observation
+            let body = serde_json::json!({
+                "title": observation.title,
+                "kind": observation.kind,
+                "severity": observation.severity,
+                "description": observation.description,
+                "tags": tags,
+                "source": "repo",
+                "metadata": metadata,
+            });
+            match api.post_observation(&project_id, &body).await {
+                Ok(_) => {
+                    info!("pipeline: created repo observation '{name}'");
+                    created += 1;
+                }
+                Err(e) => warn!("pipeline: failed to create repo observation '{name}': {e}"),
+            }
+        }
+    }
+
+    // Warn about orphaned repo-sourced observations
+    for (repo_file, o) in &repo_sourced {
+        let title = o["title"].as_str().unwrap_or("unknown");
+        warn!(
+            "pipeline: API observation '{title}' (repo_file={repo_file}) \
+             has no matching file in repo — consider removing it"
+        );
+    }
+
+    let total = created + updated + unchanged;
+    if total > 0 {
+        info!(
+            "pipeline: synced {total} repo observation(s) ({created} created, {updated} updated, {unchanged} unchanged)"
+        );
+    }
+}
+
+/// Find the project ID for a given repo root by listing projects and matching git_root.
+async fn find_project_id_for_repo(
+    api: &dyn TaskSource,
+    repo_root: &std::path::Path,
+) -> Option<String> {
+    let projects = api.list_projects().await.ok()?;
+    let repo_root_str = repo_root.display().to_string();
+    for project in &projects {
+        if let Some(git_root) = project["git_root"].as_str() {
+            // Match by suffix — the repo_root is an absolute path, git_root is typically relative
+            if repo_root_str.ends_with(git_root) || git_root == repo_root_str {
+                return project["id"].as_str().map(|s| s.to_string());
+            }
+        }
+        if let Some(repo_path) = project["repo_path"].as_str()
+            && (repo_root_str.ends_with(repo_path) || repo_path == repo_root_str)
+        {
+            return project["id"].as_str().map(|s| s.to_string());
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -395,7 +1259,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "agent-1");
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert!(result.is_ok());
     }
 
@@ -423,7 +1287,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "agent-1");
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert!(result.is_ok());
     }
 
@@ -452,7 +1316,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "agent-1");
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert!(result.is_err());
     }
 
@@ -474,7 +1338,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "agent-1");
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert!(result.is_ok());
         assert!(matches!(result.unwrap(), StepOutcome::AllDone { .. }));
     }
@@ -494,7 +1358,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "agent-1");
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert_eq!(result.unwrap(), StepOutcome::Continue);
     }
 
@@ -523,7 +1387,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "agent-1");
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert!(result.is_err());
     }
 
@@ -559,7 +1423,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "agent-1");
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert!(result.is_ok());
     }
 
@@ -581,7 +1445,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "agent-1");
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert!(result.is_ok());
         assert!(matches!(result.unwrap(), StepOutcome::AllDone { .. }));
     }
@@ -604,7 +1468,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "agent-1");
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert!(result.is_ok());
     }
 
@@ -714,7 +1578,7 @@ mod tests {
 
         let api = test_api(&server.uri());
         assert!(matches!(
-            check_next_step(&api, task_id).await.unwrap(),
+            check_next_step(&api, task_id, None).await.unwrap(),
             StepOutcome::Cancelled { .. }
         ));
     }
@@ -734,7 +1598,7 @@ mod tests {
 
         let api = test_api(&server.uri());
         assert_eq!(
-            check_next_step(&api, task_id).await.unwrap(),
+            check_next_step(&api, task_id, None).await.unwrap(),
             StepOutcome::AlreadyReady
         );
     }
@@ -754,7 +1618,7 @@ mod tests {
 
         let api = test_api(&server.uri());
         assert_eq!(
-            check_next_step(&api, task_id).await.unwrap(),
+            check_next_step(&api, task_id, None).await.unwrap(),
             StepOutcome::AlreadyReady
         );
     }
@@ -774,7 +1638,7 @@ mod tests {
 
         let api = test_api(&server.uri());
         assert_eq!(
-            check_next_step(&api, task_id).await.unwrap(),
+            check_next_step(&api, task_id, None).await.unwrap(),
             StepOutcome::Continue
         );
     }
@@ -794,7 +1658,7 @@ mod tests {
 
         let api = test_api(&server.uri());
         assert!(matches!(
-            check_next_step(&api, task_id).await.unwrap(),
+            check_next_step(&api, task_id, None).await.unwrap(),
             StepOutcome::AllDone { .. }
         ));
     }
@@ -816,7 +1680,7 @@ mod tests {
 
         let api = test_api(&server.uri());
         assert_eq!(
-            check_next_step(&api, task_id).await.unwrap(),
+            check_next_step(&api, task_id, None).await.unwrap(),
             StepOutcome::AlreadyReady
         );
     }
@@ -837,7 +1701,7 @@ mod tests {
 
         let api = test_api(&server.uri());
         assert_eq!(
-            check_next_step(&api, task_id).await.unwrap(),
+            check_next_step(&api, task_id, None).await.unwrap(),
             StepOutcome::UnexpectedState("".to_string())
         );
     }
@@ -969,7 +1833,7 @@ mod tests {
             "playbook_step": 0
         });
 
-        let (name, step_json) = resolve_step(&api, Some(&task)).await;
+        let (name, step_json) = resolve_step(&api, Some(&task), None).await;
         assert_eq!(name, "implement");
         let step = step_json.unwrap();
         assert_eq!(step["model"].as_str(), Some("opus"));
@@ -1002,7 +1866,7 @@ mod tests {
             "playbook_step": 0
         });
 
-        let (name, step_json) = resolve_step(&api, Some(&task)).await;
+        let (name, step_json) = resolve_step(&api, Some(&task), None).await;
         assert_eq!(name, "implement");
         let step = step_json.unwrap();
         assert_eq!(step["budget"].as_f64(), Some(5.0));
@@ -1049,7 +1913,7 @@ mod tests {
             "playbook_step": 0
         });
 
-        let (name, step_json) = resolve_step(&api, Some(&task)).await;
+        let (name, step_json) = resolve_step(&api, Some(&task), None).await;
         // Inline "name" overrides template "name"
         assert_eq!(name, "my-impl");
         let step = step_json.unwrap();
@@ -1093,7 +1957,7 @@ mod tests {
             "playbook_step": 0
         });
 
-        let (name, step_json) = resolve_step(&api, Some(&task)).await;
+        let (name, step_json) = resolve_step(&api, Some(&task), None).await;
         // Falls back to inline properties
         assert_eq!(name, "implement");
         let step = step_json.unwrap();
@@ -1124,7 +1988,7 @@ mod tests {
             "playbook_step": 0
         });
 
-        let (name, step_json) = resolve_step(&api, Some(&task)).await;
+        let (name, step_json) = resolve_step(&api, Some(&task), None).await;
         assert_eq!(name, "implement");
         let step = step_json.unwrap();
         assert_eq!(step["budget"].as_f64(), Some(12.0));
@@ -1170,7 +2034,7 @@ mod tests {
             .await;
 
         let api = test_api(&server.uri());
-        let result = check_next_step(&api, "task-1").await;
+        let result = check_next_step(&api, "task-1", None).await;
         assert!(result.is_ok());
     }
 }

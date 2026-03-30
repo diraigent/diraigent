@@ -5,6 +5,10 @@ import { AuthCallbackPage } from './features/auth/pages/auth-callback/auth-callb
 export const routes: Routes = [
   {
     path: '',
+    loadComponent: () => import('./features/landing/landing').then(m => m.LandingPage),
+  },
+  {
+    path: 'dashboard',
     canActivate: [AuthGuard],
     loadComponent: () => import('./features/dashboard/dashboard').then(m => m.DashboardPage),
   },
@@ -157,5 +161,9 @@ export const routes: Routes = [
     loadComponent: () => import('./features/tenant-settings/tenant-settings').then(m => m.TenantSettingsPage),
   },
   { path: 'auth/callback', component: AuthCallbackPage },
+  {
+    path: 'auth/logout',
+    loadComponent: () => import('./features/auth/pages/logout/logout').then(m => m.LogoutPage),
+  },
   { path: '**', redirectTo: '' },
 ];

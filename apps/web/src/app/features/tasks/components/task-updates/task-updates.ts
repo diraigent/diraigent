@@ -62,13 +62,13 @@ function containsError(content: string): boolean {
       } @else {
         <div class="space-y-1.5">
           @for (update of updates(); track update.id) {
-            <div class="flex gap-2 text-xs" [class.opacity-90]="hasError(update)">
+            <div class="flex flex-wrap sm:flex-nowrap gap-x-2 gap-y-0.5 text-xs" [class.opacity-90]="hasError(update)">
               <span class="text-text-muted shrink-0">{{ formatTime(update.created_at) }}</span>
               <span class="font-medium shrink-0 {{ kindColor(update.kind) }}">[{{ update.kind }}]</span>
               @if (hasError(update)) {
-                <span class="text-ctp-red latte:text-ctp-red-900 break-words" title="Error detected in content">{{ update.content }}</span>
+                <span class="w-full sm:w-auto sm:flex-1 min-w-0 text-ctp-red latte:text-ctp-red-900 break-words" title="Error detected in content">{{ update.content }}</span>
               } @else {
-                <span class="text-text-primary break-words">{{ update.content }}</span>
+                <span class="w-full sm:w-auto sm:flex-1 min-w-0 text-text-primary break-words">{{ update.content }}</span>
               }
             </div>
           } @empty {

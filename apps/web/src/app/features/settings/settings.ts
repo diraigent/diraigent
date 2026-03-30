@@ -1470,7 +1470,7 @@ export class SettingsPage implements OnInit, OnDestroy {
     this.api.deleteProject(pid).subscribe({
       next: () => {
         this.ctx.clear();
-        this.router.navigate(['/']);
+        this.router.navigate(['/dashboard']);
       },
       error: () => this.deletingProject.set(false),
     });

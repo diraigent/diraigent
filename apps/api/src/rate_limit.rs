@@ -59,7 +59,7 @@ static LIMITS: LazyLock<Limits> = LazyLock::new(|| {
     }
     Limits {
         ip: env_or("RATE_LIMIT_IP", 600),
-        agent: env_or("RATE_LIMIT_AGENT", 200),
+        agent: env_or("RATE_LIMIT_AGENT", 600),
         project: env_or("RATE_LIMIT_PROJECT", 1_000),
     }
 });

@@ -100,62 +100,10 @@ pub const REPORT_KINDS: &[&str] = &[
 ];
 pub const MEMBERSHIP_STATUSES: &[&str] = &["active", "inactive", "suspended"];
 
-// ── State Machine ──
-
-/// Lifecycle states are the fixed states in the task state machine.
-/// Active step states (e.g. "implement", "review", "dream") come from the
-/// task's playbook and are stored as free-form strings in the `state` column.
-///
-/// State machine:
-///   backlog    → ready, cancelled
-///   ready      → <step_name> (via claim), cancelled
-///   <step>     → done (final step), wait:<next> (more steps), ready (release), cancelled
-///   wait:<next> → <next> (via claim), cancelled
-///   done       → backlog (reopen), human_review
-///   cancelled  → backlog (reopen)
-///
-/// "human_review" is a playbook step name, not a lifecycle state.
-pub fn is_lifecycle_state(s: &str) -> bool {
-    matches!(s, "backlog" | "ready" | "done" | "cancelled") || s.starts_with("wait:")
-}
-
-/// Returns true if the state is a `wait:<step>` inter-step state.
-pub fn is_wait_state(s: &str) -> bool {
-    s.starts_with("wait:")
-}
-
-/// Extract the next step name from a `wait:<step>` state.
-pub fn wait_target(s: &str) -> Option<&str> {
-    s.strip_prefix("wait:")
-}
-
-/// Validate whether a state transition is allowed.
-/// Lifecycle states have fixed rules; any non-lifecycle string is treated
-/// as a playbook step name (active state).
-pub fn can_transition(current: &str, target: &str) -> bool {
-    match current {
-        "backlog" => matches!(target, "ready" | "cancelled"),
-        "ready" => {
-            // ready → any step name, or back to backlog/cancelled
-            !is_lifecycle_state(target) || matches!(target, "backlog" | "cancelled")
-        }
-        "done" => {
-            // done is terminal — reopen to backlog, or move to human_review
-            target == "backlog" || target == "human_review"
-        }
-        "cancelled" => target == "backlog",
-        _ if is_wait_state(current) => {
-            // wait:<next> → the named step (via claim) or cancelled
-            let next = wait_target(current).unwrap_or("");
-            target == next || target == "cancelled"
-        }
-        _ => {
-            // Current state is a step name (e.g. implement, review, human_review)
-            // Can go to done (final), wait:<next> (pipeline), ready (release), or cancelled
-            matches!(target, "done" | "ready" | "cancelled") || is_wait_state(target)
-        }
-    }
-}
+// ── State Machine (re-exported from shared crate) ──
+pub use diraigent_types::state_machine::{
+    can_transition, is_lifecycle_state, is_wait_state, wait_target,
+};
 
 // ── Domain Models ──
 
@@ -422,6 +370,13 @@ pub struct Task {
     pub cost_usd: f64,
     /// Timestamp when the task entered its current state — used for staleness scoring.
     pub state_entered_at: DateTime<Utc>,
+    /// Who owns the task state machine: "api" (default) or "orchestra".
+    #[serde(default = "default_state_managed_by")]
+    pub state_managed_by: String,
+}
+
+fn default_state_managed_by() -> String {
+    "api".to_string()
 }
 
 /// Task with an attached composite score, returned by the ready-tasks endpoint.
@@ -663,7 +618,6 @@ pub struct Work {
     pub description: Option<String>,
     pub status: String,
     pub work_type: String,
-    pub priority: i32,
     pub parent_work_id: Option<Uuid>,
     pub auto_status: bool,
     pub intent_type: Option<String>,
@@ -810,7 +764,6 @@ pub struct CreateWork {
     pub title: String,
     pub description: Option<String>,
     pub work_type: Option<String>,
-    pub priority: Option<i32>,
     pub parent_work_id: Option<Uuid>,
     pub auto_status: Option<bool>,
     pub intent_type: Option<String>,
@@ -824,7 +777,6 @@ pub struct UpdateWork {
     pub description: Option<String>,
     pub status: Option<String>,
     pub work_type: Option<String>,
-    pub priority: Option<i32>,
     #[serde(default, deserialize_with = "deserialize_double_option")]
     pub parent_work_id: Option<Option<Uuid>>,
     pub auto_status: Option<bool>,
@@ -1039,6 +991,25 @@ pub struct WorkStats {
     pub blocked_count: i64,
     pub avg_completion_hours: Option<f64>,
     pub oldest_open_task_date: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct WorkSummary {
+    pub work_id: Uuid,
+    // progress
+    pub total_tasks: i64,
+    pub done_tasks: i64,
+    // stats
+    pub backlog_count: i64,
+    pub ready_count: i64,
+    pub working_count: i64,
+    pub done_count: i64,
+    pub cancelled_count: i64,
+    pub total_count: i64,
+    pub blocked_count: i64,
+    pub total_cost_usd: f64,
+    pub total_input_tokens: i64,
+    pub total_output_tokens: i64,
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]

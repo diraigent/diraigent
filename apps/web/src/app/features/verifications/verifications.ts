@@ -3,7 +3,6 @@ import { DatePipe, JsonPipe, SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
-import { ProjectContext } from '../../core/services/project-context.service';
 import {
   VerificationsApiService,
   SpVerification,
@@ -12,6 +11,8 @@ import {
   VerificationStatus,
 } from '../../core/services/verifications-api.service';
 import { TasksApiService, SpTask } from '../../core/services/tasks-api.service';
+import { CrudFeatureBase } from '../../shared/crud-feature-base';
+import { ModalWrapperComponent } from '../../shared/components/modal-wrapper/modal-wrapper';
 import {
   VERIFICATION_STATUS_COLORS, VERIFICATION_KIND_COLORS,
 } from '../../shared/ui-constants';
@@ -25,7 +26,7 @@ const KIND_COLORS = VERIFICATION_KIND_COLORS;
 @Component({
   selector: 'app-verifications',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, DatePipe, JsonPipe, SlicePipe],
+  imports: [TranslocoModule, FormsModule, DatePipe, JsonPipe, SlicePipe, ModalWrapperComponent],
   template: `
     <div class="p-3 sm:p-6" *transloco="let t">
       <!-- Header -->
@@ -206,11 +207,7 @@ const KIND_COLORS = VERIFICATION_KIND_COLORS;
 
       <!-- Create modal -->
       @if (showForm()) {
-        <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]"
-             role="button" tabindex="0" aria-label="Close modal"
-             (click)="closeForm()" (keydown.enter)="closeForm()" (keydown.escape)="closeForm()">
-          <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
-               tabindex="-1" (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()">
+        <app-modal-wrapper (closed)="closeForm()" maxWidth="max-w-lg" [scrollable]="true">
             <h2 class="text-lg font-semibold text-text-primary mb-4">{{ t('verifications.createTitle') }}</h2>
             <div class="space-y-4">
               <div>
@@ -260,17 +257,12 @@ const KIND_COLORS = VERIFICATION_KIND_COLORS;
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </app-modal-wrapper>
       }
 
       <!-- Task preview modal -->
       @if (previewTask()) {
-        <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70]"
-             role="button" tabindex="0" aria-label="Close preview"
-             (click)="closeTaskPreview()" (keydown.escape)="closeTaskPreview()">
-          <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events, @angular-eslint/template/interactive-supports-focus -->
-          <div class="bg-bg border border-border rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto" (click)="$event.stopPropagation()">
+        <app-modal-wrapper (closed)="closeTaskPreview()" maxWidth="max-w-lg" [scrollable]="true">
             @if (previewTaskLoading()) {
               <p class="text-text-secondary text-sm">{{ t('common.loading') }}</p>
             } @else {
@@ -313,26 +305,20 @@ const KIND_COLORS = VERIFICATION_KIND_COLORS;
                 </button>
               </div>
             }
-          </div>
-        </div>
+        </app-modal-wrapper>
       }
     </div>
   `,
 })
-export class VerificationsPage {
+export class VerificationsPage extends CrudFeatureBase<SpVerification> {
   private api = inject(VerificationsApiService);
   private tasksApi = inject(TasksApiService);
   private router = inject(Router);
-  private ctx = inject(ProjectContext);
 
   readonly kinds = KINDS;
   readonly statuses = STATUSES;
 
-  items = signal<SpVerification[]>([]);
   total = signal(0);
-  loading = signal(false);
-  selected = signal<SpVerification | null>(null);
-  searchQuery = signal('');
   selectedStatus = '';
   selectedKind = '';
 
@@ -340,7 +326,6 @@ export class VerificationsPage {
   offset = signal(0);
   hasMore = signal(false);
 
-  showForm = signal(false);
   formTitle = '';
   formKind: VerificationKind = 'test';
   formStatus: VerificationStatus = 'pass';
@@ -350,6 +335,15 @@ export class VerificationsPage {
   previewTask = signal<SpTask | null>(null);
   previewTaskLoading = signal(false);
 
+  constructor() {
+    super();
+    // Reset pagination offset when the project changes
+    effect(() => {
+      this.ctx.projectId();
+      this.offset.set(0);
+    });
+  }
+
   filtered = computed(() => {
     const q = this.searchQuery().toLowerCase().trim();
     if (!q) return this.items();
@@ -358,16 +352,7 @@ export class VerificationsPage {
     );
   });
 
-  constructor() {
-    effect(() => {
-      this.ctx.projectId();
-      this.selected.set(null);
-      this.offset.set(0);
-      this.loadVerifications();
-    });
-  }
-
-  loadVerifications(): void {
+  override loadItems(): void {
     this.loading.set(true);
     const status = this.selectedStatus as VerificationStatus | '';
     const kind = this.selectedKind as VerificationKind | '';
@@ -380,21 +365,12 @@ export class VerificationsPage {
       })
       .subscribe({
         next: res => {
-          this.items.set(res.data);
           this.total.set(res.total);
           this.hasMore.set(res.has_more);
-          this.loading.set(false);
-          if (this.selected()) {
-            const still = res.data.find(i => i.id === this.selected()!.id);
-            this.selected.set(still ?? null);
-          }
+          this.refreshAfterMutation(res.data);
         },
         error: () => this.loading.set(false),
       });
-  }
-
-  selectItem(item: SpVerification): void {
-    this.selected.set(item.id === this.selected()?.id ? null : item);
   }
 
   statusColor(status: VerificationStatus): string {
@@ -415,31 +391,35 @@ export class VerificationsPage {
 
   updateStatus(item: SpVerification, status: VerificationStatus): void {
     this.api.update(item.id, { status }).subscribe({
-      next: () => this.loadVerifications(),
+      next: () => this.loadItems(),
     });
   }
 
   prevPage(): void {
     this.offset.update(v => Math.max(0, v - this.limit));
-    this.loadVerifications();
+    this.loadItems();
   }
 
   nextPage(): void {
     this.offset.update(v => v + this.limit);
-    this.loadVerifications();
+    this.loadItems();
   }
 
-  openCreate(): void {
+  /** Template alias kept for backward compatibility with the template. */
+  loadVerifications(): void {
+    this.loadItems();
+  }
+
+  protected override resetForm(): void {
     this.formTitle = '';
     this.formKind = 'test';
     this.formStatus = 'pass';
     this.formTaskId = '';
     this.formDetail = '';
-    this.showForm.set(true);
   }
 
-  closeForm(): void {
-    this.showForm.set(false);
+  protected override fillForm(_item: SpVerification): void {
+    // Verifications only support create, not edit
   }
 
   submitForm(): void {
@@ -453,7 +433,7 @@ export class VerificationsPage {
     this.api.create(data).subscribe({
       next: () => {
         this.closeForm();
-        this.loadVerifications();
+        this.loadItems();
       },
     });
   }

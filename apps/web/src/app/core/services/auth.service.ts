@@ -97,7 +97,7 @@ export class AuthService {
     this._isLoggedIn.next(false);
     this._user.next(null);
     if (redirectHome) {
-      this.router.navigate(['/']);
+      this.router.navigate(['/dashboard']);
     }
   }
 

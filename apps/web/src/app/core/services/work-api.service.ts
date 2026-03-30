@@ -15,7 +15,6 @@ export interface SpWork {
   description: string;
   status: WorkStatus;
   work_type: WorkType;
-  priority: number;
   parent_work_id: string | null;
   auto_status: boolean;
   success_criteria: string;
@@ -31,21 +30,21 @@ export interface SpWorkProgress {
   percentage: number;
 }
 
-export interface SpWorkStats {
+/** Bulk progress summary for all work items in a project (single API call). */
+export interface SpWorkSummary {
   work_id: string;
+  total_tasks: number;
+  done_tasks: number;
   backlog_count: number;
   ready_count: number;
   working_count: number;
   done_count: number;
   cancelled_count: number;
   total_count: number;
-  kind_breakdown: Record<string, number>;
+  blocked_count: number;
   total_cost_usd: number;
   total_input_tokens: number;
   total_output_tokens: number;
-  blocked_count: number;
-  avg_completion_hours: number | null;
-  oldest_open_task_date: string | null;
 }
 
 export interface SpWorkComment {
@@ -64,7 +63,6 @@ export interface SpWorkCreate {
   description: string;
   success_criteria: string;
   work_type?: WorkType;
-  priority?: number;
   parent_work_id?: string | null;
   auto_status?: boolean;
 }
@@ -81,7 +79,6 @@ export interface SpWorkUpdate {
   status?: WorkStatus;
   success_criteria?: string;
   work_type?: WorkType;
-  priority?: number;
   parent_work_id?: string | null;
   auto_status?: boolean;
   metadata?: Record<string, unknown>;
@@ -109,10 +106,6 @@ export class WorkApiService extends BaseCrudApiService<SpWork, SpWorkCreate, SpW
 
   progress(id: string): Observable<SpWorkProgress> {
     return this.http.get<SpWorkProgress>(`${this.baseUrl}/work/${id}/progress`);
-  }
-
-  stats(id: string): Observable<SpWorkStats> {
-    return this.http.get<SpWorkStats>(`${this.baseUrl}/work/${id}/stats`);
   }
 
   children(id: string): Observable<SpWork[]> {
@@ -146,6 +139,12 @@ export class WorkApiService extends BaseCrudApiService<SpWork, SpWorkCreate, SpW
   reorder(workIds: string[]): Observable<SpWork[]> {
     if (!this.projectId) return EMPTY as Observable<SpWork[]>;
     return this.http.post<SpWork[]>(`${this.baseUrl}/${this.projectId}/work/reorder`, { work_ids: workIds });
+  }
+
+  /** Bulk progress+stats for all work items in the project (1 request instead of 2N). */
+  summaries(): Observable<SpWorkSummary[]> {
+    if (!this.projectId) return EMPTY as Observable<SpWorkSummary[]>;
+    return this.http.get<SpWorkSummary[]>(`${this.baseUrl}/${this.projectId}/work/summaries`);
   }
 
 }

@@ -6,15 +6,15 @@ use tracing::{error, info, warn};
 
 use crate::config::{ActiveTasks, LockQueue};
 use crate::engine::pipeline::{self, StepOutcome};
+use crate::engine::task_source::TaskSource;
 use crate::git::strategy::GitAction;
-use crate::project::api::ProjectsApi;
 use crate::project::paths as project_paths;
 use crate::task_id::TaskId;
 
 /// Collect finished tasks and process them (check pipeline state, merge/cleanup).
 /// Returns `true` if any file locks were released (triggers immediate re-poll for queued tasks).
 pub async fn reap_finished(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     projects_path: &Path,
     active: &ActiveTasks,
     lock_queue: &LockQueue,
@@ -48,7 +48,7 @@ pub async fn reap_finished(
 /// Process a single reaped task: join the handle, check pipeline state, and merge/cleanup.
 /// Returns `true` if file locks were released (so queued tasks can be retried).
 async fn process_reaped_task(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     projects_path: &Path,
     task_id: String,
     handle: JoinHandle<()>,
@@ -74,7 +74,7 @@ async fn process_reaped_task(
     }
 
     // Check if there's a next pipeline step
-    let outcome = match pipeline::check_next_step(api, &task_id).await {
+    let outcome = match pipeline::check_next_step(api, &task_id, None).await {
         Ok(outcome) => outcome,
         Err(e) => {
             error!(
@@ -358,7 +358,7 @@ async fn process_reaped_task(
 /// Emit a merge success event with file stats.
 #[allow(clippy::too_many_arguments)]
 async fn emit_merge_event(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     project_id: &str,
     task_id: &str,
     branch: &str,
@@ -391,7 +391,7 @@ async fn emit_merge_event(
 
 /// Emit an error event for a failed merge (conflict).
 async fn emit_merge_error_event(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     project_id: &str,
     task_id: &str,
     branch: &str,
@@ -420,8 +420,8 @@ async fn emit_merge_error_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ProjectsApi;
     use crate::config::{ActiveTasks, LockQueue};
-    use crate::project::api::ProjectsApi;
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::Mutex;
@@ -472,7 +472,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let api = Arc::new(ProjectsApi::new(&server.uri(), "test-agent"));
+        let api: Arc<dyn TaskSource> = Arc::new(ProjectsApi::new(&server.uri(), "test-agent"));
         let config = crate::config::Config {
             agent_id: "test-agent".to_string(),
             project_id: Some("proj-1".to_string()),
@@ -487,6 +487,8 @@ mod tests {
             dek: None,
             max_implement_cycles: 3,
             indexer_interval: 120,
+            orchestration_mode: crate::config::OrchestrationMode::Api,
+            data_dir: std::env::temp_dir(),
         };
         let pp = config.projects_path.clone();
         let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
@@ -500,7 +502,7 @@ mod tests {
         let reap_api = Arc::clone(&api);
         let reap_active = Arc::clone(&active);
         let reap_handle = tokio::spawn(async move {
-            reap_finished(&reap_api, &pp, &reap_active, &new_lock_queue()).await;
+            reap_finished(reap_api.as_ref(), &pp, &reap_active, &new_lock_queue()).await;
         });
 
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;

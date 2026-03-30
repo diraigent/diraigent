@@ -691,14 +691,6 @@ pub async fn list_subtasks(
     Ok(tasks)
 }
 
-pub async fn count_subtasks(pool: &PgPool, parent_id: Uuid) -> Result<i64, AppError> {
-    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM diraigent.task WHERE parent_id = $1")
-        .bind(parent_id)
-        .fetch_one(pool)
-        .await?;
-    Ok(row.0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::playbooks::create_playbook;

@@ -2,29 +2,23 @@ use std::collections::HashMap;
 
 use crate::client::{
     Agent, AuditEntry, BranchInfo, ChangedFile, ChatMessage, Decision, GitTaskStatus, Integration,
-    IntegrationAccess, KnowledgeEntry, LogEntry, MainPushStatus, Member, Observation, Playbook,
-    Project, ProjectEvent, ProjectMetrics, Report, Role, SearchResult, StepTemplate, Task,
-    TaskComment, TaskDependencies, TaskUpdate, TreeEntry, Verification, Webhook, WebhookDelivery,
-    Work, WorkComment, WorkProgress, WorkStats,
+    IntegrationAccess, LogEntry, MainPushStatus, Observation, Project, ProjectEvent,
+    ProjectMetrics, Report, SearchResult, Task, TaskComment, TaskDependencies, TaskUpdate,
+    TreeEntry, Webhook, WebhookDelivery, Work, WorkComment, WorkProgress,
 };
 use ratatui::widgets::ListState;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
-    Tasks,
     Agents,
-    Knowledge,
     Decisions,
-    Playbooks,
     Work,
     Observations,
-    Team,
     Integrations,
     Audit,
     Logs,
     ProjectSettings,
-    Verifications,
     Git,
     Search,
     Chat,
@@ -33,24 +27,18 @@ pub enum View {
     Reports,
     Events,
     Webhooks,
-    StepTemplates,
 }
 
 /// View ordering matches navigation.json — core → operations → reference → tools → system.
 pub const ALL_VIEWS: &[View] = &[
     // core
     View::Work,
-    View::Tasks,
-    View::Decisions,
     View::Dashboard,
+    View::Decisions,
     // operations
-    View::Agents,
-    View::Playbooks,
     View::Observations,
-    View::Team,
+    View::Agents,
     // reference
-    View::Knowledge,
-    View::Verifications,
     View::Reports,
     // tools
     View::Git,
@@ -64,25 +52,19 @@ pub const ALL_VIEWS: &[View] = &[
     View::Integrations,
     View::Webhooks,
     View::ProjectSettings,
-    View::StepTemplates,
 ];
 
 impl View {
     pub fn label(self) -> &'static str {
         match self {
-            View::Tasks => "Tasks",
             View::Agents => "Agents",
-            View::Knowledge => "Knowledge",
             View::Decisions => "Decisions",
-            View::Playbooks => "Playbooks",
             View::Work => "Work",
             View::Observations => "Observations",
-            View::Team => "Team",
             View::Integrations => "Integrations",
             View::Audit => "Audit",
             View::Logs => "Logs",
             View::ProjectSettings => "Project Settings",
-            View::Verifications => "Verifications",
             View::Git => "Git",
             View::Search => "Search",
             View::Chat => "Chat",
@@ -91,7 +73,6 @@ impl View {
             View::Reports => "Reports",
             View::Events => "Events",
             View::Webhooks => "Webhooks",
-            View::StepTemplates => "Step Templates",
         }
     }
 
@@ -99,15 +80,10 @@ impl View {
     pub fn shortcut(self) -> &'static str {
         match self {
             View::Work => "1",
-            View::Tasks => "2",
+            View::Dashboard => "2",
             View::Decisions => "3",
-            View::Dashboard => "4",
+            View::Observations => "4",
             View::Agents => "5",
-            View::Playbooks => "6",
-            View::Observations => "7",
-            View::Team => "8",
-            View::Knowledge => "9",
-            View::Verifications => "0",
             View::Reports => "R",
             View::Git => "G",
             View::Source => "B",
@@ -119,7 +95,6 @@ impl View {
             View::Integrations => "I",
             View::Webhooks => "W",
             View::ProjectSettings => "S",
-            View::StepTemplates => "T",
         }
     }
 }
@@ -127,9 +102,6 @@ impl View {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Modal {
     None,
-    Transition,
-    Reply,
-    Comment,
     Search,
     WorkStatus,
     Promote,
@@ -140,13 +112,6 @@ pub enum Modal {
     DecisionSupersede,
     IntegrationAccess,
     ViewPicker,
-    ClaimTask,
-    DelegateTask,
-    BulkTransition,
-    BulkDelete,
-    VerificationStatus,
-    VerificationKindFilter,
-    VerificationStatusFilter,
     GlobalSearch,
     ChatInput,
     WorkComment,
@@ -174,162 +139,15 @@ pub const TASK_KINDS: &[&str] = &[
     "feature", "bug", "chore", "research", "spike", "refactor", "docs", "test",
 ];
 
-pub const VERIFICATION_KINDS: &[&str] = &["test", "acceptance", "sign_off"];
-pub const VERIFICATION_STATUSES: &[&str] = &["pass", "fail", "pending", "skipped"];
-
 #[derive(Default)]
 pub struct TaskForm {
     pub title: String,
     pub kind_index: usize,
     pub urgent: bool,
     pub spec: String,
-    pub playbook_index: usize, // 0 = None, 1+ = playbook from list
-    pub active_field: usize,   // 0=title, 1=kind, 2=urgent, 3=playbook, 4=spec
+    pub active_field: usize, // 0=title, 1=kind, 2=urgent, 3=spec
     pub cursor: usize,
     pub work_id: Option<Uuid>, // pre-linked work item (set when creating from Work view)
-}
-
-pub struct VerificationForm {
-    pub task_index: usize,   // Index into tasks list (for task_id picker)
-    pub kind_index: usize,   // Index into VERIFICATION_KINDS
-    pub status_index: usize, // Index into VERIFICATION_STATUSES
-    pub title: String,
-    pub detail: String,
-    pub evidence: String,    // JSON string
-    pub active_field: usize, // 0=task, 1=kind, 2=status, 3=title, 4=detail, 5=evidence
-    pub cursor: usize,
-    pub editing_id: Option<uuid::Uuid>, // None for create, Some for edit
-}
-
-impl Default for VerificationForm {
-    fn default() -> Self {
-        Self {
-            task_index: 0,
-            kind_index: 0,
-            status_index: 0,
-            title: String::new(),
-            detail: String::new(),
-            evidence: String::new(),
-            active_field: 3, // Start on title field
-            cursor: 0,
-            editing_id: None,
-        }
-    }
-}
-
-pub const ON_COMPLETE_OPTIONS: &[&str] = &["next", "done", "human_review"];
-pub const STEP_MODEL_OPTIONS: &[&str] = &["", "sonnet", "opus", "haiku"];
-
-#[derive(Clone, Default)]
-pub struct PlaybookStepForm {
-    pub name: String,
-    pub description: String,
-    pub on_complete_index: usize, // index into ON_COMPLETE_OPTIONS
-    pub timeout_minutes: String,
-    pub model_index: usize, // index into STEP_MODEL_OPTIONS (0 = default/none)
-}
-
-#[derive(Default)]
-pub struct PlaybookForm {
-    pub title: String,
-    pub trigger: String,
-    pub tags: String, // comma-separated
-    pub steps: Vec<PlaybookStepForm>,
-    pub active_field: usize, // 0=title, 1=trigger, 2=tags, 3=steps
-    pub cursor: usize,
-    pub editing_id: Option<uuid::Uuid>, // None for create, Some for edit
-    // Step management state
-    pub selected_step: usize,
-    pub editing_step: bool, // true when editing step detail fields
-    pub step_field: usize,  // 0=name, 1=desc, 2=on_complete, 3=timeout, 4=model
-}
-
-impl PlaybookForm {
-    /// Parse steps from a serde_json::Value (JSON array) into PlaybookStepForm vec
-    pub fn steps_from_json(steps: &serde_json::Value) -> Vec<PlaybookStepForm> {
-        let Some(arr) = steps.as_array() else {
-            return Vec::new();
-        };
-        let mut result: Vec<PlaybookStepForm> = arr
-            .iter()
-            .map(|step| {
-                let name = step
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let description = step
-                    .get("description")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let on_complete = step
-                    .get("on_complete")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("next");
-                let on_complete_index = ON_COMPLETE_OPTIONS
-                    .iter()
-                    .position(|o| *o == on_complete)
-                    .unwrap_or(0);
-                let timeout = step
-                    .get("timeout_minutes")
-                    .and_then(|v| v.as_i64())
-                    .map(|v| v.to_string())
-                    .unwrap_or_default();
-                let model = step.get("model").and_then(|v| v.as_str()).unwrap_or("");
-                let model_index = STEP_MODEL_OPTIONS
-                    .iter()
-                    .position(|o| *o == model)
-                    .unwrap_or(0);
-                PlaybookStepForm {
-                    name,
-                    description,
-                    on_complete_index,
-                    timeout_minutes: timeout,
-                    model_index,
-                }
-            })
-            .collect();
-        // Sort by step order from JSON
-        // (steps are already in order in the array, but let's be safe)
-        result.sort_by_key(|_| 0); // preserve original order
-        result
-    }
-
-    /// Convert steps back to JSON array
-    pub fn steps_to_json(&self) -> serde_json::Value {
-        let arr: Vec<serde_json::Value> = self
-            .steps
-            .iter()
-            .enumerate()
-            .map(|(i, s)| {
-                // Normalize step name to snake_case (match web behaviour):
-                // trim, lowercase, collapse whitespace to underscores.
-                let raw = s.name.trim().to_lowercase();
-                let normalized: String = raw.split_whitespace().collect::<Vec<_>>().join("_");
-                let name = if normalized.is_empty() {
-                    format!("step_{i}")
-                } else {
-                    normalized
-                };
-                let mut obj = serde_json::json!({
-                    "step": i,
-                    "name": name,
-                    "description": s.description,
-                    "on_complete": ON_COMPLETE_OPTIONS[s.on_complete_index],
-                });
-                if let Ok(mins) = s.timeout_minutes.parse::<i64>() {
-                    obj["timeout_minutes"] = serde_json::json!(mins);
-                }
-                let model = STEP_MODEL_OPTIONS[s.model_index];
-                if !model.is_empty() {
-                    obj["model"] = serde_json::json!(model);
-                }
-                obj
-            })
-            .collect();
-        serde_json::Value::Array(arr)
-    }
 }
 
 /// Task edit form — used for editing existing task properties
@@ -344,8 +162,8 @@ pub struct TaskEditForm {
 }
 
 /// Fields: 0=name, 1=description, 2=repo_url, 3=repo_path,
-///         4=default_branch, 5=service_name, 6=playbook, 7=claude_md
-pub const SETTINGS_FIELD_COUNT: usize = 8;
+///         4=default_branch, 5=service_name, 6=claude_md
+pub const SETTINGS_FIELD_COUNT: usize = 7;
 
 pub struct ProjectSettingsForm {
     pub name: String,
@@ -354,7 +172,6 @@ pub struct ProjectSettingsForm {
     pub repo_path: String,
     pub default_branch: String,
     pub service_name: String,
-    pub playbook_index: usize, // 0=None, 1+=playbook from list
     pub claude_md: String,
     pub active_field: usize,
     pub cursor: usize,
@@ -370,7 +187,7 @@ impl ProjectSettingsForm {
             3 => &self.repo_path,
             4 => &self.default_branch,
             5 => &self.service_name,
-            7 => &self.claude_md,
+            6 => &self.claude_md,
             _ => "",
         }
     }
@@ -383,7 +200,7 @@ impl ProjectSettingsForm {
             3 => Some(&mut self.repo_path),
             4 => Some(&mut self.default_branch),
             5 => Some(&mut self.service_name),
-            7 => Some(&mut self.claude_md),
+            6 => Some(&mut self.claude_md),
             _ => None,
         }
     }
@@ -473,35 +290,20 @@ impl Default for EventForm {
 pub const WORK_STATUSES: &[&str] = &["active", "achieved", "paused", "abandoned"];
 pub const WORK_TYPES: &[&str] = &["epic", "feature", "milestone", "sprint", "initiative"];
 
+#[derive(Default)]
 pub struct WorkForm {
     pub title: String,
     pub description: String,
     pub success_criteria: String,
     pub status_index: usize,    // index into WORK_STATUSES
     pub work_type_index: usize, // index into WORK_TYPES
-    pub priority: String,       // numeric string
     pub auto_status: bool,
-    pub active_field: usize, // 0=title, 1=desc, 2=criteria, 3=status, 4=type, 5=priority, 6=auto_status
+    pub active_field: usize, // 0=status, 1=title, 2=desc, 3=criteria, 4=type, 5=auto_status
     pub cursor: usize,
     pub editing_id: Option<Uuid>, // None for create, Some for edit
 }
 
-impl Default for WorkForm {
-    fn default() -> Self {
-        Self {
-            title: String::new(),
-            description: String::new(),
-            success_criteria: String::new(),
-            status_index: 0,
-            work_type_index: 0,
-            priority: "0".to_string(),
-            auto_status: false,
-            active_field: 0,
-            cursor: 0,
-            editing_id: None,
-        }
-    }
-}
+pub const CHAT_MODELS: &[&str] = &["sonnet", "opus", "haiku"];
 
 pub const OBSERVATION_KINDS: &[&str] = &[
     "insight",
@@ -546,26 +348,6 @@ pub struct DecisionForm {
     pub cursor: usize,
 }
 
-pub const KNOWLEDGE_CATEGORIES: &[&str] = &[
-    "architecture",
-    "convention",
-    "pattern",
-    "anti_pattern",
-    "setup",
-    "general",
-];
-
-#[derive(Default)]
-pub struct KnowledgeForm {
-    pub title: String,
-    pub category_index: usize, // index into KNOWLEDGE_CATEGORIES
-    pub content: String,
-    pub tags: String,        // comma-separated
-    pub active_field: usize, // 0=title, 1=category, 2=content, 3=tags
-    pub cursor: usize,
-    pub editing_id: Option<Uuid>, // None for create, Some for edit
-}
-
 pub const INTEGRATION_KINDS: &[&str] = &["ci", "monitoring", "logging", "vcs", "chat", "custom"];
 pub const INTEGRATION_AUTH_TYPES: &[&str] = &["none", "token", "basic", "oauth2"];
 
@@ -584,13 +366,10 @@ pub struct App {
     pub show_help: bool,
     pub task_form: Option<TaskForm>,
     pub task_edit_form: Option<TaskEditForm>,
-    pub playbook_form: Option<PlaybookForm>,
     pub settings_form: Option<ProjectSettingsForm>,
-    pub verification_form: Option<VerificationForm>,
     pub work_form: Option<WorkForm>,
     pub observation_form: Option<ObservationForm>,
     pub decision_form: Option<DecisionForm>,
-    pub knowledge_form: Option<KnowledgeForm>,
     pub integration_form: Option<IntegrationForm>,
     pub event_form: Option<EventForm>,
     pub webhook_form: Option<WebhookForm>,
@@ -608,21 +387,21 @@ pub struct App {
     pub task_comments: Vec<TaskComment>,
     pub task_dependencies: TaskDependencies,
     pub agents: Vec<Agent>,
-    pub knowledge: Vec<KnowledgeEntry>,
     pub decisions: Vec<Decision>,
-    pub playbooks: Vec<Playbook>,
     pub work_items: Vec<Work>,
+    pub done_work_items: Vec<Work>,
+    pub done_work_page: usize,
+    pub done_work_has_more: bool,
+    pub work_section: usize, // 0 = active/paused, 1 = done/abandoned
+    pub selected_done_work: Option<usize>,
+    pub done_work_list_state: ListState,
     pub work_progress: Option<WorkProgress>,
     pub work_progress_map: HashMap<Uuid, WorkProgress>,
-    pub work_stats: Option<WorkStats>,
     pub work_children: Vec<Work>,
     pub observations: Vec<Observation>,
-    pub roles: Vec<Role>,
-    pub members: Vec<Member>,
     pub integrations: Vec<Integration>,
     pub integration_access: Vec<IntegrationAccess>,
     pub audit_log: Vec<AuditEntry>,
-    pub verifications: Vec<Verification>,
     pub events: Vec<ProjectEvent>,
     pub event_kind_filter: Option<String>,
     pub event_severity_filter: Option<String>,
@@ -638,18 +417,18 @@ pub struct App {
     // Work comments
     pub work_comments: Vec<WorkComment>,
 
-    // Step templates
-    pub step_templates: Vec<StepTemplate>,
-
     // Agent tasks (queue view)
     pub agent_tasks: Vec<Task>,
 
     // Work tasks
     pub work_tasks: Vec<Task>,
-
-    // Verification filters
-    pub verification_kind_filter: Option<String>,
-    pub verification_status_filter: Option<String>,
+    pub work_task_selected: Option<usize>,
+    pub work_task_list_state: ListState,
+    pub work_task_updates: Vec<TaskUpdate>,
+    pub work_task_comments: Vec<TaskComment>,
+    pub work_task_detail_scroll: u16,
+    /// Focus within Work view: 0=work list, 1=task list
+    pub work_focus: usize,
 
     // Logs view data
     pub log_entries: Vec<LogEntry>,
@@ -666,22 +445,14 @@ pub struct App {
     pub selected_task: Option<usize>,
     pub task_list_state: ListState,
     pub selected_agent: Option<usize>,
-    pub selected_knowledge: Option<usize>,
     pub selected_decision: Option<usize>,
-    pub selected_playbook: Option<usize>,
     pub selected_work: Option<usize>,
     pub work_list_state: ListState,
     pub selected_observation: Option<usize>,
-    pub selected_role: Option<usize>,
-    pub selected_member: Option<usize>,
     pub selected_integration: Option<usize>,
     pub selected_audit: Option<usize>,
-    pub selected_verification: Option<usize>,
     pub selected_event: Option<usize>,
     pub selected_webhook: Option<usize>,
-
-    // Team view focus: 0=roles, 1=members, 2=detail
-    pub team_focus: usize,
 
     // Search filter
     pub search_query: String,
@@ -704,8 +475,7 @@ pub struct App {
     pub bulk_selected: std::collections::HashSet<uuid::Uuid>,
     pub bulk_mode: bool,
 
-    // Task hierarchy
-    pub show_hierarchy: bool,
+    // Task hierarchy (used by work view)
     pub subtasks: Vec<Task>,
 
     // Git view
@@ -726,6 +496,7 @@ pub struct App {
     pub chat_input: String,
     pub chat_streaming: bool,
     pub chat_scroll: u16,
+    pub chat_model_index: usize, // index into CHAT_MODELS
 
     // Source browser
     pub source_entries: Vec<TreeEntry>,
@@ -746,13 +517,10 @@ impl App {
             show_help: false,
             task_form: None,
             task_edit_form: None,
-            playbook_form: None,
             settings_form: None,
-            verification_form: None,
             work_form: None,
             observation_form: None,
             decision_form: None,
-            knowledge_form: None,
             integration_form: None,
             event_form: None,
             webhook_form: None,
@@ -770,21 +538,21 @@ impl App {
                 blocks: vec![],
             },
             agents: vec![],
-            knowledge: vec![],
             decisions: vec![],
-            playbooks: vec![],
             work_items: vec![],
+            done_work_items: vec![],
+            done_work_page: 0,
+            done_work_has_more: false,
+            work_section: 0,
+            selected_done_work: None,
+            done_work_list_state: ListState::default(),
             work_progress: None,
             work_progress_map: HashMap::new(),
-            work_stats: None,
             work_children: vec![],
             observations: vec![],
-            roles: vec![],
-            members: vec![],
             integrations: vec![],
             integration_access: vec![],
             audit_log: vec![],
-            verifications: vec![],
             events: vec![],
             event_kind_filter: None,
             event_severity_filter: None,
@@ -796,11 +564,14 @@ impl App {
             dashboard_metrics: None,
             dashboard_events: vec![],
             work_comments: vec![],
-            step_templates: vec![],
             agent_tasks: vec![],
             work_tasks: vec![],
-            verification_kind_filter: None,
-            verification_status_filter: None,
+            work_task_selected: None,
+            work_task_list_state: ListState::default(),
+            work_task_updates: vec![],
+            work_task_comments: vec![],
+            work_task_detail_scroll: 0,
+            work_focus: 0,
             log_entries: vec![],
             log_labels: vec![],
             log_query: String::from("{app=~\".+\"}"),
@@ -813,20 +584,14 @@ impl App {
             selected_task: None,
             task_list_state: ListState::default(),
             selected_agent: None,
-            selected_knowledge: None,
             selected_decision: None,
-            selected_playbook: None,
             selected_work: None,
             work_list_state: ListState::default(),
             selected_observation: None,
-            selected_role: None,
-            selected_member: None,
             selected_integration: None,
             selected_audit: None,
-            selected_verification: None,
             selected_event: None,
             selected_webhook: None,
-            team_focus: 0,
             search_query: String::new(),
             detail_scroll: 0,
             transition_options: vec![],
@@ -838,7 +603,6 @@ impl App {
             show_changed_files: false,
             bulk_selected: std::collections::HashSet::new(),
             bulk_mode: false,
-            show_hierarchy: false,
             subtasks: vec![],
             branches: vec![],
             current_branch: String::new(),
@@ -853,6 +617,7 @@ impl App {
             chat_input: String::new(),
             chat_streaming: false,
             chat_scroll: 0,
+            chat_model_index: 0, // default to "sonnet"
             source_entries: vec![],
             source_current_path: String::new(),
             source_selected: None,
@@ -865,24 +630,25 @@ impl App {
 
     pub fn list_len(&self) -> usize {
         match self.view {
-            View::Tasks => self.tasks.len(),
             View::Agents => self.agents.len(),
-            View::Knowledge => self.knowledge.len(),
             View::Decisions => self.decisions.len(),
-            View::Playbooks => self.playbooks.len(),
-            View::Work => self.work_items.len(),
+            View::Work => {
+                if self.work_section == 0 {
+                    self.work_items.len()
+                } else {
+                    self.done_work_items.len()
+                }
+            }
             View::Observations => self.observations.len(),
-            View::Team => self.roles.len(),
             View::Integrations => self.integrations.len(),
             View::Audit => self.audit_log.len(),
             View::Logs => self.log_entries.len(),
             View::ProjectSettings => 0, // No list in settings view
-            View::Verifications => self.filtered_verifications().len(),
             View::Git => self.branches.len(),
             View::Search => self.search_results.len(),
             View::Chat => self.chat_messages.len(),
             View::Source => self.source_entries.len(),
-            View::Dashboard | View::StepTemplates => 0,
+            View::Dashboard => 0,
             View::Reports => self.reports.len(),
             View::Webhooks => self.webhooks.len(),
             View::Events => self.filtered_events().len(),
@@ -891,24 +657,25 @@ impl App {
 
     pub fn selected(&self) -> Option<usize> {
         match self.view {
-            View::Tasks => self.selected_task,
             View::Agents => self.selected_agent,
-            View::Knowledge => self.selected_knowledge,
             View::Decisions => self.selected_decision,
-            View::Playbooks => self.selected_playbook,
-            View::Work => self.selected_work,
+            View::Work => {
+                if self.work_section == 0 {
+                    self.selected_work
+                } else {
+                    self.selected_done_work
+                }
+            }
             View::Observations => self.selected_observation,
-            View::Team => self.selected_role,
             View::Integrations => self.selected_integration,
             View::Audit => self.selected_audit,
             View::Logs => None, // Logs use scroll, not selection
             View::ProjectSettings => None,
-            View::Verifications => self.selected_verification,
             View::Git => self.selected_branch,
             View::Search => self.selected_search_result,
             View::Chat => None,
             View::Source => self.source_selected,
-            View::Dashboard | View::StepTemplates => None,
+            View::Dashboard => None,
             View::Reports => self.selected_report,
             View::Webhooks => self.selected_webhook,
             View::Events => self.selected_event,
@@ -918,30 +685,27 @@ impl App {
     pub fn set_selected(&mut self, idx: Option<usize>) {
         self.detail_scroll = 0;
         match self.view {
-            View::Tasks => {
-                self.selected_task = idx;
-                self.task_list_state.select(idx);
-            }
             View::Agents => self.selected_agent = idx,
-            View::Knowledge => self.selected_knowledge = idx,
             View::Decisions => self.selected_decision = idx,
-            View::Playbooks => self.selected_playbook = idx,
             View::Work => {
-                self.selected_work = idx;
-                self.work_list_state.select(idx);
+                if self.work_section == 0 {
+                    self.selected_work = idx;
+                    self.work_list_state.select(idx);
+                } else {
+                    self.selected_done_work = idx;
+                    self.done_work_list_state.select(idx);
+                }
             }
             View::Observations => self.selected_observation = idx,
-            View::Team => self.selected_role = idx,
             View::Integrations => self.selected_integration = idx,
             View::Audit => self.selected_audit = idx,
             View::Logs => {}            // Logs use scroll, not selection
             View::ProjectSettings => {} // No list in settings view
-            View::Verifications => self.selected_verification = idx,
             View::Git => self.selected_branch = idx,
             View::Search => self.selected_search_result = idx,
             View::Chat => {}
             View::Source => self.source_selected = idx,
-            View::Dashboard | View::StepTemplates => {}
+            View::Dashboard => {}
             View::Reports => self.selected_report = idx,
             View::Webhooks => self.selected_webhook = idx,
             View::Events => self.selected_event = idx,
@@ -949,6 +713,10 @@ impl App {
     }
 
     pub fn move_selection(&mut self, delta: i32) {
+        if self.view == View::Work {
+            self.move_work_selection(delta);
+            return;
+        }
         let len = self.list_len();
         if len == 0 {
             return;
@@ -958,17 +726,87 @@ impl App {
         self.set_selected(Some(next));
     }
 
+    fn move_work_selection(&mut self, delta: i32) {
+        self.detail_scroll = 0;
+        if self.work_section == 0 {
+            let len = self.work_items.len();
+            if len == 0 && !self.done_work_items.is_empty() && delta > 0 {
+                // Jump to done section
+                self.work_section = 1;
+                self.selected_done_work = Some(0);
+                self.done_work_list_state.select(Some(0));
+                return;
+            }
+            if len == 0 {
+                return;
+            }
+            let current = self.selected_work.unwrap_or(0) as i32;
+            let next = current + delta;
+            if next >= len as i32 && !self.done_work_items.is_empty() {
+                // Move to done section
+                self.work_section = 1;
+                self.selected_done_work = Some(0);
+                self.done_work_list_state.select(Some(0));
+            } else {
+                let clamped = next.clamp(0, len as i32 - 1) as usize;
+                self.selected_work = Some(clamped);
+                self.work_list_state.select(Some(clamped));
+            }
+        } else {
+            let len = self.done_work_items.len();
+            if len == 0 && !self.work_items.is_empty() && delta < 0 {
+                // Jump to active section
+                self.work_section = 0;
+                let last = self.work_items.len().saturating_sub(1);
+                self.selected_work = Some(last);
+                self.work_list_state.select(Some(last));
+                return;
+            }
+            if len == 0 {
+                return;
+            }
+            let current = self.selected_done_work.unwrap_or(0) as i32;
+            let next = current + delta;
+            if next < 0 && !self.work_items.is_empty() {
+                // Move to active section
+                self.work_section = 0;
+                let last = self.work_items.len().saturating_sub(1);
+                self.selected_work = Some(last);
+                self.work_list_state.select(Some(last));
+            } else {
+                let clamped = next.clamp(0, len as i32 - 1) as usize;
+                self.selected_done_work = Some(clamped);
+                self.done_work_list_state.select(Some(clamped));
+            }
+        }
+    }
+
+    /// Move the task selection within the work task list.
+    pub fn move_work_task_selection(&mut self, delta: i32) {
+        let len = self.work_tasks.len();
+        if len == 0 {
+            return;
+        }
+        let current = self.work_task_selected.unwrap_or(0) as i32;
+        let next = (current + delta).clamp(0, len as i32 - 1) as usize;
+        self.work_task_selected = Some(next);
+        self.work_task_list_state.select(Some(next));
+        self.work_task_detail_scroll = 0;
+    }
+
+    /// Returns the currently selected work item from either section.
+    pub fn selected_work_item(&self) -> Option<&Work> {
+        if self.work_section == 0 {
+            self.selected_work.and_then(|i| self.work_items.get(i))
+        } else {
+            self.selected_done_work
+                .and_then(|i| self.done_work_items.get(i))
+        }
+    }
+
     pub fn scroll_detail(&mut self, delta: i32) {
         let new = self.detail_scroll as i32 + delta;
         self.detail_scroll = new.max(0) as u16;
-    }
-
-    pub fn default_playbook_index(&self) -> usize {
-        self.playbooks
-            .iter()
-            .position(|pb| pb.metadata.get("default").and_then(|v| v.as_bool()) == Some(true))
-            .map(|i| i + 1) // 0 = None, 1+ = playbook index
-            .unwrap_or(0)
     }
 
     pub fn status_summary(&self) -> String {
@@ -1030,26 +868,6 @@ impl App {
         self.log_scroll = new.max(0) as u16;
     }
 
-    /// Returns verifications filtered by current kind and status filters.
-    pub fn filtered_verifications(&self) -> Vec<&Verification> {
-        self.verifications
-            .iter()
-            .filter(|v| {
-                if let Some(ref k) = self.verification_kind_filter {
-                    if v.kind != *k {
-                        return false;
-                    }
-                }
-                if let Some(ref s) = self.verification_status_filter {
-                    if v.status != *s {
-                        return false;
-                    }
-                }
-                true
-            })
-            .collect()
-    }
-
     /// Returns events filtered by current kind and severity filters.
     pub fn filtered_events(&self) -> Vec<&ProjectEvent> {
         self.events
@@ -1068,23 +886,5 @@ impl App {
                 true
             })
             .collect()
-    }
-
-    /// Move task selection respecting the search filter.
-    pub fn move_task_selection(&mut self, delta: i32) {
-        let visible = self.filtered_task_indices();
-        if visible.is_empty() {
-            return;
-        }
-        // Find current position in the filtered list
-        let current_pos = self
-            .selected_task
-            .and_then(|sel| visible.iter().position(|&i| i == sel))
-            .unwrap_or(0);
-        let next_pos = (current_pos as i32 + delta).clamp(0, visible.len() as i32 - 1) as usize;
-        let new_idx = visible[next_pos];
-        self.detail_scroll = 0;
-        self.selected_task = Some(new_idx);
-        self.task_list_state.select(Some(next_pos));
     }
 }

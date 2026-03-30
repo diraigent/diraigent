@@ -2,9 +2,11 @@
 
 use tracing::{error, info, warn};
 
+use std::sync::Arc;
+
 use crate::config::{ActiveTasks, Config, LockQueue, LockQueueEntry};
+use crate::engine::task_source::TaskSource;
 use crate::git::WorktreeManager;
-use crate::project::api::ProjectsApi;
 
 /// How long a task stays in the lock queue before being retried regardless.
 const LOCK_QUEUE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
@@ -16,7 +18,7 @@ use crate::project::paths as project_paths;
 use crate::task_id::TaskId;
 
 pub async fn poll_ready_tasks_with_projects(
-    api: &ProjectsApi,
+    api: &Arc<dyn TaskSource>,
     config: &Config,
     active: &ActiveTasks,
     lock_queue: &LockQueue,
@@ -107,7 +109,7 @@ pub async fn poll_ready_tasks_with_projects(
 }
 
 pub async fn spawn_worker(
-    api: &ProjectsApi,
+    api: &Arc<dyn TaskSource>,
     config: &Config,
     active: &ActiveTasks,
     task_id: &str,
@@ -129,12 +131,45 @@ pub async fn spawn_worker(
         .and_then(|t| t["title"].as_str().map(|s| s.to_string()))
         .unwrap_or_default();
 
-    // Resolve playbook step (name + full JSONB config)
-    let (step_name, step_json) = pipeline::resolve_step(api, task_data.as_ref()).await;
+    // Resolve per-project paths early so we can use git_root for repo playbook resolution.
+    let (git_mode, git_root, working_dir, auto_push, default_branch, upload_logs, store_diffs) =
+        match project_paths::resolve_project_paths(api.as_ref(), project_id, &config.projects_path)
+            .await
+        {
+            Ok(paths) => (
+                paths.git_mode,
+                paths.git_root,
+                paths.working_dir,
+                paths.auto_push,
+                paths.default_branch,
+                paths.upload_logs,
+                paths.store_diffs,
+            ),
+            Err(e) => {
+                warn!("spawn {tid}: failed to resolve project paths: {e}");
+                (
+                    "standalone".to_string(),
+                    Some(config.projects_path.clone()),
+                    config.projects_path.clone(),
+                    false,
+                    "main".to_string(),
+                    false,
+                    false,
+                )
+            }
+        };
+
+    // Resolve playbook step (name + full JSONB config), with repo playbook override support
+    let (step_name, step_json) =
+        pipeline::resolve_step(api.as_ref(), task_data.as_ref(), git_root.as_deref()).await;
 
     // Resolve effective max_cycles: step JSON > project metadata > global config.
-    let project_max_cycles =
-        pipeline::resolve_max_implement_cycles(api, project_id, config.max_implement_cycles).await;
+    let project_max_cycles = pipeline::resolve_max_implement_cycles(
+        api.as_ref(),
+        project_id,
+        config.max_implement_cycles,
+    )
+    .await;
     let effective_max_cycles = step_json
         .as_ref()
         .and_then(|s| s["max_cycles"].as_u64())
@@ -149,7 +184,7 @@ pub async fn spawn_worker(
             step_profile::StepProfile::for_step(&step_name) == step_profile::StepProfile::Implement
         });
     if effective_max_cycles > 0 && step_retriable {
-        let cycles = pipeline::count_blocker_cycles(api, task_id).await;
+        let cycles = pipeline::count_blocker_cycles(api.as_ref(), task_id).await;
         if cycles >= effective_max_cycles {
             warn!(
                 "loop-detect {tid}: {cycles} failed implement cycles (max={effective_max_cycles}), cancelling",
@@ -164,7 +199,7 @@ pub async fn spawn_worker(
                 warn!("loop-detect {tid}: failed to release task: {e}");
             } else {
                 worker::post_worker_event(
-                    api,
+                    api.as_ref(),
                     project_id,
                     task_id,
                     &format!("Loop detected: task {tid} released for human review"),
@@ -237,34 +272,9 @@ pub async fn spawn_worker(
         config.worker_model.as_deref(),
     );
 
-    // Resolve per-project paths from the API.
-    let (git_mode, git_root, working_dir, auto_push, default_branch, upload_logs, store_diffs) =
-        match project_paths::resolve_project_paths(api, project_id, &config.projects_path).await {
-            Ok(paths) => (
-                paths.git_mode,
-                paths.git_root,
-                paths.working_dir,
-                paths.auto_push,
-                paths.default_branch,
-                paths.upload_logs,
-                paths.store_diffs,
-            ),
-            Err(e) => {
-                warn!("spawn {tid}: failed to resolve project paths: {e}");
-                (
-                    "standalone".to_string(),
-                    Some(config.projects_path.clone()),
-                    config.projects_path.clone(),
-                    false,
-                    "main".to_string(),
-                    false,
-                    false,
-                )
-            }
-        };
-
     // Resolve git strategy from playbook metadata
-    let git_strategy = git_strategy::resolve_strategy(api, task_data.as_ref(), &git_mode).await;
+    let git_strategy =
+        git_strategy::resolve_strategy(api.as_ref(), task_data.as_ref(), &git_mode).await;
 
     let model_info = step_config.model.as_deref().unwrap_or("default");
     info!(
@@ -296,7 +306,7 @@ pub async fn spawn_worker(
         }
     }
 
-    let api_clone = api.clone();
+    let api_clone = Arc::clone(api);
     let agent_cli = config.agent_cli.clone();
     let log_dir = config.log_dir.clone();
     let task_id_owned = task_id.to_string();
@@ -330,7 +340,7 @@ pub async fn spawn_worker(
             wm.set_auto_push(auto_push);
             let repo_root_for_worker = git_root.as_deref().unwrap_or(&working_dir);
             match worker::run_worker(
-                &api_clone,
+                api_clone.as_ref(),
                 &wm,
                 &task_id_owned,
                 &project_id_owned,
@@ -373,7 +383,7 @@ pub async fn spawn_worker(
                     }
 
                     worker::post_worker_event(
-                        &api_clone,
+                        api_clone.as_ref(),
                         &project_id_owned,
                         &task_id_owned,
                         &format!("Worker crashed: task {sid}"),
@@ -401,7 +411,6 @@ mod tests {
     use crate::config::{ActiveTasks, Config, LockQueue};
     use crate::project::api::ProjectsApi;
     use std::collections::HashMap;
-    use std::sync::Arc;
     use tokio::sync::Mutex;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -455,6 +464,8 @@ mod tests {
             dek: None,
             max_implement_cycles,
             indexer_interval: 120,
+            orchestration_mode: crate::config::OrchestrationMode::Api,
+            data_dir: std::env::temp_dir(),
         }
     }
 
@@ -512,7 +523,7 @@ mod tests {
 
         mount_project_mock(&server, None).await;
 
-        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let api: Arc<dyn TaskSource> = Arc::new(ProjectsApi::new(&server.uri(), "test-agent"));
         let config = test_config(&server.uri(), 3);
         let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
 
@@ -583,7 +594,7 @@ mod tests {
 
         mount_project_mock(&server, None).await;
 
-        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let api: Arc<dyn TaskSource> = Arc::new(ProjectsApi::new(&server.uri(), "test-agent"));
         let config = test_config(&server.uri(), 3);
         let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
 
@@ -635,7 +646,7 @@ mod tests {
 
         mount_project_mock(&server, None).await;
 
-        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let api: Arc<dyn TaskSource> = Arc::new(ProjectsApi::new(&server.uri(), "test-agent"));
         let config = test_config(&server.uri(), 0);
         let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
 
@@ -687,7 +698,7 @@ mod tests {
 
         mount_project_mock(&server, None).await;
 
-        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let api: Arc<dyn TaskSource> = Arc::new(ProjectsApi::new(&server.uri(), "test-agent"));
         let config = test_config(&server.uri(), 3);
         let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
 
@@ -758,7 +769,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let api: Arc<dyn TaskSource> = Arc::new(ProjectsApi::new(&server.uri(), "test-agent"));
         let config = test_config(&server.uri(), 3);
         let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
 
@@ -823,7 +834,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let api: Arc<dyn TaskSource> = Arc::new(ProjectsApi::new(&server.uri(), "test-agent"));
         let config = test_config(&server.uri(), 3);
         let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
 
@@ -879,7 +890,7 @@ mod tests {
 
         mount_project_mock(&server, None).await;
 
-        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let api: Arc<dyn TaskSource> = Arc::new(ProjectsApi::new(&server.uri(), "test-agent"));
         let config = test_config(&server.uri(), 3);
         let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
         let lock_queue = new_lock_queue();

@@ -325,17 +325,6 @@ fn validate_authorities(auths: &[String]) -> Result<(), AppError> {
     Ok(())
 }
 
-// ── Priority (used by Work, not Task) ──
-
-fn validate_priority(priority: i32) -> Result<(), AppError> {
-    if !(-1000..=1000).contains(&priority) {
-        return Err(AppError::Validation(
-            "Priority must be between -1000 and 1000".into(),
-        ));
-    }
-    Ok(())
-}
-
 // ── Work ──
 
 pub fn validate_create_work(req: &CreateWork) -> Result<(), AppError> {
@@ -345,9 +334,6 @@ pub fn validate_create_work(req: &CreateWork) -> Result<(), AppError> {
     }
     if let Some(ref intent_type) = req.intent_type {
         validate_enum_member(intent_type, models::WORK_INTENT_TYPES, "work intent type")?;
-    }
-    if let Some(priority) = req.priority {
-        validate_priority(priority)?;
     }
     Ok(())
 }
@@ -364,9 +350,6 @@ pub fn validate_update_work(req: &UpdateWork) -> Result<(), AppError> {
     }
     if let Some(Some(ref intent_type)) = req.intent_type {
         validate_enum_member(intent_type, models::WORK_INTENT_TYPES, "work intent type")?;
-    }
-    if let Some(priority) = req.priority {
-        validate_priority(priority)?;
     }
     Ok(())
 }

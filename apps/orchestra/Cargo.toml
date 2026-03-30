@@ -1,6 +1,6 @@
 [package]
 name = "diraigent-orchestra"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [[bin]]
@@ -41,8 +41,10 @@ hkdf = "0.12"
 zeroize = { version = "1", features = ["derive"] }
 base64 = "0.22"
 toml = "0.8"
+serde_yaml = "0.9"
 async-trait = "0.1.64"
 thiserror.workspace = true
+rusqlite = { version = "0.32" }
 
 [dev-dependencies]
 wiremock = "0.6"

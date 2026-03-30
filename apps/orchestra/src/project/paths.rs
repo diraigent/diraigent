@@ -7,8 +7,8 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
+use crate::engine::task_source::TaskSource;
 use crate::git::provisioner as git_provisioner;
-use crate::project::api::ProjectsApi;
 
 /// Resolved filesystem paths for a project.
 pub struct ProjectPaths {
@@ -31,7 +31,7 @@ pub struct ProjectPaths {
 /// - monorepo:   git_root = PROJECTS_PATH/git_root, working_dir = git_root/project_root
 /// - none:       git_root = None, working_dir = projects_path (git ops disabled)
 pub async fn resolve_project_paths(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     project_id: &str,
     projects_path: &Path,
 ) -> Result<ProjectPaths> {
@@ -108,7 +108,7 @@ pub async fn resolve_project_paths(
 /// Used by the scheduler to get a per-project WM at reap time, avoiding the
 /// single-project assumption of a top-level WM.
 pub async fn create_project_wm(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     project_id: &str,
     projects_path: &Path,
 ) -> Result<crate::git::WorktreeManager> {
@@ -128,7 +128,7 @@ pub async fn create_project_wm(
 ///
 /// Falls back to `projects_path` on error.
 pub async fn resolve_working_dir(
-    api: &ProjectsApi,
+    api: &dyn TaskSource,
     project_id: &str,
     projects_path: &Path,
 ) -> Result<PathBuf> {

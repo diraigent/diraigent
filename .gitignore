@@ -31,5 +31,6 @@ apps/orchestra/.orchestra.pid
 ### Misc ###
 NOTES.md
 data/
+.analyzer-sync-cache.json
 
 secrets

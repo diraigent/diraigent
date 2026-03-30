@@ -1,5 +1,185 @@
 # Changelog
 
+
+## v20260326-0929 (2026-03-26)
+
+### Added
+- **iOS**: Native iOS app with full feature coverage: dashboard, work items, tasks, agents, chat, events, reports, observations, decisions, integrations, webhooks, logs, source browser, search, git status, and settings
+- **iOS**: OIDC/PKCE authentication with keychain token storage
+- **Orchestra**: Repo-as-code support — sync playbooks, decisions, knowledge, and observations from `.diraigent/` directory
+- **Orchestra**: Headless mode for CLI-driven pipeline execution without API
+- **TUI**: Model selector in chat (cycle between sonnet/opus/haiku)
+- **TUI**: Global keyboard shortcuts with help overlay
+- **TUI**: API token management in account settings
+
+### Changed
+- **TUI**: Merged work and tasks into a single unified work view
+- **TUI**: Work items sorted by status (active → paused → achieved → abandoned)
+- **TUI**: Simplified navigation by removing standalone playbooks, tasks, verify, knowledge, and teams views
+
+### Fixed
+- **API**: Membership unique constraint now scoped to tenant, preventing onboarding conflicts
+- **Orchestra**: Various pipeline resolution and task sourcing improvements
+
+---
+
+## v20260320-0042 (2026-03-20)
+
+### Added
+- **API**: Multi-provider support — configure OpenAI and Ollama alongside Anthropic
+- **API**: Forgejo and GitHub CI integrations with webhook sync
+- **API**: OpenAPI/Swagger documentation endpoint
+- **API**: AI-powered work planning with task generation
+- **Orchestra**: Codebase static analyzer with dependency graphs and API surface mapping
+- **Orchestra**: Scheduled repository re-indexing via cron
+- **Orchestra**: Composite task scoring for smarter prioritization
+- **Web**: CI pipelines page with run details, filters, and auto-polling
+- **Web**: Provider configuration UI in project settings
+- **Web**: Execute and Plan & Execute actions on work items
+- **Web**: Global keyboard shortcuts with help overlay
+- **Web**: Onboarding wizard and API token management in account settings
+- **Web**: Active Work dashboard section across projects
+- **TUI**: Unified work + tasks split view with progress indicators
+
+### Changed
+- **All**: Goals renamed to Work across the entire stack
+- **TUI**: Removed playbooks, verify, knowledge, and teams views
+- **Web**: Streamlined work detail layout — inline title editing, movable type badge
+- **CI/CD**: Binaries and containers are now signed with cosign
+
+### Fixed
+- **Web**: Mobile horizontal scrolling, dropdown clipping, and light-mode background
+- **Orchestra**: Deterministic graph cycle detection, merge rollback on push failure
+- Various UI and stability fixes across Web and TUI
+
+---
+
+## v20260320-0041 (2026-03-20)
+
+### Added
+- **Web**: CI pipelines page with Forgejo and GitHub integration setup wizards
+- **Web**: Provider configuration UI in project settings (API keys, models, base URLs)
+- **Web**: OpenAPI/Swagger documentation UI for the Diraigent API
+- **Web**: Global keyboard shortcuts with help overlay
+- **Web**: Onboarding modal and API token management in account settings
+- **Web**: Active Work dashboard section with cross-project work items
+- **API**: Forgejo webhook integration with HMAC-SHA256 validation
+- **API**: GitHub CI integration backend with webhooks and sync
+- **API**: Multi-provider support (OpenAI, Ollama) with encrypted API key storage
+- **Orchestra**: Codebase static analyzer with dependency graphs and module summaries
+- **Orchestra**: Composite task scoring for smarter task prioritization
+- **TUI**: API token management for streamlined onboarding
+
+### Changed
+- **Web**: Merged work and tasks into a unified work view with integrated task detail
+- **Web**: Streamlined work item UI: inline title editing, editable type badge, reorganized action buttons
+- **Orchestra**: Work planning now routed through orchestra with configurable per-project providers
+- **TUI**: Simplified navigation by removing playbooks, verify, knowledge, and teams views
+
+### Fixed
+- **Web**: Light mode background, dropdown clipping, mobile horizontal scrolling
+- **Orchestra**: Deterministic graph cycle detection, merge rollback on push failure
+- **API**: Authorization checks on global provider config endpoints
+- Various UI and stability fixes
+
+### Removed
+- **TUI**: Standalone tasks, playbooks, verify, knowledge, and teams views
+- **Web**: Manual link-to-work functionality and redundant status filters
+
+---
+
+## v20260319-1103 (2026-03-19)
+
+### Added
+- **Web**: Logout page with session cleanup
+
+### Changed
+- **TUI**: Simplified view layout and reordered navigation
+- **Web**: Streamlined dashboard view
+
+### Removed
+- **API**: Removed unused query methods from tasks and work repositories
+- **TUI**: Removed dead code and redundant imports
+
+---
+
+
+## v20260318-2155 (2026-03-18)
+
+### Changed
+- **API**: Improved related-item query handling
+- **Orchestra**: Refined chat handler response logic
+
+### Fixed
+- **Web**: Minor cleanup in work module
+
+---
+
+## v20260318-2146 (2026-03-18)
+
+### Changed
+- **CI/CD**: Unified deploy and release pipelines into single workflow per service
+
+### Fixed
+- **Web**: Fix minor build issue on work page
+
+---
+
+## v20260318-2117 (2026-03-18)
+
+### Added
+- **API**: OpenAPI/Swagger UI for browsing the API interactively
+- **API**: Work status counts endpoint for section header aggregation
+- **Web**: Inline title editing on work list via double-click
+- **Web**: Editable work type badge in work item header
+- **Web**: Status counts shown in work list section headers
+- **TUI**: Create-task keybinding [t] on work page
+- **TUI**: Work progress indicators (done/total) in work list
+- **TUI**: Keybindings for execute, plan+execute, and save in work form
+- **TUI**: API token management in account settings for onboarding
+
+### Changed
+- **Web**: Rename work status buttons to Done, Pause, Abandon
+- **TUI**: Default view changed from Tasks to Work
+- **TUI**: Work items sorted by status (active → paused → achieved → abandoned)
+- **Orchestra**: Improved chat handler with better model routing
+
+### Fixed
+- **TUI**: Light mode background now fills frame with correct base color
+- **TUI**: Work list scrolling keeps selected item visible
+
+### Removed
+- **Web**: Status filter dropdown from work page
+- **Web**: Unused agents, scratchpad, and status-badge components
+
+---
+
+
+## v20260318-2000 (2026-03-18)
+
+### Added
+- **TUI**: Create-task keybinding [t] on work page
+- **TUI**: Scrolling in work list keeps selected item visible
+- **TUI**: Work progress indicator (done/total) on work items
+- **TUI**: Keybindings for execute, plan+execute, and save in work form
+- **Web**: Global keyboard shortcuts with navigation keys and help overlay
+- **Web**: Inline title editing on work list header via double-click
+
+### Changed
+- **TUI**: Default view changed from Tasks to Work
+- **TUI**: Work items sorted by status (active → paused → achieved → abandoned)
+- **Web**: Status buttons renamed to Done, Pause, Abandon
+
+### Removed
+- **TUI**: Manual link-to-work functionality
+- **Web**: Status filter dropdown from work page
+- **Web**: Dead task picker code
+
+### Fixed
+- **TUI**: Light mode background now fills frame with correct base color
+
+---
+
 ## v20260318-1810 (2026-03-18)
 
 ### Added

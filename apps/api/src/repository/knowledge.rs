@@ -45,29 +45,17 @@ pub async fn get_knowledge_by_id(pool: &PgPool, id: Uuid) -> Result<Knowledge, A
     fetch_by_id(pool, Table::Knowledge, id, "Knowledge entry not found").await
 }
 
-pub async fn list_knowledge(
-    pool: &PgPool,
-    project_id: Uuid,
-    filters: &KnowledgeFilters,
-) -> Result<Vec<Knowledge>, AppError> {
-    let limit = filters.limit.unwrap_or(50).min(100);
-    let offset = filters.offset.unwrap_or(0);
-
-    let sql = format!(
-        "SELECT * FROM diraigent.knowledge {} ORDER BY created_at DESC LIMIT $4 OFFSET $5",
-        KNOWLEDGE_FILTERS_WHERE
-    );
-    let items = sqlx::query_as::<_, Knowledge>(&sql)
-        .bind(project_id)
-        .bind(&filters.category)
-        .bind(&filters.tag)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(pool)
-        .await?;
-
-    Ok(items)
-}
+super::list_and_count!(
+    list_knowledge,
+    count_knowledge,
+    Knowledge,
+    KnowledgeFilters,
+    "knowledge",
+    KNOWLEDGE_FILTERS_WHERE,
+    |f| f.limit,
+    |f| f.offset,
+    |q, f| q.bind(&f.category).bind(&f.tag)
+);
 
 pub async fn update_knowledge(
     pool: &PgPool,
@@ -128,23 +116,4 @@ pub async fn list_knowledge_with_embeddings(
     .fetch_all(pool)
     .await?;
     Ok(items)
-}
-
-pub async fn count_knowledge(
-    pool: &PgPool,
-    project_id: Uuid,
-    filters: &KnowledgeFilters,
-) -> Result<i64, AppError> {
-    let sql = format!(
-        "SELECT COUNT(*) FROM diraigent.knowledge {}",
-        KNOWLEDGE_FILTERS_WHERE
-    );
-    let row: (i64,) = sqlx::query_as(&sql)
-        .bind(project_id)
-        .bind(&filters.category)
-        .bind(&filters.tag)
-        .fetch_one(pool)
-        .await?;
-
-    Ok(row.0)
 }

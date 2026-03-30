@@ -1,15 +1,15 @@
-import { Component, inject, signal, computed, effect } from '@angular/core';
+import { Component, inject, signal, computed } from '@angular/core';
 import { DatePipe, SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
-import { ProjectContext } from '../../core/services/project-context.service';
 import {
   ReportsApiService,
   SpReport,
   ReportStatus,
   ReportKind,
 } from '../../core/services/reports-api.service';
+import { CrudFeatureBase } from '../../shared/crud-feature-base';
 import { FilterBarComponent } from '../../shared/components/filter-bar/filter-bar';
 import { ListDetailLayoutComponent } from '../../shared/components/list-detail-layout/list-detail-layout';
 import { ModalWrapperComponent } from '../../shared/components/modal-wrapper/modal-wrapper';
@@ -208,20 +208,14 @@ const KINDS: ReportKind[] = ['security', 'component', 'architecture', 'performan
     </div>
   `,
 })
-export class ReportsPage {
+export class ReportsPage extends CrudFeatureBase<SpReport> {
   private api = inject(ReportsApiService);
-  private ctx = inject(ProjectContext);
 
   readonly statuses = STATUSES;
   readonly kinds = KINDS;
 
-  items = signal<SpReport[]>([]);
-  loading = signal(false);
-  selected = signal<SpReport | null>(null);
-  searchQuery = signal('');
   selectedStatus = '';
 
-  showForm = signal(false);
   formTitle = '';
   formKind: ReportKind = 'custom';
   formPrompt = '';
@@ -239,18 +233,6 @@ export class ReportsPage {
     }
     return result.slice().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   });
-
-  constructor() {
-    effect(() => {
-      this.ctx.projectId();
-      this.selected.set(null);
-      this.loadItems();
-    });
-  }
-
-  selectItem(item: SpReport): void {
-    this.selected.set(item.id === this.selected()?.id ? null : item);
-  }
 
   statusColor(status: ReportStatus): string {
     return REPORT_STATUS_COLORS[status] ?? '';
@@ -283,15 +265,14 @@ export class ReportsPage {
     });
   }
 
-  openCreate(): void {
+  protected override resetForm(): void {
     this.formTitle = '';
     this.formKind = 'custom';
     this.formPrompt = '';
-    this.showForm.set(true);
   }
 
-  closeForm(): void {
-    this.showForm.set(false);
+  protected override fillForm(_item: SpReport): void {
+    // Reports only support create, not edit
   }
 
   submitForm(): void {
@@ -308,18 +289,11 @@ export class ReportsPage {
     });
   }
 
-  loadItems(): void {
+  override loadItems(): void {
     this.loading.set(true);
     const status = this.selectedStatus as ReportStatus | '';
     this.api.list(status || undefined).subscribe({
-      next: (items) => {
-        this.items.set(items);
-        this.loading.set(false);
-        if (this.selected()) {
-          const still = items.find(i => i.id === this.selected()!.id);
-          this.selected.set(still ?? null);
-        }
-      },
+      next: (items) => this.refreshAfterMutation(items),
       error: () => this.loading.set(false),
     });
   }

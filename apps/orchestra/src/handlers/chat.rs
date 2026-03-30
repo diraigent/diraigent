@@ -3,17 +3,101 @@ use crate::providers::{ProviderConfig, ProviderFactory, ResolvedStep, TaskContex
 use crate::ws::protocol::{ChatSseEvent, DoneMessage, WsMessage};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::LazyLock;
+use std::time::Instant;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::mpsc;
+use tokio::sync::{RwLock, mpsc};
 use tracing::{debug, error, info, warn};
 
 /// Default max tokens for message history before compression kicks in.
 const DEFAULT_MAX_MESSAGE_TOKENS: usize = 80_000;
 /// Fraction of budget reserved for recent messages (the rest is for the summary).
 const RECENT_BUDGET_FRACTION: f64 = 0.80;
+/// TTL for cached project metadata (seconds).
+const PROJECT_CACHE_TTL_SECS: u64 = 120;
+
+// ── Per-project metadata cache ──────────────────────────────────────────────
+
+struct CachedProjectInfo {
+    chat_provider: String,
+    chat_model: Option<String>,
+    working_dir: PathBuf,
+    fetched_at: Instant,
+}
+
+static PROJECT_CACHE: LazyLock<RwLock<HashMap<String, CachedProjectInfo>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
+
+/// Resolve chat provider, model, and working directory for a project.
+/// Results are cached for 2 minutes to avoid redundant API calls per chat message.
+async fn resolve_project_info(
+    api: &ProjectsApi,
+    project_id: &str,
+    projects_path: &Path,
+) -> (String, Option<String>, PathBuf) {
+    // Check cache first
+    {
+        let cache = PROJECT_CACHE.read().await;
+        if let Some(entry) = cache
+            .get(project_id)
+            .filter(|e| e.fetched_at.elapsed().as_secs() < PROJECT_CACHE_TTL_SECS)
+        {
+            return (
+                entry.chat_provider.clone(),
+                entry.chat_model.clone(),
+                entry.working_dir.clone(),
+            );
+        }
+    }
+
+    // Cache miss or expired — fetch fresh data
+    let (chat_provider, chat_model) = match api.get_project(project_id).await {
+        Ok(project) => {
+            let provider = project["metadata"]["chat_provider"]
+                .as_str()
+                .unwrap_or("claude-code")
+                .to_string();
+            let model = project["metadata"]["chat_model"]
+                .as_str()
+                .map(|s| s.to_string());
+            (provider, model)
+        }
+        Err(e) => {
+            warn!("chat: failed to fetch project metadata: {e}, using default provider");
+            ("claude-code".to_string(), None)
+        }
+    };
+
+    let working_dir = crate::project::paths::resolve_working_dir(api, project_id, projects_path)
+        .await
+        .unwrap_or_else(|e| {
+            warn!(
+                project_id = %project_id,
+                error = %e,
+                "failed to resolve project working dir, falling back to projects_path"
+            );
+            projects_path.to_path_buf()
+        });
+
+    // Store in cache
+    {
+        let mut cache = PROJECT_CACHE.write().await;
+        cache.insert(
+            project_id.to_string(),
+            CachedProjectInfo {
+                chat_provider: chat_provider.clone(),
+                chat_model: chat_model.clone(),
+                working_dir: working_dir.clone(),
+                fetched_at: Instant::now(),
+            },
+        );
+    }
+
+    (chat_provider, chat_model, working_dir)
+}
 
 // ── Types matching the API's chat types ──
 
@@ -47,44 +131,16 @@ pub async fn handle_chat_request_ws(
         }
     };
 
-    // Resolve chat provider and model from project metadata (default: "claude-code")
-    let (chat_provider, metadata_model) = match api.get_project(project_id).await {
-        Ok(project) => {
-            let provider = project["metadata"]["chat_provider"]
-                .as_str()
-                .unwrap_or("claude-code")
-                .to_string();
-            let model_meta = project["metadata"]["chat_model"]
-                .as_str()
-                .map(|s| s.to_string());
-            (provider, model_meta)
-        }
-        Err(e) => {
-            warn!("chat: failed to fetch project metadata: {e}, using default provider");
-            ("claude-code".to_string(), None)
-        }
-    };
+    // Resolve chat provider, model, and working directory (cached for 2 min)
+    let (chat_provider, metadata_model, working_dir) =
+        resolve_project_info(api, project_id, projects_path).await;
 
     // Model priority: client override (from WS message) > project metadata > original model param
     let resolved_model = if model.is_empty() {
         metadata_model.unwrap_or_else(|| model.to_string())
     } else {
-        // If the client sent a model, use it; but if it matches a generic fallback
-        // and metadata has a specific one, prefer metadata
         model.to_string()
     };
-
-    // Resolve the project's working directory from the API.
-    let working_dir = crate::project::paths::resolve_working_dir(api, project_id, projects_path)
-        .await
-        .unwrap_or_else(|e| {
-            warn!(
-                project_id = %project_id,
-                error = %e,
-                "failed to resolve project working dir, falling back to projects_path"
-            );
-            projects_path.to_path_buf()
-        });
 
     // Compress messages if they exceed the token budget
     let messages = compress_messages(messages, api, project_id).await;
@@ -467,9 +523,11 @@ async fn summarize_via_provider(
     // Limit the text we send for summarization to avoid huge requests.
     let max_summary_input = 60_000usize; // chars, ~15K tokens
     let truncated = if conversation_text.len() > max_summary_input {
-        let start = conversation_text.len() - max_summary_input;
-        let safe_start = conversation_text.ceil_char_boundary(start);
-        &conversation_text[safe_start..]
+        let mut start = conversation_text.len() - max_summary_input;
+        while start < conversation_text.len() && !conversation_text.is_char_boundary(start) {
+            start += 1;
+        }
+        &conversation_text[start..]
     } else {
         &conversation_text
     };

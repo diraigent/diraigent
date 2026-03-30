@@ -3,7 +3,7 @@ import { DatePipe, SlicePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TranslocoModule } from '@jsverse/transloco';
 import { forkJoin, of, Subscription } from 'rxjs';
-import { catchError, map, switchMap } from 'rxjs/operators';
+import { catchError, debounceTime, map, switchMap } from 'rxjs/operators';
 import { TasksApiService, SpTask, SpTaskUpdate } from '../../core/services/tasks-api.service';
 import { DiraigentApiService, DgProject } from '../../core/services/diraigent-api.service';
 import { GitApiService, TaskBranchStatus } from '../../core/services/git-api.service';
@@ -363,6 +363,7 @@ export class ReviewPage implements OnDestroy {
     // Re-fetch whenever the SSE stream signals a human_review change.
     // This replaces the 30 s polling timer — updates are now instant.
     this.sseSub = this.reviewSse.events.pipe(
+      debounceTime(500),
       switchMap(() => this.fetchReviewTasks()),
     ).subscribe({
       next: items => {

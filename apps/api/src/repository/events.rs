@@ -47,30 +47,17 @@ pub async fn get_event_by_id(pool: &PgPool, id: Uuid) -> Result<Event, AppError>
     fetch_by_id(pool, Table::Event, id, "Event not found").await
 }
 
-pub async fn list_events(
-    pool: &PgPool,
-    project_id: Uuid,
-    filters: &EventFilters,
-) -> Result<Vec<Event>, AppError> {
-    let limit = filters.limit.unwrap_or(50).min(100);
-    let offset = filters.offset.unwrap_or(0);
-
-    let sql = format!(
-        "SELECT * FROM diraigent.event {} ORDER BY created_at DESC LIMIT $5 OFFSET $6",
-        EVENT_FILTERS_WHERE
-    );
-    let items = sqlx::query_as::<_, Event>(&sql)
-        .bind(project_id)
-        .bind(&filters.kind)
-        .bind(&filters.severity)
-        .bind(filters.since)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(pool)
-        .await?;
-
-    Ok(items)
-}
+super::list_and_count!(
+    list_events,
+    count_events,
+    Event,
+    EventFilters,
+    "event",
+    EVENT_FILTERS_WHERE,
+    |f| f.limit,
+    |f| f.offset,
+    |q, f| q.bind(&f.kind).bind(&f.severity).bind(f.since)
+);
 
 pub async fn list_recent_events(
     pool: &PgPool,
@@ -87,24 +74,4 @@ pub async fn list_recent_events(
     .await?;
 
     Ok(items)
-}
-
-pub async fn count_events(
-    pool: &PgPool,
-    project_id: Uuid,
-    filters: &EventFilters,
-) -> Result<i64, AppError> {
-    let sql = format!(
-        "SELECT COUNT(*) FROM diraigent.event {}",
-        EVENT_FILTERS_WHERE
-    );
-    let row: (i64,) = sqlx::query_as(&sql)
-        .bind(project_id)
-        .bind(&filters.kind)
-        .bind(&filters.severity)
-        .bind(filters.since)
-        .fetch_one(pool)
-        .await?;
-
-    Ok(row.0)
 }

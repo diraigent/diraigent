@@ -3,5 +3,5 @@ name = "diraigent-types"
 version = "0.1.0"
 edition = "2024"
 
-# Zero dependencies — this crate is pure Rust types shared across the workspace.
 [dependencies]
+serde_json = "1"

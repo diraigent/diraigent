@@ -43,7 +43,7 @@ use crate::scoring::TaskScore;
             TaskFilters, TaskCostUpdate,
             BulkTransition, BulkDelegate, BulkDelete, BulkResult, BulkFailure,
             // -- Work --
-            Work, TaskWork, WorkComment, WorkProgress, WorkStats,
+            Work, TaskWork, WorkComment, WorkProgress, WorkStats, WorkSummary,
             CreateWork, UpdateWork, ReorderWorks, LinkTaskWork,
             BulkLinkTasks, CreateWorkComment, ReorderWorkTasks, WorkFilters,
             // -- Knowledge --
@@ -719,6 +719,13 @@ fn register_all_paths(openapi: &mut utoipa::openapi::OpenApi) {
             tag: "work",
             summary: "Unlink task from work",
             op_id: "unlink_task",
+        },
+        R {
+            method: HttpMethod::Get,
+            path: "/v1/{project_id}/work/summaries",
+            tag: "work",
+            summary: "Bulk work summaries (progress + stats)",
+            op_id: "get_bulk_work_summaries",
         },
         R {
             method: HttpMethod::Get,

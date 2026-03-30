@@ -51,30 +51,17 @@ pub async fn get_observation_by_id(pool: &PgPool, id: Uuid) -> Result<Observatio
     fetch_by_id(pool, Table::Observation, id, "Observation not found").await
 }
 
-pub async fn list_observations(
-    pool: &PgPool,
-    project_id: Uuid,
-    filters: &ObservationFilters,
-) -> Result<Vec<Observation>, AppError> {
-    let limit = filters.limit.unwrap_or(50).min(100);
-    let offset = filters.offset.unwrap_or(0);
-
-    let sql = format!(
-        "SELECT * FROM diraigent.observation {} ORDER BY created_at DESC LIMIT $5 OFFSET $6",
-        OBSERVATION_FILTERS_WHERE
-    );
-    let items = sqlx::query_as::<_, Observation>(&sql)
-        .bind(project_id)
-        .bind(&filters.kind)
-        .bind(&filters.severity)
-        .bind(&filters.status)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(pool)
-        .await?;
-
-    Ok(items)
-}
+super::list_and_count!(
+    list_observations,
+    count_observations,
+    Observation,
+    ObservationFilters,
+    "observation",
+    OBSERVATION_FILTERS_WHERE,
+    |f| f.limit,
+    |f| f.offset,
+    |q, f| q.bind(&f.kind).bind(&f.severity).bind(&f.status)
+);
 
 pub async fn update_observation(
     pool: &PgPool,
@@ -161,8 +148,8 @@ pub async fn promote_observation(
 
     // 1. Create a Work item from the observation.
     let work = sqlx::query_as::<_, Work>(
-        "INSERT INTO diraigent.work (project_id, title, description, work_type, priority, auto_status, success_criteria, metadata, created_by, sort_order)
-         VALUES ($1, $2, $3, 'epic', 0, true, $4, $5, $6,
+        "INSERT INTO diraigent.work (project_id, title, description, work_type, auto_status, success_criteria, metadata, created_by, sort_order)
+         VALUES ($1, $2, $3, 'epic', true, $4, $5, $6,
                  (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM diraigent.work WHERE project_id = $1))
          RETURNING *",
     )
@@ -354,24 +341,4 @@ pub async fn delete_old_observations_all_projects(
     .await?;
 
     Ok(result.rows_affected())
-}
-
-pub async fn count_observations(
-    pool: &PgPool,
-    project_id: Uuid,
-    filters: &ObservationFilters,
-) -> Result<i64, AppError> {
-    let sql = format!(
-        "SELECT COUNT(*) FROM diraigent.observation {}",
-        OBSERVATION_FILTERS_WHERE
-    );
-    let row: (i64,) = sqlx::query_as(&sql)
-        .bind(project_id)
-        .bind(&filters.kind)
-        .bind(&filters.severity)
-        .bind(&filters.status)
-        .fetch_one(pool)
-        .await?;
-
-    Ok(row.0)
 }

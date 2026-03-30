@@ -200,9 +200,6 @@ async fn list_ready_tasks(
     // Batch-load blocking counts: how many tasks each ready task blocks
     let blocking_counts = batch_blocking_counts(&state.pool, &task_ids).await?;
 
-    // Batch-load active work priorities linked to each task
-    let work_priorities = batch_work_priorities(&state.pool, &task_ids).await?;
-
     let now = chrono::Utc::now();
     let weights = crate::scoring::ScoreWeights::default();
 
@@ -214,7 +211,6 @@ async fn list_ready_tasks(
                 created_at: task.created_at,
                 urgent: task.urgent,
                 blocking_count: *blocking_counts.get(&task.id).unwrap_or(&0),
-                work_priorities: work_priorities.get(&task.id).cloned().unwrap_or_default(),
             };
             let score = crate::scoring::compute_score(&input, now, &weights);
             ScoredTask {
@@ -255,30 +251,6 @@ async fn batch_blocking_counts(
     .await?;
 
     Ok(rows.into_iter().collect())
-}
-
-/// Batch-fetch active work item priorities linked to each task.
-/// Returns a map of task_id → list of work priorities.
-async fn batch_work_priorities(
-    pool: &sqlx::PgPool,
-    task_ids: &[Uuid],
-) -> Result<HashMap<Uuid, Vec<i32>>, AppError> {
-    let rows: Vec<(Uuid, i32)> = sqlx::query_as(
-        "SELECT tw.task_id, w.priority
-         FROM diraigent.task_work tw
-         JOIN diraigent.work w ON tw.work_id = w.id
-         WHERE tw.task_id = ANY($1)
-           AND w.status IN ('active', 'ready', 'processing')",
-    )
-    .bind(task_ids)
-    .fetch_all(pool)
-    .await?;
-
-    let mut map: HashMap<Uuid, Vec<i32>> = HashMap::new();
-    for (task_id, priority) in rows {
-        map.entry(task_id).or_default().push(priority);
-    }
-    Ok(map)
 }
 
 async fn list_blocked_task_ids(
@@ -483,6 +455,19 @@ async fn transition_task(
     Path(task_id): Path<Uuid>,
     Json(req): Json<TransitionTask>,
 ) -> Result<Json<Task>, AppError> {
+    // Guard: orchestra-managed tasks reject direct API mutations (except human_review).
+    {
+        let task = state.db.get_task_by_id(task_id).await?;
+        if task.state_managed_by == "orchestra"
+            && task.state != "human_review"
+            && agent_id.is_some()
+        {
+            return Err(AppError::Conflict(
+                "Task state is managed by orchestra — use orchestra sync".into(),
+            ));
+        }
+    }
+
     // Capture before-state for audit; also verifies execute authority.
     let before = ensure_authority_on(
         state.db.as_ref(),
@@ -563,9 +548,15 @@ async fn claim_task(
     Path(task_id): Path<Uuid>,
     Json(req): Json<ClaimTask>,
 ) -> Result<Json<Task>, AppError> {
+    // Guard: orchestra-managed tasks cannot be claimed via API.
+    let before = state.db.get_task_by_id(task_id).await?;
+    if before.state_managed_by == "orchestra" && agent_id.is_some() {
+        return Err(AppError::Conflict(
+            "Task state is managed by orchestra — claim via orchestra".into(),
+        ));
+    }
     // Fetch task, then check authority for the playbook step being entered.
     // "review" step accepts either execute or review authority.
-    let before = state.db.get_task_by_id(task_id).await?;
     let step_name = state.db.resolve_claim_step_name(&before).await?;
     let allowed = authorities_for_claim(&step_name);
     ensure_any_authority_on(state.db.as_ref(), agent_id, user_id, before, &allowed).await?;
@@ -591,6 +582,15 @@ async fn release_task(
     OptionalAgentId(agent_id): OptionalAgentId,
     Path(task_id): Path<Uuid>,
 ) -> Result<Json<Task>, AppError> {
+    // Guard: orchestra-managed tasks cannot be released via API.
+    {
+        let task = state.db.get_task_by_id(task_id).await?;
+        if task.state_managed_by == "orchestra" && agent_id.is_some() {
+            return Err(AppError::Conflict(
+                "Task state is managed by orchestra — release via orchestra".into(),
+            ));
+        }
+    }
     ensure_authority_on(
         state.db.as_ref(),
         agent_id,
@@ -1146,6 +1146,12 @@ async fn record_task_cost(
 ) -> Result<Json<Task>, AppError> {
     // Resolve project_id for the membership check
     let task = state.db.get_task_by_id(task_id).await?;
+    // Guard: orchestra-managed tasks track cost locally.
+    if task.state_managed_by == "orchestra" && agent_id.is_some() {
+        return Err(AppError::Conflict(
+            "Task cost is managed by orchestra — use orchestra sync".into(),
+        ));
+    }
     ensure_member(state.db.as_ref(), agent_id, user_id, task).await?;
 
     let updated = state

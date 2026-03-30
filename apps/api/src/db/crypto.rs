@@ -590,7 +590,6 @@ impl DiraigentDb for CryptoDb {
                     .map(|d| dek.encrypt_str(d, "work.description"))
                     .transpose()?,
                 work_type: req.work_type.clone(),
-                priority: req.priority,
                 parent_work_id: req.parent_work_id,
                 auto_status: req.auto_status,
                 intent_type: req.intent_type.clone(),
@@ -657,7 +656,6 @@ impl DiraigentDb for CryptoDb {
                     .transpose()?,
                 status: req.status.clone(),
                 work_type: req.work_type.clone(),
-                priority: req.priority,
                 parent_work_id: req.parent_work_id,
                 auto_status: req.auto_status,
                 intent_type: req.intent_type.clone(),
@@ -753,6 +751,12 @@ impl DiraigentDb for CryptoDb {
     }
     async fn work_status_counts(&self, project_id: Uuid) -> Result<Vec<(String, i64)>, AppError> {
         delegate!(self, work_status_counts, project_id)
+    }
+    async fn get_bulk_work_summaries(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<WorkSummary>, AppError> {
+        delegate!(self, get_bulk_work_summaries, project_id)
     }
     // ── Work Comments (encrypt content) ──
     async fn create_work_comment(

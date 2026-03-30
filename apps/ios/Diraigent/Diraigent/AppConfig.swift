@@ -1,0 +1,28 @@
+import Foundation
+
+/// App configuration per environment.
+struct AppConfig: Sendable {
+    let apiBaseURL: String
+    let authIssuer: String
+    let authClientId: String
+    let authRedirectURI: String
+
+    /// Development config (localhost).
+    static let development = AppConfig(
+        apiBaseURL: "http://localhost:3000/v1",
+        authIssuer: "https://auth.diraigent.com/application/o/diraigent/",
+        authClientId: "kvuNVJmjVOdhwSfmBDwlSMJw6XxExtjaib5wEDsu",
+        authRedirectURI: "diraigent://auth/callback"
+    )
+
+    /// Production config.
+    static let production = AppConfig(
+        apiBaseURL: "https://api.diraigent.com/v1",
+        authIssuer: "https://auth.diraigent.com/application/o/diraigent/",
+        authClientId: "kvuNVJmjVOdhwSfmBDwlSMJw6XxExtjaib5wEDsu",
+        authRedirectURI: "diraigent://auth/callback"
+    )
+
+    /// Active configuration — toggle to `development` for localhost testing.
+    static let current = production
+}

@@ -1,5 +1,6 @@
 import { Component, inject, AfterViewInit, OnDestroy, signal, effect } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
+import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import { filter } from 'rxjs/operators';
 import { SidebarComponent } from './shared/components/sidebar/sidebar';
 import { ChatDrawerComponent } from './features/chat/chat-drawer';
 import { AuthService } from './core/services/auth.service';
@@ -59,6 +60,8 @@ import { KeyboardHelpComponent } from './shared/components/keyboard-help/keyboar
           <p class="text-text-secondary">Loading...</p>
         </div>
       </div>
+    } @else if (isLandingRoute()) {
+      <router-outlet />
     } @else {
       <div class="min-h-screen flex items-center justify-center bg-bg-subtle">
         <div class="text-center space-y-6">
@@ -76,15 +79,18 @@ import { KeyboardHelpComponent } from './shared/components/keyboard-help/keyboar
           </div>
         </div>
       </div>
-      <router-outlet />
     }
   `,
 })
 export class App implements AfterViewInit, OnDestroy {
+  private router = inject(Router);
   auth = inject(AuthService);
   createProject = inject(CreateProjectService);
   chat = inject(ChatService);
   keyboard = inject(KeyboardService);
+
+  /** True when the current URL is the landing page (root path). */
+  isLandingRoute = signal(false);
 
   /** Whether the floating chat button should be visible (mobile only, chat out of viewport). */
   showChatFab = signal(false);
@@ -97,6 +103,12 @@ export class App implements AfterViewInit, OnDestroy {
   private detachKeyboard: (() => void) | null = null;
 
   constructor() {
+    // Track whether we're on the landing page
+    this.isLandingRoute.set(this.router.url === '/');
+    this.router.events
+      .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
+      .subscribe(e => this.isLandingRoute.set(e.urlAfterRedirects === '/'));
+
     // Attach global keyboard shortcuts
     this.detachKeyboard = this.keyboard.attach();
 

@@ -308,6 +308,12 @@ impl DiraigentDb for PostgresDb {
     async fn work_status_counts(&self, project_id: Uuid) -> Result<Vec<(String, i64)>, AppError> {
         repository::work_status_counts(&self.0, project_id).await
     }
+    async fn get_bulk_work_summaries(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<WorkSummary>, AppError> {
+        repository::get_bulk_work_summaries(&self.0, project_id).await
+    }
 
     // Work Comments
     async fn create_work_comment(
