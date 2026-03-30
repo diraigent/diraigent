@@ -16,11 +16,20 @@ import { KeyboardHelpComponent } from './shared/components/keyboard-help/keyboar
   imports: [RouterOutlet, SidebarComponent, ChatDrawerComponent, CreateProjectModalComponent, KeyboardHelpComponent],
   template: `
     @if (auth.isLoggedIn()) {
-      <app-sidebar [class.hidden]="chat.fullscreen()" />
+      <app-sidebar #sidebar [class.hidden]="chat.fullscreen()" />
       <div class="h-dvh flex flex-col min-w-0 overflow-x-hidden"
            [class.lg:ml-64]="!chat.fullscreen()">
-        <main id="main-content" class="flex-[2] overflow-y-auto overflow-x-hidden pt-14 lg:pt-0 min-w-0" tabindex="-1"
+        <main id="main-content" class="flex-[2] overflow-y-auto overflow-x-hidden min-w-0" tabindex="-1"
               [class.hidden]="chat.fullscreen()">
+          <!-- Mobile hamburger bar -->
+          <div class="lg:hidden sticky top-0 z-20 flex items-center h-11 px-2 bg-bg-subtle/95 backdrop-blur-sm">
+            <button (click)="sidebar.toggleMobile()"
+                    class="p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+              </svg>
+            </button>
+          </div>
           <router-outlet />
         </main>
         <div id="chat-panel" class="overflow-hidden"
