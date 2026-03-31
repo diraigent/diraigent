@@ -58,6 +58,7 @@ async fn chat_handler(
         .unwrap_or_else(|| format!("X-Dev-User-Id: {user_id}"));
 
     let (tx, rx) = mpsc::channel::<ChatSseEvent>(64);
+    let tx_watch = tx.clone();
 
     // Use a oneshot so the spawned chat task can report its session_id back.
     let (sid_tx, sid_rx) = tokio::sync::oneshot::channel::<String>();
@@ -82,31 +83,30 @@ async fn chat_handler(
     });
 
     // Spawn a watcher that cancels the orchestra subprocess when the SSE
-    // client disconnects. We monitor the mpsc sender: once the receiver is
-    // dropped (client gone), `tx_watch.closed()` resolves and we cancel.
+    // client disconnects. We await `tx_watch.closed()` which resolves
+    // instantly when the receiver is dropped (client gone), giving us
+    // zero-latency disconnect detection instead of polling.
     let ws_registry_cancel = ws_registry.clone();
     tokio::spawn(async move {
-        let session_id = match sid_rx.await {
-            Ok(sid) => sid,
-            Err(_) => return, // chat stream failed before registering a session
+        // Wait for session_id, but also watch for early client disconnect.
+        let session_id = tokio::select! {
+            result = sid_rx => {
+                match result {
+                    Ok(sid) => sid,
+                    Err(_) => return, // chat stream failed before registering
+                }
+            }
+            _ = tx_watch.closed() => {
+                // Client disconnected before session was registered;
+                // the chat stream will see tx is closed and stop on its own.
+                return;
+            }
         };
-        // Wait for the session to complete or be cancelled externally.
-        // We can detect client disconnect by checking if the session is still
-        // active in the registry — if the SSE receiver was dropped, events
-        // sent via route_chat_event will fail. Poll periodically.
-        let mut interval = tokio::time::interval(Duration::from_secs(2));
-        loop {
-            interval.tick().await;
-            if !ws_registry_cancel.is_chat_active(&session_id) {
-                // Session already completed or cancelled
-                return;
-            }
-            // Check if the SSE client is gone by testing the sender
-            if ws_registry_cancel.is_chat_sender_closed(&session_id) {
-                tracing::info!(session_id, "SSE client disconnected, cancelling chat");
-                ws_registry_cancel.cancel_chat_session(&session_id);
-                return;
-            }
+        // Wait for the SSE client to disconnect (receiver dropped).
+        tx_watch.closed().await;
+        if ws_registry_cancel.is_chat_active(&session_id) {
+            tracing::info!(session_id, "SSE client disconnected, cancelling chat");
+            ws_registry_cancel.cancel_chat_session(&session_id);
         }
     });
 

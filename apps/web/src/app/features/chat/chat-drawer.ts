@@ -1,4 +1,4 @@
-import { Component, inject, viewChild, ElementRef, effect, untracked, HostListener, Pipe, PipeTransform } from '@angular/core';
+import { Component, inject, viewChild, ElementRef, effect, untracked, HostListener, Pipe, PipeTransform, signal, OnDestroy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ChatService, CHAT_MODELS } from '../../core/services/chat.service';
 import { Marked, type MarkedExtension } from 'marked';
@@ -53,6 +53,11 @@ export class ChatMarkdownPipe implements PipeTransform {
     @import 'highlight.js/styles/atom-one-dark.css';
 
     /* ── Chat markdown prose styles ── */
+    .chat-md {
+      overflow-wrap: break-word;
+      word-break: break-word;
+      min-width: 0;
+    }
     .chat-md :is(h1, h2, h3, h4) {
       font-weight: 600;
       margin-top: 0.75rem;
@@ -88,6 +93,7 @@ export class ChatMarkdownPipe implements PipeTransform {
       margin: 0.5rem 0;
       font-size: 0.8125rem;
       line-height: 1.5;
+      max-width: 100%;
     }
     .chat-md .chat-code-block code {
       background: transparent;
@@ -119,7 +125,7 @@ export class ChatMarkdownPipe implements PipeTransform {
       color: var(--color-accent, #60a5fa);
       text-decoration: underline;
     }
-    .chat-md table { border-collapse: collapse; margin: 0.5rem 0; width: 100%; font-size: 0.8125rem; }
+    .chat-md table { border-collapse: collapse; margin: 0.5rem 0; width: 100%; font-size: 0.8125rem; display: block; overflow-x: auto; }
     .chat-md th, .chat-md td { border: 1px solid rgba(255,255,255,0.1); padding: 0.35rem 0.5rem; text-align: left; }
     .chat-md th { font-weight: 600; background: rgba(255,255,255,0.04); }
     .chat-md hr { border-color: rgba(255,255,255,0.1); margin: 0.75rem 0; }
@@ -133,6 +139,9 @@ export class ChatMarkdownPipe implements PipeTransform {
         <div class="flex items-center justify-between px-4 py-3 border-b border-border bg-bg-subtle">
           <div class="flex items-center gap-2">
             <span class="font-semibold text-text-primary">AI Assistant</span>
+            @if (!chat.orchestraConnected()) {
+              <span class="w-2 h-2 rounded-full bg-ctp-red animate-pulse" title="Orchestra disconnected"></span>
+            }
             <div class="relative">
               <button (click)="chat.toggleModelSelector(); $event.stopPropagation()"
                       class="text-xs text-text-secondary font-normal hover:text-accent transition-colors
@@ -203,8 +212,8 @@ export class ChatMarkdownPipe implements PipeTransform {
           <div class="overflow-hidden flex flex-col min-h-0">
 
             <!-- Messages -->
-            <div #messageList class="flex-1 overflow-y-auto min-h-0 p-4" (scroll)="onScroll()">
-              <div class="max-w-3xl mx-auto space-y-3">
+            <div #messageList class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 p-4" (scroll)="onScroll()">
+              <div class="max-w-3xl mx-auto space-y-3 min-w-0">
               @if (!chat.canSend()) {
                 <div class="flex flex-col items-center justify-center h-full text-center px-6">
                   <div class="text-text-muted text-sm">
@@ -213,14 +222,23 @@ export class ChatMarkdownPipe implements PipeTransform {
                   </div>
                 </div>
               }
+              @if (chat.canSend() && !chat.orchestraConnected()) {
+                <div class="flex items-center gap-2 px-3 py-2 mb-2 text-xs text-ctp-peach bg-ctp-peach/10 rounded-lg">
+                  <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                  <span>No orchestra connected — chat may not work until an orchestra agent reconnects.</span>
+                </div>
+              }
               @for (msg of chat.messages(); track $index) {
-                <div [class]="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
+                <div [class]="msg.role === 'user' ? 'flex justify-end min-w-0' : 'flex justify-start min-w-0'">
                   @if (msg.role === 'user') {
-                    <div class="max-w-[85%] rounded-2xl rounded-br-md px-4 py-2 bg-accent text-bg text-sm whitespace-pre-wrap">
+                    <div class="max-w-[85%] rounded-2xl rounded-br-md px-4 py-2 bg-accent text-bg text-sm whitespace-pre-wrap break-words overflow-hidden">
                       {{ msg.content }}
                     </div>
                   } @else {
-                    <div class="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2 bg-bg-subtle text-text-primary text-sm chat-md"
+                    <div class="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2 bg-bg-subtle text-text-primary text-sm chat-md overflow-hidden"
                          [innerHTML]="msg.content | chatMarkdown">
                     </div>
                   }
@@ -229,8 +247,8 @@ export class ChatMarkdownPipe implements PipeTransform {
 
               <!-- Streaming text -->
               @if (chat.streaming() && chat.streamingText()) {
-                <div class="flex justify-start">
-                  <div class="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2 bg-bg-subtle text-text-primary text-sm chat-md">
+                <div class="flex justify-start min-w-0">
+                  <div class="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2 bg-bg-subtle text-text-primary text-sm chat-md overflow-hidden">
                     <span [innerHTML]="chat.streamingText() | chatMarkdown"></span>
                     <span class="inline-block w-1.5 h-4 bg-accent animate-pulse ml-0.5 align-text-bottom"></span>
                   </div>
@@ -239,7 +257,7 @@ export class ChatMarkdownPipe implements PipeTransform {
 
               <!-- Thinking indicator -->
               @if (chat.streaming() && !chat.streamingText() && chat.activeTools().length === 0 && chat.toolsCompleted() === 0) {
-                <div class="flex justify-start">
+                <div class="flex justify-start min-w-0">
                   @if (chat.thinkingText()) {
                     <details class="max-w-[85%] rounded-2xl rounded-bl-md bg-bg-subtle text-sm group" [attr.open]="thinkingExpanded ? '' : null">
                       <summary (click)="thinkingExpanded = !thinkingExpanded; $event.preventDefault()"
@@ -292,26 +310,26 @@ export class ChatMarkdownPipe implements PipeTransform {
 
             <!-- Input -->
             <div class="border-t border-border p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-              <div class="max-w-3xl mx-auto flex gap-2">
+              <div class="max-w-3xl mx-auto flex gap-2 min-w-0">
                 <textarea
                   #inputEl
                   [(ngModel)]="inputText"
                   (keydown.enter)="onEnter($event)"
                   [placeholder]="chat.canSend() ? 'Ask about your project...' : 'Select a project first'"
                   [disabled]="!chat.canSend()"
-                  rows="1"
-                  class="flex-1 resize-none rounded-xl border border-border bg-bg-subtle px-3 py-2
-                         min-h-[44px] text-sm text-text-primary placeholder:text-text-secondary
+                  [attr.rows]="isMobile() ? 2 : 1"
+                  class="flex-1 min-w-0 resize-none rounded-xl border border-border bg-bg-subtle px-3 py-2
+                         min-h-[44px] text-[16px] sm:text-sm text-text-primary placeholder:text-text-secondary
                          focus:outline-none focus:ring-1 focus:ring-accent"></textarea>
                 @if (chat.streaming()) {
                   <button (click)="chat.cancel()"
-                          class="self-end px-3 py-2 rounded-xl bg-ctp-red/10 text-ctp-red text-sm hover:bg-ctp-red/20 transition-colors">
+                          class="self-end shrink-0 px-3 py-2 rounded-xl bg-ctp-red/10 text-ctp-red text-sm hover:bg-ctp-red/20 transition-colors">
                     Stop
                   </button>
                 }
                 <button (click)="sendMessage()"
                         [disabled]="!inputText.trim() || !chat.canSend()"
-                        class="self-end px-3 py-2 rounded-xl bg-accent text-bg text-sm hover:opacity-90 transition-opacity
+                        class="self-end shrink-0 px-3 py-2 rounded-xl bg-accent text-bg text-sm hover:opacity-90 transition-opacity
                                disabled:opacity-40 disabled:cursor-not-allowed">
                   Send
                 </button>
@@ -323,11 +341,16 @@ export class ChatMarkdownPipe implements PipeTransform {
       </div>
   `,
 })
-export class ChatDrawerComponent {
+export class ChatDrawerComponent implements OnDestroy {
   chat = inject(ChatService);
   inputText = '';
   thinkingExpanded = false;
   readonly models = CHAT_MODELS;
+
+  /** Tracks whether viewport is mobile-sized (< 640px). */
+  readonly isMobile = signal(window.innerWidth < 640);
+  private mobileQuery = window.matchMedia('(max-width: 639px)');
+  private onMobileChange = (e: MediaQueryListEvent) => this.isMobile.set(e.matches);
 
   private messageList = viewChild<ElementRef<HTMLDivElement>>('messageList');
 
@@ -341,6 +364,8 @@ export class ChatDrawerComponent {
   private userScrolledUp = false;
 
   constructor() {
+    this.mobileQuery.addEventListener('change', this.onMobileChange);
+
     // Auto-scroll whenever messages or streaming content change,
     // unless the user has deliberately scrolled up to read history.
     effect(() => {
@@ -355,6 +380,10 @@ export class ChatDrawerComponent {
         }
       });
     });
+  }
+
+  ngOnDestroy(): void {
+    this.mobileQuery.removeEventListener('change', this.onMobileChange);
   }
 
   /**
