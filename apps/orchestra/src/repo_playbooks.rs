@@ -268,9 +268,8 @@ pub struct SyncResult {
 /// Orphaned API playbooks (source=repo but no matching repo file) are logged as
 /// warnings but not auto-deleted.
 pub async fn sync_repo_playbooks(
-    api: &crate::project::api::ProjectsApi,
+    api: &dyn crate::engine::task_source::TaskSource,
     repo_root: &Path,
-    _tenant_id: Option<&str>,
 ) -> Result<Vec<SyncResult>> {
     let repo_playbooks = load_repo_playbooks(repo_root)?;
     if repo_playbooks.is_empty() {
