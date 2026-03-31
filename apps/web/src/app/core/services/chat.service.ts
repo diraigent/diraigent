@@ -46,9 +46,12 @@ export class ChatService {
   readonly modelSelectorOpen = signal(false);
   /** Whether the chat panel is in full-screen mode. */
   readonly fullscreen = signal(localStorage.getItem('diraigent-chat-fullscreen') === 'true');
+  /** Whether any orchestra agent has an active WebSocket connection to the API. */
+  readonly orchestraConnected = signal(true); // assume connected initially to avoid flicker
 
   private abortController: AbortController | null = null;
   private generation = 0;
+  private configPollTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.fetchChatModel();
@@ -297,6 +300,12 @@ export class ChatService {
   }
 
   private async fetchChatModel(): Promise<void> {
+    await this.fetchConfig();
+    // Poll config every 30s to keep ws_connected status current
+    this.configPollTimer = setInterval(() => this.fetchConfig(), 30_000);
+  }
+
+  private async fetchConfig(): Promise<void> {
     try {
       const res = await fetch(`${environment.apiServer}/config`);
       if (!res.ok) return;
@@ -305,8 +314,12 @@ export class ChatService {
       if (data.chat_model && !localStorage.getItem(MODEL_STORAGE_KEY)) {
         this.chatModel.set(data.chat_model);
       }
+      if (typeof data.ws_connected === 'boolean') {
+        this.orchestraConnected.set(data.ws_connected);
+      }
     } catch {
-      // Config endpoint unavailable — leave model blank
+      // Config endpoint unavailable — assume disconnected
+      this.orchestraConnected.set(false);
     }
   }
 }

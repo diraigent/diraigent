@@ -139,6 +139,9 @@ export class ChatMarkdownPipe implements PipeTransform {
         <div class="flex items-center justify-between px-4 py-3 border-b border-border bg-bg-subtle">
           <div class="flex items-center gap-2">
             <span class="font-semibold text-text-primary">AI Assistant</span>
+            @if (!chat.orchestraConnected()) {
+              <span class="w-2 h-2 rounded-full bg-ctp-red animate-pulse" title="Orchestra disconnected"></span>
+            }
             <div class="relative">
               <button (click)="chat.toggleModelSelector(); $event.stopPropagation()"
                       class="text-xs text-text-secondary font-normal hover:text-accent transition-colors
@@ -217,6 +220,15 @@ export class ChatMarkdownPipe implements PipeTransform {
                     <p class="font-medium text-text-secondary mb-1">No project selected</p>
                     <p>Create or select a project to start chatting with the AI assistant.</p>
                   </div>
+                </div>
+              }
+              @if (chat.canSend() && !chat.orchestraConnected()) {
+                <div class="flex items-center gap-2 px-3 py-2 mb-2 text-xs text-ctp-peach bg-ctp-peach/10 rounded-lg">
+                  <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                  <span>No orchestra connected — chat may not work until an orchestra agent reconnects.</span>
                 </div>
               }
               @for (msg of chat.messages(); track $index) {
