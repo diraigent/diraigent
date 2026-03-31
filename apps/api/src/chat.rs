@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -196,6 +197,7 @@ pub async fn run_chat_stream(p: ChatStreamParams) -> Option<String> {
     let agent_ids = match db.list_tenant_agent_ids(tenant_id).await {
         Ok(ids) => ids,
         Err(e) => {
+            tracing::error!(%tenant_id, error = %e, "chat: failed to list tenant agents");
             let _ = tx
                 .send(ChatSseEvent::Error {
                     message: format!("Failed to find agents: {e}"),
@@ -205,15 +207,62 @@ pub async fn run_chat_stream(p: ChatStreamParams) -> Option<String> {
         }
     };
 
-    let agent_id = match ws_registry.find_connected_agent(&agent_ids) {
-        Some(id) => id,
-        None => {
-            let _ = tx
-                .send(ChatSseEvent::Error {
-                    message: "No orchestra agent connected".into(),
-                })
-                .await;
-            return None;
+    if agent_ids.is_empty() {
+        tracing::warn!(%tenant_id, "chat: no agents registered in tenant");
+        let _ = tx
+            .send(ChatSseEvent::Error {
+                message: "No agents registered for this project's tenant. \
+                          Add an agent membership first."
+                    .into(),
+            })
+            .await;
+        return None;
+    }
+
+    // Retry a few times to handle brief WS reconnection windows.
+    // The orchestra auto-reconnects every 5s, so waiting up to 6s covers one full cycle.
+    let agent_id = {
+        const MAX_RETRIES: u32 = 3;
+        const RETRY_DELAY: Duration = Duration::from_secs(2);
+        let mut found = ws_registry.find_connected_agent(&agent_ids);
+        if found.is_none() {
+            tracing::info!(
+                %tenant_id,
+                agent_count = agent_ids.len(),
+                "chat: no connected agent found, retrying..."
+            );
+        }
+        for attempt in 1..=MAX_RETRIES {
+            if found.is_some() {
+                break;
+            }
+            tokio::time::sleep(RETRY_DELAY).await;
+            found = ws_registry.find_connected_agent(&agent_ids);
+            if found.is_some() {
+                tracing::info!(attempt, "chat: agent connected after retry");
+            }
+        }
+        match found {
+            Some(id) => id,
+            None => {
+                tracing::warn!(
+                    %tenant_id,
+                    agent_count = agent_ids.len(),
+                    has_any_ws = ws_registry.has_connections(),
+                    "chat: no orchestra agent connected after retries"
+                );
+                let _ = tx
+                    .send(ChatSseEvent::Error {
+                        message: format!(
+                            "No orchestra agent connected. {} agent(s) registered \
+                             but none have an active WebSocket connection. \
+                             Check that your orchestra process is running.",
+                            agent_ids.len()
+                        ),
+                    })
+                    .await;
+                return None;
+            }
         }
     };
 

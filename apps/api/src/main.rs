@@ -231,11 +231,13 @@ async fn main() -> anyhow::Result<()> {
                 let chat_model = env::var("CHAT_MODEL").unwrap_or_else(|_| "sonnet".into());
                 let api_version = env::var("DIRAIGENT_VERSION")
                     .unwrap_or_else(|_| env!("CARGO_PKG_VERSION").to_string());
-                move || async move {
+                move |State(state): State<AppState>| async move {
+                    let ws_connected = state.ws_registry.has_connections();
                     Json(json!({
                         "auth_required": auth_required,
                         "chat_model": chat_model,
                         "api_version": api_version,
+                        "ws_connected": ws_connected,
                     }))
                 }
             }),
