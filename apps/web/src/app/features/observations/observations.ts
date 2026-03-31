@@ -152,14 +152,8 @@ const STATUSES: ObservationStatus[] = ['open', 'acknowledged', 'acted_on', 'dism
               <!-- Expanded detail (inline) -->
               @if (item.id === selected()?.id) {
                 <div class="px-4 pb-4 pt-0 border-t border-border/50 mt-0">
-                  <!-- Badges + Actions -->
+                  <!-- Status badge (kind + severity already shown in header) -->
                   <div class="flex items-center gap-2 pt-3 mb-3 flex-wrap">
-                    <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ severityColor(item.severity) }}">
-                      {{ t('observations.severity.' + item.severity) }}
-                    </span>
-                    <span class="px-2 py-0.5 rounded-full text-xs font-medium {{ kindColor(item.kind) }}">
-                      {{ t('observations.kind.' + item.kind) }}
-                    </span>
                     <span class="px-1.5 py-0.5 bg-surface-hover text-text-secondary rounded text-xs">
                       {{ t('observations.status.' + item.status) }}
                     </span>
