@@ -21,16 +21,17 @@ import { KeyboardHelpComponent } from './shared/components/keyboard-help/keyboar
            [class.lg:ml-64]="!chat.fullscreen()">
         <main id="main-content" class="flex-[2] overflow-y-auto overflow-x-hidden min-w-0" tabindex="-1"
               [class.hidden]="chat.fullscreen()">
-          <!-- Mobile hamburger bar -->
-          <div class="lg:hidden sticky top-0 z-20 flex items-center h-11 px-2 bg-bg-subtle/95 backdrop-blur-sm">
+          <!-- Mobile hamburger — overlays inline with page header (no vertical space consumed) -->
+          <div class="lg:hidden sticky top-0 z-20 h-12 -mb-12 flex items-start pt-3 px-1 pointer-events-none">
             <button (click)="sidebar.toggleMobile()"
-                    class="p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors">
+                    class="pointer-events-auto p-2 rounded-lg bg-bg-subtle/90 backdrop-blur-sm shadow-sm
+                           text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
               </svg>
             </button>
           </div>
-          <div class="w-full max-w-7xl mx-auto">
+          <div class="w-full max-w-7xl mx-auto pl-10 lg:pl-0">
             <router-outlet />
           </div>
         </main>
