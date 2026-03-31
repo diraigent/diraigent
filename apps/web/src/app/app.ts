@@ -19,7 +19,7 @@ import { KeyboardHelpComponent } from './shared/components/keyboard-help/keyboar
       <app-sidebar #sidebar [class.hidden]="chat.fullscreen()" />
       <div class="h-dvh flex flex-col min-w-0 overflow-x-hidden"
            [class.lg:ml-64]="!chat.fullscreen()">
-        <main id="main-content" class="flex-[2] overflow-y-auto overflow-x-hidden min-w-0" tabindex="-1"
+        <main id="main-content" class="flex-1 lg:flex-[2] overflow-y-auto overflow-x-hidden min-w-0" tabindex="-1"
               [class.hidden]="chat.fullscreen()">
           <!-- Mobile hamburger — overlays inline with page header (no vertical space consumed) -->
           <div class="lg:hidden sticky top-0 z-20 h-12 -mb-12 flex items-start pt-3 px-1 pointer-events-none">
