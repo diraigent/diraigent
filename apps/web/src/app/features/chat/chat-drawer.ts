@@ -1,4 +1,4 @@
-import { Component, inject, viewChild, ElementRef, effect, untracked, HostListener, Pipe, PipeTransform } from '@angular/core';
+import { Component, inject, viewChild, ElementRef, effect, untracked, HostListener, Pipe, PipeTransform, signal, OnDestroy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ChatService, CHAT_MODELS } from '../../core/services/chat.service';
 import { Marked, type MarkedExtension } from 'marked';
@@ -317,7 +317,7 @@ export class ChatMarkdownPipe implements PipeTransform {
                   (keydown.enter)="onEnter($event)"
                   [placeholder]="chat.canSend() ? 'Ask about your project...' : 'Select a project first'"
                   [disabled]="!chat.canSend()"
-                  rows="1"
+                  [attr.rows]="isMobile() ? 2 : 1"
                   class="flex-1 min-w-0 resize-none rounded-xl border border-border bg-bg-subtle px-3 py-2
                          min-h-[44px] text-[16px] sm:text-sm text-text-primary placeholder:text-text-secondary
                          focus:outline-none focus:ring-1 focus:ring-accent"></textarea>
@@ -341,11 +341,16 @@ export class ChatMarkdownPipe implements PipeTransform {
       </div>
   `,
 })
-export class ChatDrawerComponent {
+export class ChatDrawerComponent implements OnDestroy {
   chat = inject(ChatService);
   inputText = '';
   thinkingExpanded = false;
   readonly models = CHAT_MODELS;
+
+  /** Tracks whether viewport is mobile-sized (< 640px). */
+  readonly isMobile = signal(window.innerWidth < 640);
+  private mobileQuery = window.matchMedia('(max-width: 639px)');
+  private onMobileChange = (e: MediaQueryListEvent) => this.isMobile.set(e.matches);
 
   private messageList = viewChild<ElementRef<HTMLDivElement>>('messageList');
 
@@ -359,6 +364,8 @@ export class ChatDrawerComponent {
   private userScrolledUp = false;
 
   constructor() {
+    this.mobileQuery.addEventListener('change', this.onMobileChange);
+
     // Auto-scroll whenever messages or streaming content change,
     // unless the user has deliberately scrolled up to read history.
     effect(() => {
@@ -373,6 +380,10 @@ export class ChatDrawerComponent {
         }
       });
     });
+  }
+
+  ngOnDestroy(): void {
+    this.mobileQuery.removeEventListener('change', this.onMobileChange);
   }
 
   /**
