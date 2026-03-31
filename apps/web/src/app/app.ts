@@ -31,7 +31,7 @@ import { KeyboardHelpComponent } from './shared/components/keyboard-help/keyboar
               </svg>
             </button>
           </div>
-          <div class="w-full max-w-7xl mx-auto pl-10 lg:pl-0">
+          <div class="w-full pl-10 pr-4 lg:px-6">
             <router-outlet />
           </div>
         </main>
