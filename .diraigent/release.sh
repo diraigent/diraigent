@@ -60,7 +60,7 @@ if [ "$MODE" = "production" ]; then
      - Aim for 5-15 bullets total. Collapse minor fixes into a single 'Various UI/stability fixes' bullet if there are many small ones.
      - Do NOT mention file names, function names, struct names, or migration numbers.
 
-     Output ONLY the commit message and changelog, nothing else." 2>/dev/null)
+     Output ONLY the commit message and changelog, nothing else.")
 
   # Split output into commit message and changelog
   COMMIT_BODY=$(echo "$COMMIT_MSG" | sed '/^---CHANGELOG---$/,$d')
@@ -91,7 +91,7 @@ else
      $COMMITS
 
      Output a commit message: first line 'Merge $SOURCE into $TARGET', then blank line, then bullet points summarizing the changes grouped by area (API, Orchestra, Web, TUI, CI/CD).
-     Output ONLY the commit message, nothing else." 2>/dev/null)
+     Output ONLY the commit message, nothing else.")
 fi
 
 git add .
