@@ -38,7 +38,7 @@ git merge --squash "$SOURCE"
 COMMITS=$(git log "$TARGET".."$SOURCE" --oneline)
 
 if [ "$MODE" = "production" ]; then
-  COMMIT_MSG=$(git diff --cached --stat | gh copilot -- -p -s \
+  COMMIT_MSG=$(git diff --cached --stat | copilot -- -p -s \
     "You are writing a release commit message and changelog entry.
      Above is the diff stat for a squash merge from $SOURCE to $TARGET.
      Here are the individual commits being merged:
@@ -84,7 +84,7 @@ $CHANGELOG_ENTRY
 EOF
   fi
 else
-  COMMIT_BODY=$(git diff --cached --stat | gh copilot -- -p -s \
+  COMMIT_BODY=$(git diff --cached --stat | copilot -- -p -s \
     "You are writing a commit message for a squash merge from $SOURCE to $TARGET.
      Above is the diff stat. Here are the individual commits being merged:
 
