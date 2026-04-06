@@ -1,5 +1,13 @@
 # Changelog
 
+## v20260406-2342 (2026-04-06)
+
+### Fixed
+- **Orchestra**: SQLite now bundled correctly for cross-compiled targets
+- **CI/CD**: Various pipeline fixes
+
+---
+
 
 ## v20260326-0929 (2026-03-26)
 
