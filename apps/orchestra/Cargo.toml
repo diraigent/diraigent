@@ -44,7 +44,7 @@ toml = "0.8"
 serde_yaml = "0.9"
 async-trait = "0.1.64"
 thiserror.workspace = true
-rusqlite = { version = "0.32" }
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [dev-dependencies]
 wiremock = "0.6"
