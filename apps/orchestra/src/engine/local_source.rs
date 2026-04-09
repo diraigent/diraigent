@@ -126,7 +126,7 @@ impl LocalTaskSource {
                 "urgent": false,
                 "flagged": false,
                 "context": context,
-                "playbook_id": null,
+                "playbook_name": work.playbook,
                 "playbook_step": 0,
                 "created_at": chrono::Utc::now().to_rfc3339(),
             });
@@ -155,7 +155,7 @@ impl LocalTaskSource {
                     "urgent": task_def.urgent.unwrap_or(false),
                     "flagged": false,
                     "context": context,
-                    "playbook_id": null,
+                    "playbook_name": work.playbook,
                     "playbook_step": 0,
                     "created_at": chrono::Utc::now().to_rfc3339(),
                 });
@@ -405,20 +405,6 @@ impl TaskSource for LocalTaskSource {
         Ok(json!({"knowledge": [], "decisions": [], "observations": []}))
     }
 
-    // ── Playbooks (no-op — headless uses defaults) ──
-
-    async fn get_playbook(&self, _playbook_id: &str) -> Result<Value> {
-        bail!("no playbooks in local mode")
-    }
-    async fn list_playbooks(&self) -> Result<Vec<Value>> {
-        Ok(vec![])
-    }
-    async fn create_playbook(&self, _body: &Value) -> Result<Value> {
-        Ok(json!({}))
-    }
-    async fn update_playbook(&self, _playbook_id: &str, _body: &Value) -> Result<Value> {
-        Ok(json!({}))
-    }
     async fn get_step_template(&self, _template_id: &str) -> Result<Value> {
         bail!("no step templates in local mode")
     }

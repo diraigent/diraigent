@@ -256,7 +256,7 @@ impl DiraigentDb for CryptoDb {
                     .map(|c| dek.encrypt_json(c, "task.context"))
                     .transpose()?,
                 required_capabilities: req.required_capabilities.clone(),
-                playbook_id: req.playbook_id,
+                playbook_name: req.playbook_name.clone(),
                 decision_id: req.decision_id,
                 work_id: req.work_id,
                 file_scope: req.file_scope.clone(),
@@ -348,7 +348,7 @@ impl DiraigentDb for CryptoDb {
                     .transpose()?,
                 required_capabilities: req.required_capabilities.clone(),
                 playbook_step: req.playbook_step,
-                playbook_id: req.playbook_id,
+                playbook_name: req.playbook_name.clone(),
                 flagged: req.flagged,
                 file_scope: req.file_scope.clone(),
                 parent_id: req.parent_id,
@@ -1092,44 +1092,6 @@ impl DiraigentDb for CryptoDb {
         task_ids: &[Uuid],
     ) -> Result<Vec<Task>, AppError> {
         delegate!(self, reorder_work_tasks, work_id, task_ids)
-    }
-
-    // ── Playbooks (no encrypted fields) ──
-    async fn create_playbook(
-        &self,
-        tenant_id: Uuid,
-        req: &CreatePlaybook,
-        created_by: Uuid,
-    ) -> Result<Playbook, AppError> {
-        delegate!(self, create_playbook, tenant_id, req, created_by)
-    }
-    async fn get_playbook_by_id(&self, id: Uuid) -> Result<Playbook, AppError> {
-        delegate!(self, get_playbook_by_id, id)
-    }
-    async fn list_playbooks(
-        &self,
-        tenant_id: Uuid,
-        filters: &PlaybookFilters,
-    ) -> Result<Vec<Playbook>, AppError> {
-        delegate!(self, list_playbooks, tenant_id, filters)
-    }
-    async fn update_playbook(&self, id: Uuid, req: &UpdatePlaybook) -> Result<Playbook, AppError> {
-        delegate!(self, update_playbook, id, req)
-    }
-    async fn fork_playbook(
-        &self,
-        tenant_id: Uuid,
-        source: &Playbook,
-        req: &UpdatePlaybook,
-        created_by: Uuid,
-    ) -> Result<Playbook, AppError> {
-        delegate!(self, fork_playbook, tenant_id, source, req, created_by)
-    }
-    async fn sync_playbook_with_parent(&self, id: Uuid) -> Result<Playbook, AppError> {
-        delegate!(self, sync_playbook_with_parent, id)
-    }
-    async fn delete_playbook(&self, id: Uuid) -> Result<(), AppError> {
-        delegate!(self, delete_playbook, id)
     }
 
     // ── Step Templates (no encrypted fields) ──

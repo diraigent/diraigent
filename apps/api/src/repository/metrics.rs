@@ -171,40 +171,41 @@ async fn get_playbook_completion(
     project_id: Uuid,
     since: chrono::DateTime<Utc>,
 ) -> Result<Vec<PlaybookMetrics>, AppError> {
-    let rows = sqlx::query_as::<_, (Uuid, String, i64, i64)>(
+    let rows: Vec<(String, i64, i64)> = sqlx::query_as(
         "SELECT
-            p.id AS playbook_id,
-            p.title AS playbook_title,
-            COUNT(t.id)::bigint AS total_tasks,
-            COUNT(t.id) FILTER (WHERE t.state = 'done')::bigint AS completed_tasks
-         FROM diraigent.playbook p
-         JOIN diraigent.task t ON t.playbook_id = p.id
-         WHERE t.project_id = $1 AND t.created_at >= $2
-         GROUP BY p.id, p.title
-         ORDER BY total_tasks DESC",
+            t.playbook_name,
+            COUNT(*)::bigint AS total_tasks,
+            COUNT(*) FILTER (WHERE t.state = 'done')::bigint AS completed_tasks
+         FROM diraigent.task t
+         WHERE t.project_id = $1
+           AND t.playbook_name IS NOT NULL
+           AND t.created_at >= $2
+         GROUP BY t.playbook_name
+         ORDER BY t.playbook_name",
     )
     .bind(project_id)
     .bind(since)
     .fetch_all(pool)
     .await?;
 
-    Ok(rows
+    let metrics = rows
         .into_iter()
-        .map(|r| {
-            let rate = if r.2 > 0 {
-                r.3 as f64 / r.2 as f64
+        .map(|(playbook_name, total_tasks, completed_tasks)| {
+            let completion_rate = if total_tasks > 0 {
+                completed_tasks as f64 / total_tasks as f64
             } else {
                 0.0
             };
             PlaybookMetrics {
-                playbook_id: r.0,
-                playbook_title: r.1,
-                total_tasks: r.2,
-                completed_tasks: r.3,
-                completion_rate: rate,
+                playbook_name,
+                total_tasks,
+                completed_tasks,
+                completion_rate,
             }
         })
-        .collect())
+        .collect();
+
+    Ok(metrics)
 }
 
 async fn get_cost_summary(

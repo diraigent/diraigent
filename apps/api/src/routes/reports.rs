@@ -3,7 +3,6 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use uuid::Uuid;
-
 use crate::AppState;
 use crate::auth::AuthUser;
 use crate::authz::{
@@ -13,8 +12,8 @@ use crate::error::AppError;
 use crate::models::*;
 use crate::validation;
 
-/// Researcher playbook UUID (built-in seed playbook).
-const RESEARCHER_PLAYBOOK_ID: &str = "e701aa5c-02e1-47f6-9d9c-fa7e125f578c";
+/// Repo/YAML playbook name used for report research tasks.
+const RESEARCHER_PLAYBOOK_NAME: &str = "research";
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -44,11 +43,6 @@ async fn create(
         serde_json::json!({"report_id": r.id, "title": r.title, "kind": r.kind}),
     );
 
-    // Auto-spawn a research task using the Researcher playbook.
-    let playbook_id: Uuid = RESEARCHER_PLAYBOOK_ID
-        .parse()
-        .expect("hardcoded researcher playbook UUID");
-
     let task_context = serde_json::json!({
         "spec": format!(
             "You are researching for report \"{}\" (kind: {}).\n\n\
@@ -74,7 +68,7 @@ async fn create(
         urgent: None,
         context: Some(task_context),
         required_capabilities: None,
-        playbook_id: Some(playbook_id),
+        playbook_name: Some(RESEARCHER_PLAYBOOK_NAME.to_string()),
         decision_id: None,
         work_id: None,
         file_scope: None,
@@ -111,7 +105,7 @@ async fn create(
                         "title": task.title,
                         "from": "backlog",
                         "to": "ready",
-                        "playbook_id": task.playbook_id,
+                        "playbook_name": task.playbook_name,
                         "playbook_step": task.playbook_step,
                         "report_id": r.id,
                     }),

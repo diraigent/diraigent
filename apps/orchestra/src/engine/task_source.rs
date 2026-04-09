@@ -66,10 +66,6 @@ pub trait TaskSource: Send + Sync {
 
     // ── Playbooks ──
 
-    async fn get_playbook(&self, playbook_id: &str) -> Result<Value>;
-    async fn list_playbooks(&self) -> Result<Vec<Value>>;
-    async fn create_playbook(&self, body: &Value) -> Result<Value>;
-    async fn update_playbook(&self, playbook_id: &str, body: &Value) -> Result<Value>;
     async fn get_step_template(&self, template_id: &str) -> Result<Value>;
 
     // ── Work items ──

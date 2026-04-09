@@ -320,30 +320,6 @@ pub trait DiraigentDb: Send + Sync {
         task_ids: &[Uuid],
     ) -> Result<Vec<Task>, AppError>;
 
-    // ── Playbooks ─────────────────────────────────────────────────────────────
-    async fn create_playbook(
-        &self,
-        tenant_id: Uuid,
-        req: &CreatePlaybook,
-        created_by: Uuid,
-    ) -> Result<Playbook, AppError>;
-    async fn get_playbook_by_id(&self, id: Uuid) -> Result<Playbook, AppError>;
-    async fn list_playbooks(
-        &self,
-        tenant_id: Uuid,
-        filters: &PlaybookFilters,
-    ) -> Result<Vec<Playbook>, AppError>;
-    async fn update_playbook(&self, id: Uuid, req: &UpdatePlaybook) -> Result<Playbook, AppError>;
-    async fn fork_playbook(
-        &self,
-        tenant_id: Uuid,
-        source: &Playbook,
-        req: &UpdatePlaybook,
-        created_by: Uuid,
-    ) -> Result<Playbook, AppError>;
-    async fn sync_playbook_with_parent(&self, id: Uuid) -> Result<Playbook, AppError>;
-    async fn delete_playbook(&self, id: Uuid) -> Result<(), AppError>;
-
     // ── Step Templates ───────────────────────────────────────────────────────
     async fn create_step_template(
         &self,

@@ -64,9 +64,6 @@ pub async fn export_user_data(pool: &PgPool, user_id: Uuid) -> Result<serde_json
     let verifications =
         export_table!("SELECT to_jsonb(v) FROM diraigent.verification v WHERE v.user_id = $1");
 
-    let playbooks =
-        export_table!("SELECT to_jsonb(p) FROM diraigent.playbook p WHERE p.created_by = $1");
-
     let step_templates =
         export_table!("SELECT to_jsonb(s) FROM diraigent.step_template s WHERE s.created_by = $1");
 
@@ -94,7 +91,6 @@ pub async fn export_user_data(pool: &PgPool, user_id: Uuid) -> Result<serde_json
         "decisions": decisions,
         "knowledge": knowledge,
         "verifications": verifications,
-        "playbooks": playbooks,
         "step_templates": step_templates,
         "reports": reports,
         "audit_log": audit_log,

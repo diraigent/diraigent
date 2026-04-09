@@ -6,7 +6,6 @@ use crate::models::*;
 
 use super::Table;
 use super::fetch_by_id;
-use super::playbooks::get_playbook_by_id;
 use super::projects::get_project_by_id;
 
 const OBSERVATION_FILTERS_WHERE: &str = "WHERE project_id = $1 \
@@ -128,13 +127,11 @@ pub async fn promote_observation(
 
     // Resolve project defaults before starting the transaction (read-only).
     let project = get_project_by_id(pool, obs.project_id).await?;
-    let playbook_id = req.playbook_id.or(project.default_playbook_id);
-    let initial_state = if let Some(pb_id) = playbook_id {
-        let playbook = get_playbook_by_id(pool, pb_id).await?;
-        playbook.initial_state.clone()
-    } else {
-        "backlog".to_string()
-    };
+    let playbook_name = req
+        .playbook_name
+        .clone()
+        .or_else(|| project.default_playbook_name.clone());
+    let initial_state = if playbook_name.is_some() { "ready" } else { "backlog" };
     let context = serde_json::Value::Object(Default::default());
     let capabilities: Vec<String> = vec![];
     let success_criteria = serde_json::json!([]);
@@ -166,7 +163,7 @@ pub async fn promote_observation(
     let task = sqlx::query_as::<_, Task>(
         "INSERT INTO diraigent.task
              (project_id, title, kind, state, urgent, context, required_capabilities,
-              playbook_id, playbook_step, decision_id, created_by)
+              playbook_name, playbook_step, decision_id, created_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING *",
     )
@@ -177,8 +174,8 @@ pub async fn promote_observation(
     .bind(urgent)
     .bind(&context)
     .bind(&capabilities)
-    .bind(playbook_id)
-    .bind(if playbook_id.is_some() {
+    .bind(playbook_name.as_deref())
+    .bind(if playbook_name.is_some() {
         Some(0i32)
     } else {
         None

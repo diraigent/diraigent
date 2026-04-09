@@ -489,44 +489,6 @@ impl DiraigentDb for PostgresDb {
         repository::reorder_work_tasks(&self.0, work_id, task_ids).await
     }
 
-    // Playbooks
-    async fn create_playbook(
-        &self,
-        tenant_id: Uuid,
-        req: &CreatePlaybook,
-        created_by: Uuid,
-    ) -> Result<Playbook, AppError> {
-        repository::create_playbook(&self.0, tenant_id, req, created_by).await
-    }
-    async fn get_playbook_by_id(&self, id: Uuid) -> Result<Playbook, AppError> {
-        repository::get_playbook_by_id(&self.0, id).await
-    }
-    async fn list_playbooks(
-        &self,
-        tenant_id: Uuid,
-        filters: &PlaybookFilters,
-    ) -> Result<Vec<Playbook>, AppError> {
-        repository::list_playbooks(&self.0, tenant_id, filters).await
-    }
-    async fn update_playbook(&self, id: Uuid, req: &UpdatePlaybook) -> Result<Playbook, AppError> {
-        repository::update_playbook(&self.0, id, req).await
-    }
-    async fn fork_playbook(
-        &self,
-        tenant_id: Uuid,
-        source: &Playbook,
-        req: &UpdatePlaybook,
-        created_by: Uuid,
-    ) -> Result<Playbook, AppError> {
-        repository::fork_playbook(&self.0, tenant_id, source, req, created_by).await
-    }
-    async fn sync_playbook_with_parent(&self, id: Uuid) -> Result<Playbook, AppError> {
-        repository::sync_playbook_with_parent(&self.0, id).await
-    }
-    async fn delete_playbook(&self, id: Uuid) -> Result<(), AppError> {
-        repository::delete_playbook(&self.0, id).await
-    }
-
     // Step Templates
     async fn create_step_template(
         &self,

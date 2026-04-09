@@ -5,6 +5,8 @@
 
 use serde_json::Value;
 
+use crate::repo_playbooks;
+
 /// Per-step git action: what git operation to perform after this step completes.
 ///
 /// This allows mid-pipeline merges/pushes without dedicated "merge" steps.
@@ -194,7 +196,7 @@ impl GitStrategy {
     }
 }
 
-/// Resolve the git strategy for a task by fetching its playbook metadata.
+/// Resolve the git strategy for a task from repo/YAML playbook metadata.
 ///
 /// Returns `Merge { target_branch: None }` as fallback when the task has no
 /// playbook or the playbook fetch fails.
@@ -215,31 +217,42 @@ pub async fn resolve_strategy(
         return default_merge;
     };
 
-    let playbook_id = task["playbook_id"].as_str().unwrap_or("");
-    if playbook_id.is_empty() {
+    let playbook_name = task["playbook_name"].as_str().unwrap_or("");
+    if playbook_name.is_empty() {
         return default_merge;
     }
 
-    match api.get_playbook(playbook_id).await {
-        Ok(playbook) => {
-            let metadata = &playbook["metadata"];
-
-            // Only resolve work branch if strategy is feature_branch
-            let work_branch = if metadata.get("git_strategy").and_then(|v| v.as_str())
-                == Some("feature_branch")
-            {
-                resolve_work_branch(api, task).await
-            } else {
-                None
-            };
-
-            GitStrategy::from_playbook_metadata(metadata, project_git_mode, work_branch)
-        }
+    let project_id = task["project_id"].as_str().unwrap_or("");
+    let project = match api.get_project(project_id).await {
+        Ok(project) => project,
         Err(e) => {
-            tracing::warn!("failed to fetch playbook {playbook_id} for git strategy: {e}");
-            default_merge
+            tracing::warn!("failed to fetch project {project_id} for git strategy: {e}");
+            return default_merge;
         }
-    }
+    };
+    let repo_root = project["git_resolved_path"]
+        .as_str()
+        .or_else(|| project["resolved_path"].as_str());
+    let Some(repo_root) = repo_root else {
+        return default_merge;
+    };
+    let Some(playbook) =
+        repo_playbooks::find_playbook_by_name(std::path::Path::new(repo_root), playbook_name)
+    else {
+        tracing::warn!("failed to load playbook {playbook_name} for git strategy");
+        return default_merge;
+    };
+
+    let metadata = &playbook.metadata;
+    let work_branch = if metadata.get("git_strategy").and_then(|v| v.as_str())
+        == Some("feature_branch")
+    {
+        resolve_work_branch(api, task).await
+    } else {
+        None
+    };
+
+    GitStrategy::from_playbook_metadata(metadata, project_git_mode, work_branch)
 }
 
 /// Derive the work branch name for a task by looking up its linked work items.

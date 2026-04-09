@@ -4,7 +4,6 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::models::*;
 
-use super::playbooks::get_playbook_by_id;
 use super::projects::get_project_by_id;
 use super::transitions::resolve_step_name;
 use super::{Table, delete_by_id, fetch_by_id};
@@ -39,20 +38,17 @@ pub async fn create_task(
     let file_scope = req.file_scope.clone().unwrap_or_default();
     let urgent = req.urgent.unwrap_or(false);
 
-    // Use explicit playbook_id, or fall back to project default
-    let playbook_id = req.playbook_id.or(project.default_playbook_id);
+    // Use explicit playbook_name, or fall back to project default
+    let playbook_name = req
+        .playbook_name
+        .clone()
+        .or_else(|| project.default_playbook_name.clone());
 
-    // Determine initial state: respect the playbook's initial_state field, fall back to
-    // "ready" for backward compatibility. Tasks without a playbook always start in "backlog".
-    let initial_state = if let Some(pb_id) = playbook_id {
-        let playbook = get_playbook_by_id(pool, pb_id).await?;
-        playbook.initial_state.clone()
-    } else {
-        "backlog".to_string()
-    };
+    // Tasks with a playbook start as "ready"; tasks without stay in "backlog".
+    let initial_state = if playbook_name.is_some() { "ready" } else { "backlog" };
 
     let task = sqlx::query_as::<_, Task>(
-        "INSERT INTO diraigent.task (project_id, title, kind, state, urgent, context, required_capabilities, playbook_id, playbook_step, decision_id, created_by, file_scope, parent_id, state_entered_at)
+        "INSERT INTO diraigent.task (project_id, title, kind, state, urgent, context, required_capabilities, playbook_name, playbook_step, decision_id, created_by, file_scope, parent_id, state_entered_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())
          RETURNING *",
     )
@@ -63,8 +59,8 @@ pub async fn create_task(
     .bind(urgent)
     .bind(&context)
     .bind(&capabilities)
-    .bind(playbook_id)
-    .bind(if playbook_id.is_some() { Some(0i32) } else { None })
+    .bind(playbook_name.as_deref())
+    .bind(if playbook_name.is_some() { Some(0i32) } else { None })
     .bind(req.decision_id)
     .bind(created_by)
     .bind(&file_scope)
@@ -189,27 +185,12 @@ pub async fn list_ready_tasks(
     Ok(tasks)
 }
 
-/// Validates that a playbook_step value is non-negative and within bounds of the assigned playbook.
-/// If the task has no playbook_id, only the negative check applies.
-pub(crate) async fn validate_playbook_step(
-    pool: &PgPool,
-    step: i32,
-    playbook_id: Option<Uuid>,
-) -> Result<(), AppError> {
+/// Validates that a playbook_step value is non-negative.
+pub(crate) async fn validate_playbook_step(step: i32) -> Result<(), AppError> {
     if step < 0 {
         return Err(AppError::UnprocessableEntity(
             "playbook_step cannot be negative".into(),
         ));
-    }
-    if let Some(playbook_id) = playbook_id {
-        let playbook = get_playbook_by_id(pool, playbook_id).await?;
-        let step_count = playbook.steps.as_array().map(|a| a.len()).unwrap_or(0);
-        if step as usize >= step_count {
-            return Err(AppError::UnprocessableEntity(format!(
-                "playbook_step {} is out of range (playbook has {} steps)",
-                step, step_count
-            )));
-        }
     }
     Ok(())
 }
@@ -217,14 +198,13 @@ pub(crate) async fn validate_playbook_step(
 pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Result<Task, AppError> {
     let existing = get_task_by_id(pool, task_id).await?;
 
-    // Double-Option: None → keep existing, Some(v) → use v (which may be None to clear).
-    let playbook_id = match &req.playbook_id {
-        Some(v) => *v,
-        None => existing.playbook_id,
-    };
+    let playbook_name = req
+        .playbook_name
+        .as_deref()
+        .or(existing.playbook_name.as_deref());
 
     if let Some(step) = req.playbook_step {
-        validate_playbook_step(pool, step, playbook_id).await?;
+        validate_playbook_step(step).await?;
     }
 
     let title = req.title.as_deref().unwrap_or(&existing.title);
@@ -247,7 +227,7 @@ pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Resu
 
     let task = sqlx::query_as::<_, Task>(
         "UPDATE diraigent.task
-         SET title = $2, kind = $3, urgent = $4, context = $5, required_capabilities = $6, playbook_step = $7, playbook_id = $8, flagged = $9, file_scope = $10, parent_id = $11
+         SET title = $2, kind = $3, urgent = $4, context = $5, required_capabilities = $6, playbook_step = $7, playbook_name = $8, flagged = $9, file_scope = $10, parent_id = $11
          WHERE id = $1 RETURNING *",
     )
     .bind(task_id)
@@ -257,7 +237,7 @@ pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Resu
     .bind(context)
     .bind(capabilities)
     .bind(playbook_step)
-    .bind(playbook_id)
+    .bind(playbook_name)
     .bind(flagged)
     .bind(file_scope)
     .bind(parent_id)
@@ -693,225 +673,25 @@ pub async fn list_subtasks(
 
 #[cfg(test)]
 mod tests {
-    use super::super::playbooks::create_playbook;
     use super::*;
-    use sqlx::postgres::PgPoolOptions;
-    use std::time::Duration;
-
-    /// Ephemeral test database helper. Returns (pool, admin_pool, db_name).
-    /// Returns None if PostgreSQL is not reachable (test will be skipped).
-    async fn setup_test_db() -> Option<(PgPool, PgPool, String)> {
-        let db_name = format!("test_validate_ps_{}", Uuid::now_v7().simple());
-        let admin_url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://zivue:zivue@localhost:5433/diraigent".into());
-
-        let admin_opts = admin_url
-            .parse::<sqlx::postgres::PgConnectOptions>()
-            .unwrap()
-            .ssl_mode(sqlx::postgres::PgSslMode::Disable);
-
-        let admin_pool = match PgPoolOptions::new()
-            .max_connections(2)
-            .acquire_timeout(Duration::from_secs(5))
-            .connect_with(admin_opts)
-            .await
-        {
-            Ok(pool) => pool,
-            Err(_) => return None,
-        };
-
-        sqlx::query(&format!("CREATE DATABASE \"{db_name}\""))
-            .execute(&admin_pool)
-            .await
-            .expect("Failed to create test database");
-
-        let connect_opts = format!("postgres://zivue:zivue@localhost:5433/{db_name}")
-            .parse::<sqlx::postgres::PgConnectOptions>()
-            .unwrap()
-            .ssl_mode(sqlx::postgres::PgSslMode::Disable)
-            .options([("search_path", "public,diraigent")]);
-
-        let pool = PgPoolOptions::new()
-            .max_connections(5)
-            .acquire_timeout(Duration::from_secs(5))
-            .connect_with(connect_opts)
-            .await
-            .expect("Failed to connect to test database");
-
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .expect("Failed to run migrations");
-
-        Some((pool, admin_pool, db_name))
-    }
-
-    async fn teardown_test_db(pool: PgPool, admin_pool: PgPool, db_name: &str) {
-        pool.close().await;
-        let _ = sqlx::query(&format!(
-            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{db_name}'"
-        ))
-        .execute(&admin_pool)
-        .await;
-        let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS \"{db_name}\""))
-            .execute(&admin_pool)
-            .await;
-    }
-
-    /// Helper: create a playbook with N steps directly in the database.
-    async fn seed_playbook(pool: &PgPool, step_count: usize) -> Uuid {
-        let tenant_id: Uuid = "00000000-0000-0000-0000-000000000001".parse().unwrap();
-        let created_by = Uuid::now_v7();
-        let steps: Vec<serde_json::Value> = (0..step_count)
-            .map(|i| serde_json::json!({ "name": format!("step{i}") }))
-            .collect();
-
-        let req = CreatePlaybook {
-            title: format!("{step_count}-step test playbook"),
-            trigger_description: None,
-            steps: Some(serde_json::json!(steps)),
-            tags: None,
-            metadata: None,
-            initial_state: None,
-        };
-
-        create_playbook(pool, tenant_id, &req, created_by)
-            .await
-            .expect("seed_playbook")
-            .id
-    }
 
     // ── validate_playbook_step tests ──
 
     #[tokio::test]
     async fn validate_playbook_step_negative_step_is_rejected() {
-        let (pool, admin_pool, db_name) = match setup_test_db().await {
-            Some(v) => v,
-            None => {
-                eprintln!("SKIPPED: PostgreSQL not available");
-                return;
-            }
-        };
-
-        let result = validate_playbook_step(&pool, -1, None).await;
+        let result = validate_playbook_step(-1).await;
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("cannot be negative"),
             "expected 'cannot be negative', got: {err_msg}"
         );
-
-        teardown_test_db(pool, admin_pool, &db_name).await;
     }
 
     #[tokio::test]
-    async fn validate_playbook_step_no_playbook_non_negative_is_ok() {
-        let (pool, admin_pool, db_name) = match setup_test_db().await {
-            Some(v) => v,
-            None => {
-                eprintln!("SKIPPED: PostgreSQL not available");
-                return;
-            }
-        };
-
-        // With no playbook, any non-negative step should be Ok
-        assert!(validate_playbook_step(&pool, 0, None).await.is_ok());
-        assert!(validate_playbook_step(&pool, 5, None).await.is_ok());
-        assert!(validate_playbook_step(&pool, 100, None).await.is_ok());
-
-        teardown_test_db(pool, admin_pool, &db_name).await;
-    }
-
-    #[tokio::test]
-    async fn validate_playbook_step_in_bounds_is_ok() {
-        let (pool, admin_pool, db_name) = match setup_test_db().await {
-            Some(v) => v,
-            None => {
-                eprintln!("SKIPPED: PostgreSQL not available");
-                return;
-            }
-        };
-
-        let playbook_id = seed_playbook(&pool, 3).await;
-
-        // Steps 0, 1, 2 are all in-bounds for a 3-step playbook
-        assert!(
-            validate_playbook_step(&pool, 0, Some(playbook_id))
-                .await
-                .is_ok()
-        );
-        assert!(
-            validate_playbook_step(&pool, 1, Some(playbook_id))
-                .await
-                .is_ok()
-        );
-        assert!(
-            validate_playbook_step(&pool, 2, Some(playbook_id))
-                .await
-                .is_ok()
-        );
-
-        teardown_test_db(pool, admin_pool, &db_name).await;
-    }
-
-    #[tokio::test]
-    async fn validate_playbook_step_out_of_bounds_is_rejected() {
-        let (pool, admin_pool, db_name) = match setup_test_db().await {
-            Some(v) => v,
-            None => {
-                eprintln!("SKIPPED: PostgreSQL not available");
-                return;
-            }
-        };
-
-        let playbook_id = seed_playbook(&pool, 3).await;
-
-        // Step 3 is out-of-bounds for a 3-step playbook (valid: 0, 1, 2)
-        let result = validate_playbook_step(&pool, 3, Some(playbook_id)).await;
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("out of range"),
-            "expected 'out of range', got: {err_msg}"
-        );
-        assert!(
-            err_msg.contains("3 steps"),
-            "expected '3 steps' in message, got: {err_msg}"
-        );
-
-        // Much larger step
-        let result = validate_playbook_step(&pool, 100, Some(playbook_id)).await;
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("out of range"),
-            "expected 'out of range', got: {err_msg}"
-        );
-
-        teardown_test_db(pool, admin_pool, &db_name).await;
-    }
-
-    #[tokio::test]
-    async fn validate_playbook_step_negative_with_playbook_is_rejected() {
-        let (pool, admin_pool, db_name) = match setup_test_db().await {
-            Some(v) => v,
-            None => {
-                eprintln!("SKIPPED: PostgreSQL not available");
-                return;
-            }
-        };
-
-        let playbook_id = seed_playbook(&pool, 3).await;
-
-        // Negative check fires before the bounds check
-        let result = validate_playbook_step(&pool, -1, Some(playbook_id)).await;
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("cannot be negative"),
-            "expected 'cannot be negative', got: {err_msg}"
-        );
-
-        teardown_test_db(pool, admin_pool, &db_name).await;
+    async fn validate_playbook_step_non_negative_is_ok() {
+        assert!(validate_playbook_step(0).await.is_ok());
+        assert!(validate_playbook_step(5).await.is_ok());
+        assert!(validate_playbook_step(100).await.is_ok());
     }
 }

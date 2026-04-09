@@ -15,6 +15,7 @@ use crate::engine::context::ContextAssembler;
 use crate::engine::task_source::TaskSource;
 use crate::git::ChangedFile;
 use crate::project::api::ProjectsApi;
+use crate::repo_playbooks::{self, RepoPlaybook};
 
 /// Orchestra-local task source: owns the task state machine in SQLite,
 /// delegates metadata reads to the API.
@@ -30,15 +31,34 @@ impl OrchestraTaskSource {
         Self { db, api, context }
     }
 
-    /// Resolve the playbook step name for a task (from API playbook data).
+    async fn load_repo_playbook_for_task(&self, task: &Value) -> Result<Option<RepoPlaybook>> {
+        let Some(playbook_name) = task["playbook_name"].as_str().filter(|s| !s.is_empty()) else {
+            return Ok(None);
+        };
+        let Some(project_id) = task["project_id"].as_str().filter(|s| !s.is_empty()) else {
+            return Ok(None);
+        };
+        let project = self.api.get_project(project_id).await?;
+        let repo_root = project["git_resolved_path"]
+            .as_str()
+            .or_else(|| project["resolved_path"].as_str());
+        let Some(repo_root) = repo_root else {
+            return Ok(None);
+        };
+        Ok(repo_playbooks::find_playbook_by_name(
+            std::path::Path::new(repo_root),
+            playbook_name,
+        ))
+    }
+
+    /// Resolve the playbook step name for a task (from repo playbook data).
     async fn resolve_step_name(&self, task: &Value) -> Result<String> {
-        let playbook_id = task["playbook_id"].as_str().unwrap_or("");
-        if playbook_id.is_empty() {
+        let Some(playbook) = self.load_repo_playbook_for_task(task).await? else {
             return Ok("working".to_string());
-        }
-        let playbook = self.api.get_playbook(playbook_id).await?;
+        };
         let step_index = task["playbook_step"].as_i64().unwrap_or(0) as usize;
-        let name = playbook["steps"]
+        let name = playbook
+            .steps
             .as_array()
             .and_then(|steps| steps.get(step_index))
             .and_then(|step| step["name"].as_str())
@@ -59,12 +79,11 @@ impl OrchestraTaskSource {
         // Pipeline advancement: non-final step → "done" gets redirected
         if target_state == "done"
             && !diraigent_types::state_machine::is_lifecycle_state(current_state)
-            && let Some(playbook_id) = task["playbook_id"].as_str().filter(|s| !s.is_empty())
+            && let Some(playbook) = self.load_repo_playbook_for_task(task).await?
         {
-            let playbook = self.api.get_playbook(playbook_id).await?;
             let current = task["playbook_step"].as_i64().unwrap_or(0) as usize;
             let next = current + 1;
-            let total = playbook["steps"].as_array().map(|a| a.len()).unwrap_or(0);
+            let total = playbook.steps.as_array().map(|a| a.len()).unwrap_or(0);
 
             if next < total {
                 // More steps — advance pipeline
@@ -82,12 +101,11 @@ impl OrchestraTaskSource {
         // Step regression: non-implement step releasing back to ready
         if target_state == "ready"
             && !diraigent_types::state_machine::is_lifecycle_state(current_state)
-            && let Some(playbook_id) = task["playbook_id"].as_str().filter(|s| !s.is_empty())
+            && let Some(playbook) = self.load_repo_playbook_for_task(task).await?
         {
-            let playbook = self.api.get_playbook(playbook_id).await?;
             let current_step = task["playbook_step"].as_i64().unwrap_or(0) as usize;
 
-            if let Some(steps) = playbook["steps"].as_array() {
+            if let Some(steps) = playbook.steps.as_array() {
                 let current_retriable = steps
                     .get(current_step)
                     .map(diraigent_types::state_machine::is_retriable_step)
@@ -282,24 +300,6 @@ impl TaskSource for OrchestraTaskSource {
 
     async fn get_related_items(&self, task_id: &str) -> Result<Value> {
         self.api.get_related_items(task_id).await
-    }
-
-    // ── Playbooks (API read-through) ──
-
-    async fn get_playbook(&self, playbook_id: &str) -> Result<Value> {
-        self.api.get_playbook(playbook_id).await
-    }
-
-    async fn list_playbooks(&self) -> Result<Vec<Value>> {
-        self.api.list_playbooks().await
-    }
-
-    async fn create_playbook(&self, body: &Value) -> Result<Value> {
-        self.api.create_playbook(body).await
-    }
-
-    async fn update_playbook(&self, playbook_id: &str, body: &Value) -> Result<Value> {
-        self.api.update_playbook(playbook_id, body).await
     }
 
     async fn get_step_template(&self, template_id: &str) -> Result<Value> {

@@ -84,11 +84,6 @@ async fn create_task(
     crate::quota::check_quota_for_project(&state.pool, project_id, crate::quota::Resource::Tasks)
         .await?;
 
-    // If playbook_id provided, verify it exists
-    if let Some(playbook_id) = req.playbook_id {
-        let _ = state.db.get_playbook_by_id(playbook_id).await?;
-    }
-
     // If work_id provided, verify the work item exists before creating the task
     if let Some(work_id) = req.work_id {
         let _ = state.db.get_work_by_id(work_id).await?;
@@ -106,8 +101,8 @@ async fn create_task(
 
     let task = state.db.create_task(project_id, &req, user_id).await?;
 
-    // If task was auto-transitioned to ready (has playbook with initial_state=ready), fire event
-    if task.playbook_id.is_some() && task.state == "ready" {
+    // Tasks with a playbook name start in ready and should emit the transition event.
+    if task.playbook_name.is_some() && task.state == "ready" {
         state.fire_event(
             task.project_id,
             "task.transitioned",
@@ -120,7 +115,7 @@ async fn create_task(
                 "title": task.title,
                 "from": "backlog",
                 "to": "ready",
-                "playbook_id": task.playbook_id,
+                "playbook_name": task.playbook_name,
                 "playbook_step": task.playbook_step,
             }),
         );

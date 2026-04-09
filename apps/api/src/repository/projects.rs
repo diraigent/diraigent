@@ -22,18 +22,6 @@ pub async fn create_project(
 
     let default_branch = req.default_branch.as_deref().unwrap_or("main").to_string();
 
-    // Auto-assign the "default"-tagged playbook to new projects.
-    // Prefer a tenant-owned playbook; fall back to shared (tenant_id IS NULL).
-    let default_playbook_id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM diraigent.playbook \
-         WHERE 'default' = ANY(tags) AND (tenant_id = $1 OR tenant_id IS NULL) \
-         ORDER BY tenant_id NULLS LAST, created_at ASC LIMIT 1",
-    )
-    .bind(req.tenant_id)
-    .fetch_optional(pool)
-    .await
-    .unwrap_or(None);
-
     // Resolve package: use given slug, fall back to software-dev
     let package_slug = req.package_slug.as_deref().unwrap_or("software-dev");
     let package_id = get_package_by_slug(pool, package_slug)
@@ -53,7 +41,7 @@ pub async fn create_project(
         .ok_or_else(|| AppError::Validation("tenant_id is required".into()))?;
 
     let project = sqlx::query_as::<_, Project>(
-        "INSERT INTO diraigent.project (name, slug, description, owner_id, parent_id, repo_url, repo_path, default_branch, service_name, metadata, default_playbook_id, package_id, git_mode, git_root, project_root, tenant_id)
+        "INSERT INTO diraigent.project (name, slug, description, owner_id, parent_id, repo_url, repo_path, default_branch, service_name, metadata, default_playbook_name, package_id, git_mode, git_root, project_root, tenant_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
          RETURNING *",
     )
@@ -67,7 +55,7 @@ pub async fn create_project(
     .bind(&default_branch)
     .bind(&req.service_name)
     .bind(&metadata)
-    .bind(default_playbook_id)
+    .bind(None::<String>)
     .bind(package_id)
     .bind(&git_mode)
     .bind(&git_root)
@@ -144,10 +132,10 @@ pub async fn update_project(
         .as_deref()
         .or(existing.description.as_deref());
     let metadata = req.metadata.as_ref().unwrap_or(&existing.metadata);
-    let default_playbook_id = match &req.default_playbook_id {
-        Some(val) => *val, // explicitly provided (Some(id) or None to clear)
-        None => existing.default_playbook_id, // not provided, keep existing
-    };
+    let default_playbook_name = req
+        .default_playbook_name
+        .as_deref()
+        .or(existing.default_playbook_name.as_deref());
     let repo_url = match &req.repo_url {
         Some(val) => val.clone(),
         None => existing.repo_url.clone(),
@@ -195,7 +183,7 @@ pub async fn update_project(
     };
 
     let project = sqlx::query_as::<_, Project>(
-        "UPDATE diraigent.project SET name = $2, description = $3, metadata = $4, default_playbook_id = $5,
+        "UPDATE diraigent.project SET name = $2, description = $3, metadata = $4, default_playbook_name = $5,
                 repo_url = $6, repo_path = $7, default_branch = $8, service_name = $9, package_id = $10,
                 git_mode = $11, git_root = $12, project_root = $13
          WHERE id = $1 RETURNING *",
@@ -204,7 +192,7 @@ pub async fn update_project(
     .bind(name)
     .bind(description)
     .bind(metadata)
-    .bind(default_playbook_id)
+    .bind(default_playbook_name)
     .bind(repo_url)
     .bind(synced_repo_path)
     .bind(default_branch)

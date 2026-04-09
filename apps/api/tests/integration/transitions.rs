@@ -515,7 +515,7 @@ async fn transition_playbook_step_out_of_range_rejected() {
     let agent_id = app.create_agent("oob-stepper").await;
 
     // Create a 3-step playbook
-    let playbook_id = app.create_playbook(&["implement", "review", "merge"]).await;
+    let playbook_name = app.create_playbook(&["implement", "review", "merge"]).await;
 
     // Create task with this playbook
     let task = app
@@ -523,7 +523,7 @@ async fn transition_playbook_step_out_of_range_rejected() {
             project_id,
             serde_json::json!({
                 "title": "OOB step test",
-                "playbook_id": playbook_id,
+                "playbook_name": playbook_name,
             }),
         )
         .await;
@@ -603,7 +603,7 @@ async fn transition_playbook_step_within_bounds_succeeds() {
     let agent_id = app.create_agent("ok-stepper").await;
 
     // Create a 3-step playbook
-    let playbook_id = app.create_playbook(&["implement", "review", "merge"]).await;
+    let playbook_name = app.create_playbook(&["implement", "review", "merge"]).await;
 
     // Create task with playbook
     let task = app
@@ -611,7 +611,7 @@ async fn transition_playbook_step_within_bounds_succeeds() {
             project_id,
             serde_json::json!({
                 "title": "Valid step test",
-                "playbook_id": playbook_id,
+                "playbook_name": playbook_name,
             }),
         )
         .await;
@@ -654,7 +654,7 @@ async fn transition_playbook_step_none_succeeds() {
     let agent_id = app.create_agent("none-stepper").await;
 
     // Create a 3-step playbook
-    let playbook_id = app.create_playbook(&["implement", "review", "merge"]).await;
+    let playbook_name = app.create_playbook(&["implement", "review", "merge"]).await;
 
     // Create task with playbook
     let task = app
@@ -662,7 +662,7 @@ async fn transition_playbook_step_none_succeeds() {
             project_id,
             serde_json::json!({
                 "title": "None step test",
-                "playbook_id": playbook_id,
+                "playbook_name": playbook_name,
             }),
         )
         .await;
@@ -1124,7 +1124,7 @@ async fn bulk_delegate_nonexistent_agent_fails() {
     app.cleanup().await;
 }
 
-// ── transition with playbook_step on task without playbook_id ──
+// ── transition with playbook_step on task without playbook_name ──
 
 #[tokio::test]
 async fn transition_with_step_on_no_playbook_task_succeeds() {
@@ -1132,10 +1132,10 @@ async fn transition_with_step_on_no_playbook_task_succeeds() {
     let project_id = app.create_project("trans-no-pb-step").await;
     let agent_id = app.create_agent("no-pb-stepper").await;
 
-    // Create task WITHOUT a playbook_id
+    // Create task WITHOUT a playbook_name
     let task = app.create_task(project_id, "No playbook step test").await;
     let task_id = task["id"].as_str().unwrap();
-    assert!(task["playbook_id"].is_null());
+    assert!(task["playbook_name"].is_null());
 
     // backlog → ready → working → done
     app.send(post_json(
@@ -1177,7 +1177,7 @@ async fn update_task_playbook_step_out_of_range_rejected() {
     let project_id = app.create_project("upd-step-oob").await;
 
     // Create a 3-step playbook
-    let playbook_id = app.create_playbook(&["implement", "review", "merge"]).await;
+    let playbook_name = app.create_playbook(&["implement", "review", "merge"]).await;
 
     // Create task with this playbook
     let task = app
@@ -1185,7 +1185,7 @@ async fn update_task_playbook_step_out_of_range_rejected() {
             project_id,
             serde_json::json!({
                 "title": "Update OOB step test",
-                "playbook_id": playbook_id,
+                "playbook_name": playbook_name,
             }),
         )
         .await;
@@ -1231,7 +1231,7 @@ async fn update_task_playbook_step_within_bounds_succeeds() {
     let project_id = app.create_project("upd-step-ok").await;
 
     // Create a 3-step playbook
-    let playbook_id = app.create_playbook(&["implement", "review", "merge"]).await;
+    let playbook_name = app.create_playbook(&["implement", "review", "merge"]).await;
 
     // Create task with this playbook
     let task = app
@@ -1239,7 +1239,7 @@ async fn update_task_playbook_step_within_bounds_succeeds() {
             project_id,
             serde_json::json!({
                 "title": "Update OK step test",
-                "playbook_id": playbook_id,
+                "playbook_name": playbook_name,
             }),
         )
         .await;
@@ -1279,21 +1279,21 @@ async fn update_task_playbook_step_none_succeeds() {
     app.cleanup().await;
 }
 
-// Known gap: when a task has no playbook_id, only the negative-value guard applies.
+// Known gap: when a task has no playbook_name, only the negative-value guard applies.
 // playbook_step=99 (or any non-negative value) silently succeeds because the OOB
-// upper-bound check in validate_playbook_step is skipped when playbook_id is None.
+// upper-bound check in validate_playbook_step is skipped when playbook_name is None.
 // This mirrors the same gap documented for transition_task (task #64).
 #[tokio::test]
 async fn update_task_playbook_step_on_no_playbook_task_succeeds() {
     let app = require_db!();
     let project_id = app.create_project("upd-step-no-pb").await;
 
-    // Create task WITHOUT a playbook_id
+    // Create task WITHOUT a playbook_name
     let task = app
         .create_task(project_id, "Update OOB no playbook test")
         .await;
     let task_id = task["id"].as_str().unwrap();
-    assert!(task["playbook_id"].is_null());
+    assert!(task["playbook_name"].is_null());
 
     // PUT with playbook_step=99 — no playbook means no upper-bound check,
     // so this succeeds (known gap: no playbook → no upper bound enforced)
@@ -1325,7 +1325,7 @@ async fn merge_rejection_regresses_to_implement() {
     let agent_id = app.create_agent("merge-rejecter").await;
 
     // Create a 3-step playbook: implement(0) → review(1) → merge(2)
-    let playbook_id = app.create_playbook(&["implement", "review", "merge"]).await;
+    let playbook_name = app.create_playbook(&["implement", "review", "merge"]).await;
 
     // Create task with this playbook
     let task = app
@@ -1333,7 +1333,7 @@ async fn merge_rejection_regresses_to_implement() {
             project_id,
             serde_json::json!({
                 "title": "Merge rejection test",
-                "playbook_id": playbook_id,
+                "playbook_name": playbook_name,
             }),
         )
         .await;
@@ -1401,7 +1401,7 @@ async fn rejected_then_re_implemented_advances_again() {
     let agent_id = app.create_agent("re-implementer").await;
 
     // Create a 3-step playbook: implement(0) → review(1) → merge(2)
-    let playbook_id = app.create_playbook(&["implement", "review", "merge"]).await;
+    let playbook_name = app.create_playbook(&["implement", "review", "merge"]).await;
 
     // Create task with this playbook
     let task = app
@@ -1409,7 +1409,7 @@ async fn rejected_then_re_implemented_advances_again() {
             project_id,
             serde_json::json!({
                 "title": "Re-implement after rejection",
-                "playbook_id": playbook_id,
+                "playbook_name": playbook_name,
             }),
         )
         .await;
@@ -1493,7 +1493,7 @@ async fn step_regression_finds_nearest_previous_implement() {
     let agent_id = app.create_agent("regress-nearest-agent").await;
 
     // Create a 4-step playbook: [implement, review, implement, merge]
-    let playbook_id = app
+    let playbook_name = app
         .create_playbook(&["implement", "review", "implement", "merge"])
         .await;
 
@@ -1503,7 +1503,7 @@ async fn step_regression_finds_nearest_previous_implement() {
             project_id,
             serde_json::json!({
                 "title": "Nearest regression test",
-                "playbook_id": playbook_id,
+                "playbook_name": playbook_name,
             }),
         )
         .await;
@@ -1590,7 +1590,7 @@ async fn implement_step_to_ready_does_not_regress() {
     let agent_id = app.create_agent("impl-releaser").await;
 
     // Create a 3-step playbook: implement(0) → review(1) → merge(2)
-    let playbook_id = app.create_playbook(&["implement", "review", "merge"]).await;
+    let playbook_name = app.create_playbook(&["implement", "review", "merge"]).await;
 
     // Create task with this playbook
     let task = app
@@ -1598,7 +1598,7 @@ async fn implement_step_to_ready_does_not_regress() {
             project_id,
             serde_json::json!({
                 "title": "Implement release test",
-                "playbook_id": playbook_id,
+                "playbook_name": playbook_name,
             }),
         )
         .await;
@@ -1651,7 +1651,7 @@ async fn regression_falls_through_when_no_implement_step_before_current() {
     let agent_id = app.create_agent("no-impl-agent").await;
 
     // Create a 2-step playbook with NO implement step: [review, merge]
-    let playbook_id = app.create_playbook(&["review", "merge"]).await;
+    let playbook_name = app.create_playbook(&["review", "merge"]).await;
 
     // Create task with this playbook (starts at ready, step 0)
     let task = app
@@ -1659,7 +1659,7 @@ async fn regression_falls_through_when_no_implement_step_before_current() {
             project_id,
             serde_json::json!({
                 "title": "No implement step regression test",
-                "playbook_id": playbook_id,
+                "playbook_name": playbook_name,
             }),
         )
         .await;
@@ -1721,7 +1721,7 @@ async fn bulk_transition_with_valid_playbook_step() {
     let agent_id = app.create_agent("bulk-stepper").await;
 
     // Create a 3-step playbook
-    let playbook_id = app.create_playbook(&["implement", "review", "merge"]).await;
+    let playbook_name = app.create_playbook(&["implement", "review", "merge"]).await;
 
     // Create task with this playbook
     let task = app
@@ -1729,7 +1729,7 @@ async fn bulk_transition_with_valid_playbook_step() {
             project_id,
             serde_json::json!({
                 "title": "Bulk step test",
-                "playbook_id": playbook_id,
+                "playbook_name": playbook_name,
             }),
         )
         .await;
@@ -1793,7 +1793,7 @@ async fn bulk_transition_oob_playbook_step_fails_per_task() {
     let agent_id = app.create_agent("bulk-oob-stepper").await;
 
     // Create a 3-step playbook (steps 0, 1, 2)
-    let playbook_id = app.create_playbook(&["implement", "review", "merge"]).await;
+    let playbook_name = app.create_playbook(&["implement", "review", "merge"]).await;
 
     // Create task with this playbook
     let task = app
@@ -1801,7 +1801,7 @@ async fn bulk_transition_oob_playbook_step_fails_per_task() {
             project_id,
             serde_json::json!({
                 "title": "Bulk OOB step test",
-                "playbook_id": playbook_id,
+                "playbook_name": playbook_name,
             }),
         )
         .await;
@@ -1873,7 +1873,7 @@ async fn bulk_transition_pipeline_advancement_releases_file_locks() {
     let agent_id = app.create_agent("lock-stepper").await;
 
     // Create a 3-step playbook
-    let playbook_id = app.create_playbook(&["implement", "review", "merge"]).await;
+    let playbook_name = app.create_playbook(&["implement", "review", "merge"]).await;
 
     // Create task with playbook
     let task = app
@@ -1881,7 +1881,7 @@ async fn bulk_transition_pipeline_advancement_releases_file_locks() {
             project_id,
             serde_json::json!({
                 "title": "Lock release test",
-                "playbook_id": playbook_id,
+                "playbook_name": playbook_name,
             }),
         )
         .await;
@@ -2015,7 +2015,7 @@ async fn bulk_transition_cross_project_task_fails() {
     app.cleanup().await;
 }
 
-// ── update_task: validate playbook_step against effective (post-update) playbook_id ──
+// ── update_task: validate playbook_step against effective (post-update) playbook_name ──
 
 #[tokio::test]
 async fn update_task_playbook_step_oob_with_new_playbook_rejected() {
@@ -2023,22 +2023,22 @@ async fn update_task_playbook_step_oob_with_new_playbook_rejected() {
     let project_id = app.create_project("upd-step-oob-new-pb").await;
 
     // Create a 3-step playbook
-    let playbook_id = app.create_playbook(&["implement", "review", "merge"]).await;
+    let playbook_name = app.create_playbook(&["implement", "review", "merge"]).await;
 
     // Create task WITHOUT a playbook
     let task = app
         .create_task(project_id, "OOB step with new playbook test")
         .await;
     let task_id = task["id"].as_str().unwrap();
-    assert!(task["playbook_id"].is_null());
+    assert!(task["playbook_name"].is_null());
 
-    // PUT simultaneously setting playbook_id AND playbook_step=99 (OOB for a 3-step playbook)
+    // PUT simultaneously setting playbook_name AND playbook_step=99 (OOB for a 3-step playbook)
     // This should be rejected with 422 because step 99 is out of range for the new playbook.
     let resp = app
         .send(put_json(
             &format!("/v1/tasks/{task_id}"),
             serde_json::json!({
-                "playbook_id": playbook_id,
+                "playbook_name": playbook_name,
                 "playbook_step": 99,
             }),
         ))
@@ -2053,33 +2053,33 @@ async fn update_task_playbook_step_oob_with_new_playbook_rejected() {
     app.cleanup().await;
 }
 
-// ── update_task: simultaneous playbook_id + playbook_step boundary tests ──
+// ── update_task: simultaneous playbook_name + playbook_step boundary tests ──
 
-/// When setting a new playbook_id AND an out-of-bounds playbook_step in a single PUT,
+/// When setting a new playbook_name AND an out-of-bounds playbook_step in a single PUT,
 /// the API rejects with 422. Fixed in task #165: validate_playbook_step now uses the
-/// effective (post-update) playbook_id, correctly rejecting out-of-bounds steps.
+/// effective (post-update) playbook_name, correctly rejecting out-of-bounds steps.
 #[tokio::test]
 async fn update_task_new_playbook_and_oob_step_rejected() {
     let app = require_db!();
     let project_id = app.create_project("upd-new-pb-oob").await;
 
     // Create a 3-step playbook
-    let playbook_id = app.create_playbook(&["implement", "review", "merge"]).await;
+    let playbook_name = app.create_playbook(&["implement", "review", "merge"]).await;
 
-    // Create task WITHOUT a playbook_id
+    // Create task WITHOUT a playbook_name
     let task = app
         .create_task(project_id, "New playbook + OOB step test")
         .await;
     let task_id = task["id"].as_str().unwrap();
-    assert!(task["playbook_id"].is_null());
+    assert!(task["playbook_name"].is_null());
 
-    // PUT simultaneously setting playbook_id AND playbook_step=99 (OOB for a 3-step playbook).
+    // PUT simultaneously setting playbook_name AND playbook_step=99 (OOB for a 3-step playbook).
     // After task #165 fix: returns 422 (correct). Before fix: returned 200 with step=99 (bug).
     let resp = app
         .send(put_json(
             &format!("/v1/tasks/{task_id}"),
             serde_json::json!({
-                "playbook_id": playbook_id,
+                "playbook_name": playbook_name,
                 "playbook_step": 99,
             }),
         ))
@@ -2094,28 +2094,28 @@ async fn update_task_new_playbook_and_oob_step_rejected() {
     app.cleanup().await;
 }
 
-/// Setting a new playbook_id AND a valid playbook_step in a single PUT should succeed.
+/// Setting a new playbook_name AND a valid playbook_step in a single PUT should succeed.
 #[tokio::test]
 async fn update_task_new_playbook_and_valid_step_succeeds() {
     let app = require_db!();
     let project_id = app.create_project("upd-new-pb-ok").await;
 
     // Create a 3-step playbook
-    let playbook_id = app.create_playbook(&["implement", "review", "merge"]).await;
+    let playbook_name = app.create_playbook(&["implement", "review", "merge"]).await;
 
-    // Create task WITHOUT a playbook_id
+    // Create task WITHOUT a playbook_name
     let task = app
         .create_task(project_id, "New playbook + valid step test")
         .await;
     let task_id = task["id"].as_str().unwrap();
-    assert!(task["playbook_id"].is_null());
+    assert!(task["playbook_name"].is_null());
 
-    // PUT simultaneously setting playbook_id AND playbook_step=1 (within bounds for 3-step)
+    // PUT simultaneously setting playbook_name AND playbook_step=1 (within bounds for 3-step)
     let resp = app
         .send(put_json(
             &format!("/v1/tasks/{task_id}"),
             serde_json::json!({
-                "playbook_id": playbook_id,
+                "playbook_name": playbook_name,
                 "playbook_step": 1,
             }),
         ))
@@ -2133,109 +2133,109 @@ async fn update_task_new_playbook_and_valid_step_succeeds() {
         resp.json
     );
     assert_eq!(
-        resp.json["playbook_id"].as_str().unwrap(),
-        playbook_id.to_string(),
-        "playbook_id should be set: {}",
+        resp.json["playbook_name"].as_str().unwrap(),
+        playbook_name.to_string(),
+        "playbook_name should be set: {}",
         resp.json
     );
 
     app.cleanup().await;
 }
 
-// ── update_task: clearing playbook_id via double-option None path ──
+// ── update_task: clearing playbook_name via double-option None path ──
 
-/// PUT with {"playbook_id": null} clears the playbook binding (Some(None) path).
+/// PUT with {"playbook_name": null} clears the playbook binding (Some(None) path).
 #[tokio::test]
-async fn update_task_clears_playbook_id() {
+async fn update_task_clears_playbook_name() {
     let app = require_db!();
     let project_id = app.create_project("upd-clear-pb").await;
 
     // Create a 3-step playbook
-    let playbook_id = app.create_playbook(&["implement", "review", "merge"]).await;
+    let playbook_name = app.create_playbook(&["implement", "review", "merge"]).await;
 
     // Create task WITH a playbook
     let task = app
         .create_task_with(
             project_id,
             serde_json::json!({
-                "title": "Clear playbook_id test",
-                "playbook_id": playbook_id,
+                "title": "Clear playbook_name test",
+                "playbook_name": playbook_name,
             }),
         )
         .await;
     let task_id = task["id"].as_str().unwrap();
     assert_eq!(
-        task["playbook_id"].as_str().unwrap(),
-        playbook_id.to_string(),
-        "task should start with a playbook_id assigned"
+        task["playbook_name"].as_str().unwrap(),
+        playbook_name.to_string(),
+        "task should start with a playbook_name assigned"
     );
 
-    // PUT with {"playbook_id": null} → deserializes to Some(None), clearing the binding
+    // PUT with {"playbook_name": null} → deserializes to Some(None), clearing the binding
     let resp = app
         .send(put_json(
             &format!("/v1/tasks/{task_id}"),
-            serde_json::json!({ "playbook_id": null }),
+            serde_json::json!({ "playbook_name": null }),
         ))
         .await;
     assert_eq!(
         resp.status,
         StatusCode::OK,
-        "clearing playbook_id should succeed: {}",
+        "clearing playbook_name should succeed: {}",
         resp.json
     );
     assert!(
-        resp.json["playbook_id"].is_null(),
-        "playbook_id should be null after clearing: {}",
+        resp.json["playbook_name"].is_null(),
+        "playbook_name should be null after clearing: {}",
         resp.json
     );
 
     app.cleanup().await;
 }
 
-/// Clearing playbook_id leaves playbook_step orphaned (known gap).
+/// Clearing playbook_name leaves playbook_step orphaned (known gap).
 /// The step value is preserved even though the playbook binding is gone.
 #[tokio::test]
-async fn update_task_clears_playbook_id_also_clears_step() {
+async fn update_task_clears_playbook_name_also_clears_step() {
     let app = require_db!();
     let project_id = app.create_project("upd-clear-pb-step").await;
 
     // Create a 3-step playbook
-    let playbook_id = app.create_playbook(&["implement", "review", "merge"]).await;
+    let playbook_name = app.create_playbook(&["implement", "review", "merge"]).await;
 
     // Create task WITH a playbook and set playbook_step=1
     let task = app
         .create_task_with(
             project_id,
             serde_json::json!({
-                "title": "Clear playbook_id step test",
-                "playbook_id": playbook_id,
+                "title": "Clear playbook_name step test",
+                "playbook_name": playbook_name,
                 "playbook_step": 1,
             }),
         )
         .await;
     let task_id = task["id"].as_str().unwrap();
     assert_eq!(
-        task["playbook_id"].as_str().unwrap(),
-        playbook_id.to_string(),
+        task["playbook_name"].as_str().unwrap(),
+        playbook_name.to_string(),
     );
     assert_eq!(task["playbook_step"].as_i64().unwrap(), 1);
 
-    // Clear playbook_id — step is NOT cleared (orphaned-step gap)
+    // Clear playbook_name — step is NOT cleared (orphaned-step gap)
     let resp = app
         .send(put_json(
             &format!("/v1/tasks/{task_id}"),
-            serde_json::json!({ "playbook_id": null }),
+            serde_json::json!({ "playbook_name": null }),
         ))
         .await;
     assert_eq!(
         resp.status,
         StatusCode::OK,
-        "clearing playbook_id should succeed: {}",
+        "clearing playbook_name should succeed: {}",
         resp.json
     );
     assert!(
-        resp.json["playbook_id"].is_null(),
-        "playbook_id should be null after clearing: {}",
+        resp.json["playbook_name"].is_null(),
+        "playbook_name should be null after clearing: {}",
         resp.json
     );
     // Known gap: playbook_step is preserved even though the playbook binding is gone.
@@ -2243,7 +2243,7 @@ async fn update_task_clears_playbook_id_also_clears_step() {
     assert_eq!(
         resp.json["playbook_step"].as_i64().unwrap(),
         1,
-        "playbook_step should be preserved (orphaned) when playbook_id is cleared: {}",
+        "playbook_step should be preserved (orphaned) when playbook_name is cleared: {}",
         resp.json
     );
 

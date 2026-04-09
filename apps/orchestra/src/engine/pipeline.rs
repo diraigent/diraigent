@@ -76,11 +76,10 @@ pub async fn check_next_step(
         // Task was sent back to ready by the current step (e.g. review rejection).
         // If the current step is a non-implement step, regress playbook_step back
         // to the previous implement step so it can apply the feedback.
-        let playbook_id = task["playbook_id"].as_str().unwrap_or("");
+        let playbook_name = task["playbook_name"].as_str().unwrap_or("");
         let current_step = task["playbook_step"].as_i64().unwrap_or(0);
-        if !playbook_id.is_empty() {
-            let (_playbook, steps_vec) =
-                resolve_playbook_steps(api, playbook_id, git_root, &tid).await?;
+        if !playbook_name.is_empty() {
+            let steps_vec = resolve_playbook_steps(playbook_name, git_root, &tid).await?;
             let steps_value: Option<&[Value]> = if !steps_vec.is_empty() {
                 Some(&steps_vec)
             } else {
@@ -242,15 +241,8 @@ pub async fn resolve_max_implement_cycles(
 /// Returns (step_name, step_json) where step_json is the full step object
 /// from the playbook JSONB.
 ///
-/// If the playbook response includes `resolved_steps` (meaning step templates
-/// were expanded by the API), uses those. Otherwise falls back to raw `steps`.
-/// If a step has a `step_template_id` but the API didn't resolve it (e.g. older
-/// API version), the orchestra fetches the template directly and merges inline.
-///
-/// When `git_root` is provided, also checks `.diraigent/playbooks/` for a
-/// matching repo playbook. If found, the repo version's steps override the
-/// API version (repo is source of truth). If the API fetch fails entirely,
-/// the repo playbook is used as a fallback.
+/// Uses repo/YAML playbooks referenced by `task.playbook_name`.
+/// If a step has `step_template_id`, the orchestra fetches the template and merges inline.
 pub async fn resolve_step(
     api: &dyn TaskSource,
     task_data: Option<&Value>,
@@ -260,131 +252,51 @@ pub async fn resolve_step(
         return ("implement".to_string(), None);
     };
 
-    let playbook_id = task["playbook_id"].as_str().unwrap_or("");
+    let playbook_name = task["playbook_name"].as_str().unwrap_or("");
     let current_step = task["playbook_step"].as_u64().unwrap_or(0);
 
-    if playbook_id.is_empty() {
+    if playbook_name.is_empty() {
         return ("implement".to_string(), None);
     }
 
-    match api.get_playbook(playbook_id).await {
-        Ok(playbook) => {
-            // Try to find a repo override for this playbook
-            let repo_steps = git_root.and_then(|root| {
-                let api_title = playbook["title"].as_str().unwrap_or("");
-                let api_metadata = playbook.get("metadata");
-                match repo_playbooks::find_repo_override(root, api_title, api_metadata) {
-                    Some(repo_pb) => {
-                        info!(
-                            "Using repo playbook override: {} (matches API playbook '{}')",
-                            repo_pb.name, api_title
-                        );
-                        repo_pb.steps.as_array().cloned()
-                    }
-                    None => None,
-                }
-            });
+    let Some(root) = git_root else {
+        return ("implement".to_string(), None);
+    };
+    let Some(playbook) = repo_playbooks::find_playbook_by_name(root, playbook_name) else {
+        warn!("resolve_step: repo playbook '{playbook_name}' not found");
+        return ("implement".to_string(), None);
+    };
+    let steps = playbook.steps.as_array().cloned().unwrap_or_default();
+    if let Some(step) = steps.get(current_step as usize) {
+        let resolved: Value = if step
+            .get("step_template_id")
+            .is_some_and(|v: &Value| v.is_string())
+        {
+            resolve_step_template(api, step).await
+        } else {
+            step.clone()
+        };
 
-            // Use repo steps if available, otherwise API steps
-            let using_repo = repo_steps.is_some();
-            let steps: Option<Vec<Value>> = if let Some(repo) = repo_steps {
-                Some(repo)
-            } else {
-                playbook["resolved_steps"]
-                    .as_array()
-                    .or_else(|| playbook["steps"].as_array())
-                    .cloned()
-            };
-
-            if let Some(ref steps) = steps
-                && let Some(step) = steps.get(current_step as usize)
-            {
-                // If the step still has an unresolved step_template_id (API didn't expand),
-                // try to resolve it client-side as a fallback.
-                // Only do this for API steps (not repo overrides).
-                let resolved: Value = if !using_repo
-                    && step
-                        .get("step_template_id")
-                        .is_some_and(|v: &Value| v.is_string())
-                    && playbook["resolved_steps"].is_null()
-                {
-                    resolve_step_template(api, step).await
-                } else {
-                    step.clone()
-                };
-
-                let name = resolved["name"].as_str().unwrap_or("implement").to_string();
-                (name, Some(resolved))
-            } else {
-                ("implement".to_string(), None)
-            }
-        }
-        Err(e) => {
-            // API playbook fetch failed — try repo fallback
-            if let Some(root) = git_root {
-                warn!("resolve_step: API playbook fetch failed ({e}), trying repo fallback");
-                if let Ok(loaded_playbooks) = repo_playbooks::load_repo_playbooks(root) {
-                    // Try to find any repo playbook (we don't know the title since API failed)
-                    // Use the first one that has enough steps, or just the first one
-                    for repo_pb in &loaded_playbooks {
-                        if let Some(steps) = repo_pb.steps.as_array() {
-                            let step: Option<&Value> = steps.get(current_step as usize);
-                            if let Some(step) = step {
-                                info!(
-                                    "Using repo playbook fallback: {} (API fetch failed)",
-                                    repo_pb.name
-                                );
-                                let name = step["name"].as_str().unwrap_or("implement").to_string();
-                                return (name, Some(step.clone()));
-                            }
-                        }
-                    }
-                }
-            }
-            ("implement".to_string(), None)
-        }
+        let name = resolved["name"].as_str().unwrap_or("implement").to_string();
+        (name, Some(resolved))
+    } else {
+        ("implement".to_string(), None)
     }
 }
 
-/// Resolve playbook steps from API with repo playbook override support.
-///
-/// Used by `check_next_step()` to get steps for regression logic and git actions.
-/// If `git_root` is provided, checks for repo playbook overrides.
+/// Resolve playbook steps from the repo YAML playbook.
 async fn resolve_playbook_steps(
-    api: &dyn TaskSource,
-    playbook_id: &str,
+    playbook_name: &str,
     git_root: Option<&Path>,
     tid: &TaskId,
-) -> Result<(Value, Vec<Value>)> {
-    let playbook = retry_api_call("get_playbook", tid, || api.get_playbook(playbook_id)).await?;
-
-    // Check for repo playbook override
-    let repo_steps = git_root.and_then(|root| {
-        let api_title = playbook["title"].as_str().unwrap_or("");
-        let api_metadata = playbook.get("metadata");
-        match repo_playbooks::find_repo_override(root, api_title, api_metadata) {
-            Some(repo_pb) => {
-                info!(
-                    "Using repo playbook override for check_next_step: {} (matches '{}')",
-                    repo_pb.name, api_title
-                );
-                repo_pb.steps.as_array().cloned()
-            }
-            None => None,
-        }
-    });
-
-    let steps = if let Some(repo) = repo_steps {
-        repo
-    } else {
-        playbook["resolved_steps"]
-            .as_array()
-            .or_else(|| playbook["steps"].as_array())
-            .cloned()
-            .unwrap_or_default()
+) -> Result<Vec<Value>> {
+    let Some(root) = git_root else {
+        anyhow::bail!("task {tid}: no git_root available for playbook '{playbook_name}'");
     };
-
-    Ok((playbook, steps))
+    let Some(playbook) = repo_playbooks::find_playbook_by_name(root, playbook_name) else {
+        anyhow::bail!("task {tid}: repo playbook '{playbook_name}' not found");
+    };
+    Ok(playbook.steps.as_array().cloned().unwrap_or_default())
 }
 
 /// Client-side fallback: resolve a single step's step_template_id by fetching
@@ -450,15 +362,8 @@ async fn resolve_step_template(api: &dyn TaskSource, step: &Value) -> Value {
     }
 }
 
-/// Sync repo-based playbooks to the API for a given project.
-///
-/// Delegates to [`crate::repo_playbooks::sync_repo_playbooks`] which handles YAML
-/// discovery, parsing, and API sync. Failures are non-fatal: errors are logged
-/// but do not prevent task execution.
-pub async fn sync_project_playbooks(api: &dyn TaskSource, repo_root: &std::path::Path) {
-    if let Err(e) = repo_playbooks::sync_repo_playbooks(api, repo_root).await {
-        warn!("pipeline: failed to sync repo playbooks: {e:#}");
-    }
+/// Repo playbooks are the source of truth now, so there is nothing to sync.
+pub async fn sync_project_playbooks(_api: &dyn TaskSource, _repo_root: &std::path::Path) {
 }
 
 /// Sync repo-based decisions (ADRs) to the API for a given project.

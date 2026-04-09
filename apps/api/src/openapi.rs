@@ -54,8 +54,6 @@ use crate::scoring::TaskScore;
             // -- Observations --
             Observation, CreateObservation, UpdateObservation,
             PromoteObservation, CleanupObservationsResult, ObservationFilters,
-            // -- Playbooks --
-            Playbook, CreatePlaybook, UpdatePlaybook, PlaybookFilters,
             // -- Events --
             Event, CreateEvent, EventFilters,
             // -- Integrations --

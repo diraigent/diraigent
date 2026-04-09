@@ -34,6 +34,18 @@ pub enum WsMessage {
         #[serde(skip_serializing_if = "Option::is_none")]
         git_ref: Option<String>,
     },
+    // API -> Orchestra: request playbook operation
+    #[serde(rename = "playbook.request")]
+    PlaybookRequest {
+        request_id: String,
+        project_id: Uuid,
+        /// "list" | "get" | "create" | "update" | "delete"
+        operation: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        content: Option<serde_json::Value>,
+    },
 
     // API -> Orchestra: cancel an active chat session
     #[serde(rename = "chat.cancel")]
@@ -49,6 +61,15 @@ pub enum WsMessage {
     GitResponse {
         request_id: String,
         success: bool,
+        error: Option<String>,
+        data: serde_json::Value,
+    },
+    // Orchestra -> API: playbook operation result
+    #[serde(rename = "playbook.response")]
+    PlaybookResponse {
+        request_id: String,
+        success: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
         data: serde_json::Value,
     },

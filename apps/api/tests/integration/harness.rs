@@ -256,28 +256,17 @@ impl TestApp {
         resp.json
     }
 
-    /// Create a playbook with the given step names and return its ID.
-    pub async fn create_playbook(&self, step_names: &[&str]) -> Uuid {
-        let steps: Vec<serde_json::Value> = step_names
-            .iter()
-            .map(|name| serde_json::json!({ "name": name }))
-            .collect();
-        let resp = self
-            .send(post_json(
-                "/v1/playbooks",
-                serde_json::json!({
-                    "title": format!("{}-Step Pipeline", step_names.len()),
-                    "steps": steps,
-                }),
-            ))
-            .await;
-        assert_eq!(
-            resp.status,
-            StatusCode::OK,
-            "create playbook: {}",
-            resp.json
-        );
-        resp.id()
+    /// Return a synthetic playbook name for tests.
+    ///
+    /// The runtime now resolves playbooks from repo YAML by name; task creation no
+    /// longer requires a DB playbook row to exist.
+    pub async fn create_playbook(&self, step_names: &[&str]) -> String {
+        let base = step_names.join("-");
+        if base.is_empty() {
+            "test-playbook".to_string()
+        } else {
+            base
+        }
     }
 
     /// Create a task with specific fields.

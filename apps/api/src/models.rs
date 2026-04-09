@@ -207,7 +207,7 @@ pub struct Project {
     pub description: Option<String>,
     pub owner_id: Uuid,
     pub parent_id: Option<Uuid>,
-    pub default_playbook_id: Option<Uuid>,
+    pub default_playbook_name: Option<String>,
     /// FK to diraigent.package — determines which domain enum values are valid
     /// for tasks, knowledge, observations, events, and integrations in this project.
     pub package_id: Option<Uuid>,
@@ -345,7 +345,7 @@ pub struct Task {
     pub assigned_role_id: Option<Uuid>,
     pub delegated_by: Option<Uuid>,
     pub delegated_at: Option<DateTime<Utc>>,
-    pub playbook_id: Option<Uuid>,
+    pub playbook_name: Option<String>,
     pub playbook_step: Option<i32>,
     /// FK to the decision that originated this task (nullable).
     pub decision_id: Option<Uuid>,
@@ -500,7 +500,7 @@ pub struct CreateProject {
 pub struct UpdateProject {
     pub name: Option<String>,
     pub description: Option<String>,
-    pub default_playbook_id: Option<Option<Uuid>>,
+    pub default_playbook_name: Option<String>,
     pub repo_url: Option<Option<String>>,
     /// Legacy path field — prefer `git_root` for new projects.
     pub repo_path: Option<Option<String>>,
@@ -524,7 +524,7 @@ pub struct CreateTask {
     pub urgent: Option<bool>,
     pub context: Option<serde_json::Value>,
     pub required_capabilities: Option<Vec<String>>,
-    pub playbook_id: Option<Uuid>,
+    pub playbook_name: Option<String>,
     /// Optional FK to the decision that originated this task.
     pub decision_id: Option<Uuid>,
     /// Optional work item to link the new task to (inserts into task_work join table).
@@ -543,9 +543,7 @@ pub struct UpdateTask {
     pub context: Option<serde_json::Value>,
     pub required_capabilities: Option<Vec<String>>,
     pub playbook_step: Option<i32>,
-    /// Double-Option: None = don't change, Some(None) = clear, Some(Some(id)) = set.
-    #[serde(default, deserialize_with = "deserialize_double_option")]
-    pub playbook_id: Option<Option<Uuid>>,
+    pub playbook_name: Option<String>,
     /// User-toggleable flag (bookmark).
     pub flagged: Option<bool>,
     /// File paths this task intends to modify (for branch overlap detection).
@@ -718,31 +716,6 @@ pub struct Observation {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
-pub struct Playbook {
-    pub id: Uuid,
-    /// Tenant that owns this playbook. NULL means shared / visible to all tenants.
-    pub tenant_id: Option<Uuid>,
-    pub title: String,
-    pub trigger_description: Option<String>,
-    pub steps: serde_json::Value,
-    pub tags: Vec<String>,
-    pub metadata: serde_json::Value,
-    /// State a task enters when created with this playbook.
-    /// "ready"   — auto-queue for agents immediately (default).
-    /// "backlog" — stay in backlog until manually promoted to ready.
-    pub initial_state: String,
-    pub created_by: Uuid,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    /// Monotonically increasing version number, incremented on each update.
-    pub version: i32,
-    /// If this playbook was forked from another, the source playbook's ID.
-    pub parent_id: Option<Uuid>,
-    /// The version of the parent playbook at the time this fork was created.
-    pub parent_version: Option<i32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct Event {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -883,28 +856,6 @@ pub struct UpdateObservation {
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub struct CreatePlaybook {
-    pub title: String,
-    pub trigger_description: Option<String>,
-    pub steps: Option<serde_json::Value>,
-    pub tags: Option<Vec<String>>,
-    pub metadata: Option<serde_json::Value>,
-    /// "ready" (default) or "backlog".
-    pub initial_state: Option<String>,
-}
-
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub struct UpdatePlaybook {
-    pub title: Option<String>,
-    pub trigger_description: Option<String>,
-    pub steps: Option<serde_json::Value>,
-    pub tags: Option<Vec<String>>,
-    pub metadata: Option<serde_json::Value>,
-    /// "ready" or "backlog".
-    pub initial_state: Option<String>,
-}
-
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateEvent {
     pub kind: String,
     pub source: String,
@@ -948,13 +899,6 @@ pub struct ObservationFilters {
     pub kind: Option<String>,
     pub severity: Option<String>,
     pub status: Option<String>,
-    pub limit: Option<i64>,
-    pub offset: Option<i64>,
-}
-
-#[derive(Debug, Deserialize, Default, utoipa::ToSchema)]
-pub struct PlaybookFilters {
-    pub tag: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
 }
@@ -1017,7 +961,7 @@ pub struct PromoteObservation {
     pub title: Option<String>,
     pub kind: Option<String>,
     pub urgent: Option<bool>,
-    pub playbook_id: Option<Uuid>,
+    pub playbook_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
@@ -1246,7 +1190,7 @@ pub struct AgentContext {
     pub my_tasks: Vec<Task>,
     pub open_observations: Vec<Observation>,
     pub recent_events: Vec<Event>,
-    pub playbooks: Vec<Playbook>,
+    pub playbooks: Vec<serde_json::Value>,
 }
 
 // ── File Locks ──
@@ -1490,8 +1434,7 @@ pub struct AgentMetrics {
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct PlaybookMetrics {
-    pub playbook_id: Uuid,
-    pub playbook_title: String,
+    pub playbook_name: String,
     pub total_tasks: i64,
     pub completed_tasks: i64,
     pub completion_rate: f64,

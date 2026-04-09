@@ -12,6 +12,7 @@ use crate::auth::AuthUser;
 use crate::error::AppError;
 use crate::ws_protocol::WsMessage;
 use crate::ws_registry::GitResponsePayload;
+use crate::ws_registry::PlaybookResponsePayload;
 
 pub fn routes() -> Router<AppState> {
     Router::new().route("/agents/{agent_id}/ws", get(ws_handler))
@@ -86,6 +87,17 @@ async fn handle_socket(state: AppState, agent_id: Uuid, socket: WebSocket) {
                                 error,
                                 data,
                             },
+                        );
+                    }
+                    WsMessage::PlaybookResponse {
+                        request_id,
+                        success,
+                        error,
+                        data,
+                    } => {
+                        state.ws_registry.complete_playbook_request(
+                            &request_id,
+                            PlaybookResponsePayload { success, error, data },
                         );
                     }
                     WsMessage::Heartbeat => {

@@ -279,23 +279,6 @@ impl ProjectsApi {
 
     // ── Playbook operations ──────────────────────────────────
 
-    pub async fn get_playbook(&self, playbook_id: &str) -> Result<Value> {
-        self.get(&format!("/playbooks/{playbook_id}")).await
-    }
-
-    pub async fn list_playbooks(&self) -> Result<Vec<Value>> {
-        let val = self.get("/playbooks").await?;
-        Ok(as_array(&val))
-    }
-
-    pub async fn create_playbook(&self, body: &Value) -> Result<Value> {
-        self.post("/playbooks", body).await
-    }
-
-    pub async fn update_playbook(&self, playbook_id: &str, body: &Value) -> Result<Value> {
-        self.put(&format!("/playbooks/{playbook_id}"), body).await
-    }
-
     pub async fn get_step_template(&self, template_id: &str) -> Result<Value> {
         self.get(&format!("/step-templates/{template_id}")).await
     }
@@ -718,18 +701,6 @@ impl crate::engine::task_source::TaskSource for ProjectsApi {
         ProjectsApi::get_related_items(self, task_id).await
     }
 
-    async fn get_playbook(&self, playbook_id: &str) -> Result<Value> {
-        ProjectsApi::get_playbook(self, playbook_id).await
-    }
-    async fn list_playbooks(&self) -> Result<Vec<Value>> {
-        ProjectsApi::list_playbooks(self).await
-    }
-    async fn create_playbook(&self, body: &Value) -> Result<Value> {
-        ProjectsApi::create_playbook(self, body).await
-    }
-    async fn update_playbook(&self, playbook_id: &str, body: &Value) -> Result<Value> {
-        ProjectsApi::update_playbook(self, playbook_id, body).await
-    }
     async fn get_step_template(&self, template_id: &str) -> Result<Value> {
         ProjectsApi::get_step_template(self, template_id).await
     }

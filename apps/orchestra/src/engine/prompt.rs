@@ -150,9 +150,9 @@ pub async fn build_user_prompt(
     let task_updates = updates_res.unwrap_or_default();
     let verifications = verifications_res.unwrap_or_default();
 
-    let current_playbook_id = task_json
+    let current_playbook_name = task_json
         .as_ref()
-        .and_then(|t| t["playbook_id"].as_str())
+        .and_then(|t| t["playbook_name"].as_str())
         .unwrap_or("")
         .to_string();
 
@@ -356,7 +356,7 @@ pub async fn build_user_prompt(
         short_id: tid.short(),
         repo_root,
         api_base: &api_base,
-        playbook_id: &current_playbook_id,
+        playbook_name: &current_playbook_name,
         review_feedback: &review_feedback,
         decompose_mode,
         project_json: project_json.as_ref(),
@@ -739,7 +739,7 @@ struct WorkflowParams<'a> {
     short_id: &'a str,
     repo_root: &'a Path,
     api_base: &'a str,
-    playbook_id: &'a str,
+    playbook_name: &'a str,
     review_feedback: &'a str,
     /// When true, the agent should decompose this task into subtasks
     /// instead of implementing it directly (set via `context.decompose`).
@@ -755,7 +755,7 @@ struct WorkflowParams<'a> {
 /// Substitute `{{variable}}` placeholders in a step description template.
 ///
 /// Built-in variables (from runtime context): agent_cli, task_id, project_id,
-/// short_id, repo_root, api_base, auth_header, agent_id, playbook_id, branch,
+/// short_id, repo_root, api_base, auth_header, agent_id, playbook_name, branch,
 /// review_feedback.
 ///
 /// Project variables: `{{project.<key>}}` — any string field from the project
@@ -782,7 +782,7 @@ fn substitute_description(
         .replace("{{api_base}}", p.api_base)
         .replace("{{auth_header}}", auth_header)
         .replace("{{agent_id}}", agent_id)
-        .replace("{{playbook_id}}", p.playbook_id)
+        .replace("{{playbook_name}}", p.playbook_name)
         .replace("{{branch}}", &branch)
         .replace("{{review_feedback}}", p.review_feedback)
         .replace("{{work_id}}", p.work_id);
@@ -842,7 +842,7 @@ fn build_workflow(p: &WorkflowParams<'_>) -> String {
         let agent_cli = p.agent_cli;
         let task_id = p.task_id;
         let project_id = p.project_id;
-        let playbook_id = p.playbook_id;
+        let playbook_name = p.playbook_name;
         // Include work_id in subtask creation so subtasks inherit the parent's work item.
         let work_id_field = if p.work_id.is_empty() {
             String::new()
@@ -860,7 +860,7 @@ Instead, analyze the spec and break it into smaller, well-scoped subtasks.
 3. **Analyze the spec**: Identify logical units of work that can be implemented independently.
 4. **Create subtasks**: For each unit, create a task with a clear spec, files, test_cmd, and acceptance_criteria:
    ```
-   {agent_cli} create {project_id} '{{{work_id_field}"parent_id": "{task_id}", "title": "...", "kind": "feature", "urgent": false, "playbook_id": "{playbook_id}", "context": {{"spec": "...", "files": ["..."], "test_cmd": "...", "acceptance_criteria": ["..."]}}}}'
+   {agent_cli} create {project_id} '{{{work_id_field}"parent_id": "{task_id}", "title": "...", "kind": "feature", "urgent": false, "playbook_name": "{playbook_name}", "context": {{"spec": "...", "files": ["..."], "test_cmd": "...", "acceptance_criteria": ["..."]}}}}'
    ```
 5. **Wire dependencies**: If subtask B depends on subtask A:
    ```
@@ -877,7 +877,7 @@ Instead, analyze the spec and break it into smaller, well-scoped subtasks.
 - Each subtask should be small enough for a single agent to implement in one session
 - Include concrete file paths, test commands, and acceptance criteria in each subtask
 - Set dependencies so subtasks that build on each other run in the right order
-- Use the same playbook_id as the parent task so subtasks follow the same pipeline
+- Use the same playbook_name as the parent task so subtasks follow the same pipeline
 - Always include `"parent_id": "{task_id}"` so subtasks are linked to this parent task
 - Do NOT write any code — only create and wire subtasks
 - Do NOT run `git push`"#

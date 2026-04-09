@@ -5,7 +5,6 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::models::*;
 
-use super::playbooks::get_playbook_by_id;
 use super::tasks::{check_dependencies_met, get_task_by_id, validate_playbook_step};
 
 // ── State Transitions ──
@@ -22,37 +21,8 @@ pub async fn transition_task(
 
     let existing = get_task_by_id(pool, task_id).await?;
 
-    // Auto-pipeline: when a non-final step transitions to "done", redirect to
-    // "wait:<next_step>" instead of terminal "done". Only fetch the playbook
-    // when a redirect is actually possible (step state with a playbook).
-    let mut step_validated_by_pipeline = false;
-    let (effective_target, effective_step) = if target_state == "done"
-        && !is_lifecycle_state(&existing.state)
-        && let Some(playbook_id) = existing.playbook_id
-    {
-        let playbook = get_playbook_by_id(pool, playbook_id).await?;
-        let current = existing.playbook_step.unwrap_or(0) as usize;
-        let next = current + 1;
-        let total = playbook.steps.as_array().map(|a| a.len()).unwrap_or(0);
-
-        if next < total {
-            let next_name = playbook
-                .steps
-                .as_array()
-                .and_then(|a| a.get(next))
-                .and_then(|s| s.get("name"))
-                .and_then(|n| n.as_str())
-                .unwrap_or("implement");
-            // Pipeline already verified next < total, so skip validate_playbook_step.
-            step_validated_by_pipeline = true;
-            (format!("wait:{next_name}"), Some(next as i32))
-        } else {
-            // Final step — "done" passes through unchanged.
-            (target_state.to_string(), playbook_step)
-        }
-    } else {
-        (target_state.to_string(), playbook_step)
-    };
+    let effective_target = target_state.to_string();
+    let effective_step = playbook_step;
     let target_state = &effective_target;
     let playbook_step = effective_step;
 
@@ -63,12 +33,9 @@ pub async fn transition_task(
         )));
     }
 
-    // Validate caller-supplied playbook_step. Skip when pipeline advancement
-    // already computed and validated the step (avoids a redundant playbook fetch).
-    if let Some(step) = playbook_step
-        && !step_validated_by_pipeline
-    {
-        validate_playbook_step(pool, step, existing.playbook_id).await?;
+    // Validate caller-supplied playbook_step.
+    if let Some(step) = playbook_step {
+        validate_playbook_step(step).await?;
     }
 
     // Enforce dependency blocking: cannot transition to ready/wait:* if blockers are not done.
@@ -78,45 +45,6 @@ pub async fn transition_task(
         && is_lifecycle_state(&existing.state)
     {
         check_dependencies_met(pool, task_id).await?;
-    }
-
-    // ── Step regression ──
-    // When a non-implement step (review, dream, etc.) releases back to ready,
-    // regress playbook_step to the previous implement step so the implement
-    // agent can apply the feedback.
-    if target_state == "ready"
-        && !is_lifecycle_state(&existing.state)
-        && let Some(playbook_id) = existing.playbook_id
-    {
-        let playbook = get_playbook_by_id(pool, playbook_id).await?;
-        let current_step = existing.playbook_step.unwrap_or(0) as usize;
-
-        if let Some(steps) = playbook.steps.as_array() {
-            let current_json = steps.get(current_step);
-            let current_retriable = current_json.map(is_retriable_step).unwrap_or(true);
-
-            if !current_retriable {
-                // Find the previous retriable step to regress to
-                for prev in (0..current_step).rev() {
-                    if let Some(prev_step) = steps.get(prev)
-                        && is_retriable_step(prev_step)
-                    {
-                        let task = sqlx::query_as::<_, Task>(
-                            "UPDATE diraigent.task
-                                 SET state = 'ready', playbook_step = $2,
-                                     assigned_agent_id = NULL, claimed_at = NULL,
-                                     state_entered_at = now()
-                                 WHERE id = $1 RETURNING *",
-                        )
-                        .bind(task_id)
-                        .bind(prev as i32)
-                        .fetch_one(pool)
-                        .await?;
-                        return Ok(task);
-                    }
-                }
-            }
-        }
     }
 
     let completed_at = if target_state == "done" {
@@ -183,8 +111,6 @@ pub async fn transition_task(
     Ok(task)
 }
 
-use diraigent_types::state_machine::is_retriable_step;
-
 pub async fn claim_task(pool: &PgPool, task_id: Uuid, agent_id: Uuid) -> Result<Task, AppError> {
     // Look up the task to determine the step name from its playbook
     let existing = get_task_by_id(pool, task_id).await?;
@@ -230,19 +156,12 @@ pub async fn resolve_claim_step_name(pool: &PgPool, task: &Task) -> Result<Strin
 }
 
 /// Resolve the current playbook step name for a task.
-/// Returns the step name from the playbook, or "working" for tasks without a playbook.
-pub(crate) async fn resolve_step_name(pool: &PgPool, task: &Task) -> Result<String, AppError> {
-    if let Some(playbook_id) = task.playbook_id {
-        let playbook = get_playbook_by_id(pool, playbook_id).await?;
-        let step_index = task.playbook_step.unwrap_or(0) as usize;
-        let name = playbook
-            .steps
-            .as_array()
-            .and_then(|steps| steps.get(step_index))
-            .and_then(|step| step.get("name"))
-            .and_then(|n| n.as_str())
-            .unwrap_or("implement");
-        Ok(name.to_string())
+/// Returns "implement" for tasks with a playbook (step 0 default), or "working" otherwise.
+pub(crate) async fn resolve_step_name(_pool: &PgPool, task: &Task) -> Result<String, AppError> {
+    if task.playbook_name.is_some() {
+        // Without DB access to the playbook YAML, default to "implement" (step 0).
+        // The orchestra pipeline handles precise step advancement via YAML lookup.
+        Ok("implement".to_string())
     } else {
         Ok("working".to_string())
     }

@@ -310,10 +310,7 @@ pub async fn get_agent_context(
     let recent_events = list_recent_events(pool, project_id, 20).await?;
 
     // 12. Playbooks (global)
-    let playbooks =
-        sqlx::query_as::<_, Playbook>("SELECT * FROM diraigent.playbook ORDER BY title")
-            .fetch_all(pool)
-            .await?;
+    let playbooks: Vec<serde_json::Value> = vec![];
 
     Ok(Some(AgentContext {
         agent,

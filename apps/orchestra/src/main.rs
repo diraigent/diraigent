@@ -311,23 +311,21 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Find a Research playbook ID from the list of available playbooks.
-/// Looks for a playbook with "Research" in the title or "research" in tags.
-fn find_research_playbook(playbooks: &[Value]) -> Option<String> {
-    for pb in playbooks {
-        let title = pb["title"].as_str().unwrap_or("");
-        if title.to_lowercase().contains("research") {
-            return pb["id"].as_str().map(|s| s.to_string());
-        }
-        if let Some(tags) = pb["tags"].as_array() {
-            for tag in tags {
-                if tag.as_str().map(|t| t == "research").unwrap_or(false) {
-                    return pb["id"].as_str().map(|s| s.to_string());
-                }
-            }
-        }
+/// Prefer a repo/YAML playbook named `research`, else fall back to the project's default.
+fn find_research_playbook_name(project: &Value) -> Option<String> {
+    let repo_root = project["git_resolved_path"]
+        .as_str()
+        .or_else(|| project["resolved_path"].as_str())?;
+    if crate::repo_playbooks::find_playbook_by_name(std::path::Path::new(repo_root), "research")
+        .is_some()
+    {
+        Some("research".to_string())
+    } else {
+        project["default_playbook_name"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
     }
-    None
 }
 
 /// Poll all projects for work items in 'ready' status and create tasks from them.
@@ -340,16 +338,13 @@ fn find_research_playbook(playbooks: &[Value]) -> Option<String> {
 ///
 /// Errors on individual work items are logged but do not stop batch processing.
 async fn process_ready_work_items(api: &ProjectsApi, projects: &[Value]) {
-    // Cache playbooks once per poll cycle (for research playbook lookup)
-    let playbooks = api.list_playbooks().await.unwrap_or_default();
-
     for project in projects {
         let project_id = match project["id"].as_str() {
             Some(id) => id,
             None => continue,
         };
 
-        let default_playbook_id = project["default_playbook_id"]
+        let default_playbook_name = project["default_playbook_name"]
             .as_str()
             .unwrap_or("")
             .to_string();
@@ -367,8 +362,8 @@ async fn process_ready_work_items(api: &ProjectsApi, projects: &[Value]) {
                 api,
                 project_id,
                 work_item,
-                &default_playbook_id,
-                &playbooks,
+                &default_playbook_name,
+                project,
             )
             .await
             {
@@ -384,8 +379,8 @@ async fn process_single_work_item(
     api: &ProjectsApi,
     project_id: &str,
     work_item: &Value,
-    default_playbook_id: &str,
-    playbooks: &[Value],
+    default_playbook_name: &str,
+    project: &Value,
 ) -> Result<()> {
     let work_id = work_item["id"]
         .as_str()
@@ -398,17 +393,17 @@ async fn process_single_work_item(
     api.update_work_item_status(work_id, "processing").await?;
 
     // 2. Determine task parameters based on intent_type
-    let (kind, playbook_id, urgent, decompose) = match intent_type {
-        "simple" => ("feature", default_playbook_id.to_string(), false, false),
-        "hotfix" => ("bug", default_playbook_id.to_string(), true, false),
+    let (kind, playbook_name, urgent, decompose) = match intent_type {
+        "simple" => ("feature", default_playbook_name.to_string(), false, false),
+        "hotfix" => ("bug", default_playbook_name.to_string(), true, false),
         "investigation" => {
-            let research_pb = find_research_playbook(playbooks)
-                .unwrap_or_else(|| default_playbook_id.to_string());
+            let research_pb = find_research_playbook_name(project)
+                .unwrap_or_else(|| default_playbook_name.to_string());
             ("research", research_pb, false, false)
         }
-        "refactor" => ("refactor", default_playbook_id.to_string(), false, false),
+        "refactor" => ("refactor", default_playbook_name.to_string(), false, false),
         // "complex", null/missing, or any unknown type → decompose
-        _ => ("feature", default_playbook_id.to_string(), false, true),
+        _ => ("feature", default_playbook_name.to_string(), false, true),
     };
 
     // 3. Build task body
@@ -422,9 +417,11 @@ async fn process_single_work_item(
     let mut task_body = serde_json::json!({
         "title": work_title,
         "kind": kind,
-        "playbook_id": playbook_id,
         "context": context,
     });
+    if !playbook_name.is_empty() {
+        task_body["playbook_name"] = serde_json::json!(playbook_name);
+    }
     if urgent {
         task_body["urgent"] = serde_json::json!(true);
     }
