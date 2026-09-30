@@ -5,8 +5,15 @@ dist
 .idea
 *.log
 npm-debug.log*
-.env
-.env.local
+.env*
+*.env
+.netrc
+auth.json
+credentials.json
+*.key
+*.p12
+*.pfx
+test-results
 coverage
 *.md
 .git

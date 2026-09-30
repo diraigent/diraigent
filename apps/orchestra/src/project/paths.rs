@@ -76,7 +76,13 @@ pub async fn resolve_project_paths(
 
     // Must match the provisioner's target path logic:
     // 1. Explicit git_root  2. Derived from repo_url path  3. Slug fallback
-    let git_root = if !git_root_rel.is_empty() {
+    let local_override = std::env::var("PROJECT_GIT_ROOT_OVERRIDE")
+        .ok()
+        .filter(|path| !path.is_empty())
+        .filter(|_| std::env::var("PROJECT_ID").ok().as_deref() == Some(project_id));
+    let git_root = if let Some(path) = local_override {
+        PathBuf::from(path)
+    } else if !git_root_rel.is_empty() {
         projects_path.join(git_root_rel)
     } else if let Some(repo_path) = git_provisioner::repo_path_from_url(repo_url) {
         projects_path.join(repo_path)

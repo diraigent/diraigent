@@ -1,0 +1,4 @@
+// Copy to Local.xcconfig and fill in your own values.
+DEVELOPMENT_TEAM =
+// Optional: use a private Info.plist with HTTP exceptions for your own LAN host.
+// INFOPLIST_FILE = Info.local.plist

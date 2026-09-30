@@ -63,8 +63,8 @@ pub struct StepConfig {
     /// Extra environment variables injected into the worker's shell.
     /// Useful for MCP servers or tools that require API keys.
     pub env: HashMap<String, String>,
-    /// AI provider for this step (e.g. "claude-code", "anthropic", "openai", "copilot", "ollama").
-    /// `None` defaults to "claude-code".
+    /// AI provider for this step (e.g. "claude-code", "codex", "anthropic", "openai", "copilot", "ollama").
+    /// `None` defaults to "opencode".
     pub provider: Option<String>,
     /// Override the default API endpoint for the chosen provider.
     pub base_url: Option<String>,
@@ -271,9 +271,8 @@ pub async fn run_worker(
     );
 
     // Route to the correct provider based on step config.
-    // Default to "claude-code" — the agentic CLI provider that supports
-    // worktrees, PTY, tools, and file access needed for task execution.
-    let provider_name = step_config.provider.as_deref().unwrap_or("claude-code");
+    // OpenCode is the default agentic CLI; other providers remain explicit options.
+    let provider_name = step_config.provider.as_deref().unwrap_or("opencode");
     let start = std::time::Instant::now();
 
     let (result, cost_usd, input_tokens, output_tokens, api_turns, stop_reason, is_error) =
@@ -606,11 +605,30 @@ async fn execute_via_provider(
         name: step_config.step_name.clone(),
         description: step_description,
         model: provider_cfg.model.clone(),
-        allowed_tools: step_config
-            .step_json
-            .as_ref()
-            .and_then(|s| s["allowed_tools"].as_str())
-            .map(String::from),
+        allowed_tools: Some(
+            match step_config
+                .step_json
+                .as_ref()
+                .and_then(|s| s["allowed_tools"].as_str())
+            {
+                Some(preset) => preset.to_string(),
+                None if matches!(
+                    StepProfile::for_step(&step_config.step_name),
+                    StepProfile::Review | StepProfile::Dream
+                ) =>
+                {
+                    "readonly".to_string()
+                }
+                None if matches!(
+                    StepProfile::for_step(&step_config.step_name),
+                    StepProfile::Merge
+                ) =>
+                {
+                    "merge".to_string()
+                }
+                None => "full".to_string(),
+            },
+        ),
         allowed_tools_list: step_config.allowed_tools.clone(),
         budget: step_config.budget,
         env: step_config.env.clone(),
@@ -755,17 +773,17 @@ mod tests {
     // ── Provider routing decision tests ──────────────────────
 
     #[test]
-    fn default_provider_is_claude_code() {
+    fn default_provider_is_opencode() {
         let step_config = StepConfig::for_step("implement", None, None, None);
-        let provider_name = step_config.provider.as_deref().unwrap_or("claude-code");
-        assert_eq!(provider_name, "claude-code");
+        let provider_name = step_config.provider.as_deref().unwrap_or("opencode");
+        assert_eq!(provider_name, "opencode");
     }
 
     #[test]
     fn explicit_anthropic_provider_is_recognised() {
         let step_json = serde_json::json!({"name": "implement", "provider": "anthropic"});
         let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
-        let provider_name = step_config.provider.as_deref().unwrap_or("claude-code");
+        let provider_name = step_config.provider.as_deref().unwrap_or("opencode");
         assert_eq!(provider_name, "anthropic");
     }
 

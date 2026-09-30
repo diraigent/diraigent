@@ -74,6 +74,8 @@ services:
       PROJECTS_PATH: /projects
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      CODEX_API_KEY: ${CODEX_API_KEY:-}
+      CODEX_ACCESS_TOKEN: ${CODEX_ACCESS_TOKEN:-}
     volumes:
       - ${PROJECTS_PATH:-~/diraigent/projects}:/projects
     depends_on:

@@ -316,13 +316,9 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' 
                 <!-- Chat Model -->
                 <div class="block">
                   <label for="sett-chat-model" class="block text-sm font-medium text-text-secondary mb-1">{{ t('settings.chatModel') }}</label>
-                  <select id="sett-chat-model" [(ngModel)]="formChatModel"
+                  <input id="sett-chat-model" [(ngModel)]="formChatModel" placeholder="provider/model (or leave blank)"
                     class="w-full bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                           focus:outline-none focus:ring-1 focus:ring-accent">
-                    @for (opt of modelOptions; track opt.value) {
-                      <option [value]="opt.value">{{ opt.label }}</option>
-                    }
-                  </select>
+                           focus:outline-none focus:ring-1 focus:ring-accent" />
                   <span class="block text-xs text-text-secondary mt-1">{{ t('settings.chatModelHint') }}</span>
                 </div>
 
@@ -1219,15 +1215,9 @@ export class SettingsPage implements OnInit, OnDestroy {
   formStoreDiffs = false;
   formDoneRetentionDays = 1;
   formObservationRetentionDays = 30;
-  formChatProvider = 'claude-code';
+  formChatProvider = 'opencode';
   formChatModel = '';
-  readonly providerOptions = ['claude-code', 'anthropic', 'openai', 'copilot', 'ollama'];
-  readonly modelOptions = [
-    { value: '', label: 'Default' },
-    { value: 'sonnet', label: 'Sonnet' },
-    { value: 'opus', label: 'Opus' },
-    { value: 'haiku', label: 'Haiku' },
-  ];
+  readonly providerOptions = ['opencode', 'claude-code', 'codex', 'anthropic', 'openai', 'copilot', 'ollama'];
   savingProject = signal(false);
   projectSaved = signal(false);
 
@@ -1364,7 +1354,7 @@ export class SettingsPage implements OnInit, OnDestroy {
         this.formStoreDiffs = (p.metadata?.['store_diffs'] as boolean) ?? false;
         this.formDoneRetentionDays = (p.metadata?.['done_retention_days'] as number) ?? 1;
         this.formObservationRetentionDays = (p.metadata?.['observation_retention_days'] as number) ?? 30;
-        this.formChatProvider = (p.metadata?.['chat_provider'] as string) ?? 'claude-code';
+        this.formChatProvider = (p.metadata?.['chat_provider'] as string) ?? 'opencode';
         this.formChatModel = (p.metadata?.['chat_model'] as string) ?? '';
         this.loading.set(false);
       },

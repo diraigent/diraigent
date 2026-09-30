@@ -298,7 +298,7 @@ async fn run_pipeline(
 ///
 /// Skips projects with `git_mode == "none"` and projects whose HEAD hasn't
 /// changed since the last run.
-pub async fn tick(api: &ProjectsApi, projects_path: &Path) {
+pub async fn tick(api: &ProjectsApi, projects_path: &Path, selected_project: Option<&str>) {
     let state_path = projects_path.join(STATE_FILE);
     let mut state = IndexerState::load(&state_path);
 
@@ -315,6 +315,9 @@ pub async fn tick(api: &ProjectsApi, projects_path: &Path) {
             Some(id) => id,
             None => continue,
         };
+        if selected_project.is_some_and(|selected| selected != project_id) {
+            continue;
+        }
 
         let git_mode = project["git_mode"].as_str().unwrap_or("standalone");
         if git_mode == "none" {

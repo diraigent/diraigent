@@ -139,9 +139,9 @@ Each step in a playbook's `steps` array is a JSON object. All fields except `nam
 | `on_complete` | string | Unused by orchestra — UI hint for what happens after completion. |
 | `retriable` | bool | If `true`, this step is a regression target — when a later step is rejected, the pipeline regresses to this step. Default: inferred from name (implement-like → true, review/dream → false). |
 | `max_cycles` | number | Maximum failed cycles before loop detection cancels the task. Overrides the project-level `max_implement_cycles` setting for this step. `0` disables loop detection. |
-| `model` | string | Claude model to use (e.g. `"sonnet"`, `"opus"`). Overrides the task-level model. |
+| `model` | string | Model to use for the selected provider. Overrides the task-level model. |
 | `budget` | number | Max dollar budget for this step (e.g. `5.0`). Default depends on step type. |
-| `allowed_tools` | string | Tool preset: `"full"` (all tools), `"readonly"` (no writes). Default depends on step type. |
+| `allowed_tools` | string | Tool preset: `"full"`, `"readonly"`, or `"merge"`. Default depends on step type. Codex maps these to its workspace-write or read-only sandbox. |
 | `context_level` | string | How much project context to include: `"full"`, `"minimal"`, `"dream"`. Default: inferred from step name. |
 | `mcp_servers` | object | MCP server config passed to Claude Code via `--mcp-config`. |
 | `agents` | object | Custom sub-agent definitions passed via `--agents`. |
@@ -149,7 +149,7 @@ Each step in a playbook's `steps` array is a JSON object. All fields except `nam
 | `settings` | object | Additional Claude Code settings (skills, etc.) passed via `--settings`. |
 | `env` | object | Extra environment variables (string→string) exported before running the agent. |
 | `vars` | object | Custom template variables (string→string) for `{{placeholder}}` substitution in `description`. |
-| `provider` | string | AI provider for this step: `"anthropic"` (default), `"openai"`, `"ollama"`. When omitted, defaults to `"anthropic"`. |
+| `provider` | string | AI provider for this step: `"claude-code"` (default), `"codex"`, `"anthropic"`, `"openai"`, `"copilot"`, or `"ollama"`. |
 | `base_url` | string | Override the default API endpoint for the chosen provider (e.g. `"https://my-proxy.example.com"`, `"http://localhost:11434"`). |
 
 ### Template Variables

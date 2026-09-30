@@ -210,7 +210,7 @@ export class DiraigentApiService {
   }
 
   getHealth(): Observable<SpHealthResponse> {
-    const base = new URL(this.baseUrl).origin;
+    const base = new URL(this.baseUrl, window.location.origin).origin;
     return this.http.get<SpHealthResponse>(`${base}/health/live`);
   }
 

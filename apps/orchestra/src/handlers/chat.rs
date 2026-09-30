@@ -58,7 +58,7 @@ async fn resolve_project_info(
         Ok(project) => {
             let provider = project["metadata"]["chat_provider"]
                 .as_str()
-                .unwrap_or("claude-code")
+                .unwrap_or("opencode")
                 .to_string();
             let model = project["metadata"]["chat_model"]
                 .as_str()
@@ -67,7 +67,7 @@ async fn resolve_project_info(
         }
         Err(e) => {
             warn!("chat: failed to fetch project metadata: {e}, using default provider");
-            ("claude-code".to_string(), None)
+            ("opencode".to_string(), None)
         }
     };
 
@@ -138,7 +138,7 @@ pub async fn handle_chat_request_ws(
 
     // Model priority: client override (from WS message) > project metadata > original model param
     let resolved_model = if model.is_empty() {
-        metadata_model.unwrap_or_else(|| model.to_string())
+        metadata_model.clone().unwrap_or_else(|| model.to_string())
     } else {
         model.to_string()
     };
@@ -149,7 +149,24 @@ pub async fn handle_chat_request_ws(
     // Build user prompt from (possibly compressed) conversation history
     let user_prompt = build_user_prompt(&messages);
 
-    // If chat_provider is not "claude-code", use the provider abstraction
+    if chat_provider == "opencode" {
+        let worker_model = std::env::var("OPENCODE_MODEL").ok();
+        let opencode_model =
+            resolve_opencode_chat_model(model, metadata_model.as_deref(), worker_model.as_deref());
+        handle_chat_via_opencode(
+            sender,
+            &session_id,
+            &working_dir,
+            &user_prompt,
+            system_prompt,
+            opencode_model,
+            cancel_rx,
+        )
+        .await;
+        return;
+    }
+
+    // API providers use the provider abstraction.
     if chat_provider != "claude-code" {
         handle_chat_via_provider(
             sender,
@@ -455,6 +472,239 @@ pub async fn handle_chat_request_ws(
     // Wait for process to finish
     let _ = child.wait().await;
     info!("chat session {session_id} completed");
+}
+
+// Claude aliases from older clients must not override OpenCode's provider/model settings.
+fn resolve_opencode_chat_model<'a>(
+    client_model: &'a str,
+    project_model: Option<&'a str>,
+    worker_model: Option<&'a str>,
+) -> Option<&'a str> {
+    [Some(client_model), project_model, worker_model]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .find(|value| {
+            value
+                .split_once('/')
+                .is_some_and(|(provider, model)| !provider.is_empty() && !model.is_empty())
+        })
+}
+
+#[cfg(test)]
+mod opencode_chat_model_tests {
+    use super::{opencode_api_auth_prompt, resolve_opencode_chat_model};
+
+    #[test]
+    fn api_credential_is_replaced_with_an_environment_reference() {
+        let (prompt, token) =
+            opencode_api_auth_prompt("Use curl -H 'Authorization: Bearer test-credential' here.");
+        assert_eq!(token.as_deref(), Some("test-credential"));
+        assert!(!prompt.contains("test-credential"));
+        assert!(prompt.contains("-H \"Authorization: Bearer $DIRAIGENT_CHAT_TOKEN\""));
+        assert_eq!(
+            opencode_api_auth_prompt("No auth header"),
+            ("No auth header".into(), None)
+        );
+    }
+
+    #[test]
+    fn qualified_client_model_overrides_project_and_worker() {
+        assert_eq!(
+            resolve_opencode_chat_model(
+                "provider/client",
+                Some("provider/project"),
+                Some("provider/worker")
+            ),
+            Some("provider/client")
+        );
+    }
+
+    #[test]
+    fn legacy_alias_uses_project_then_worker() {
+        assert_eq!(
+            resolve_opencode_chat_model(
+                "sonnet",
+                Some("provider/project"),
+                Some("provider/worker")
+            ),
+            Some("provider/project")
+        );
+        assert_eq!(
+            resolve_opencode_chat_model("sonnet", None, Some("github-copilot/gpt-5.3-codex")),
+            Some("github-copilot/gpt-5.3-codex")
+        );
+    }
+
+    #[test]
+    fn invalid_models_leave_cli_default_available() {
+        assert_eq!(
+            resolve_opencode_chat_model("", Some("provider/"), Some(" /model")),
+            None
+        );
+    }
+}
+
+async fn handle_chat_via_opencode(
+    sender: WsSender,
+    session_id: &str,
+    working_dir: &Path,
+    user_prompt: &str,
+    system_prompt: &str,
+    model: Option<&str>,
+    mut cancel_rx: watch::Receiver<bool>,
+) {
+    // Keep the caller's bearer credential out of the model prompt and saved session.
+    let (system_prompt, api_token) = opencode_api_auth_prompt(system_prompt);
+    let prompt = if system_prompt.is_empty() {
+        user_prompt.to_string()
+    } else {
+        format!("{system_prompt}\n\n{user_prompt}")
+    };
+    let mut cmd = match crate::providers::opencode_run_command(Path::new("opencode")).await {
+        Ok(command) => command,
+        Err(error) => {
+            send_chat_event(
+                &sender,
+                session_id,
+                ChatSseEvent::Error {
+                    message: format!("Failed to inspect OpenCode CLI: {error}"),
+                },
+            )
+            .await;
+            return;
+        }
+    };
+    if let Some(token) = api_token {
+        cmd.env("DIRAIGENT_CHAT_TOKEN", token);
+    }
+    cmd.args(["--agent", "build"])
+        .current_dir(working_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    if let Some(model) = model {
+        cmd.args(["--model", model]);
+    }
+    cmd.arg(prompt);
+    #[cfg(unix)]
+    cmd.process_group(0);
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            send_chat_event(
+                &sender,
+                session_id,
+                ChatSseEvent::Error {
+                    message: format!("Failed to spawn OpenCode CLI: {e}"),
+                },
+            )
+            .await;
+            return;
+        }
+    };
+    let Some(stdout) = child.stdout.take() else {
+        return;
+    };
+    let mut lines = BufReader::new(stdout).lines();
+    let mut text_parts: HashMap<String, String> = HashMap::new();
+    let mut part_order = Vec::new();
+    let mut completed = false;
+    let mut error_message = None;
+    loop {
+        tokio::select! {
+            line = lines.next_line() => {
+                let Ok(Some(line)) = line else { break };
+                let Ok(event) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+                match event["type"].as_str() {
+                    Some("text") => {
+                        // V2 ends with a completed text part and exits successfully,
+                        // without emitting V1's step_finish event.
+                        completed |= event["part"]["time"]["end"].as_u64().is_some_and(|end| end > 0);
+                        if let Some(value) = event["part"]["text"].as_str() {
+                            let id = event["part"]["id"].as_str().unwrap_or("").to_string();
+                            if !text_parts.contains_key(&id) { part_order.push(id.clone()); }
+                            let previous = text_parts.insert(id, value.to_string()).unwrap_or_default();
+                            let delta = value.strip_prefix(&previous).unwrap_or(value);
+                            if !delta.is_empty() {
+                                send_chat_event(&sender, session_id, ChatSseEvent::Text { content: delta.to_string() }).await;
+                            }
+                        }
+                    }
+                    Some("tool_use") => {
+                        let part = &event["part"];
+                        let tool_name = part["tool"].as_str().unwrap_or("unknown").to_string();
+                        let tool_id = part["id"].as_str().unwrap_or("").to_string();
+                        send_chat_event(&sender, session_id, ChatSseEvent::ToolStart { tool_name, tool_id }).await;
+                    }
+                    Some("step_finish" | "step-finish") => completed = true,
+                    Some("error") => {
+                        error_message = Some(event["error"].to_string());
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            _ = cancel_rx.changed() => {
+                if *cancel_rx.borrow() {
+                    #[cfg(unix)]
+                    if let Some(pid) = child.id() { unsafe { libc::kill(-(pid as i32), libc::SIGTERM); } }
+                    let _ = child.kill().await;
+                    return;
+                }
+            }
+        }
+    }
+    let status = child.wait().await;
+    if let Some(message) = error_message {
+        send_chat_event(&sender, session_id, ChatSseEvent::Error { message }).await;
+    } else if status.as_ref().is_ok_and(|s| s.success()) && completed {
+        let content = part_order
+            .iter()
+            .filter_map(|id| text_parts.get(id))
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
+        send_chat_event(
+            &sender,
+            session_id,
+            ChatSseEvent::Done {
+                message: DoneMessage {
+                    role: "assistant".into(),
+                    content,
+                },
+            },
+        )
+        .await;
+    } else {
+        send_chat_event(
+            &sender,
+            session_id,
+            ChatSseEvent::Error {
+                message: format!("OpenCode exited without a completed response: {status:?}"),
+            },
+        )
+        .await;
+    }
+}
+
+fn opencode_api_auth_prompt(system_prompt: &str) -> (String, Option<String>) {
+    let marker = "-H 'Authorization: Bearer ";
+    let Some(start) = system_prompt.find(marker) else {
+        return (system_prompt.to_string(), None);
+    };
+    let token_start = start + marker.len();
+    let Some(end) = system_prompt[token_start..].find('\'') else {
+        return (system_prompt.to_string(), None);
+    };
+    let token = system_prompt[token_start..token_start + end].to_string();
+    let header = format!("{marker}{token}'");
+    let prompt = system_prompt.replace(
+        &header,
+        "-H \"Authorization: Bearer $DIRAIGENT_CHAT_TOKEN\"",
+    );
+    (prompt, Some(token))
 }
 
 fn build_user_prompt(messages: &[Message]) -> String {

@@ -18,10 +18,6 @@ import { STORAGE_KEYS } from '../../shared/ui-constants';
 const STORAGE_PREFIX = STORAGE_KEYS.CHAT_PREFIX;
 const MODEL_STORAGE_KEY = STORAGE_KEYS.CHAT_MODEL;
 
-/** Available chat models. */
-export const CHAT_MODELS = ['sonnet', 'opus', 'haiku'] as const;
-export type ChatModel = (typeof CHAT_MODELS)[number];
-
 @Injectable({ providedIn: 'root' })
 export class ChatService {
   private auth = inject(AuthService);
@@ -40,8 +36,23 @@ export class ChatService {
   readonly scrollToChat = signal(false);
   /** Whether the chat panel is collapsed to just the header. */
   readonly collapsed = signal(localStorage.getItem('diraigent-chat-collapsed') === 'true');
-  /** The chat model name — user-selected or from server config. */
-  readonly chatModel = signal<string>(localStorage.getItem(MODEL_STORAGE_KEY) || '');
+  /** An explicit override; empty means the project/worker default. */
+  readonly chatModel = signal('');
+  readonly chatProvider = computed(() =>
+    this.project.project()?.metadata?.['chat_provider'] as string || 'opencode');
+  private readonly serverModel = signal('');
+  readonly defaultModel = computed(() => {
+    const model = this.project.project()?.metadata?.['chat_model'];
+    if (typeof model === 'string' && this.isValidModel(model)) return model;
+    return this.chatProvider() === 'claude-code' ? this.serverModel() : '';
+  });
+  readonly modelLabel = computed(() => this.chatModel() || this.defaultModel() || 'Worker default');
+  readonly modelOptions = computed(() => {
+    const models = this.chatProvider() === 'claude-code' ? ['sonnet', 'opus', 'haiku'] : [];
+    return [...new Set(['', ...(this.defaultModel() ? [this.defaultModel()] : []), ...models])];
+  });
+  readonly modelPlaceholder = computed(() =>
+    this.chatProvider() === 'opencode' ? 'provider/model' : 'Model ID');
   /** Whether the model selector dropdown is open. */
   readonly modelSelectorOpen = signal(false);
   /** Whether the chat panel is in full-screen mode. */
@@ -55,6 +66,15 @@ export class ChatService {
 
   constructor() {
     this.fetchChatModel();
+    effect(() => {
+      const pid = this.project.projectId();
+      const provider = this.chatProvider();
+      const stored = localStorage.getItem(`${MODEL_STORAGE_KEY}:${pid}:${provider}`) || '';
+      untracked(() => {
+        this.chatModel.set(this.isValidModel(stored) ? stored : '');
+        this.modelSelectorOpen.set(false);
+      });
+    });
     // Load stored messages on init and when project changes
     effect(() => {
       const pid = this.project.projectId();
@@ -250,9 +270,18 @@ export class ChatService {
   }
 
   setModel(model: string): void {
-    this.chatModel.set(model);
-    localStorage.setItem(MODEL_STORAGE_KEY, model);
+    const selected = model.trim();
+    if (selected && !this.isValidModel(selected)) return;
+    this.chatModel.set(selected);
+    localStorage.setItem(`${MODEL_STORAGE_KEY}:${this.project.projectId()}:${this.chatProvider()}`, selected);
     this.modelSelectorOpen.set(false);
+  }
+
+  isValidModel(model: string): boolean {
+    if (!model.trim()) return false;
+    return this.chatProvider() === 'opencode'
+      ? /^[^/\s]+\/\S+$/.test(model.trim())
+      : !/\s/.test(model.trim());
   }
 
   toggleModelSelector(): void {
@@ -310,10 +339,7 @@ export class ChatService {
       const res = await fetch(`${environment.apiServer}/config`);
       if (!res.ok) return;
       const data = await res.json();
-      // Only use server default if user hasn't explicitly selected a model
-      if (data.chat_model && !localStorage.getItem(MODEL_STORAGE_KEY)) {
-        this.chatModel.set(data.chat_model);
-      }
+      if (typeof data.chat_model === 'string') this.serverModel.set(data.chat_model);
       if (typeof data.ws_connected === 'boolean') {
         this.orchestraConnected.set(data.ws_connected);
       }

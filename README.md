@@ -103,7 +103,7 @@ Without credentials, agents can still work locally but push/merge to the remote 
 | Component | Description |
 |-----------|-------------|
 | **API** | Rust/Axum REST API. PostgreSQL backend (sqlx). JWT JWKS auth. WebSocket agent communication. |
-| **Orchestra** | Polls API for ready tasks, spawns Claude Code workers in isolated git worktrees, auto-advances playbook pipelines. |
+| **Orchestra** | Polls API for ready tasks, runs OpenCode by default in isolated git worktrees, auto-advances playbook pipelines. |
 | **Web** | Angular 21 + Tailwind CSS 4 + Catppuccin themes. Full project management dashboard. |
 | **TUI** | Ratatui terminal interface (experimental). |
 
@@ -128,6 +128,25 @@ Reusable multi-step workflows attached to tasks. The orchestra auto-advances tas
 
 Playbooks use a `git_strategy` metadata field (e.g. `merge_to_default`) to control how completed work is integrated.
 
+OpenCode is the default provider for playbook steps. Authenticate a model
+provider with the OpenCode CLI in the orchestra container, then leave the
+step provider blank or select **OpenCode CLI**. Claude Code and Codex remain
+available as explicit options.
+
+Set `OPENCODE_MODEL=provider/model` in the worker's private environment to
+choose its default model for both tasks and project chat. Explicit task models
+and project chat models take precedence. Orchestra supports OpenCode V1 and V2;
+V2 runs with a private server so the worker's environment applies to each run.
+
+To run a step with the Codex CLI, select **Codex CLI** as its provider (or set
+`"provider": "codex"` in the step JSON). The orchestra runs `codex exec` in the
+task worktree. `readonly` steps use the read-only sandbox; `full` and `merge`
+steps use the workspace-write sandbox. Set a Codex model explicitly in the step
+if needed; otherwise the CLI's configured default applies. The orchestra image
+includes the CLI. Supply `CODEX_API_KEY` or `CODEX_ACCESS_TOKEN` in the runtime
+environment for non-interactive authentication. The Codex sandbox inside a
+container also requires the host to permit Linux user namespaces.
+
 ### Projects, Roles, and Knowledge
 
 Projects nest hierarchically — agents at a parent level inherit authority over all children. Agents are assigned to projects through roles, each granting a combination of six authorities: `execute`, `delegate`, `review`, `create`, `decide`, `manage`.
@@ -135,6 +154,24 @@ Projects nest hierarchically — agents at a parent level inherit authority over
 The platform also tracks structured knowledge (architecture docs, conventions, patterns), ADR-style decisions, observations (things agents notice that may become tasks), integrations (external tools with per-agent access control), and events (CI results, deploys, errors).
 
 ## Configuration
+
+Keep deployment manifests, credentials, host addresses, and machine-specific
+settings outside version control. The tracked `startup/docker-compose.yml` is
+a generic example; `startup/unraid/` and runtime `.env` files are ignored.
+Ignoring a file does not remove copies already committed to Git history.
+
+The web container requires runtime `AUTH_PROVIDER_BASE`, `AUTH_ISSUER`, and
+`AUTH_CLIENT_ID` values for your identity provider. Set `AUTH_ENROLLMENT_URL`
+if registration is enabled. These settings are visible to browser users;
+never place a client secret or an access token in frontend configuration.
+
+For iOS, copy `apps/ios/Diraigent/LocalConfig.example.plist` to
+`apps/ios/Diraigent/Diraigent/LocalConfig.plist` and configure the API and OAuth
+client. Xcode bundles this ignored file. Copy `Local.example.xcconfig` to
+`Local.xcconfig` for your signing team. If your LAN requires an HTTP exception,
+put it in an ignored `Info.local.plist` and set `INFOPLIST_FILE` in
+`Local.xcconfig`. Without local settings, Debug uses localhost and Release
+requires authentication configuration before sign-in can work.
 
 | Variable | Required | Description |
 |----------|----------|-------------|

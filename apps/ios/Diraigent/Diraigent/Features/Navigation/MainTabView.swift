@@ -4,9 +4,15 @@ import SwiftUI
 /// 5 tabs: Dashboard, Work, Chat, Agents, More
 struct MainTabView: View {
     @Environment(AppState.self) private var appState
+    @State private var selectedTab: Tab = .dashboard
+    @State private var previousTab: Tab = .dashboard
+
+    private enum Tab: Hashable {
+        case dashboard, work, chat, agents, more
+    }
 
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             NavigationStack {
                 DashboardView()
                     .toolbar {
@@ -16,26 +22,34 @@ struct MainTabView: View {
                     }
             }
             .tabItem { Label("Dashboard", systemImage: "chart.bar") }
+            .tag(Tab.dashboard)
 
             NavigationStack {
                 WorkListView()
             }
             .tabItem { Label("Work", systemImage: "hammer") }
+            .tag(Tab.work)
 
             NavigationStack {
-                ChatView()
+                ChatView(onExit: { selectedTab = previousTab })
             }
             .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
+            .tag(Tab.chat)
 
             NavigationStack {
                 AgentListView()
             }
             .tabItem { Label("Agents", systemImage: "cpu") }
+            .tag(Tab.agents)
 
             NavigationStack {
                 MoreMenuView()
             }
             .tabItem { Label("More", systemImage: "ellipsis.circle") }
+            .tag(Tab.more)
+        }
+        .onChange(of: selectedTab) { oldTab, _ in
+            if oldTab != .chat { previousTab = oldTab }
         }
     }
 }

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>apiBaseURL</key>
+    <string>http://localhost:3000/v1</string>
+    <key>authIssuer</key>
+    <string>http://localhost:9000/application/o/diraigent/</string>
+    <key>authClientId</key>
+    <string>change-me</string>
+    <key>authRedirectURI</key>
+    <string>diraigent://auth/callback</string>
+</dict>
+</plist>

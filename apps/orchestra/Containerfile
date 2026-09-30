@@ -84,7 +84,7 @@ RUN if [ -n "$DIRAIGENT_VERSION" ]; then \
 FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash curl git ca-certificates util-linux \
+    bash curl git ca-certificates util-linux bubblewrap \
     && rm -rf /var/lib/apt/lists/*
 
 # Security: run as non-root user
@@ -97,8 +97,14 @@ USER appuser
 # Claude Code CLI
 RUN curl -fsSL https://claude.ai/install.sh | bash
 
+# Codex CLI
+RUN curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh
+
 # GitHub Copilot CLI
 RUN curl -fsSL https://gh.io/copilot-install | bash
+
+# OpenCode CLI (pinned for reproducible demo deployments)
+RUN curl -fsSL https://opencode.ai/install | bash -s -- --version 1.14.20 --no-modify-path
 
 USER root
 
@@ -116,14 +122,14 @@ RUN chown appuser:appgroup /app && mkdir -p logs /repo && chown appuser:appgroup
 USER appuser
 
 # Defaults — override at runtime via env or docker-compose
-ENV PATH="/home/appuser/.local/bin:${PATH}" \
+ENV PATH="/home/appuser/.opencode/bin:/home/appuser/.local/bin:${PATH}" \
     DIRAIGENT_API_URL=http://api:8082/v1 \
     MAX_WORKERS=3 \
     PROJECTS_PATH=/projects \
     SERVICE_NAME=diraigent-orchestra
 
 LABEL org.opencontainers.image.title="diraigent-orchestra" \
-      org.opencontainers.image.description="AI agent orchestrator — spawns Claude Code workers in isolated git worktrees" \
+      org.opencontainers.image.description="AI agent orchestrator — runs OpenCode and optional providers in isolated git worktrees" \
       org.opencontainers.image.vendor="Zivue AS" \
       org.opencontainers.image.url="https://www.diraigent.com" \
       org.opencontainers.image.source="https://www.diraigent.com"

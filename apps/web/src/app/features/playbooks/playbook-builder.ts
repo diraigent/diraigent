@@ -295,6 +295,12 @@ import { ProjectContext } from '../../core/services/project-context.service';
               <div class="grid grid-cols-2 gap-3">
                 <div>
                   <label [attr.for]="'pb-step-model-' + i" class="text-xs text-text-muted mb-0.5 block">{{ t('playbooks.model') }}</label>
+                  @if (step.provider === 'codex') {
+                    <input [id]="'pb-step-model-' + i" type="text" [ngModel]="step.model ?? ''" (ngModelChange)="updateField(i, 'model', $event || undefined)"
+                      placeholder="Codex CLI default"
+                      class="w-full bg-bg text-text-primary text-xs rounded px-2.5 py-1.5 border border-border
+                             focus:outline-none focus:ring-1 focus:ring-accent" />
+                  } @else {
                   <select [id]="'pb-step-model-' + i" [ngModel]="step.model ?? ''" (ngModelChange)="updateField(i, 'model', $event || undefined)"
                     class="w-full bg-bg text-text-primary text-xs rounded px-2.5 py-1.5 border border-border
                            focus:outline-none focus:ring-1 focus:ring-accent">
@@ -303,6 +309,7 @@ import { ProjectContext } from '../../core/services/project-context.service';
                     <option value="claude-opus-4-6">Opus</option>
                     <option value="claude-haiku-4-5-20251001">Haiku</option>
                   </select>
+                  }
                 </div>
                 <div>
                   <label [attr.for]="'pb-step-budget-' + i" class="text-xs text-text-muted mb-0.5 block">Budget ($)</label>
@@ -366,9 +373,13 @@ import { ProjectContext } from '../../core/services/project-context.service';
                   <select [id]="'pb-step-provider-' + i" [ngModel]="step.provider ?? ''" (ngModelChange)="updateField(i, 'provider', $event || undefined)"
                     class="w-full bg-bg text-text-primary text-xs rounded px-2.5 py-1.5 border border-border
                            focus:outline-none focus:ring-1 focus:ring-accent">
-                    <option value="">Default (anthropic)</option>
+                    <option value="">Default (OpenCode)</option>
+                    <option value="opencode">OpenCode CLI</option>
+                    <option value="claude-code">Claude Code CLI</option>
+                    <option value="codex">Codex CLI</option>
                     <option value="anthropic">Anthropic</option>
                     <option value="openai">OpenAI</option>
+                    <option value="copilot">GitHub Copilot</option>
                     <option value="ollama">Ollama</option>
                   </select>
                 </div>

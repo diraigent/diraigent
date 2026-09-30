@@ -12,8 +12,8 @@ use crate::util;
 
 pub struct Config {
     pub agent_id: String,
-    /// Project ID — used only for WebSocket subscription scoping.
-    /// Path resolution is always per-project at task spawn/reap time.
+    /// Optional project ID limiting task, work-item, and indexer polling.
+    /// Path resolution remains per-project at task spawn/reap time.
     pub project_id: Option<String>,
     pub diraigent_api: String,
     pub max_workers: usize,

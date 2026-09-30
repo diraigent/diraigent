@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Chat view with streaming AI responses.
 struct ChatView: View {
+    var onExit: (() -> Void)? = nil
     @Environment(AppState.self) private var appState
     @State private var inputText = ""
     @FocusState private var isInputFocused: Bool
@@ -13,7 +14,24 @@ struct ChatView: View {
             inputArea
         }
         .navigationTitle("Chat")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if let onExit {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        isInputFocused = false
+                        onExit()
+                    } label: {
+                        Label("Close chat", systemImage: "xmark")
+                    }
+                    .accessibilityLabel("Close chat")
+                }
+            }
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { isInputFocused = false }
+                    .accessibilityLabel("Dismiss keyboard")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     appState.chatService.clearMessages()
@@ -23,6 +41,7 @@ struct ChatView: View {
                 .disabled(appState.chatService.messages.isEmpty)
             }
         }
+        .onDisappear { isInputFocused = false }
     }
 
     // MARK: - Message List
@@ -49,6 +68,7 @@ struct ChatView: View {
                 .padding(.horizontal, DiraigentTheme.spacingLG)
                 .padding(.vertical, DiraigentTheme.spacingMD)
             }
+            .scrollDismissesKeyboard(.interactively)
             .onChange(of: appState.chatService.messages.count) {
                 scrollToBottom(proxy: proxy)
             }

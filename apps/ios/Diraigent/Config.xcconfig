@@ -1,0 +1,4 @@
+// Machine-specific signing and LAN settings belong in the ignored Local.xcconfig.
+DEVELOPMENT_TEAM =
+INFOPLIST_FILE = Info.plist
+#include? "Local.xcconfig"

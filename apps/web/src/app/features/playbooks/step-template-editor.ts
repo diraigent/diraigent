@@ -63,6 +63,11 @@ export interface StepTemplateFormData {
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
         <div>
           <label for="ste-model" class="block text-sm font-medium text-text-secondary mb-1">{{ t('stepTemplates.fieldModel') }}</label>
+          @if (form.provider === 'codex') {
+            <input id="ste-model" type="text" [(ngModel)]="form.model" placeholder="Codex CLI default"
+              class="w-full bg-bg text-text-primary text-sm rounded-lg px-3 py-2 border border-border
+                     focus:outline-none focus:ring-1 focus:ring-accent" />
+          } @else {
           <select
             id="ste-model"
             [(ngModel)]="form.model"
@@ -73,6 +78,7 @@ export interface StepTemplateFormData {
             <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
             <option value="claude-haiku-3-5">claude-haiku-3-5</option>
           </select>
+          }
         </div>
         <div>
           <label for="ste-budget" class="block text-sm font-medium text-text-secondary mb-1">{{ t('stepTemplates.fieldBudget') }}</label>
@@ -173,9 +179,13 @@ export interface StepTemplateFormData {
             [(ngModel)]="form.provider"
             class="w-full bg-bg text-text-primary text-sm rounded-lg px-3 py-2 border border-border
                    focus:outline-none focus:ring-1 focus:ring-accent">
-            <option value="">Default (anthropic)</option>
+            <option value="">Default (OpenCode)</option>
+            <option value="opencode">OpenCode CLI</option>
+            <option value="claude-code">Claude Code CLI</option>
+            <option value="codex">Codex CLI</option>
             <option value="anthropic">Anthropic</option>
             <option value="openai">OpenAI</option>
+            <option value="copilot">GitHub Copilot</option>
             <option value="ollama">Ollama</option>
           </select>
         </div>

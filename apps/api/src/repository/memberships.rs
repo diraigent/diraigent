@@ -16,7 +16,7 @@ pub async fn create_membership(
     let m = sqlx::query_as::<_, Membership>(
         "INSERT INTO diraigent.membership (tenant_id, agent_id, role_id, config)
          VALUES ($1, $2, $3, $4)
-         ON CONFLICT (agent_id, role_id) DO UPDATE SET updated_at = now()
+         ON CONFLICT (tenant_id, agent_id, role_id) DO UPDATE SET updated_at = now()
          RETURNING *",
     )
     .bind(tenant_id)

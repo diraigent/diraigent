@@ -183,8 +183,8 @@ async fn main() -> Result<()> {
     let active: ActiveTasks = Arc::new(Mutex::new(HashMap::new()));
     let lock_queue: config::LockQueue = Arc::new(Mutex::new(HashMap::new()));
 
-    // Spawn WebSocket client loop (handles chat + git requests)
-    {
+    // A polling-only worker can leave chat and git requests to another agent.
+    if !matches!(std::env::var("DISABLE_WS").as_deref(), Ok("1" | "true")) {
         let api_url = config.diraigent_api.clone();
         let agent_id = config.agent_id.clone();
         let ws_api = api.clone();
@@ -208,7 +208,10 @@ async fn main() -> Result<()> {
 
     // Initial poll
     {
-        let projects = api.list_projects().await.unwrap_or_default();
+        let projects = scoped_projects(
+            api.list_projects().await.unwrap_or_default(),
+            config.project_id.as_deref(),
+        );
         engine::spawner::poll_ready_tasks_with_projects(
             &task_source,
             &config,
@@ -253,7 +256,10 @@ async fn main() -> Result<()> {
         // Poll on interval, or immediately when file locks were released (queue drain).
         if locks_released || last_poll.elapsed().as_secs() >= config.poll_interval {
             // Fetch projects once and share across spawner + work item processing.
-            let projects = api.list_projects().await.unwrap_or_default();
+            let projects = scoped_projects(
+                api.list_projects().await.unwrap_or_default(),
+                config.project_id.as_deref(),
+            );
             engine::spawner::poll_ready_tasks_with_projects(
                 &task_source,
                 &config,
@@ -262,14 +268,19 @@ async fn main() -> Result<()> {
                 &projects,
             )
             .await;
-            process_ready_work_items(&api, &projects).await;
+            if !matches!(
+                std::env::var("DISABLE_WORK_ITEMS").as_deref(),
+                Ok("1" | "true")
+            ) {
+                process_ready_work_items(&api, &projects).await;
+            }
             last_poll = std::time::Instant::now();
         }
 
         // Run indexer on its own interval (0 = disabled).
         if config.indexer_interval > 0 && last_index.elapsed().as_secs() >= config.indexer_interval
         {
-            indexer::tick(&api, &config.projects_path).await;
+            indexer::tick(&api, &config.projects_path, config.project_id.as_deref()).await;
             last_index = std::time::Instant::now();
         }
 
@@ -309,6 +320,16 @@ async fn main() -> Result<()> {
     std::fs::remove_file(&config.lockfile).ok();
     info!("shutdown complete");
     Ok(())
+}
+
+fn scoped_projects(projects: Vec<Value>, project_id: Option<&str>) -> Vec<Value> {
+    match project_id {
+        Some(project_id) => projects
+            .into_iter()
+            .filter(|project| project["id"].as_str() == Some(project_id))
+            .collect(),
+        None => projects,
+    }
 }
 
 /// Prefer a repo/YAML playbook named `research`, else fall back to the project's default.
@@ -586,4 +607,22 @@ async fn run_headless(args: &[String]) -> Result<()> {
 
     info!("headless: all tasks complete");
     Ok(())
+}
+
+#[cfg(test)]
+mod project_scope_tests {
+    use super::scoped_projects;
+
+    #[test]
+    fn selected_project_limits_polling() {
+        let projects = vec![
+            serde_json::json!({"id": "diraigent"}),
+            serde_json::json!({"id": "stareto"}),
+        ];
+        assert_eq!(
+            scoped_projects(projects.clone(), Some("diraigent")),
+            vec![projects[0].clone()]
+        );
+        assert_eq!(scoped_projects(projects.clone(), None), projects);
+    }
 }

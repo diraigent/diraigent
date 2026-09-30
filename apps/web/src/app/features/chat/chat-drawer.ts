@@ -1,6 +1,6 @@
 import { Component, inject, viewChild, ElementRef, effect, untracked, HostListener, Pipe, PipeTransform, signal, OnDestroy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ChatService, CHAT_MODELS } from '../../core/services/chat.service';
+import { ChatService } from '../../core/services/chat.service';
 import { Marked, type MarkedExtension } from 'marked';
 import hljs from 'highlight.js/lib/common';
 import DOMPurify from 'dompurify';
@@ -143,25 +143,35 @@ export class ChatMarkdownPipe implements PipeTransform {
               <span class="w-2 h-2 rounded-full bg-ctp-red animate-pulse" title="Orchestra disconnected"></span>
             }
             <div class="relative">
-              <button (click)="chat.toggleModelSelector(); $event.stopPropagation()"
+              <button (click)="customModel = chat.chatModel(); chat.toggleModelSelector(); $event.stopPropagation()"
+                      aria-label="Choose chat model" [title]="chat.chatProvider() + ': ' + chat.modelLabel()"
                       class="text-xs text-text-secondary font-normal hover:text-accent transition-colors
                              flex items-center gap-0.5 cursor-pointer">
-                {{ chat.chatModel() || 'model' }}
+                <span class="max-w-[180px] sm:max-w-[320px] truncate">{{ chat.modelLabel() }}</span>
                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
               @if (chat.modelSelectorOpen()) {
-                <div class="absolute top-full left-0 mt-1 bg-surface border border-border rounded-lg shadow-lg z-50 py-1 min-w-[120px]">
-                  @for (model of models; track model) {
+                <div (click)="$event.stopPropagation()" class="absolute top-full left-0 mt-1 bg-surface border border-border rounded-lg shadow-lg z-50 py-1 w-72 max-w-[calc(100vw-2rem)]">
+                  <p class="px-3 py-1.5 text-xs text-text-secondary">{{ chat.chatProvider() }}</p>
+                  @for (model of chat.modelOptions(); track model) {
                     <button (click)="chat.setModel(model); $event.stopPropagation()"
                             class="w-full text-left px-3 py-1.5 text-xs transition-colors"
                             [class]="model === chat.chatModel()
                               ? 'text-accent bg-accent/10 font-medium'
                               : 'text-text-secondary hover:text-text-primary hover:bg-bg-subtle'">
-                      {{ model }}
+                      {{ model || ((chat.defaultModel() || 'Worker default') + ' (default)') }}
                     </button>
                   }
+                  <div class="px-3 py-2 border-t border-border space-y-2">
+                    <label for="chat-model-id" class="block text-xs text-text-secondary">Custom model</label>
+                    <input id="chat-model-id" [(ngModel)]="customModel" [placeholder]="chat.modelPlaceholder()"
+                           (keydown.enter)="chat.setModel(customModel); $event.preventDefault()"
+                           class="w-full bg-bg-subtle text-text-primary text-xs rounded px-2 py-1.5 border border-border" />
+                    <button (click)="chat.setModel(customModel)" [disabled]="!chat.isValidModel(customModel)"
+                            class="text-xs text-accent disabled:opacity-40">Use model</button>
+                  </div>
                 </div>
               }
             </div>
@@ -345,7 +355,7 @@ export class ChatDrawerComponent implements OnDestroy {
   chat = inject(ChatService);
   inputText = '';
   thinkingExpanded = false;
-  readonly models = CHAT_MODELS;
+  customModel = '';
 
   /** Tracks whether viewport is mobile-sized (< 640px). */
   readonly isMobile = signal(window.innerWidth < 640);

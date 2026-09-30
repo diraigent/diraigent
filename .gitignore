@@ -16,9 +16,31 @@
 /**/node_modules
 
 ### Environment ###
-.env
-.env.local
-.env.prod
+.env*
+!.env.example
+!.env.*.example
+*.env
+.netrc
+auth.json
+credentials.json
+*.p12
+*.pfx
+*.mobileprovision
+*.key
+*.dump
+*.sqlite
+*.sqlite3
+
+### Private deployments and local app configuration ###
+/startup/unraid/
+LocalConfig.plist
+Local.xcconfig
+Info.local.plist
+
+### Xcode user state and test output ###
+xcuserdata/
+*.xcuserstate
+test-results/
 
 ### Agent ###
 apps/orchestra/.env.orchestra

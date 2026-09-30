@@ -553,7 +553,7 @@
     "observationRetentionDays": "Beobachtungen Aufbewahrung (Tage)",
     "observationRetentionDaysHint": "Beobachtungen, die aelter als diese Anzahl von Tagen sind, werden automatisch geloescht. Standard: 30 Tage.",
     "chatProvider": "Chat-Provider",
-    "chatProviderHint": "KI-Provider fuer den Projekt-Chat. Standard: claude-code. Nicht-claude-code-Provider verwenden einen einzelnen API-Aufruf ohne Tool-Zugriff.",
+    "chatProviderHint": "KI-Provider fuer den Projekt-Chat. Standard: OpenCode. Claude Code und OpenCode koennen Projektwerkzeuge nutzen; API-Provider verwenden direkte Anfragen.",
     "chatModel": "Chat-Modell",
     "chatModelHint": "Standard-KI-Modell fuer den Projekt-Chat. Benutzer koennen dies pro Sitzung im Chat-Panel ueberschreiben.",
     "notConfigured": "Nicht konfiguriert",

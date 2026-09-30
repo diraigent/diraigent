@@ -24,6 +24,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		AA0000302F41668C00000001 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 		AA0000092F41668B00000001 /* Diraigent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Diraigent.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA00000B2F41668C00000001 /* DiraigentTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DiraigentTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA00000C2F41668C00000001 /* DiraigentUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DiraigentUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -85,6 +86,7 @@
 		AA0000102F41668B00000001 = {
 			isa = PBXGroup;
 			children = (
+				AA0000302F41668C00000001 /* Config.xcconfig */,
 				AA0000022F41668B00000001 /* Diraigent */,
 				AA0000032F41668C00000001 /* DiraigentTests */,
 				AA0000042F41668C00000001 /* DiraigentUITests */,
@@ -393,12 +395,12 @@
 		};
 		AA00001D2F41668C00000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = AA0000302F41668C00000001 /* Config.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = W58V4ZL7PL;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -422,12 +424,12 @@
 		};
 		AA00001E2F41668C00000001 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = AA0000302F41668C00000001 /* Config.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = W58V4ZL7PL;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

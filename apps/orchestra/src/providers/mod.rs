@@ -1,9 +1,11 @@
 //! Provider abstraction for step execution.
 //!
 //! This module defines the [`StepProvider`] trait and a [`ProviderFactory`] for
-//! creating provider instances by name.  Five providers are registered:
+//! creating provider instances by name. Seven providers are registered:
 //!
 //! - `claude-code` — Claude Code CLI subprocess (agentic, PTY, tools)
+//! - `codex` — Codex CLI subprocess (agentic, sandboxed)
+//! - `opencode` — OpenCode CLI subprocess (agentic, default)
 //! - `anthropic` — Anthropic Messages API (direct, non-streaming)
 //! - `openai` — OpenAI-compatible chat completions API (SSE streaming)
 //! - `copilot` — GitHub Copilot / GitHub Models inference API (OpenAI-compatible, SSE streaming)
@@ -11,9 +13,12 @@
 
 mod anthropic;
 mod claude_code;
+mod codex;
 mod copilot;
 mod ollama;
 mod openai;
+mod opencode;
+pub(crate) use opencode::run_command as opencode_run_command;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -137,12 +142,14 @@ pub struct ProviderFactory;
 impl ProviderFactory {
     /// Create a boxed [`StepProvider`] for the given provider name.
     ///
-    /// Known providers: `"claude-code"`, `"anthropic"`, `"openai"`, `"copilot"`, `"ollama"`.
+    /// Known providers: `"opencode"`, `"claude-code"`, `"codex"`, `"anthropic"`, `"openai"`, `"copilot"`, `"ollama"`.
     ///
     /// Returns [`UnknownProviderError`] for any unrecognised name.
     pub fn create(provider_name: &str) -> Result<Box<dyn StepProvider>, UnknownProviderError> {
         match provider_name {
+            "opencode" => Ok(Box::new(opencode::OpenCodeProvider)),
             "claude-code" => Ok(Box::new(claude_code::ClaudeCodeProvider)),
+            "codex" => Ok(Box::new(codex::CodexProvider)),
             "anthropic" => Ok(Box::new(anthropic::AnthropicProvider)),
             "openai" => Ok(Box::new(openai::OpenAIProvider)),
             "copilot" => Ok(Box::new(copilot::CopilotProvider)),
@@ -162,6 +169,16 @@ mod tests {
     fn factory_creates_claude_code() {
         let provider = ProviderFactory::create("claude-code");
         assert!(provider.is_ok(), "claude-code provider should be created");
+    }
+
+    #[test]
+    fn factory_creates_codex() {
+        assert!(ProviderFactory::create("codex").is_ok());
+    }
+
+    #[test]
+    fn factory_creates_opencode() {
+        assert!(ProviderFactory::create("opencode").is_ok());
     }
 
     #[test]

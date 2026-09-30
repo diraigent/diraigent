@@ -15,6 +15,7 @@ HEADER
 [ -n "$AUTH_CLIENT_ID" ]    && echo "  e.AUTH_CLIENT_ID = \"$AUTH_CLIENT_ID\";" >> "$JS"
 [ -n "$AUTH_REDIRECT_PATH" ] && echo "  e.AUTH_REDIRECT_PATH = \"$AUTH_REDIRECT_PATH\";" >> "$JS"
 [ -n "$AUTH_REDIRECT_URI" ] && echo "  e.AUTH_REDIRECT_URI = \"$AUTH_REDIRECT_URI\";" >> "$JS"
+[ -n "$AUTH_ENROLLMENT_URL" ] && echo "  e.AUTH_ENROLLMENT_URL = \"$AUTH_ENROLLMENT_URL\";" >> "$JS"
 APP_VERSION="${APP_VERSION:-$(cat /etc/diraigent_version 2>/dev/null)}"
 [ -n "$APP_VERSION" ]      && echo "  e.APP_VERSION = \"$APP_VERSION\";" >> "$JS"
 
