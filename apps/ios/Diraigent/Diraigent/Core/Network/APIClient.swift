@@ -95,6 +95,7 @@ public actor APIClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = streamSession.configuration.timeoutIntervalForRequest
         request.httpBody = try encoder.encode(body)
         for attempt in 0...1 {
             let (authorized, token) = await authorize(request)

@@ -186,6 +186,7 @@ struct AuthenticationTests {
         var text = ""
         for try await line in bytes.lines { text += line }
         #expect(text == "data: done")
+        #expect(requests.all.filter { $0.url!.path == "/chat" }.allSatisfy { $0.timeoutInterval == 660 })
         #expect(requests.all.count == 3)
         #expect(requests.all.filter { $0.url!.path == "/chat" }.allSatisfy { $0.httpBody == requests.all[0].httpBody })
         #expect(auth.isAuthenticated)
