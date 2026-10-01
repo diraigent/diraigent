@@ -25,6 +25,14 @@ struct ChatMessage: Identifiable, Sendable {
 struct ChatRequest: Encodable, Sendable {
     let messages: [ChatRequestMessage]
     let model: String?
+    var agentId: UUID? = nil
+}
+
+struct ChatModelCatalog: Decodable, Sendable {
+    let provider: String
+    let defaultModel: String?
+    let models: [String]
+    let agentId: UUID
 }
 
 /// A message in the chat request payload.

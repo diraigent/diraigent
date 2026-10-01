@@ -229,6 +229,35 @@ async fn connect_and_run(
                 };
 
                 match ws_msg {
+                    WsMessage::ChatModelsRequest {
+                        request_id,
+                        project_id,
+                        refresh,
+                    } => {
+                        let sender = tx.clone();
+                        let api = api.clone();
+                        let projects_path = projects_path.to_path_buf();
+                        tokio::spawn(async move {
+                            let result = crate::handlers::chat_models::discover(
+                                &api,
+                                project_id,
+                                &projects_path,
+                                refresh,
+                            )
+                            .await;
+                            let (catalog, error) = match result {
+                                Ok(catalog) => (Some(catalog), None),
+                                Err(_) => {
+                                    (None, Some("OpenCode model discovery unavailable".into()))
+                                }
+                            };
+                            let _ = sender.send(WsMessage::ChatModelsResponse {
+                                request_id,
+                                catalog,
+                                error,
+                            });
+                        });
+                    }
                     WsMessage::ChatRequest {
                         session_id,
                         project_id,

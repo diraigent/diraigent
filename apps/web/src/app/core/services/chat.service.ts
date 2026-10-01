@@ -13,6 +13,13 @@ interface ActiveTool {
   toolName: string;
 }
 
+interface ChatModelCatalog {
+  provider: string;
+  default_model: string | null;
+  models: string[];
+  agent_id: string;
+}
+
 import { STORAGE_KEYS } from '../../shared/ui-constants';
 
 const STORAGE_PREFIX = STORAGE_KEYS.CHAT_PREFIX;
@@ -41,15 +48,25 @@ export class ChatService {
   readonly chatProvider = computed(() =>
     this.project.project()?.metadata?.['chat_provider'] as string || 'opencode');
   private readonly serverModel = signal('');
+  private readonly catalog = signal<ChatModelCatalog | null>(null);
+  readonly modelsLoading = signal(false);
+  readonly modelsError = signal<string | null>(null);
+  readonly modelSearch = signal('');
+  private modelRequest: AbortController | null = null;
+  private modelGeneration = 0;
+  private modelContext = '';
   readonly defaultModel = computed(() => {
     const model = this.project.project()?.metadata?.['chat_model'];
     if (typeof model === 'string' && this.isValidModel(model)) return model;
+    if (this.catalog()?.default_model) return this.catalog()!.default_model!;
     return this.chatProvider() === 'claude-code' ? this.serverModel() : '';
   });
   readonly modelLabel = computed(() => this.chatModel() || this.defaultModel() || 'Worker default');
   readonly modelOptions = computed(() => {
-    const models = this.chatProvider() === 'claude-code' ? ['sonnet', 'opus', 'haiku'] : [];
-    return [...new Set(['', ...(this.defaultModel() ? [this.defaultModel()] : []), ...models])];
+    const models = this.catalog()?.models ?? (this.chatProvider() === 'claude-code' ? ['sonnet', 'opus', 'haiku'] : []);
+    const search = this.modelSearch().trim().toLowerCase();
+    return [...new Set(['', ...(this.defaultModel() ? [this.defaultModel()] : []), ...models])]
+      .filter(model => !model || model.toLowerCase().includes(search));
   });
   readonly modelPlaceholder = computed(() =>
     this.chatProvider() === 'opencode' ? 'provider/model' : 'Model ID');
@@ -69,10 +86,16 @@ export class ChatService {
     effect(() => {
       const pid = this.project.projectId();
       const provider = this.chatProvider();
+      const context = `${pid}:${provider}`;
+      if (context === this.modelContext) return;
+      this.modelContext = context;
       const stored = localStorage.getItem(`${MODEL_STORAGE_KEY}:${pid}:${provider}`) || '';
       untracked(() => {
         this.chatModel.set(this.isValidModel(stored) ? stored : '');
         this.modelSelectorOpen.set(false);
+        this.catalog.set(null);
+        this.modelSearch.set('');
+        void this.loadModels();
       });
     });
     // Load stored messages on init and when project changes
@@ -135,6 +158,7 @@ export class ChatService {
       const body: Record<string, unknown> = { messages: history };
       const selectedModel = this.chatModel();
       if (selectedModel) body['model'] = selectedModel;
+      if (selectedModel && this.catalog()) body['agent_id'] = this.catalog()!.agent_id;
 
       const resp = await fetch(`${environment.apiServer}/${projectId}/chat`, {
         method: 'POST',
@@ -286,6 +310,42 @@ export class ChatService {
 
   toggleModelSelector(): void {
     this.modelSelectorOpen.update(v => !v);
+    if (this.modelSelectorOpen()) {
+      this.modelSearch.set('');
+      if (!this.catalog() && !this.modelsLoading()) void this.loadModels();
+    }
+  }
+
+  async loadModels(refresh = false): Promise<void> {
+    const pid = this.project.projectId();
+    const provider = this.chatProvider();
+    const generation = ++this.modelGeneration;
+    this.modelRequest?.abort();
+    this.modelRequest = new AbortController();
+    this.modelsError.set(null);
+    this.modelsLoading.set(!!pid);
+    if (!pid) return;
+    try {
+      const token = this.auth.getAccessToken();
+      const response = await fetch(`${environment.apiServer}/${pid}/chat/models?refresh=${refresh}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal: this.modelRequest.signal,
+      });
+      if (!response.ok) throw new Error('Model list unavailable. Refresh or enter a model manually.');
+      const catalog: ChatModelCatalog = await response.json();
+      if (generation !== this.modelGeneration) return;
+      if (catalog.provider !== provider || !Array.isArray(catalog.models) || typeof catalog.agent_id !== 'string') {
+        throw new Error('Chat provider changed. Reload the project to refresh its models.');
+      }
+      catalog.models = catalog.models.filter(model => typeof model === 'string' && this.isValidModel(model));
+      this.catalog.set(catalog);
+    } catch (error) {
+      if (generation !== this.modelGeneration) return;
+      this.catalog.set(null);
+      this.modelsError.set(error instanceof Error ? error.message : 'Model list unavailable.');
+    } finally {
+      if (generation === this.modelGeneration) this.modelsLoading.set(false);
+    }
   }
 
   toggleFullscreen(): void {

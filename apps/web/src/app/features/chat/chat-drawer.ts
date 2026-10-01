@@ -154,7 +154,17 @@ export class ChatMarkdownPipe implements PipeTransform {
               </button>
               @if (chat.modelSelectorOpen()) {
                 <div (click)="$event.stopPropagation()" class="absolute top-full left-0 mt-1 bg-surface border border-border rounded-lg shadow-lg z-50 py-1 w-72 max-w-[calc(100vw-2rem)]">
-                  <p class="px-3 py-1.5 text-xs text-text-secondary">{{ chat.chatProvider() }}</p>
+                  <div class="flex items-center justify-between px-3 py-1.5 text-xs text-text-secondary">
+                    <span>{{ chat.chatProvider() }}</span>
+                    <button (click)="chat.loadModels(true)" [disabled]="chat.modelsLoading()" class="text-accent disabled:opacity-40">Refresh</button>
+                  </div>
+                  <div class="px-3 pb-2">
+                    <input aria-label="Search models" [ngModel]="chat.modelSearch()" (ngModelChange)="chat.modelSearch.set($event)"
+                           placeholder="Search models" class="w-full bg-bg-subtle text-text-primary text-xs rounded px-2 py-1.5 border border-border" />
+                  </div>
+                  @if (chat.modelsLoading()) { <p class="px-3 py-1.5 text-xs text-text-secondary" role="status">Loading models…</p> }
+                  @if (chat.modelsError()) { <p class="px-3 py-1.5 text-xs text-text-secondary" role="status">{{ chat.modelsError() }}</p> }
+                  <div class="max-h-64 overflow-y-auto">
                   @for (model of chat.modelOptions(); track model) {
                     <button (click)="chat.setModel(model); $event.stopPropagation()"
                             class="w-full text-left px-3 py-1.5 text-xs transition-colors"
@@ -164,6 +174,7 @@ export class ChatMarkdownPipe implements PipeTransform {
                       {{ model || ((chat.defaultModel() || 'Worker default') + ' (default)') }}
                     </button>
                   }
+                  </div>
                   <div class="px-3 py-2 border-t border-border space-y-2">
                     <label for="chat-model-id" class="block text-xs text-text-secondary">Custom model</label>
                     <input id="chat-model-id" [(ngModel)]="customModel" [placeholder]="chat.modelPlaceholder()"

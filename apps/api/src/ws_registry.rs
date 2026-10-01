@@ -18,6 +18,9 @@ pub struct PlaybookResponsePayload {
     pub data: serde_json::Value,
 }
 
+type ModelReply = Result<diraigent_types::ChatModelCatalog, String>;
+type PendingModelRequest = (Uuid, oneshot::Sender<ModelReply>);
+
 pub struct WsRegistry {
     /// Connected orchestras: agent_id -> WS sender
     connections: DashMap<Uuid, mpsc::UnboundedSender<WsMessage>>,
@@ -25,6 +28,7 @@ pub struct WsRegistry {
     pending_git: DashMap<String, oneshot::Sender<GitResponsePayload>>,
     /// Pending playbook requests: request_id -> oneshot sender
     pending_playbook: DashMap<String, oneshot::Sender<PlaybookResponsePayload>>,
+    pending_models: DashMap<String, PendingModelRequest>,
     /// Active chat sessions: session_id -> mpsc sender for SSE events
     active_chats: DashMap<String, mpsc::Sender<ChatSseEvent>>,
     /// Which agent handles each chat session: session_id -> agent_id
@@ -43,6 +47,7 @@ impl WsRegistry {
             connections: DashMap::new(),
             pending_git: DashMap::new(),
             pending_playbook: DashMap::new(),
+            pending_models: DashMap::new(),
             active_chats: DashMap::new(),
             session_agents: DashMap::new(),
         }
@@ -57,6 +62,8 @@ impl WsRegistry {
     /// Unregister a disconnected agent.
     pub fn unregister(&self, agent_id: Uuid) {
         self.connections.remove(&agent_id);
+        self.pending_models
+            .retain(|_, (agent, _)| *agent != agent_id);
         tracing::info!(%agent_id, "agent disconnected from WebSocket");
     }
 
@@ -76,6 +83,38 @@ impl WsRegistry {
             .iter()
             .find(|id| self.connections.contains_key(id))
             .copied()
+    }
+
+    /// Register a model request bound to the selected worker.
+    pub fn register_model_request(
+        &self,
+        request_id: String,
+        agent_id: Uuid,
+    ) -> oneshot::Receiver<ModelReply> {
+        let (tx, rx) = oneshot::channel();
+        self.pending_models.insert(request_id, (agent_id, tx));
+        rx
+    }
+
+    pub fn remove_model_request(&self, request_id: &str) {
+        self.pending_models.remove(request_id);
+    }
+
+    pub fn complete_model_request(
+        &self,
+        agent_id: Uuid,
+        request_id: &str,
+        catalog: Option<diraigent_types::ChatModelCatalog>,
+    ) {
+        if let Some((_, (_, tx))) = self
+            .pending_models
+            .remove_if(request_id, |_, (agent, _)| *agent == agent_id)
+        {
+            // Never forward worker diagnostics (which could contain credentials).
+            let _ = tx.send(catalog.ok_or_else(|| {
+                "Model discovery failed. You can still enter a model manually.".into()
+            }));
+        }
     }
 
     /// Register a pending git request. Returns a receiver for the response.
@@ -106,11 +145,7 @@ impl WsRegistry {
     }
 
     /// Complete a pending playbook request with a response.
-    pub fn complete_playbook_request(
-        &self,
-        request_id: &str,
-        response: PlaybookResponsePayload,
-    ) {
+    pub fn complete_playbook_request(&self, request_id: &str, response: PlaybookResponsePayload) {
         if let Some((_, tx)) = self.pending_playbook.remove(request_id) {
             let _ = tx.send(response);
         }
@@ -187,5 +222,49 @@ impl WsRegistry {
     /// Check if any agent is connected.
     pub fn has_connections(&self) -> bool {
         !self.connections.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod model_tests {
+    use super::*;
+
+    fn catalog() -> diraigent_types::ChatModelCatalog {
+        diraigent_types::ChatModelCatalog {
+            provider: "opencode".into(),
+            default_model: None,
+            models: vec!["custom/model".into()],
+        }
+    }
+
+    #[tokio::test]
+    async fn model_reply_must_come_from_the_selected_worker() {
+        let registry = WsRegistry::new();
+        let worker = Uuid::new_v4();
+        let mut rx = registry.register_model_request("request".into(), worker);
+        registry.complete_model_request(Uuid::new_v4(), "request", Some(catalog()));
+        assert!(matches!(
+            rx.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        registry.complete_model_request(worker, "request", Some(catalog()));
+        assert_eq!(rx.await.unwrap().unwrap().models, vec!["custom/model"]);
+        assert!(registry.pending_models.is_empty());
+    }
+
+    #[tokio::test]
+    async fn disconnect_and_cancellation_remove_pending_catalogs() {
+        let registry = WsRegistry::new();
+        let worker = Uuid::new_v4();
+        let rx = registry.register_model_request("disconnect".into(), worker);
+        let other = Uuid::new_v4();
+        let other_rx = registry.register_model_request("cancel".into(), other);
+        registry.unregister(worker);
+        assert!(rx.await.is_err());
+        assert_eq!(registry.pending_models.len(), 1);
+        registry.remove_model_request("cancel");
+        assert!(other_rx.await.is_err());
+        registry.complete_model_request(other, "cancel", Some(catalog()));
+        assert!(registry.pending_models.is_empty());
     }
 }

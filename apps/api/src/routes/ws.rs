@@ -71,6 +71,15 @@ async fn handle_socket(state: AppState, agent_id: Uuid, socket: WebSocket) {
                 };
 
                 match ws_msg {
+                    WsMessage::ChatModelsResponse {
+                        request_id,
+                        catalog,
+                        ..
+                    } => {
+                        state
+                            .ws_registry
+                            .complete_model_request(agent_id, &request_id, catalog);
+                    }
                     WsMessage::ChatEvent { session_id, event } => {
                         state.ws_registry.route_chat_event(&session_id, event).await;
                     }
@@ -97,7 +106,11 @@ async fn handle_socket(state: AppState, agent_id: Uuid, socket: WebSocket) {
                     } => {
                         state.ws_registry.complete_playbook_request(
                             &request_id,
-                            PlaybookResponsePayload { success, error, data },
+                            PlaybookResponsePayload {
+                                success,
+                                error,
+                                data,
+                            },
                         );
                     }
                     WsMessage::Heartbeat => {

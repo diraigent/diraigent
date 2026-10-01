@@ -31,6 +31,10 @@ struct CachedProjectInfo {
 static PROJECT_CACHE: LazyLock<RwLock<HashMap<String, CachedProjectInfo>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
+pub(super) async fn invalidate_project_info(project_id: &str) {
+    PROJECT_CACHE.write().await.remove(project_id);
+}
+
 /// Resolve chat provider, model, and working directory for a project.
 /// Results are cached for 2 minutes to avoid redundant API calls per chat message.
 async fn resolve_project_info(

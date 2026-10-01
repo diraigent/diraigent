@@ -6,6 +6,18 @@ use crate::chat::{ChatSseEvent, Message};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum WsMessage {
+    #[serde(rename = "chat.models.request")]
+    ChatModelsRequest {
+        request_id: String,
+        project_id: Uuid,
+        refresh: bool,
+    },
+    #[serde(rename = "chat.models.response")]
+    ChatModelsResponse {
+        request_id: String,
+        catalog: Option<diraigent_types::ChatModelCatalog>,
+        error: Option<String>,
+    },
     // API -> Orchestra
     #[serde(rename = "chat.request")]
     ChatRequest {

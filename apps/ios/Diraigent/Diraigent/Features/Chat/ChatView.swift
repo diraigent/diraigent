@@ -5,6 +5,9 @@ struct ChatView: View {
     var onExit: (() -> Void)? = nil
     @Environment(AppState.self) private var appState
     @State private var inputText = ""
+    @State private var modelPickerOpen = false
+    @State private var modelSearch = ""
+    @State private var customModel = ""
     @FocusState private var isInputFocused: Bool
 
     var body: some View {
@@ -42,6 +45,10 @@ struct ChatView: View {
             }
         }
         .onDisappear { isInputFocused = false }
+        .task(id: appState.selectedProjectId) {
+            await appState.chatService.loadModels(projectId: appState.selectedProjectId, provider: chatProvider)
+        }
+        .sheet(isPresented: $modelPickerOpen) { modelPicker }
     }
 
     // MARK: - Message List
@@ -124,6 +131,22 @@ struct ChatView: View {
 
     private var inputArea: some View {
         VStack(spacing: DiraigentTheme.spacingSM) {
+            HStack {
+                Button {
+                    customModel = appState.chatService.selectedModel
+                    modelSearch = ""
+                    modelPickerOpen = true
+                } label: {
+                    Label(appState.chatService.modelLabel, systemImage: "chevron.up.chevron.down")
+                        .font(.caption)
+                        .lineLimit(1)
+                }
+                .accessibilityLabel("Choose chat model")
+                .disabled(appState.selectedProjectId == nil)
+                Spacer()
+            }
+            .padding(.horizontal, DiraigentTheme.spacingLG)
+            .padding(.top, DiraigentTheme.spacingSM)
             if let error = appState.chatService.error {
                 HStack {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -186,6 +209,62 @@ struct ChatView: View {
         !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !appState.chatService.isStreaming
             && appState.selectedProjectId != nil
+    }
+
+    private var modelPicker: some View {
+        NavigationStack {
+            List {
+                Section(appState.chatService.modelProvider) {
+                    modelButton("", label: (appState.chatService.modelCatalog?.defaultModel ?? "Worker default") + " (default)")
+                    ForEach((appState.chatService.modelCatalog?.models ?? []).filter {
+                        modelSearch.isEmpty || $0.localizedCaseInsensitiveContains(modelSearch)
+                    }, id: \.self) { model in
+                        modelButton(model, label: model)
+                    }
+                    if appState.chatService.modelsLoading { ProgressView("Loading models…") }
+                    if let error = appState.chatService.modelsError { Text(error).font(.caption).foregroundStyle(.secondary) }
+                }
+                Section("Custom model") {
+                    TextField(appState.chatService.modelProvider == "opencode" ? "provider/model" : "Model ID", text: $customModel)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    Button("Use model") {
+                        appState.chatService.setModel(customModel)
+                        modelPickerOpen = false
+                    }
+                    .disabled(!appState.chatService.isValidModel(customModel.trimmingCharacters(in: .whitespacesAndNewlines)))
+                }
+            }
+            .searchable(text: $modelSearch, prompt: "Search models")
+            .navigationTitle("Chat model")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { modelPickerOpen = false } }
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Refresh") {
+                        Task { await appState.chatService.loadModels(projectId: appState.selectedProjectId, provider: chatProvider, refresh: true) }
+                    }
+                    .disabled(appState.chatService.modelsLoading)
+                }
+            }
+        }
+    }
+
+    private var chatProvider: String {
+        appState.projectService.projects.first { $0.id == appState.selectedProjectId }?.metadata?["chat_provider"]?.value as? String ?? "opencode"
+    }
+
+    private func modelButton(_ model: String, label: String) -> some View {
+        Button {
+            appState.chatService.setModel(model)
+            modelPickerOpen = false
+        } label: {
+            HStack {
+                Text(label)
+                Spacer()
+                if appState.chatService.selectedModel == model { Image(systemName: "checkmark") }
+            }
+        }
     }
 
     private func sendCurrentMessage() {

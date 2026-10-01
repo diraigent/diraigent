@@ -138,6 +138,13 @@ choose its default model for both tasks and project chat. Explicit task models
 and project chat models take precedence. Orchestra supports OpenCode V1 and V2;
 V2 runs with a private server so the worker's environment applies to each run.
 
+The web and iOS chat model pickers discover available models with `opencode models`
+on the connected orchestra, in the project's working directory. Search or refresh
+the list, select a model for subsequent messages, or enter a model ID manually
+when discovery is unavailable. Selections are saved per project and provider;
+they do not change OpenCode's configuration. Catalogs are cached for 60 seconds
+on each worker, and Refresh bypasses that cache. Provider credentials stay on the worker.
+
 To run a step with the Codex CLI, select **Codex CLI** as its provider (or set
 `"provider": "codex"` in the step JSON). The orchestra runs `codex exec` in the
 task worktree. `readonly` steps use the read-only sandbox; `full` and `merge`

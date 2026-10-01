@@ -154,6 +154,8 @@ pub struct ChatStreamParams {
     pub messages: Vec<Message>,
     /// Optional model override from the client. Falls back to CHAT_MODEL env var, then "sonnet".
     pub model: Option<String>,
+    /// Keep an explicitly selected model on the worker that supplied its catalog.
+    pub model_agent_id: Option<Uuid>,
     pub tx: mpsc::Sender<ChatSseEvent>,
     pub api_base: String,
     pub auth_header: String,
@@ -170,6 +172,7 @@ pub async fn run_chat_stream(p: ChatStreamParams) -> Option<String> {
         user_id,
         messages,
         model: model_override,
+        model_agent_id,
         tx,
         api_base,
         auth_header,
@@ -218,6 +221,22 @@ pub async fn run_chat_stream(p: ChatStreamParams) -> Option<String> {
             .await;
         return None;
     }
+
+    let agent_ids = if let Some(id) = model_agent_id {
+        if !agent_ids.contains(&id) {
+            let _ = tx
+                .send(ChatSseEvent::Error {
+                    message:
+                        "Model worker is unavailable for this project. Refresh the model list."
+                            .into(),
+                })
+                .await;
+            return None;
+        }
+        vec![id]
+    } else {
+        agent_ids
+    };
 
     // Retry a few times to handle brief WS reconnection windows.
     // The orchestra auto-reconnects every 5s, so waiting up to 6s covers one full cycle.

@@ -9,6 +9,68 @@ final class ChatService {
     var messages: [ChatMessage] = []
     var isStreaming = false
     var error: String?
+    var modelCatalog: ChatModelCatalog?
+    var modelsLoading = false
+    var modelsError: String?
+    var selectedModel = ""
+    private(set) var modelProvider = "opencode"
+    private var modelProjectId: UUID?
+    private var modelGeneration = UUID()
+
+    var modelLabel: String { selectedModel.isEmpty ? modelCatalog?.defaultModel ?? "Worker default" : selectedModel }
+
+    func loadModels(projectId: UUID?, provider: String = "opencode", refresh: Bool = false) async {
+        let generation = UUID()
+        modelGeneration = generation
+        if modelProjectId != projectId || modelProvider != provider {
+            modelCatalog = nil
+            selectedModel = ""
+            modelProjectId = projectId
+            modelProvider = provider
+            if let projectId {
+                let stored = UserDefaults.standard.string(forKey: modelStorageKey(projectId, provider)) ?? ""
+                if stored.isEmpty || isValidModel(stored) { selectedModel = stored }
+            }
+        }
+        modelsError = nil
+        modelsLoading = projectId != nil
+        guard let projectId else { return }
+        defer { if modelGeneration == generation { modelsLoading = false } }
+        do {
+            let catalog: ChatModelCatalog = try await apiClient.get(
+                Endpoints.chat(projectId) + "/models", query: ["refresh": String(refresh)])
+            guard modelGeneration == generation, !Task.isCancelled else { return }
+            guard catalog.provider == provider else {
+                modelsError = "Chat provider changed. Reload the project to refresh its models."
+                modelCatalog = nil
+                return
+            }
+            modelCatalog = catalog
+        } catch {
+            guard modelGeneration == generation, !Task.isCancelled else { return }
+            modelCatalog = nil
+            modelsError = "Model list unavailable. Refresh or enter a model manually."
+        }
+    }
+
+    func setModel(_ model: String) {
+        let value = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value.isEmpty || isValidModel(value) else { return }
+        selectedModel = value
+        if let projectId = modelProjectId {
+            UserDefaults.standard.set(selectedModel, forKey: modelStorageKey(projectId, modelProvider))
+        }
+    }
+
+    func isValidModel(_ model: String) -> Bool {
+        guard !model.isEmpty, model.count <= 256, !model.contains(where: { $0.isWhitespace }) else { return false }
+        if modelProvider != "opencode" { return true }
+        return model.range(of: "^[^/\\s]+/\\S+$", options: .regularExpression) != nil
+    }
+
+    private func modelStorageKey(_ projectId: UUID, _ provider: String) -> String {
+        "chat-model:\(projectId.uuidString):\(provider)"
+    }
 
     /// The current streaming task, kept so it can be cancelled.
     private var streamTask: Task<Void, Never>?
@@ -34,6 +96,8 @@ final class ChatService {
 
         isStreaming = true
         error = nil
+        let chosenModel = model ?? (selectedModel.isEmpty ? nil : selectedModel)
+        let modelAgentId = chosenModel == nil ? nil : modelCatalog?.agentId
 
         streamTask = Task { [weak self] in
             guard let self else { return }
@@ -45,7 +109,8 @@ final class ChatService {
                     url: url,
                     token: token,
                     messages: requestMessages,
-                    model: model
+                    model: chosenModel,
+                    agentId: modelAgentId
                 )
 
                 let (bytes, response) = try await URLSession.shared.bytes(for: request)
@@ -74,6 +139,7 @@ final class ChatService {
                         if let type = eventType, !dataBuffer.isEmpty {
                             let event = Self.parseSSEEvent(type: type, data: dataBuffer)
                             self.handleSSEEvent(event, assistantIndex: assistantIndex)
+                            if type == "done" || type == "error" { break }
                         }
 
                         eventType = nil
@@ -125,7 +191,8 @@ final class ChatService {
         url: URL,
         token: String?,
         messages: [ChatRequestMessage],
-        model: String?
+        model: String?,
+        agentId: UUID?
     ) throws -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -135,7 +202,7 @@ final class ChatService {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 
-        let body = ChatRequest(messages: messages, model: model)
+        let body = ChatRequest(messages: messages, model: model, agentId: agentId)
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         request.httpBody = try encoder.encode(body)

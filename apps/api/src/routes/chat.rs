@@ -1,7 +1,7 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures::StreamExt;
 use futures::stream::Stream;
@@ -13,11 +13,84 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::AuthUser;
+use crate::authz::{OptionalAgentId, require_membership};
 use crate::chat::{self, ChatSseEvent, ChatStreamParams, Message};
 use crate::error::AppError;
 
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/{project_id}/chat", post(chat_handler))
+    Router::new()
+        .route("/{project_id}/chat", post(chat_handler))
+        .route("/{project_id}/chat/models", get(chat_models))
+}
+
+#[derive(Default, Deserialize)]
+struct ModelQuery {
+    #[serde(default)]
+    refresh: bool,
+}
+
+struct PendingCatalog {
+    registry: std::sync::Arc<crate::ws_registry::WsRegistry>,
+    request_id: String,
+}
+
+impl Drop for PendingCatalog {
+    fn drop(&mut self) {
+        self.registry.remove_model_request(&self.request_id);
+    }
+}
+
+async fn chat_models(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
+    Path(project_id): Path<Uuid>,
+    Query(query): Query<ModelQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
+    let project = state.db.get_project_by_id(project_id).await?;
+    let candidates = state.db.list_tenant_agent_ids(project.tenant_id).await?;
+    // Same candidate list and selection as project chat.
+    let worker = state
+        .ws_registry
+        .find_connected_agent(&candidates)
+        .ok_or_else(|| {
+            AppError::ServiceUnavailable(
+                "No orchestra worker connected. Enter a model manually or try again later.".into(),
+            )
+        })?;
+    let request_id = Uuid::now_v7().to_string();
+    let rx = state
+        .ws_registry
+        .register_model_request(request_id.clone(), worker);
+    let _pending = PendingCatalog {
+        registry: state.ws_registry.clone(),
+        request_id: request_id.clone(),
+    };
+    let sent = state.ws_registry.send_to_agent(
+        worker,
+        crate::ws_protocol::WsMessage::ChatModelsRequest {
+            request_id: request_id.clone(),
+            project_id,
+            refresh: query.refresh,
+        },
+    );
+    let result = if sent {
+        match tokio::time::timeout(Duration::from_secs(30), rx).await {
+            Ok(Ok(Ok(catalog))) => Ok(catalog),
+            _ => Err(AppError::ServiceUnavailable(
+                "Model discovery unavailable. Enter a model manually or refresh the list.".into(),
+            )),
+        }
+    } else {
+        Err(AppError::ServiceUnavailable(
+            "Orchestra worker disconnected.".into(),
+        ))
+    };
+    let mut data = serde_json::to_value(result?)
+        .map_err(|_| AppError::Internal("Invalid model catalog".into()))?;
+    data["agent_id"] = serde_json::json!(worker);
+    Ok(Json(data))
 }
 
 #[derive(Debug, Deserialize)]
@@ -25,16 +98,19 @@ struct ChatRequest {
     messages: Vec<Message>,
     #[serde(default)]
     model: Option<String>,
+    #[serde(default)]
+    agent_id: Option<Uuid>,
 }
 
 async fn chat_handler(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
     headers: HeaderMap,
     Path(project_id): Path<Uuid>,
     Json(req): Json<ChatRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>>, AppError> {
-    let _ = state.db.get_project_by_id(project_id).await?;
+    require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
 
     // Derive the API base URL from the incoming request so the chat agent
     // knows the correct address even when the API is running remotely.
@@ -72,6 +148,7 @@ async fn chat_handler(
             user_id,
             messages: req.messages,
             model: req.model,
+            model_agent_id: req.agent_id,
             tx,
             api_base,
             auth_header,
