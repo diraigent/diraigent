@@ -104,7 +104,7 @@ RUN curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh
 RUN curl -fsSL https://gh.io/copilot-install | bash
 
 # OpenCode CLI (pinned for reproducible demo deployments)
-RUN curl -fsSL https://opencode.ai/install | bash -s -- --version 1.14.20 --no-modify-path
+RUN curl -fsSL https://opencode.ai/v2/install | bash -s -- --version 2.0.20 --no-modify-path
 
 USER root
 
