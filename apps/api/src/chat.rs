@@ -308,21 +308,17 @@ pub async fn run_chat_stream(p: ChatStreamParams) -> Option<String> {
         return None;
     }
 
-    // Spawn a timeout watcher so we don't hang forever.
-    // 600s (10 minutes) to accommodate extended thinking / tool use chains.
+    // Worker events reset the idle deadline. SSE transport keep-alives do not:
+    // a connected but stalled worker should still be cancelled.
     let session_clone = session_id.clone();
     let registry_clone = ws_registry.clone();
-    let tx_clone = tx.clone();
     tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(600)).await;
-        // If session is still active after 600s, cancel it (also kills orchestra subprocess)
-        if registry_clone.is_chat_active(&session_clone) {
-            let _ = tx_clone
-                .send(ChatSseEvent::Error {
-                    message: "Chat session timed out (no response from worker)".into(),
-                })
-                .await;
-            registry_clone.cancel_chat_session(&session_clone);
+        let idle_timeout = std::time::Duration::from_secs(600);
+        while let Some(deadline) = registry_clone.chat_idle_deadline(&session_clone, idle_timeout) {
+            tokio::time::sleep_until(deadline).await;
+            if registry_clone.expire_idle_chat(&session_clone, idle_timeout) {
+                break;
+            }
         }
     });
 

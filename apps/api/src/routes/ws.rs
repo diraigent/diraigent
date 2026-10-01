@@ -81,7 +81,10 @@ async fn handle_socket(state: AppState, agent_id: Uuid, socket: WebSocket) {
                             .complete_model_request(agent_id, &request_id, catalog);
                     }
                     WsMessage::ChatEvent { session_id, event } => {
-                        state.ws_registry.route_chat_event(&session_id, event).await;
+                        state
+                            .ws_registry
+                            .route_chat_event(agent_id, &session_id, event)
+                            .await;
                     }
                     WsMessage::GitResponse {
                         request_id,

@@ -43,6 +43,7 @@ struct ChatRequestMessage: Codable, Sendable {
 
 /// SSE event types returned by the chat endpoint.
 enum ChatSseEvent {
+    case thinking
     case text(String)
     case toolStart(toolName: String, toolId: String)
     case toolEnd(toolId: String, success: Bool)

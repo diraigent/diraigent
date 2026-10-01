@@ -102,28 +102,12 @@ final class ChatService {
         streamTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let baseURL = AppConfig.current.apiBaseURL
-                let token = KeychainHelper.readString(key: "access_token")
-                let url = try self.buildChatURL(baseURL: baseURL, projectId: projectId)
-                let request = try self.buildStreamRequest(
-                    url: url,
-                    token: token,
-                    messages: requestMessages,
-                    model: chosenModel,
-                    agentId: modelAgentId
+                let bytes = try await apiClient.stream(
+                    Endpoints.chat(projectId),
+                    body: ChatRequest(messages: requestMessages, model: chosenModel, agentId: modelAgentId)
                 )
 
-                let (bytes, response) = try await URLSession.shared.bytes(for: request)
-
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    throw APIError.serverError(0, "Invalid response")
-                }
-                guard (200...299).contains(httpResponse.statusCode) else {
-                    if httpResponse.statusCode == 401 {
-                        throw APIError.unauthorized
-                    }
-                    throw APIError.serverError(httpResponse.statusCode, "Chat request failed")
-                }
+                defer { bytes.task.cancel() }
 
                 var eventType: String?
                 var dataBuffer = ""
@@ -179,37 +163,6 @@ final class ChatService {
 
     // MARK: - Private Helpers
 
-    private func buildChatURL(baseURL: String, projectId: UUID) throws -> URL {
-        let path = Endpoints.chat(projectId)
-        guard let url = URL(string: baseURL + path) else {
-            throw APIError.invalidURL
-        }
-        return url
-    }
-
-    private func buildStreamRequest(
-        url: URL,
-        token: String?,
-        messages: [ChatRequestMessage],
-        model: String?,
-        agentId: UUID?
-    ) throws -> URLRequest {
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        if let token {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-
-        let body = ChatRequest(messages: messages, model: model, agentId: agentId)
-        let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
-        request.httpBody = try encoder.encode(body)
-
-        return request
-    }
-
     private static func parseSSEEvent(type: String, data: String) -> ChatSseEvent {
         guard let jsonData = data.data(using: .utf8) else {
             return .error("Failed to parse SSE data")
@@ -219,6 +172,8 @@ final class ChatService {
             let json = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any] ?? [:]
 
             switch type {
+            case "thinking":
+                return .thinking
             case "text":
                 let content = json["content"] as? String ?? ""
                 return .text(content)
@@ -252,6 +207,8 @@ final class ChatService {
         guard assistantIndex < messages.count else { return }
 
         switch event {
+        case .thinking:
+            break
         case .text(let content):
             messages[assistantIndex].content += content
         case .toolStart(let toolName, _):

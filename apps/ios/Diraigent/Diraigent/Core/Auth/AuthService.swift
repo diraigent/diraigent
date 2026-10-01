@@ -22,7 +22,7 @@ public final class AuthService {
             issuer: String,
             clientId: String,
             redirectURI: String,
-            scopes: String = "openid profile email"
+            scopes: String = "openid profile email offline_access"
         ) {
             self.issuer = issuer
             // Authentik's authorize/token endpoints live at /application/o/
@@ -56,41 +56,44 @@ public final class AuthService {
     private let config: Config
     private let apiClient: APIClient
 
+    private let session: URLSession
+    private let tokens: AuthTokenStore
+    private var generation = UUID()
+    private var refreshTask: Task<String, Error>?
+
     private var accessToken: String? {
-        get { KeychainHelper.readString(key: "access_token") }
-        set {
-            if let value = newValue {
-                KeychainHelper.saveString(key: "access_token", value: value)
-            } else {
-                KeychainHelper.delete(key: "access_token")
-            }
-        }
+        get { tokens.read("access_token") }
+        set { tokens.write("access_token", newValue) }
     }
 
     private var refreshToken: String? {
-        get { KeychainHelper.readString(key: "refresh_token") }
-        set {
-            if let value = newValue {
-                KeychainHelper.saveString(key: "refresh_token", value: value)
-            } else {
-                KeychainHelper.delete(key: "refresh_token")
-            }
-        }
+        get { tokens.read("refresh_token") }
+        set { tokens.write("refresh_token", newValue) }
     }
 
-    // MARK: - Init
+    public convenience init(config: Config, apiClient: APIClient) {
+        self.init(config: config, apiClient: apiClient, session: .shared, tokens: KeychainTokenStore())
+    }
 
-    public init(config: Config, apiClient: APIClient) {
+    init(config: Config, apiClient: APIClient, session: URLSession, tokens: AuthTokenStore) {
         self.config = config
         self.apiClient = apiClient
+        self.session = session
+        self.tokens = tokens
+        isAuthenticated = accessToken != nil
+    }
 
-        // Restore session if we have a stored token
-        if let token = accessToken {
-            isAuthenticated = true
-            Task {
-                await apiClient.setToken(token)
+    private func configureClient() async {
+        await apiClient.setAuthentication(
+            token: { [weak self] in await self?.accessToken },
+            refresh: { [weak self] rejected in
+                guard let self else { throw APIError.unauthorized }
+                return try await self.refresh(rejected: rejected)
+            },
+            invalidate: { [weak self] rejected in
+                await self?.invalidate(rejected: rejected)
             }
-        }
+        )
     }
 
     // MARK: - Auth Flow
@@ -116,89 +119,107 @@ public final class AuthService {
         isLoading = true
         defer { isLoading = false }
 
-        guard let tokenURL = URL(string: config.tokenURL) else { return }
-
-        var request = URLRequest(url: tokenURL)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-
-        let body: [String: String] = [
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": config.redirectURI,
-            "client_id": config.clientId,
+        // Invalidate any refresh belonging to the previous login.
+        generation = UUID()
+        refreshTask?.cancel()
+        refreshTask = nil
+        let loginGeneration = generation
+        let response = try await requestTokens([
+            "grant_type": "authorization_code", "code": code,
+            "redirect_uri": config.redirectURI, "client_id": config.clientId,
             "code_verifier": codeVerifier,
-        ]
-        request.httpBody = body
-            .map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0.value)" }
-            .joined(separator: "&")
-            .data(using: .utf8)
-
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
-
-        accessToken = tokenResponse.accessToken
-        refreshToken = tokenResponse.refreshToken
+        ])
+        guard generation == loginGeneration else { throw CancellationError() }
+        accessToken = response.accessToken
+        refreshToken = response.refreshToken
         isAuthenticated = true
-
-        await apiClient.setToken(tokenResponse.accessToken)
+        await configureClient()
     }
 
-    /// Refresh the access token using the stored refresh token.
     public func refreshAccessToken() async throws {
-        guard let refresh = refreshToken else {
-            logout()
-            return
-        }
-
-        guard let tokenURL = URL(string: config.tokenURL) else { return }
-
-        var request = URLRequest(url: tokenURL)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-
-        let body: [String: String] = [
-            "grant_type": "refresh_token",
-            "refresh_token": refresh,
-            "client_id": config.clientId,
-        ]
-        request.httpBody = body
-            .map { "\($0.key)=\($0.value)" }
-            .joined(separator: "&")
-            .data(using: .utf8)
-
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
-
-        accessToken = tokenResponse.accessToken
-        if let newRefresh = tokenResponse.refreshToken {
-            refreshToken = newRefresh
-        }
-
-        await apiClient.setToken(tokenResponse.accessToken)
+        _ = try await refresh(rejected: accessToken)
     }
 
-    /// Clear all tokens and reset authentication state.
+    private func refresh(rejected: String?) async throws -> String {
+        // A late 401 for an old token can use the already refreshed credential.
+        if let token = accessToken, token != rejected { return token }
+        if let refreshTask { return try await refreshTask.value }
+        guard let refreshToken else {
+            invalidate(rejected: rejected)
+            throw APIError.unauthorized
+        }
+        let refreshGeneration = generation
+        let task = Task { @MainActor in
+            do {
+                let response = try await self.requestTokens([
+                    "grant_type": "refresh_token", "refresh_token": refreshToken,
+                    "client_id": self.config.clientId,
+                ])
+                try Task.checkCancellation()
+                guard self.generation == refreshGeneration else { throw CancellationError() }
+                self.accessToken = response.accessToken
+                if let rotated = response.refreshToken { self.refreshToken = rotated }
+                self.isAuthenticated = true
+                return response.accessToken
+            } catch {
+                if case APIError.unauthorized = error, self.generation == refreshGeneration {
+                    self.logout()
+                }
+                throw error
+            }
+        }
+        refreshTask = task
+        defer { if generation == refreshGeneration { refreshTask = nil } }
+        return try await task.value
+    }
+
+    private func invalidate(rejected: String?) {
+        guard accessToken == rejected else { return }
+        logout()
+    }
+
     public func logout() {
+        generation = UUID()
+        refreshTask?.cancel()
+        refreshTask = nil
         accessToken = nil
         refreshToken = nil
         currentUser = nil
         isAuthenticated = false
-        Task {
-            await apiClient.setToken(nil)
-        }
     }
 
-    /// Attempt to restore session on launch by refreshing the token.
     public func restoreSession() async {
-        guard accessToken != nil else { return }
+        await configureClient()
+        guard accessToken != nil, refreshToken != nil else { return }
         do {
             try await refreshAccessToken()
         } catch {
-            // Refresh failed — session is stale, log out
-            logout()
+            // Only a definitive OAuth rejection clears credentials (in refresh).
+            // Offline launches and temporary provider failures retain the session.
         }
     }
+
+    private func requestTokens(_ fields: [String: String]) async throws -> TokenResponse {
+        guard let url = URL(string: config.tokenURL) else { throw APIError.invalidURL }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+        request.httpBody = fields.sorted { $0.key < $1.key }.map {
+            "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: allowed)!)"
+        }.joined(separator: "&").data(using: .utf8)
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw APIError.serverError(0, "Invalid token response") }
+        guard (200...299).contains(http.statusCode) else {
+            let oauth = try? JSONDecoder().decode(OAuthError.self, from: data)
+            if http.statusCode == 400 && oauth?.error == "invalid_grant" {
+                throw APIError.unauthorized
+            }
+            throw APIError.serverError(http.statusCode, "Authentication service unavailable")
+        }
+        return try JSONDecoder().decode(TokenResponse.self, from: data)
+    }
+
 }
 
 // MARK: - Token Response
@@ -233,5 +254,22 @@ public struct UserInfo: Codable, Sendable {
         case email
         case name
         case preferredUsername = "preferred_username"
+    }
+}
+
+private struct OAuthError: Decodable { let error: String }
+
+@MainActor
+protocol AuthTokenStore {
+    func read(_ key: String) -> String?
+    func write(_ key: String, _ value: String?)
+}
+
+@MainActor
+private struct KeychainTokenStore: AuthTokenStore {
+    func read(_ key: String) -> String? { KeychainHelper.readString(key: key) }
+    func write(_ key: String, _ value: String?) {
+        if let value { KeychainHelper.saveString(key: key, value: value) }
+        else { KeychainHelper.delete(key: key) }
     }
 }

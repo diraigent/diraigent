@@ -76,15 +76,7 @@ final class AppState {
             self.selectedProjectId = uuid
         }
 
-        // Wire up 401 handler so unauthorized responses trigger logout
-        let authService = self.authService
-        Task {
-            await apiClient.setOnUnauthorized {
-                await MainActor.run {
-                    authService.logout()
-                }
-            }
-        }
+
     }
 
     /// Select a project and persist the choice.

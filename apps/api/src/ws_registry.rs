@@ -21,6 +21,11 @@ pub struct PlaybookResponsePayload {
 type ModelReply = Result<diraigent_types::ChatModelCatalog, String>;
 type PendingModelRequest = (Uuid, oneshot::Sender<ModelReply>);
 
+struct ActiveChat {
+    tx: mpsc::Sender<ChatSseEvent>,
+    last_activity: tokio::time::Instant,
+}
+
 pub struct WsRegistry {
     /// Connected orchestras: agent_id -> WS sender
     connections: DashMap<Uuid, mpsc::UnboundedSender<WsMessage>>,
@@ -30,7 +35,7 @@ pub struct WsRegistry {
     pending_playbook: DashMap<String, oneshot::Sender<PlaybookResponsePayload>>,
     pending_models: DashMap<String, PendingModelRequest>,
     /// Active chat sessions: session_id -> mpsc sender for SSE events
-    active_chats: DashMap<String, mpsc::Sender<ChatSseEvent>>,
+    active_chats: DashMap<String, ActiveChat>,
     /// Which agent handles each chat session: session_id -> agent_id
     session_agents: DashMap<String, Uuid>,
 }
@@ -161,22 +166,65 @@ impl WsRegistry {
         agent_id: Uuid,
     ) {
         self.session_agents.insert(session_id.clone(), agent_id);
-        self.active_chats.insert(session_id, tx);
+        self.active_chats.insert(
+            session_id,
+            ActiveChat {
+                tx,
+                last_activity: tokio::time::Instant::now(),
+            },
+        );
     }
 
     /// Route a chat event to the correct session.
-    pub async fn route_chat_event(&self, session_id: &str, event: ChatSseEvent) {
+    pub async fn route_chat_event(&self, agent_id: Uuid, session_id: &str, event: ChatSseEvent) {
+        if self
+            .session_agents
+            .get(session_id)
+            .is_none_or(|owner| *owner != agent_id)
+        {
+            return;
+        }
         let is_terminal = matches!(
             &event,
             ChatSseEvent::Done { .. } | ChatSseEvent::Error { .. }
         );
-        if let Some(tx) = self.active_chats.get(session_id) {
+        // Do not hold a DashMap lock across a backpressured SSE send.
+        let tx = self.active_chats.get_mut(session_id).map(|mut chat| {
+            chat.last_activity = tokio::time::Instant::now();
+            chat.tx.clone()
+        });
+        if is_terminal {
+            self.remove_chat_session(session_id);
+        }
+        if let Some(tx) = tx {
             let _ = tx.send(event).await;
         }
-        if is_terminal {
-            self.active_chats.remove(session_id);
-            self.session_agents.remove(session_id);
-        }
+    }
+
+    pub fn chat_idle_deadline(
+        &self,
+        session_id: &str,
+        timeout: std::time::Duration,
+    ) -> Option<tokio::time::Instant> {
+        self.active_chats
+            .get(session_id)
+            .map(|chat| chat.last_activity + timeout)
+    }
+
+    /// Atomically recheck activity before cancellation: a worker event arriving
+    /// at the deadline must not lose its session to a stale timer.
+    pub fn expire_idle_chat(&self, session_id: &str, timeout: std::time::Duration) -> bool {
+        let removed = self.active_chats.remove_if(session_id, |_, chat| {
+            tokio::time::Instant::now().duration_since(chat.last_activity) >= timeout
+        });
+        let Some((_, chat)) = removed else {
+            return false;
+        };
+        let _ = chat.tx.try_send(ChatSseEvent::Error {
+            message: "Chat session timed out after 10 minutes without worker activity".into(),
+        });
+        self.cancel_chat_session(session_id);
+        true
     }
 
     /// Check if a chat session is still active.
@@ -194,7 +242,7 @@ impl WsRegistry {
     /// Returns true if the sender's receiver is closed.
     pub fn is_chat_sender_closed(&self, session_id: &str) -> bool {
         if let Some(tx) = self.active_chats.get(session_id) {
-            tx.is_closed()
+            tx.tx.is_closed()
         } else {
             true // session doesn't exist = effectively closed
         }
@@ -266,5 +314,93 @@ mod model_tests {
         assert!(other_rx.await.is_err());
         registry.complete_model_request(other, "cancel", Some(catalog()));
         assert!(registry.pending_models.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod chat_idle_tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn worker_events_extend_only_their_own_idle_deadline() {
+        let registry = WsRegistry::new();
+        let agent = Uuid::new_v4();
+        let (tx, mut rx) = mpsc::channel(8);
+        let timeout = Duration::from_secs(600);
+        registry.register_chat_session("active".into(), tx.clone(), agent);
+        registry.register_chat_session("idle".into(), tx, agent);
+        let old = tokio::time::Instant::now() - Duration::from_secs(601);
+        registry
+            .active_chats
+            .get_mut("active")
+            .unwrap()
+            .last_activity = old;
+        registry.active_chats.get_mut("idle").unwrap().last_activity = old;
+        registry
+            .route_chat_event(
+                Uuid::new_v4(),
+                "idle",
+                ChatSseEvent::Text {
+                    content: "wrong worker".into(),
+                },
+            )
+            .await;
+        assert_eq!(
+            registry.active_chats.get("idle").unwrap().last_activity,
+            old
+        );
+        registry
+            .route_chat_event(
+                agent,
+                "active",
+                ChatSseEvent::Text {
+                    content: "progress".into(),
+                },
+            )
+            .await;
+        assert!(!registry.expire_idle_chat("active", timeout));
+        assert!(registry.expire_idle_chat("idle", timeout));
+        assert!(registry.is_chat_active("active"));
+        assert!(!registry.is_chat_active("idle"));
+        assert!(matches!(rx.recv().await, Some(ChatSseEvent::Text { .. })));
+        assert!(matches!(rx.recv().await, Some(ChatSseEvent::Error { .. })));
+        assert!(!registry.session_agents.contains_key("idle"));
+    }
+
+    #[tokio::test]
+    async fn idle_timeout_cancels_worker_once_and_terminal_events_clean_up() {
+        let registry = WsRegistry::new();
+        let agent = Uuid::new_v4();
+        let (worker_tx, mut worker_rx) = mpsc::unbounded_channel();
+        registry.register(agent, worker_tx);
+        let (tx, mut rx) = mpsc::channel(8);
+        registry.register_chat_session("idle".into(), tx.clone(), agent);
+        registry.active_chats.get_mut("idle").unwrap().last_activity =
+            tokio::time::Instant::now() - Duration::from_secs(600);
+        assert!(registry.expire_idle_chat("idle", Duration::from_secs(600)));
+        assert!(!registry.expire_idle_chat("idle", Duration::from_secs(600)));
+        assert!(
+            matches!(worker_rx.try_recv(), Ok(WsMessage::ChatCancel { session_id }) if session_id == "idle")
+        );
+        assert!(worker_rx.try_recv().is_err());
+        assert!(matches!(rx.recv().await, Some(ChatSseEvent::Error { .. })));
+        registry.register_chat_session("done".into(), tx, agent);
+        registry
+            .route_chat_event(
+                agent,
+                "done",
+                ChatSseEvent::Error {
+                    message: "finished".into(),
+                },
+            )
+            .await;
+        assert!(
+            registry
+                .chat_idle_deadline("done", Duration::from_secs(600))
+                .is_none()
+        );
+        assert!(!registry.session_agents.contains_key("done"));
+        assert!(!registry.expire_idle_chat("done", Duration::ZERO));
     }
 }
