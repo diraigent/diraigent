@@ -61,6 +61,7 @@ impl StepOutcome {
 ///
 /// When `git_root` is provided, repo playbook overrides are used for consistency
 /// with `resolve_step()`.
+#[cfg(test)]
 pub async fn check_next_step(
     api: &dyn TaskSource,
     task_id: &str,
@@ -68,6 +69,17 @@ pub async fn check_next_step(
 ) -> Result<StepOutcome> {
     let tid = TaskId::new(task_id);
     let task = retry_api_call("get_task", &tid, || api.get_task(task_id)).await?;
+    check_next_step_for_task(api, task_id, &task, git_root).await
+}
+
+/// Evaluate the fetched task snapshot used to resolve its project paths.
+pub async fn check_next_step_for_task(
+    api: &dyn TaskSource,
+    task_id: &str,
+    task: &Value,
+    git_root: Option<&Path>,
+) -> Result<StepOutcome> {
+    let tid = TaskId::new(task_id);
     let state_str = task["state"].as_str().unwrap_or("");
     let state = TaskState::parse(state_str);
     let project_id = task["project_id"].as_str().unwrap_or("").to_string();
@@ -102,7 +114,7 @@ pub async fn check_next_step(
                             "standalone".to_string()
                         };
                         let strategy =
-                            git_strategy::resolve_strategy(api, Some(&task), &git_mode).await;
+                            git_strategy::resolve_strategy(api, Some(task), &git_mode).await;
                         let completed_name =
                             completed_step_json["name"].as_str().unwrap_or("unknown");
                         info!(
@@ -155,7 +167,7 @@ pub async fn check_next_step(
             } else {
                 "standalone".to_string()
             };
-            let strategy = git_strategy::resolve_strategy(api, Some(&task), &git_mode).await;
+            let strategy = git_strategy::resolve_strategy(api, Some(task), &git_mode).await;
             info!(
                 "task {tid} completed all playbook steps (git_strategy={})",
                 strategy.id()
@@ -363,8 +375,7 @@ async fn resolve_step_template(api: &dyn TaskSource, step: &Value) -> Value {
 }
 
 /// Repo playbooks are the source of truth now, so there is nothing to sync.
-pub async fn sync_project_playbooks(_api: &dyn TaskSource, _repo_root: &std::path::Path) {
-}
+pub async fn sync_project_playbooks(_api: &dyn TaskSource, _repo_root: &std::path::Path) {}
 
 /// Sync repo-based decisions (ADRs) to the API for a given project.
 ///

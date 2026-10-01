@@ -8,6 +8,7 @@ use crate::config::{ActiveTasks, LockQueue};
 use crate::engine::pipeline::{self, StepOutcome};
 use crate::engine::task_source::TaskSource;
 use crate::git::strategy::GitAction;
+use crate::project::api::retry_api_call;
 use crate::project::paths as project_paths;
 use crate::task_id::TaskId;
 
@@ -74,7 +75,7 @@ async fn process_reaped_task(
     }
 
     // Check if there's a next pipeline step
-    let outcome = match pipeline::check_next_step(api, &task_id, None).await {
+    let outcome = match check_project_pipeline(api, &task_id, projects_path).await {
         Ok(outcome) => outcome,
         Err(e) => {
             error!(
@@ -353,6 +354,31 @@ async fn process_reaped_task(
     locks_released
 }
 
+/// Resolve the task's own repository before inspecting its YAML pipeline.
+/// A missing repository or failed lookup remains an error, preserving the worktree.
+async fn check_project_pipeline(
+    api: &dyn TaskSource,
+    task_id: &str,
+    projects_path: &Path,
+) -> anyhow::Result<StepOutcome> {
+    let tid = TaskId::new(task_id);
+    let task = retry_api_call("get_task", &tid, || api.get_task(task_id)).await?;
+    let paths = if task["state"] == "ready"
+        && task["playbook_name"]
+            .as_str()
+            .is_some_and(|name| !name.is_empty())
+    {
+        let project_id = task["project_id"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("task {tid}: missing project_id"))?;
+        Some(project_paths::resolve_project_paths(api, project_id, projects_path).await?)
+    } else {
+        None
+    };
+    let git_root = paths.as_ref().and_then(|paths| paths.git_root.as_deref());
+    pipeline::check_next_step_for_task(api, task_id, &task, git_root).await
+}
+
 // ── Git event helpers ──
 
 /// Emit a merge success event with file stats.
@@ -430,6 +456,64 @@ mod tests {
 
     fn new_lock_queue() -> LockQueue {
         Arc::new(Mutex::new(HashMap::new()))
+    }
+
+    #[tokio::test]
+    async fn ready_playbook_resolves_the_tasks_project_repository() {
+        let server = MockServer::start().await;
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("another-project/repo");
+        std::fs::create_dir_all(repo.join(".diraigent/playbooks")).unwrap();
+        std::fs::write(
+            repo.join(".diraigent/playbooks/custom.yaml"),
+            "title: Custom\nsteps:\n  - name: implement\n    git_action: push\n  - name: review\n",
+        )
+        .unwrap();
+        Mock::given(method("GET"))
+            .and(path("/tasks/task-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id":"task-1", "project_id":"proj-2", "state":"ready",
+                "playbook_name":"custom", "playbook_step":1
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET")).and(path("/proj-2"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id":"proj-2", "git_mode":"standalone", "git_root":"another-project/repo", "metadata":{}
+            }))).mount(&server).await;
+        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let result = check_project_pipeline(&api, "task-1", root.path())
+            .await
+            .unwrap();
+        assert!(
+            matches!(result, StepOutcome::ContinueWithGitAction { project_id, git_action: GitAction::Push, .. } if project_id == "proj-2")
+        );
+    }
+
+    #[tokio::test]
+    async fn unresolved_project_preserves_pipeline_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/tasks/task-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id":"task-1", "project_id":"missing-project", "state":"ready",
+                "playbook_name":"standard-lifecycle", "playbook_step":0
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/missing-project"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        let root = tempfile::tempdir().unwrap();
+        assert!(
+            check_project_pipeline(&api, "task-1", root.path())
+                .await
+                .is_err()
+        );
     }
 
     /// Mount a project mock that returns git_mode="none" so create_project_wm
