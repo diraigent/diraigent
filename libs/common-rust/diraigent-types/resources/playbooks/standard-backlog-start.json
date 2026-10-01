@@ -5,26 +5,22 @@
   "steps": [
     {
       "name": "implement",
-      "budget": 12.0,
       "allowed_tools": "full",
       "context_level": "full",
-      "on_complete": "next",
-      "description": "## Your Job: IMPLEMENT\n\n1. **Read the task**: Run `{{agent_cli}} task {{task_id}}` to get the spec, files, test_cmd, and acceptance criteria. Also check `## Task Discussion` above for any human instructions.\n2. **Claim the task**: Run `{{agent_cli}} claim {{task_id}}`\n3. **Assess complexity**: If this touches many files across modules, decompose:\n   - Create subtasks: `{{agent_cli}} create {{project_id}} '<json>'`\n   - Wire dependencies: `{{agent_cli}} depend <id> <dep_id>`\n   - Transition subtasks to ready: `{{agent_cli}} transition <id> ready`\n   - Post progress and submit for review. Stop here.\n   Otherwise, continue.\n4. **Implement**: Write code as the spec requires.\n5. **Report progress**: `{{agent_cli}} progress {{task_id}} \"what was done\"`\n6. **Lint & format**: If a lint command is available, run it. Fix all issues before testing.\n7. **Test**: If a test command is specified, run it. Retry up to 3 times on failure.\n   - Still failing? `{{agent_cli}} blocker {{task_id}} \"error\"`, `{{agent_cli}} transition {{task_id}} ready`\n8. **Post artifacts**: `{{agent_cli}} artifact {{task_id}} \"test output\"`\n9. **Complete**: `{{agent_cli}} transition {{task_id}} done`\n\n**Rules**: Do NOT run `git push`. Stay in your worktree.\n\n**Scope guardrail**: Before transitioning to done, run `git diff --stat {{project.default_branch}}...HEAD` and verify you only touched files listed in the task spec.",
+      "description": "Implement the task’s requested behavior, including relevant integration changes and tests. Infer the necessary files when file lists are absent; honor explicit exclusions. Choose a suitable plan and diagnose validation failures before retrying. Do not automatically split a task merely because it touches several files. Report what changed, validation results and any genuine blockers. Review staged and unstaged changes for unrelated edits and secrets before completing this step. Leave merges and pushes to Orchestra.",
       "step": 0
     },
     {
       "name": "review",
-      "budget": 5.0,
       "allowed_tools": "readonly",
       "context_level": "minimal",
-      "on_complete": "next",
-      "description": "## Your Job: CODE REVIEW\n\n1. **Read the task**: Run `{{agent_cli}} task {{task_id}}` to get the spec and acceptance criteria.\n2. **Claim the task**: Run `{{agent_cli}} claim {{task_id}}`\n3. **Review the changes**: Run `git diff {{project.default_branch}}...HEAD` to see what changed.\n4. **Check quality**: Does it meet the spec? Acceptance criteria met? Any obvious bugs or security issues?\n5. **Post your review**: `{{agent_cli}} artifact {{task_id}} \"REVIEW: <findings>\"`\n6. **Decision**:\n   - APPROVED: `{{agent_cli}} transition {{task_id}} done`\n   - CHANGES NEEDED: `{{agent_cli}} blocker {{task_id}} \"what needs fixing\"`, then `{{agent_cli}} transition {{task_id}} ready`\n\n**Rules**: Do NOT modify code — only review. Be specific (file names, line numbers).",
+      "description": "Review the task branch and any relevant uncommitted changes against the actual target/base. Check the requested behavior, acceptance criteria, regression risks, test evidence and data/security boundaries. Do not modify implementation files. Report specific findings with file locations and useful evidence; if changes are needed, post a blocker and release the step for rework. Approve only when the requested behavior is implemented and relevant validation is satisfactory.",
       "step": 1
     }
   ],
   "metadata": {
     "start_in_backlog": true,
-    "git_strategy": "merge_to_default"
+    "git_strategy": "merge"
   },
   "initial_state": "backlog",
   "tags": [

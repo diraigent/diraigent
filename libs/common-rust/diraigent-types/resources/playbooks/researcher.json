@@ -5,39 +5,31 @@
   "steps": [
     {
       "name": "scope",
-      "budget": 5.0,
       "allowed_tools": "readonly",
-      "on_complete": "next",
-      "description": "## Your Job: SCOPE THE RESEARCH\n\n1. **Read the task**: Run `{{agent_cli}} task {{task_id}}` to get the research question.\n2. **Claim the task**: Run `{{agent_cli}} claim {{task_id}}`\n3. **Read existing docs and codebase** to understand the current state.\n4. **Refine the scope**: Post the refined research question as a decision:\n   `{{agent_cli}} decision {{project_id}} '{\"title\":\"Research scope: ...\",\"description\":\"...\",\"rationale\":\"...\",\"alternatives\":[\"...\"]}'\n5. **Report progress**: `{{agent_cli}} progress {{task_id}} \"scoped: <summary>\"`\n6. **Complete**: `{{agent_cli}} transition {{task_id}} done`",
+      "description": "Clarify the research question and success criteria using the task and existing evidence. Make reasonable assumptions explicit. Ask only for information necessary to resolve a meaningful ambiguity; a missing file list is not a blocker. Record the scope for subsequent stages.",
       "step": 0
     },
     {
       "name": "gather",
-      "budget": 10.0,
       "allowed_tools": "full",
-      "on_complete": "next",
-      "description": "## Your Job: GATHER SOURCES\n\n1. **Read the task**: Run `{{agent_cli}} task {{task_id}}` to get the scoped research question.\n2. **Claim the task**: Run `{{agent_cli}} claim {{task_id}}`\n3. **Fetch and aggregate** relevant sources — code, docs, web references.\n4. **Post key findings as knowledge entries**:\n   `{{agent_cli}} knowledge {{project_id}} '{\"title\":\"...\",\"category\":\"<pattern|convention|architecture|reference>\",\"content\":\"...\"}'`\n5. **Report progress**: `{{agent_cli}} progress {{task_id}} \"gathered N sources\"`\n6. **Complete**: `{{agent_cli}} transition {{task_id}} done`",
+      "description": "Gather relevant primary sources, repository evidence and existing project knowledge. Record source links and findings for the next stage. Respect authentication and data-access boundaries; do not modify unrelated implementation code.",
       "step": 1
     },
     {
       "name": "synthesize",
-      "budget": 15.0,
       "allowed_tools": "full",
-      "on_complete": "next",
-      "description": "## Your Job: SYNTHESIZE FINDINGS\n\n1. **Read the task**: Run `{{agent_cli}} task {{task_id}}` to review the gathered material.\n2. **Claim the task**: Run `{{agent_cli}} claim {{task_id}}`\n3. **Synthesize** findings into structured notes. Identify patterns, trade-offs, and recommendations.\n4. **Create a section with actionable tasks** that could follow from this research.\n5. **Post artifacts**: `{{agent_cli}} artifact {{task_id}} \"SYNTHESIS: <structured notes>\"`\n6. **Complete**: `{{agent_cli}} transition {{task_id}} done`",
+      "description": "Combine the gathered evidence into findings, trade-offs and recommendations. Distinguish facts from inference, flag unresolved questions, and describe actionable next steps only when supported. Record a synthesis artifact for the documentation stage.",
       "step": 2
     },
     {
       "name": "document",
-      "budget": 8.0,
       "allowed_tools": "full",
-      "on_complete": "done",
-      "description": "## Your Job: WRITE DOCUMENTATION\n\n1. **Read the task**: Run `{{agent_cli}} task {{task_id}}` to review the synthesis.\n2. **Claim the task**: Run `{{agent_cli}} claim {{task_id}}`\n3. **Write the final documentation artifact** based on the synthesized findings.\n4. **Post artifacts**: `{{agent_cli}} artifact {{task_id}} \"<final document>\"`\n5. **Complete**: `{{agent_cli}} transition {{task_id}} done`",
+      "description": "Write the requested research artifact from the synthesis, with supporting sources, assumptions and unresolved questions. Validate the artifact in an appropriate way and record its location and useful follow-up work. Keep edits related to the requested documentation.",
       "step": 3
     }
   ],
   "metadata": {
-    "git_strategy": "merge_to_default"
+    "git_strategy": "merge"
   },
   "initial_state": "ready",
   "tags": [

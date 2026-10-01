@@ -1,205 +1,38 @@
-# Claude Code Agent Instructions
+# Orchestra task worker guidance
 
-You are an AI agent registered with the Diraigent API. You pick up tasks, do real work, and report back.
+These instructions apply to OpenCode, Codex, Claude Code and other supported providers. Orchestra supplies the task identity, context, step, repository and working directory. Use the configured `agent-cli` for task operations; it handles authentication. Do not print environment files, tokens or authorization headers.
 
-## Identity
+## Perform the assigned step
 
-Your agent config is in `apps/orchestra/.env`:
-- `AGENT_ID` — your registered agent ID
-- `PROJECT_ID` — default project to work on
-- `DIRAIGENT_API_URL` — API base URL
+- Read the supplied task and discussion; fetch `agent-cli task <task_id>` when current details are needed. Do not claim a task again if Orchestra already claimed it for you. Claim it only when manually picking up a ready task.
+- Work in the supplied task worktree or working directory. Do not assume a fixed checkout layout or move into a different project.
+- Infer the implementation files from the requested behavior. `context.files` and `file_scope` are hints for discovery and overlap detection, not mandatory authorization lists. Honor explicit exclusions and exclusive scope instructions.
+- Choose the plan and tools that fit the task. Decompose only when explicitly requested or when independent work genuinely needs separate tasks; touching several files alone is not a reason to abandon implementation.
+- Preserve unrelated code and other contributors' changes. Use focused edits with whichever tools the provider supports, then inspect the diff. Do not blindly replace a file or restore it to a branch snapshot.
+- Run the supplied validation when relevant. If no test command is supplied, find the repository's normal checks and choose those that verify the changed behavior. Diagnose failures before retrying; distinguish failures introduced by this task from baseline problems.
+- Report meaningful progress and final evidence through `agent-cli`. Create observations or follow-up tasks when they are actionable; do not manufacture a quota of suggestions.
+- Complete the assigned step with `agent-cli transition <task_id> done` only after its actual work and validation are complete. Orchestra handles playbook advancement. A review step may report findings through the API but must not edit implementation files.
 
-## CLI Tool
+## Git and data integrity
 
-All API interactions go through `agent-cli`:
+Orchestra owns worktree creation, merge and push behavior according to the project's Git strategy. Task workers commit relevant changes but do not run `git push` or merge into the target branch themselves. An explicit user request to change that behavior must be handled by the controlling session/runtime.
 
-```bash
-agent-cli ready <project_id>           # list tasks ready for work
-agent-cli task <task_id>                # get task details
-agent-cli context <project_id>          # full project context
-agent-cli claim <task_id>               # claim a task
-agent-cli transition <task_id> <state>  # move task state
-agent-cli progress <task_id> "msg"      # post progress update
-agent-cli artifact <task_id> "output"   # post artifact (code/output)
-agent-cli blocker <task_id> "msg"       # post blocker
-agent-cli comment <task_id> "msg"       # post discussion comment
-agent-cli create <project_id> '<json>'  # create a new task (decompose or dream)
-agent-cli depend <task_id> <dep_id>     # add a dependency between tasks
-agent-cli observation <project_id> '<json>'  # file observation (insight/risk/smell/improvement)
-agent-cli knowledge <project_id> '<json>'    # contribute knowledge (pattern/convention/etc.)
-agent-cli decision <project_id> '<json>'     # propose decision (with rationale/alternatives)
-agent-cli heartbeat                     # keep-alive
-agent-cli setup                         # interactive setup wizard
-```
+For commits made for a claimed Orchestra task, append `agent(<short_task_id>)`, using the first 12 characters of the task UUID. The revert system searches for this marker. This convention does not apply to ordinary human or interactive-agent commits without a claimed task.
 
-## Workflow
+Inspect `git status`, staged changes, unstaged changes, and the task branch diff against its actual base/target. Stage only intended files. Do not assume every project targets `main`, or that a branch diff alone includes uncommitted work.
 
-When asked to "pick up a task" or "work on a task":
+Never edit a committed migration. Add a new migration when required. Do not commit secrets, local deployment manifests, private connection details or signing overrides. Use configured credentials through the CLI without copying them into comments, logs, prompts or task artifacts.
 
-1. **Load config**: Read `apps/orchestra/.env` for AGENT_ID and PROJECT_ID
-2. **Find work**: `agent-cli ready $PROJECT_ID` — pick the highest priority task
-3. **Read details**: `agent-cli task $TASK_ID` — understand spec, files, test_cmd, acceptance
-4. **Claim**: `agent-cli claim $TASK_ID` (sets state to the current playbook step name)
-5. **Do the work**: Write code, create files, run commands as specified in the task context
-6. **Report progress**: `agent-cli progress $TASK_ID "description of what was done"`
-7. **Test**: Run the `test_cmd` from the task context
-8. **Post artifacts**: `agent-cli artifact $TASK_ID "test output or code snippet"`
-9. **Verify acceptance**: Check each acceptance criterion is met
-10. **File observations**: If you encounter out-of-scope findings (architectural insights, code smells, risks, or improvement ideas), file them as observations: `agent-cli observation $PROJECT_ID '{"kind":"<insight|risk|smell|improvement>","title":"...","description":"...","severity":"<info|low|medium|high>"}'`
-11. **Complete step**: `agent-cli transition $TASK_ID done`
+## Genuine blockers
 
-## Task Context Fields
+A missing file list or test command is not a blocker. An explicit contradictory restriction, unavailable required credential, unresolved dependency, or unrecoverable validation failure can be.
 
-Tasks include structured context:
-- `spec` — what to build/do
-- `files` — which files to create/modify
-- `test_cmd` — how to verify the work
-- `acceptance_criteria` — conditions that must be met
-- `notes` — additional guidance
+Post a specific blocker with the evidence and the missing information or dependency. Do not mark unfinished work done. Releasing a task to `ready` makes it eligible for immediate retry; do not repeatedly release and retry the same failure without a change that can resolve it. Use the available project controls to defer unresolved work, or report that a human needs to defer it. Do not invent an unsupported `blocked` state.
 
-## Workspace Convention
+## Playbooks and providers
 
-Each project gets its own directory: `apps/orchestra/{project-slug}/`
+Playbooks are optional stage policies, not scripts for the agent's internal reasoning. Definitions live in `.diraigent/playbooks/`; tasks refer to `playbook_name`. Repository YAML may override a bundled default. See `.diraigent/playbooks/README.md` for the schema and examples.
 
-For example, a project with slug `hello-world` → work in `apps/orchestra/hello-world/`.
+Leave `provider` and `model` unset to inherit the worker configuration. Tool presets, budget limits and provider-specific options are applied by the selected adapter; support differs between providers. Do not assume Claude flag names or a dollar budget are portable enforcement mechanisms.
 
-## Commit Message Convention
-
-All commit messages MUST end with `agent(<short_task_id>)` where `<short_task_id>` is the first 12 characters of your task ID. This suffix is required for the revert system to identify task commits.
-
-Example: if your task ID is `7956d757-cfda-4b2e-9a1f-...`, your commits should look like:
-```
-fix button styling on dashboard agent(7956d757-cfd)
-add unit tests for auth service agent(7956d757-cfd)
-```
-
-Never omit this suffix. It applies to every commit you make, not just the final one.
-
-## Safe Editing Rules — READ BEFORE TOUCHING ANY FILE
-
-These rules prevent collateral damage. Violations cause regressions that waste multiple review cycles.
-
-1. **Keep edits within the task's spec and acceptance criteria.**
-   `task.context.files` and `file_scope` help locate relevant code and detect overlapping work;
-   they are not required authorization lists. If they are missing or empty, inspect the repository,
-   identify the files needed for the requested change, and proceed without requesting file-by-file
-   permission. Relevant tests and supporting integration changes are part of the task.
-   Honor explicit exclusions and instructions that limit edits to an exclusive list of files.
-   Do not make unrelated improvements. Ask only when the requested behavior conflicts with an
-   explicit restriction or is too ambiguous to implement safely.
-2. **NEVER use the `Write` tool on a file that already exists.**
-   `Write` replaces the ENTIRE file — you will silently delete every line not in your new content,
-   including i18n keys, test cases, other functions, and unrelated features.
-   **Always use `Edit` for existing files.** Use `Write` only to create brand-new files.
-3. **Read the full file before editing it.**
-   Use `Read` on any file you plan to change. You must see all existing sections before writing,
-   or you will produce an `Edit` that conflicts with content you didn't know was there.
-4. **Never remove existing code you weren't asked to remove.**
-   Do not delete functions, i18n keys, imports, tests, or features that are unrelated to the task.
-   Particularly at risk: `en.json`/`de.json` (i18n), `*.spec.ts` (tests), large Angular components.
-5. **Before completing, sanity-check your diff:**
-   ```bash
-   git diff --stat main...HEAD
-   ```
-   The three-dot syntax (`main...HEAD`) is critical — it shows only YOUR changes since the
-   branch diverged from main. Plain `git diff main` includes changes merged to main by other
-   concurrent tasks, which produces false positives.
-   If you see unrelated deletions outside the task's scope, restore them:
-   ```bash
-   git checkout main -- <file>
-   ```
-6. **Never use `git add -A` or `git add .`** — stage only the files you intentionally changed.
-
-## If Blocked
-
-- Post a blocker: `agent-cli blocker $TASK_ID "description of what's blocking"`
-- Release the task back: `agent-cli transition $TASK_ID ready`
-- Move on to the next ready task
-
-## State Machine Reference
-
-```
-backlog → ready → <step_name> → ready (next step) or done (final)
-                              ↘ cancelled
-done → human_review → done | ready | backlog
-```
-
-Lifecycle states: `backlog`, `ready`, `done`, `cancelled`, `human_review`
-Step states: playbook step names (e.g. `implement`, `review`, `dream`) or `working` for tasks without a playbook.
-
-Claiming a task sets its state to the current playbook step name. Completing a step
-transitions to `done` — but the API intercepts non-final steps and auto-advances to
-`ready` with the next `playbook_step`. `done` is only reached on the final step.
-`human_review` is an optional post-done state for human testing. From `human_review`, tasks can be approved (→ done), sent for rework (→ ready), or reopened (→ backlog).
-
-## Playbook Step JSON Reference
-
-Each step in a playbook's `steps` array is a JSON object. All fields except `name` are optional.
-
-### Step Fields
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | string | Step name (e.g. `"implement"`, `"review"`, `"dream"`). Shown in UI and used as task state when claimed. |
-| `description` | string | Prompt template for the agent. Supports `{{variable}}` placeholders (see below). This is the primary way to tell the agent what to do. |
-| `on_complete` | string | Unused by orchestra — UI hint for what happens after completion. |
-| `retriable` | bool | If `true`, this step is a regression target — when a later step is rejected, the pipeline regresses to this step. Default: inferred from name (implement-like → true, review/dream → false). |
-| `max_cycles` | number | Maximum failed cycles before loop detection cancels the task. Overrides the project-level `max_implement_cycles` setting for this step. `0` disables loop detection. |
-| `model` | string | Model to use for the selected provider. Overrides the task-level model. |
-| `budget` | number | Max dollar budget for this step (e.g. `5.0`). Default depends on step type. |
-| `allowed_tools` | string | Tool preset: `"full"`, `"readonly"`, or `"merge"`. Default depends on step type. Codex maps these to its workspace-write or read-only sandbox. |
-| `context_level` | string | How much project context to include: `"full"`, `"minimal"`, `"dream"`. Default: inferred from step name. |
-| `mcp_servers` | object | MCP server config passed to Claude Code via `--mcp-config`. |
-| `agents` | object | Custom sub-agent definitions passed via `--agents`. |
-| `agent` | string | Specific agent to activate via `--agent <name>`. |
-| `settings` | object | Additional Claude Code settings (skills, etc.) passed via `--settings`. |
-| `env` | object | Extra environment variables (string→string) exported before running the agent. |
-| `vars` | object | Custom template variables (string→string) for `{{placeholder}}` substitution in `description`. |
-| `provider` | string | AI provider for this step: `"claude-code"` (default), `"codex"`, `"anthropic"`, `"openai"`, `"copilot"`, or `"ollama"`. |
-| `base_url` | string | Override the default API endpoint for the chosen provider (e.g. `"https://my-proxy.example.com"`, `"http://localhost:11434"`). |
-
-### Template Variables
-
-The `description` field supports `{{variable}}` placeholders that are replaced at runtime.
-
-**Built-in variables** (always available):
-
-| Variable | Description |
-|----------|-------------|
-| `{{agent_cli}}` | Path to the agent-cli binary |
-| `{{task_id}}` | Full task UUID |
-| `{{project_id}}` | Project UUID |
-| `{{short_id}}` | Shortened task ID (e.g. `aaaaaaaa-bbb`) |
-| `{{branch}}` | Task branch name (e.g. `agent/task-aaaaaaaa-bbb`) |
-| `{{repo_root}}` | Absolute path to the git repository root |
-| `{{api_base}}` | Diraigent API base URL |
-| `{{auth_header}}` | Authorization header value for API calls |
-| `{{agent_id}}` | Current agent's UUID |
-| `{{playbook_id}}` | Current playbook's UUID |
-| `{{review_feedback}}` | Review feedback from the previous cycle (empty if none) |
-
-**Project variables** — any string field from the project record or its `metadata` JSONB:
-
-| Variable | Description |
-|----------|-------------|
-| `{{project.<key>}}` | Top-level project field (e.g. `default_branch`, `slug`, `name`) or `metadata.<key>` |
-
-Top-level fields take precedence over metadata fields with the same name.
-
-Examples: `{{project.default_branch}}`, `{{project.slug}}`, `{{project.branch}}`, `{{project.slack_channel}}`
-
-Top-level fields are set in the project record; metadata fields are set in project settings or via the API.
-
-**Custom step variables** — defined in the step's `vars` object:
-
-```json
-{
-  "name": "implement",
-  "description": "Run {{lint_cmd}} before committing.",
-  "vars": {
-    "lint_cmd": "cargo clippy --all-targets"
-  }
-}
-```
-
-**Substitution order**: built-ins → project metadata → step vars. Step vars can override project metadata if they use the same key name.
+Lifecycle states include `backlog`, `ready`, `done`, `cancelled` and `human_review`; active step names come from the selected playbook. Use the CLI/runtime's supported transitions and report the state returned, rather than assuming a transition completed a whole pipeline.

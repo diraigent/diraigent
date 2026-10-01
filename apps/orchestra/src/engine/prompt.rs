@@ -5,30 +5,27 @@ use crate::task_id::TaskId;
 use std::path::Path;
 use tracing::{debug, info};
 
-/// Build the static system prompt for Claude Code's `--system-prompt` flag.
+/// Build shared worker instructions for every provider adapter.
 ///
-/// This content is stable across tasks and benefits from Anthropic's prompt
-/// caching. Claude Code marks system prompt blocks with `cache_control`,
-/// so identical content across invocations gets a server-side cache hit
-/// (5-min TTL).
-///
-/// NOTE: CLAUDE.md and AGENTS.md are NOT included here — Claude Code
-/// auto-loads them from the worktree directory with its own caching.
+/// The historical CLAUDE.md filename is retained for compatibility; its content
+/// is provider-neutral. Project-root instructions are discovered by the selected
+/// agent according to that agent's own rules, rather than assuming Claude flags
+/// or prompt-cache behavior.
 pub fn build_static_system_prompt(repo_root: &Path) -> String {
-    let apps_claude_md = read_file_or_empty(&repo_root.join("apps/orchestra/CLAUDE.md"));
+    let worker_guidance = read_file_or_empty(&repo_root.join("apps/orchestra/CLAUDE.md"));
 
     format!(
         "You are an autonomous AI agent working on a specific task in a software project.\n\n\
          ## Agent Instructions\n\
-         {apps_claude_md}"
+         {worker_guidance}"
     )
 }
 
-/// Build the dynamic user prompt for Claude Code's `-p` flag.
+/// Build dynamic task context passed to the selected provider.
 ///
 /// This content changes per task: identity, project context, active work,
 /// workflow steps, and task discussion. Kept separate from the static
-/// system prompt so that the system prompt can be cached across tasks.
+/// system prompt so adapters can handle stable and task-specific context separately.
 ///
 /// Context is trimmed based on the step type to reduce input tokens:
 /// - implement/rework: full context (observations, knowledge, events, playbooks)

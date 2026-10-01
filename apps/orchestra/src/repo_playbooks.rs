@@ -354,6 +354,26 @@ mod tests {
         }
     }
 
+    #[test]
+    fn repository_defaults_match_the_bundled_stage_policies() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for book in diraigent_types::default_playbooks::default_playbooks() {
+            let file = root
+                .join(".diraigent/playbooks")
+                .join(format!("{}.yaml", book["name"].as_str().unwrap()));
+            let parsed = parse_playbook(&file).unwrap();
+            assert_eq!(
+                parsed.steps, book["steps"],
+                "repository/bundled policy drift: {}",
+                parsed.name
+            );
+        }
+        let legacy = parse_playbook(&root.join(".diraigent/playbooks/standard.yaml")).unwrap();
+        let current = find_playbook_by_name(&root, "standard-lifecycle").unwrap();
+        assert_eq!(legacy.name, "standard");
+        assert_eq!(legacy.steps, current.steps);
+    }
+
     fn write_yaml(dir: &Path, name: &str, content: &str) {
         fs::create_dir_all(dir.join(".diraigent/playbooks")).unwrap();
         fs::write(dir.join(format!(".diraigent/playbooks/{name}")), content).unwrap();

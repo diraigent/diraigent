@@ -48,9 +48,10 @@ Valid transitions:
 - human_review → done, ready, backlog
 - cancelled → backlog (reopen)
 
-Pipeline advancement is handled atomically by `transition_task()`: when an agent
-transitions a non-final playbook step to "done", the API intercepts and sets
-state="ready" with an incremented playbook_step. `done` is only ever a terminal state.
+Orchestra resolves repository YAML and manages pipeline advancement through its
+task source. The API validates requested state transitions; do not assume it can
+inspect playbooks stored on another worker machine. Stage completion and terminal
+task completion are distinct.
 
 Claiming a task (`POST /tasks/:id/claim`) atomically transitions it from `ready` to the current playbook step name.
 
