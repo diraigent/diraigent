@@ -661,7 +661,7 @@ export class CreateProjectModalComponent implements OnInit, AfterViewInit {
   }
 
   private setPlaybookOnProject(projectId: string, pb: SpPlaybook): void {
-    this.api.updateProject(projectId, { default_playbook_id: pb.id }).subscribe({
+    this.api.updateProject(projectId, { default_playbook_name: pb.id }).subscribe({
       next: () => {
         this.savingPlaybook.set(false);
         this.configuredPlaybook.set(pb);

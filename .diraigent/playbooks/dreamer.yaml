@@ -34,7 +34,6 @@ steps:
 
   - name: review
     budget: 5.0
-    model: claude-sonnet-4-6
     allowed_tools: readonly
     context_level: minimal
     on_complete: next
@@ -54,7 +53,6 @@ steps:
 
   - name: dream
     budget: 4.0
-    model: claude-sonnet-4-6
     allowed_tools: readonly
     context_level: dream
     on_complete: done
@@ -74,7 +72,7 @@ steps:
          - Documentation gaps
       5. **Post suggestions as new tasks** (quality over quantity -- only things worth doing):
          ```
-         {{agent_cli}} create {{project_id}} '{"title": "...", "kind": "<feature|refactor|docs|test|bug>", "priority": 5, "playbook_id": "{{playbook_id}}", "context": {"spec": "...", "files": ["..."], "acceptance_criteria": ["..."]}}'
+         {{agent_cli}} create {{project_id}} '{"title": "...", "kind": "<feature|refactor|docs|test|bug>", "priority": 5, "playbook_name": "{{playbook_name}}", "context": {"spec": "...", "files": ["..."], "acceptance_criteria": ["..."]}}'
          ```
       6. **Post observations** for architectural insights or code smells:
          `{{agent_cli}} observation {{project_id}} '{"kind":"<insight|risk|smell|improvement>","title":"...","description":"...","severity":"<info|low|medium|high>"}'`

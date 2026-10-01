@@ -333,7 +333,10 @@ pub fn find_playbook_by_name(repo_root: &Path, name: &str) -> Option<RepoPlayboo
     if path.exists() {
         parse_playbook(&path).ok()
     } else {
-        None
+        diraigent_types::default_playbooks::default_playbooks()
+            .into_iter()
+            .find(|book| book["name"] == name || book["title"] == name)
+            .and_then(|book| serde_json::from_value(book).ok())
     }
 }
 
@@ -341,6 +344,15 @@ pub fn find_playbook_by_name(repo_root: &Path, name: &str) -> Option<RepoPlayboo
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn bundled_defaults_work_without_repo_files() {
+        let root = tempfile::tempdir().unwrap();
+        for book in diraigent_types::default_playbooks::default_playbooks() {
+            let found = find_playbook_by_name(root.path(), book["name"].as_str().unwrap()).unwrap();
+            assert_eq!(found.steps, book["steps"]);
+        }
+    }
 
     fn write_yaml(dir: &Path, name: &str, content: &str) {
         fs::create_dir_all(dir.join(".diraigent/playbooks")).unwrap();

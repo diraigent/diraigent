@@ -154,8 +154,8 @@ export interface ReviewTask {
                     @if (item.task.playbook_step !== null && item.task.playbook_step !== undefined) {
                       <p class="text-xs text-text-secondary mt-1">
                         {{ t('review.completedStep') }}: {{ item.task.playbook_step + 1 }}
-                        @if (item.task.playbook_id) {
-                          <span class="opacity-60"> ({{ item.task.playbook_id | slice:0:8 }})</span>
+                        @if (item.task.playbook_name) {
+                          <span class="opacity-60"> ({{ item.task.playbook_name | slice:0:8 }})</span>
                         }
                       </p>
                     }

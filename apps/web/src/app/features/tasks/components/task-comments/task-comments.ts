@@ -1,12 +1,13 @@
 import { Component, input, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { DatePipe } from '@angular/common';
 import { TranslocoModule } from '@jsverse/transloco';
 import { SpTaskComment } from '../../../../core/services/tasks-api.service';
 
 @Component({
   selector: 'app-task-comments',
   standalone: true,
-  imports: [TranslocoModule, FormsModule],
+  imports: [TranslocoModule, FormsModule, DatePipe],
   template: `
     <div *transloco="let t">
       <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">{{ t('tasks.comments') }}</h3>
@@ -31,7 +32,7 @@ import { SpTaskComment } from '../../../../core/services/tasks-api.service';
           @for (comment of comments(); track comment.id) {
             <div class="text-xs">
               <div class="flex items-center gap-2 mb-0.5">
-                <span class="text-text-muted">{{ formatTime(comment.created_at) }}</span>
+                <time class="text-text-muted" [attr.datetime]="comment.created_at" [title]="comment.created_at | date:'medium'">{{ comment.created_at | date:'HH:mm' }}</time>
                 <span class="font-medium text-ctp-mauve">{{ comment.agent_id ? 'assistant' : 'human' }}</span>
               </div>
               <p class="text-text-primary break-words">{{ comment.content }}</p>
@@ -51,10 +52,6 @@ export class TaskCommentsComponent {
   post = output<string>();
 
   newComment = '';
-
-  formatTime(iso: string): string {
-    return iso?.substring(11, 16) ?? '??:??';
-  }
 
   postComment(): void {
     const content = this.newComment.trim();

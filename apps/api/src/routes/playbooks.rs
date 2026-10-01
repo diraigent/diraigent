@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::auth::AuthUser;
+use crate::authz::{OptionalAgentId, require_authority, require_membership};
 use crate::error::AppError;
 use crate::ws_protocol::WsMessage;
 
@@ -26,13 +27,16 @@ async fn proxy_playbook(
     name: Option<String>,
     content: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, AppError> {
-    let agent_ids = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM diraigent.agent WHERE project_id = $1",
-    )
-    .bind(project_id)
-    .fetch_all(&state.pool)
-    .await
-    .unwrap_or_default();
+    let project = state.db.get_project_by_id(project_id).await?;
+    let candidates = state.db.list_tenant_agent_ids(project.tenant_id).await?;
+    let mut agent_ids = Vec::new();
+    for id in candidates {
+        if let Ok(agent) = state.db.get_agent_by_id(id).await
+            && agent.metadata["playbook_protocol"].as_u64() == Some(1)
+        {
+            agent_ids.push(id);
+        }
+    }
 
     let agent_id = state
         .ws_registry
@@ -42,7 +46,9 @@ async fn proxy_playbook(
         })?;
 
     let request_id = Uuid::new_v4().to_string();
-    let rx = state.ws_registry.register_playbook_request(request_id.clone());
+    let rx = state
+        .ws_registry
+        .register_playbook_request(request_id.clone());
 
     let sent = state.ws_registry.send_to_agent(
         agent_id,
@@ -56,7 +62,9 @@ async fn proxy_playbook(
     );
 
     if !sent {
-        return Err(AppError::ServiceUnavailable("Orchestra disconnected".into()));
+        return Err(AppError::ServiceUnavailable(
+            "Orchestra disconnected".into(),
+        ));
     }
 
     let payload = tokio::time::timeout(Duration::from_secs(10), rx)
@@ -65,7 +73,21 @@ async fn proxy_playbook(
         .map_err(|_| AppError::ServiceUnavailable("Orchestra disconnected".into()))?;
 
     if payload.success {
-        Ok(payload.data)
+        let mut data = payload.data;
+        let normalize = |book: &mut serde_json::Value| {
+            if book["name"].is_string() {
+                book["id"] = book["name"].clone();
+                book["tenant_id"] = serde_json::json!(project.tenant_id);
+            }
+        };
+        if let Some(books) = data.as_array_mut() {
+            for book in books {
+                normalize(book);
+            }
+        } else {
+            normalize(&mut data);
+        }
+        Ok(data)
     } else {
         Err(AppError::Internal(
             payload
@@ -77,19 +99,29 @@ async fn proxy_playbook(
 
 async fn list(
     State(state): State<AppState>,
-    AuthUser(_): AuthUser,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let data = proxy_playbook(&state, project_id, "list", None, None).await?;
-    Ok(Json(data))
+    require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
+    let mut books = diraigent_types::default_playbooks::default_playbooks();
+    if let Ok(data) = proxy_playbook(&state, project_id, "list", None, None).await {
+        for book in data.as_array().into_iter().flatten() {
+            books.retain(|default| default["name"] != book["name"]);
+            books.push(book.clone());
+        }
+    }
+    Ok(Json(serde_json::json!(books)))
 }
 
 async fn create(
     State(state): State<AppState>,
-    AuthUser(_): AuthUser,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
     Path(project_id): Path<Uuid>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_authority(state.db.as_ref(), agent_id, user_id, project_id, "manage").await?;
     let name = body["name"].as_str().map(|s| s.to_string());
     let data = proxy_playbook(&state, project_id, "create", name, Some(body)).await?;
     Ok(Json(data))
@@ -97,28 +129,62 @@ async fn create(
 
 async fn get_one(
     State(state): State<AppState>,
-    AuthUser(_): AuthUser,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
     Path((project_id, name)): Path<(Uuid, String)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
+    if let Some(book) = diraigent_types::default_playbooks::default_playbooks()
+        .into_iter()
+        .find(|book| book["name"] == name)
+    {
+        return Ok(Json(book));
+    }
     let data = proxy_playbook(&state, project_id, "get", Some(name), None).await?;
     Ok(Json(data))
 }
 
 async fn update(
     State(state): State<AppState>,
-    AuthUser(_): AuthUser,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
     Path((project_id, name)): Path<(Uuid, String)>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let data = proxy_playbook(&state, project_id, "update", Some(name), Some(body)).await?;
+    require_authority(state.db.as_ref(), agent_id, user_id, project_id, "manage").await?;
+    let data = if diraigent_types::default_playbooks::default_playbooks()
+        .iter()
+        .any(|book| book["name"] == name)
+    {
+        proxy_playbook(
+            &state,
+            project_id,
+            "create",
+            Some(format!("{name}-custom")),
+            Some(body),
+        )
+        .await?
+    } else {
+        proxy_playbook(&state, project_id, "update", Some(name), Some(body)).await?
+    };
     Ok(Json(data))
 }
 
 async fn remove(
     State(state): State<AppState>,
-    AuthUser(_): AuthUser,
+    AuthUser(user_id): AuthUser,
+    OptionalAgentId(agent_id): OptionalAgentId,
     Path((project_id, name)): Path<(Uuid, String)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_authority(state.db.as_ref(), agent_id, user_id, project_id, "manage").await?;
+    if diraigent_types::default_playbooks::default_playbooks()
+        .iter()
+        .any(|book| book["name"] == name)
+    {
+        return Err(AppError::Validation(
+            "Bundled default playbooks cannot be deleted".into(),
+        ));
+    }
     let data = proxy_playbook(&state, project_id, "delete", Some(name), None).await?;
     Ok(Json(data))
 }

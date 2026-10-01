@@ -33,7 +33,7 @@ export interface DgProject {
   slug: string;
   description: string;
   parent_id: string | null;
-  default_playbook_id: string | null;
+  default_playbook_name: string | null;
   package?: DgPackageInfo | null;
   repo_url: string | null;
   /** @deprecated Use project_root instead. Kept for backward compatibility. */
@@ -58,7 +58,7 @@ export interface DgProject {
 export interface DgProjectUpdate {
   name?: string;
   description?: string;
-  default_playbook_id?: string | null;
+  default_playbook_name?: string | null;
   repo_url?: string | null;
   /** @deprecated Use git_root instead. */
   repo_path?: string | null;
@@ -141,7 +141,7 @@ export interface ProjectMetrics {
   tasks_per_day: { day: string; count: number }[];
   avg_time_in_state_hours: { state: string; avg_hours: number | null }[];
   agent_breakdown: { agent_id: string; agent_name: string; tasks_completed: number; tasks_in_progress: number; avg_completion_hours: number | null }[];
-  playbook_completion: { playbook_id: string; playbook_title: string; total_tasks: number; completed_tasks: number; completion_rate: number }[];
+  playbook_completion: { playbook_name: string; playbook_title: string; total_tasks: number; completed_tasks: number; completion_rate: number }[];
   cost_summary: CostSummary;
   task_costs: TaskCostRow[];
   tokens_per_day: TokenDayCount[];

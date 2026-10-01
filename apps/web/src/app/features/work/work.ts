@@ -2079,7 +2079,7 @@ export class WorkPage {
   onLinkedTaskPlaybookChange(playbookId: string | null): void {
     const task = this.selectedLinkedTask();
     if (!task) return;
-    this.tasksApi.update(task.id, { playbook_id: playbookId, playbook_step: playbookId ? 0 : null }).subscribe({
+    this.tasksApi.update(task.id, { playbook_name: playbookId, playbook_step: playbookId ? 0 : null }).subscribe({
       next: () => {
         const sel = this.selected();
         if (sel) this.loadLinkedTasks(sel.id);
@@ -2196,7 +2196,7 @@ export class WorkPage {
   onUnlinkedTaskPlaybookChange(playbookId: string | null): void {
     const task = this.selectedUnlinkedTask();
     if (!task) return;
-    this.tasksApi.update(task.id, { playbook_id: playbookId, playbook_step: playbookId ? 0 : null }).subscribe({
+    this.tasksApi.update(task.id, { playbook_name: playbookId, playbook_step: playbookId ? 0 : null }).subscribe({
       next: () => this.loadUnlinkedTasks(),
     });
   }

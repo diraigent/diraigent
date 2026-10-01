@@ -16,7 +16,7 @@ export const projects = [
     slug: 'acme-platform',
     description: 'Main product platform',
     parent_id: null,
-    default_playbook_id: 'pb-001',
+    default_playbook_name: 'pb-001',
     repo_url: 'https://github.com/acme/platform',
     repo_path: '/projects/acme-platform',
     default_branch: 'main',
@@ -59,8 +59,8 @@ export const metrics = {
     { agent_id: '22222222-3333-4444-5555-666666666666', agent_name: 'claude-agent-2', tasks_completed: 13, tasks_in_progress: 3, avg_completion_hours: 1.1 },
   ],
   playbook_completion: [
-    { playbook_id: 'pb-001', playbook_title: 'Standard Development', total_tasks: 35, completed_tasks: 28, completion_rate: 80.0 },
-    { playbook_id: 'pb-002', playbook_title: 'Research Spike', total_tasks: 12, completed_tasks: 3, completion_rate: 25.0 },
+    { playbook_name: 'pb-001', playbook_title: 'Standard Development', total_tasks: 35, completed_tasks: 28, completion_rate: 80.0 },
+    { playbook_name: 'pb-002', playbook_title: 'Research Spike', total_tasks: 12, completed_tasks: 3, completion_rate: 25.0 },
   ],
   cost_summary: {
     total_input_tokens: 45_200_000,
@@ -220,7 +220,7 @@ function mkTask(num: number, title: string, kind: string, state: string, urgent:
     assigned_role_id: null,
     delegated_by: null,
     delegated_at: null,
-    playbook_id: 'pb-001',
+    playbook_name: 'pb-001',
     playbook_step: state === 'implement' ? 0 : state === 'review' ? 1 : null,
     decision_id: null,
     created_by: 'user',

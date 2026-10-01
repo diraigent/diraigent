@@ -1,0 +1,32 @@
+{
+  "name": "standard-lifecycle",
+  "title": "Standard Lifecycle",
+  "trigger_description": "implement → review",
+  "steps": [
+    {
+      "name": "implement",
+      "budget": 12.0,
+      "allowed_tools": "full",
+      "context_level": "full",
+      "on_complete": "next",
+      "description": "## Your Job: IMPLEMENT\n\n1. **Read the task**: Run `{{agent_cli}} task {{task_id}}` to get the spec, files, test_cmd, and acceptance criteria. Also check `## Task Discussion` above for any human instructions.\n2. **Claim the task**: Run `{{agent_cli}} claim {{task_id}}`\n3. **Assess complexity**: If this touches many files across modules, decompose:\n   - Create subtasks: `{{agent_cli}} create {{project_id}} '<json>'`\n   - Wire dependencies: `{{agent_cli}} depend <id> <dep_id>`\n   - Transition subtasks to ready: `{{agent_cli}} transition <id> ready`\n   - Post progress and submit for review. Stop here.\n   Otherwise, continue.\n4. **Implement**: Write code as the spec requires.\n5. **Report progress**: `{{agent_cli}} progress {{task_id}} \"what was done\"`\n6. **Lint & format**: If a lint command is available, run it. Fix all issues before testing.\n7. **Test**: If a test command is specified, run it. Retry up to 3 times on failure.\n   - Still failing? `{{agent_cli}} blocker {{task_id}} \"error\"`, `{{agent_cli}} transition {{task_id}} ready`\n8. **Post artifacts**: `{{agent_cli}} artifact {{task_id}} \"test output\"`\n9. **Complete**: `{{agent_cli}} transition {{task_id}} done`\n10. **File observations** for code smells, risks, or improvements:\n    `{{agent_cli}} observation {{project_id}} '{\"kind\":\"<insight|risk|smell|improvement>\",\"title\":\"...\",\"description\":\"...\",\"severity\":\"<info|low|medium|high>\"}'\n\n**Rules**: Do NOT run `git push`. Stay in your worktree.\n\n**Scope guardrail**: Before transitioning to done, run `git diff --stat {{project.default_branch}}...HEAD` and verify you only touched files listed in the task spec.",
+      "step": 0
+    },
+    {
+      "name": "review",
+      "budget": 5.0,
+      "allowed_tools": "readonly",
+      "context_level": "minimal",
+      "on_complete": "next",
+      "description": "## Your Job: CODE REVIEW\n\n1. **Read the task**: Run `{{agent_cli}} task {{task_id}}` to get the spec and acceptance criteria.\n2. **Claim the task**: Run `{{agent_cli}} claim {{task_id}}`\n3. **Review the changes**: Run `git diff {{project.default_branch}}...HEAD` to see what changed.\n4. **Check quality**: Does it meet the spec? Acceptance criteria met? Any obvious bugs or security issues?\n5. **Post your review**: `{{agent_cli}} artifact {{task_id}} \"REVIEW: <findings>\"`\n6. **Decision**:\n   - APPROVED: `{{agent_cli}} transition {{task_id}} done`\n   - CHANGES NEEDED: `{{agent_cli}} blocker {{task_id}} \"what needs fixing\"`, then `{{agent_cli}} transition {{task_id}} ready`\n\n**Rules**: Do NOT modify code — only review. Be specific (file names, line numbers).",
+      "step": 1
+    }
+  ],
+  "metadata": {
+    "git_strategy": "merge_to_default"
+  },
+  "initial_state": "ready",
+  "tags": [
+    "default"
+  ]
+}

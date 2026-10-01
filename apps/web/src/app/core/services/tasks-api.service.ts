@@ -31,7 +31,7 @@ export interface SpTask {
   assigned_role_id: string | null;
   delegated_by: string | null;
   delegated_at: string | null;
-  playbook_id: string | null;
+  playbook_name: string | null;
   playbook_step: number | null;
   decision_id: string | null;
   created_by: string;
@@ -113,7 +113,7 @@ export interface CreateTaskRequest {
   urgent?: boolean;
   context?: Record<string, unknown>;
   required_capabilities?: string[];
-  playbook_id?: string;
+  playbook_name?: string;
   decision_id?: string;
   work_id?: string;
   parent_id?: string;
@@ -125,7 +125,7 @@ export interface UpdateTaskRequest {
   urgent?: boolean;
   context?: Record<string, unknown>;
   required_capabilities?: string[];
-  playbook_id?: string | null;
+  playbook_name?: string | null;
   playbook_step?: number | null;
   flagged?: boolean;
 }

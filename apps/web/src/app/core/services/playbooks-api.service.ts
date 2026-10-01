@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
+import { STORAGE_KEYS } from '../../shared/ui-constants';
 import { BaseApiService } from './base-crud-api.service';
 
 export interface SpPlaybookStep {
@@ -69,24 +70,31 @@ export interface SpPlaybookUpdate {
 
 @Injectable({ providedIn: 'root' })
 export class PlaybooksApiService extends BaseApiService {
+  private get playbooksUrl(): string {
+    return `${this.baseUrl}/projects/${localStorage.getItem(STORAGE_KEYS.PROJECT) ?? ''}/playbooks`;
+  }
+
+  private normalize(book: SpPlaybook & { name?: string }): SpPlaybook {
+    return { ...book, id: book.name ?? book.id };
+  }
   list(): Observable<SpPlaybook[]> {
-    return this.http.get<SpPlaybook[]>(`${this.baseUrl}/playbooks`);
+    return this.http.get<SpPlaybook[]>(this.playbooksUrl).pipe(map(books => books.map(book => this.normalize(book))));
   }
 
   get(id: string): Observable<SpPlaybook> {
-    return this.http.get<SpPlaybook>(`${this.baseUrl}/playbooks/${id}`);
+    return this.http.get<SpPlaybook>(`${this.playbooksUrl}/${encodeURIComponent(id)}`).pipe(map(book => this.normalize(book)));
   }
 
   create(data: SpPlaybookCreate): Observable<SpPlaybook> {
-    return this.http.post<SpPlaybook>(`${this.baseUrl}/playbooks`, data);
+    return this.http.post<SpPlaybook>(this.playbooksUrl, data).pipe(map(book => this.normalize(book)));
   }
 
   update(id: string, data: SpPlaybookUpdate): Observable<SpPlaybook> {
-    return this.http.put<SpPlaybook>(`${this.baseUrl}/playbooks/${id}`, data);
+    return this.http.put<SpPlaybook>(`${this.playbooksUrl}/${encodeURIComponent(id)}`, data).pipe(map(book => this.normalize(book)));
   }
 
   delete(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.baseUrl}/playbooks/${id}`);
+    return this.http.delete<void>(`${this.playbooksUrl}/${encodeURIComponent(id)}`);
   }
 
   getGitStrategies(): Observable<GitStrategyDef[]> {

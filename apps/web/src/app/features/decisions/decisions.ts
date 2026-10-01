@@ -656,7 +656,7 @@ export class DecisionsPage extends CrudFeatureBase<SpDecision> {
         context: t.spec.trim() ? { spec: t.spec.trim() } : {},
       };
       if (this.spawnPlaybookId) {
-        req.playbook_id = this.spawnPlaybookId;
+        req.playbook_name = this.spawnPlaybookId;
       }
       if (decisionId) {
         req.decision_id = decisionId;

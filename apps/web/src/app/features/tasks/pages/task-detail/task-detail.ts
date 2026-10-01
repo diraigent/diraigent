@@ -135,9 +135,9 @@ import { ChangedFilesComponent } from '../../components/changed-files/changed-fi
           <span class="text-text-muted text-xs">{{ t('tasks.playbook') }}</span>
           <select (change)="onPlaybookChange($event)"
             class="w-full bg-surface text-text-primary text-xs rounded px-2 py-1 border border-border mt-0.5">
-            <option value="" [selected]="!task().playbook_id">—</option>
+            <option value="" [selected]="!task().playbook_name">—</option>
             @for (pb of playbooks(); track pb.id) {
-              <option [value]="pb.id" [selected]="pb.id === task().playbook_id">{{ pb.title }}</option>
+              <option [value]="pb.id" [selected]="pb.id === task().playbook_name">{{ pb.title }}</option>
             }
           </select>
           @if (currentPlaybook(); as pb) {
@@ -747,7 +747,7 @@ export class TaskDetailComponent {
   }
 
   currentPlaybook(): SpPlaybook | undefined {
-    const id = this.task().playbook_id;
+    const id = this.task().playbook_name;
     if (!id) return undefined;
     return this.playbooks().find(pb => pb.id === id);
   }

@@ -164,8 +164,9 @@ async fn main() -> Result<()> {
                 let mut meta = agent["metadata"].clone();
                 if let Some(obj) = meta.as_object_mut() {
                     obj.insert("version".into(), serde_json::json!(version));
+                    obj.insert("playbook_protocol".into(), serde_json::json!(1));
                 } else {
-                    meta = serde_json::json!({"runtime": "orchestra", "version": version});
+                    meta = serde_json::json!({"runtime": "orchestra", "version": version, "playbook_protocol": 1});
                 }
                 if let Err(e) = api
                     .update_agent(&config.agent_id, &serde_json::json!({"metadata": meta}))

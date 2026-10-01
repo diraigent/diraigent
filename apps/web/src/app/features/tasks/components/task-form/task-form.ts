@@ -130,7 +130,7 @@ export class TaskFormComponent implements OnChanges {
       this.formSpec = (task.context?.['spec'] as string) ?? '';
       const criteria = task.context?.['acceptance_criteria'] as string[] | undefined;
       this.formAcceptanceCriteria = criteria?.join('\n') ?? '';
-      this.formPlaybookId = task.playbook_id ?? '';
+      this.formPlaybookId = task.playbook_name ?? '';
       this.loadPlaybooks();
     } else if (this.show()) {
       this.formTitle = '';
@@ -160,7 +160,7 @@ export class TaskFormComponent implements OnChanges {
 
     this.projectApi.getProject(projectId).subscribe({
       next: (proj) => {
-        this.defaultPlaybookId = proj.default_playbook_id ?? '';
+        this.defaultPlaybookId = proj.default_playbook_name ?? '';
         if (!this.editing()) {
           this.formPlaybookId = this.defaultPlaybookId;
         }
@@ -236,7 +236,7 @@ export class TaskFormComponent implements OnChanges {
         urgent: this.formUrgent,
       };
       if (Object.keys(context).length > 0) req.context = context;
-      if (this.formPlaybookId.trim()) req.playbook_id = this.formPlaybookId.trim();
+      if (this.formPlaybookId.trim()) req.playbook_name = this.formPlaybookId.trim();
       this.submitCreate.emit(req);
     }
   }

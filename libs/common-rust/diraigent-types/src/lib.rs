@@ -1,5 +1,6 @@
 pub mod chat;
 pub mod chat_models;
+pub mod default_playbooks;
 pub mod state_machine;
 pub mod step_profile;
 pub mod sync;

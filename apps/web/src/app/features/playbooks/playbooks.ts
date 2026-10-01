@@ -67,7 +67,7 @@ type PlaybooksTab = 'playbooks' | 'templates';
         <label for="default-playbook-select" class="text-sm text-text-secondary whitespace-nowrap">{{ t('playbooks.projectDefault') }}:</label>
         <select
           id="default-playbook-select"
-          [ngModel]="currentProject()?.default_playbook_id ?? ''"
+          [ngModel]="currentProject()?.default_playbook_name ?? ''"
           (ngModelChange)="setProjectDefault($event)"
           class="bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
                  focus:outline-none focus:ring-1 focus:ring-accent min-w-[240px]">
@@ -299,7 +299,7 @@ export class PlaybooksPage extends CrudFeatureBase<SpPlaybook> {
     const projectId = this.ctx.projectId();
     if (!projectId) return;
     this.projectApi.updateProject(projectId, {
-      default_playbook_id: playbookId || null,
+      default_playbook_name: playbookId || null,
     }).subscribe({
       next: (updated) => this.currentProject.set(updated),
     });

@@ -57,7 +57,7 @@ export async function setupMocks(page: Page) {
 
     // Task dependencies
     if (path.match(/^tasks\/.*\/dependencies/)) {
-      return route.fulfill({ json: { upstream: [], downstream: [] } });
+      return route.fulfill({ json: { depends_on: [], blocks: [] } });
     }
 
     // Task branch status
@@ -103,12 +103,12 @@ export async function setupMocks(page: Page) {
     }
 
     // Playbooks
-    if (path.match(/^playbooks\/(.+)/)) {
-      const pbId = path.match(/^playbooks\/(.+)/)![1];
+    if (path.match(/^projects\/[^/]+\/playbooks\/(.+)/)) {
+      const pbId = path.match(/^projects\/[^/]+\/playbooks\/(.+)/)![1];
       const pb = mock.playbooks.find((p: Record<string, unknown>) => p.id === pbId);
       return route.fulfill({ json: pb || mock.playbooks[0] });
     }
-    if (path === 'playbooks' || path.match(/^playbooks$/)) {
+    if (path === `projects/${PROJECT_ID}/playbooks`) {
       return route.fulfill({ json: mock.playbooks });
     }
     if (path === `${PROJECT_ID}/step-templates`) {

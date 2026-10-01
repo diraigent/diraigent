@@ -1,5 +1,6 @@
 import { Component, input, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { DatePipe } from '@angular/common';
 import { TranslocoModule } from '@jsverse/transloco';
 import { SpTaskUpdate, UpdateKind } from '../../../../core/services/tasks-api.service';
 
@@ -32,7 +33,7 @@ function containsError(content: string): boolean {
 @Component({
   selector: 'app-task-updates',
   standalone: true,
-  imports: [TranslocoModule, FormsModule],
+  imports: [TranslocoModule, FormsModule, DatePipe],
   template: `
     <div *transloco="let t">
       <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">{{ t('tasks.updates') }}</h3>
@@ -63,7 +64,7 @@ function containsError(content: string): boolean {
         <div class="space-y-1.5">
           @for (update of updates(); track update.id) {
             <div class="flex flex-wrap sm:flex-nowrap gap-x-2 gap-y-0.5 text-xs" [class.opacity-90]="hasError(update)">
-              <span class="text-text-muted shrink-0">{{ formatTime(update.created_at) }}</span>
+              <time class="text-text-muted shrink-0" [attr.datetime]="update.created_at" [title]="update.created_at | date:'medium'">{{ update.created_at | date:'HH:mm' }}</time>
               <span class="font-medium shrink-0 {{ kindColor(update.kind) }}">[{{ update.kind }}]</span>
               @if (hasError(update)) {
                 <span class="w-full sm:w-auto sm:flex-1 min-w-0 text-ctp-red latte:text-ctp-red-900 break-words" title="Error detected in content">{{ update.content }}</span>
@@ -97,10 +98,6 @@ export class TaskUpdatesComponent {
     // blockers are already styled red by kind; check content for other kinds
     if (update.kind === 'blocker') return false;
     return containsError(update.content);
-  }
-
-  formatTime(iso: string): string {
-    return iso?.substring(11, 16) ?? '??:??';
   }
 
   postUpdate(): void {
