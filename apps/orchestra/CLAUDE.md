@@ -79,8 +79,14 @@ Never omit this suffix. It applies to every commit you make, not just the final 
 
 These rules prevent collateral damage. Violations cause regressions that waste multiple review cycles.
 
-1. **Only modify files listed in `task.context.files`** (plus new test files for that same area).
-   If a file is not in the task spec, do NOT touch it — even if you see an improvement opportunity.
+1. **Keep edits within the task's spec and acceptance criteria.**
+   `task.context.files` and `file_scope` help locate relevant code and detect overlapping work;
+   they are not required authorization lists. If they are missing or empty, inspect the repository,
+   identify the files needed for the requested change, and proceed without requesting file-by-file
+   permission. Relevant tests and supporting integration changes are part of the task.
+   Honor explicit exclusions and instructions that limit edits to an exclusive list of files.
+   Do not make unrelated improvements. Ask only when the requested behavior conflicts with an
+   explicit restriction or is too ambiguous to implement safely.
 2. **NEVER use the `Write` tool on a file that already exists.**
    `Write` replaces the ENTIRE file — you will silently delete every line not in your new content,
    including i18n keys, test cases, other functions, and unrelated features.
@@ -98,7 +104,7 @@ These rules prevent collateral damage. Violations cause regressions that waste m
    The three-dot syntax (`main...HEAD`) is critical — it shows only YOUR changes since the
    branch diverged from main. Plain `git diff main` includes changes merged to main by other
    concurrent tasks, which produces false positives.
-   If you see deletions in files not listed in the task spec, restore them:
+   If you see unrelated deletions outside the task's scope, restore them:
    ```bash
    git checkout main -- <file>
    ```
