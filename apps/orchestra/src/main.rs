@@ -419,8 +419,8 @@ async fn process_single_work_item(
     // 5. Link the task to the work item
     api.link_task_to_work_item(work_id, task_id).await?;
 
-    // Queue only after linking, so a worker can resolve the work item's Git policy.
-    api.transition_task(task_id, "ready").await?;
+    // Linking to processing work queues the task atomically in the API, so a
+    // worker can resolve the work item's Git policy before claiming it.
 
     // 6. Transition work item to 'active'
     api.update_work_item_status(work_id, "active").await?;

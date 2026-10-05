@@ -1,4 +1,4 @@
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -51,6 +51,7 @@ pub async fn get_work_by_id(pool: &PgPool, id: Uuid) -> Result<Work, AppError> {
 }
 
 pub async fn activate_work(pool: &PgPool, work_id: Uuid) -> Result<Work, AppError> {
+    let mut tx = pool.begin().await?;
     // Try to activate: only from 'active' or 'paused'
     let maybe = sqlx::query_as::<_, Work>(
         "UPDATE diraigent.work SET status = 'ready', updated_at = now()
@@ -58,10 +59,12 @@ pub async fn activate_work(pool: &PgPool, work_id: Uuid) -> Result<Work, AppErro
          RETURNING *",
     )
     .bind(work_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await?;
 
     if let Some(work) = maybe {
+        ready_backlog_tasks(&mut tx, work_id, None).await?;
+        tx.commit().await?;
         return Ok(work);
     }
 
@@ -139,7 +142,13 @@ pub async fn work_status_counts(
 }
 
 pub async fn update_work(pool: &PgPool, id: Uuid, req: &UpdateWork) -> Result<Work, AppError> {
-    let existing = get_work_by_id(pool, id).await?;
+    let mut tx = pool.begin().await?;
+    let existing =
+        sqlx::query_as::<_, Work>("SELECT * FROM diraigent.work WHERE id = $1 FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Work not found".into()))?;
 
     // Self-parent check
     if let Some(Some(parent_id)) = req.parent_work_id
@@ -193,10 +202,45 @@ pub async fn update_work(pool: &PgPool, id: Uuid, req: &UpdateWork) -> Result<Wo
     .bind(success_criteria)
     .bind(metadata)
     .bind(sort_order)
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await?;
 
+    // Starting/resuming work queues its backlog once, not on every update.
+    // In particular, metadata edits and auto-status refreshes must not undo
+    // a user's explicit ready -> backlog transition.
+    if !work_has_started(&existing.status) && work_has_started(&work.status) {
+        ready_backlog_tasks(&mut tx, id, None).await?;
+    }
+    tx.commit().await?;
     Ok(work)
+}
+
+fn work_has_started(status: &str) -> bool {
+    matches!(status, "active" | "ready" | "processing")
+}
+
+/// Queue only backlog tasks, leaving running, review and terminal states intact.
+/// Called in the same transaction as the work status/link change.
+async fn ready_backlog_tasks(
+    conn: &mut PgConnection,
+    work_id: Uuid,
+    task_ids: Option<&[Uuid]>,
+) -> Result<(), AppError> {
+    sqlx::query(
+        "UPDATE diraigent.task t
+         SET state = 'ready', state_entered_at = now(), updated_at = now(),
+             assigned_agent_id = NULL, claimed_at = NULL, completed_at = NULL
+         FROM diraigent.task_work tw, diraigent.work w
+         WHERE tw.task_id = t.id AND tw.work_id = w.id AND w.id = $1
+           AND t.project_id = w.project_id AND t.state = 'backlog'
+           AND w.status IN ('active', 'ready', 'processing')
+           AND ($2::uuid[] IS NULL OR t.id = ANY($2))",
+    )
+    .bind(work_id)
+    .bind(task_ids)
+    .execute(conn)
+    .await?;
+    Ok(())
 }
 
 pub async fn delete_work(pool: &PgPool, id: Uuid) -> Result<(), AppError> {
@@ -208,6 +252,12 @@ pub async fn link_task_work(
     work_id: Uuid,
     task_id: Uuid,
 ) -> Result<TaskWork, AppError> {
+    let mut tx = pool.begin().await?;
+    // Serialize linking with starting/pausing work, so neither misses the other.
+    sqlx::query("SELECT id FROM diraigent.work WHERE id = $1 FOR UPDATE")
+        .bind(work_id)
+        .execute(&mut *tx)
+        .await?;
     let tw = sqlx::query_as::<_, TaskWork>(
         "INSERT INTO diraigent.task_work (task_id, work_id, position)
          VALUES ($1, $2, (SELECT COALESCE(MAX(position), 0) + 1 FROM diraigent.task_work WHERE work_id = $2))
@@ -215,7 +265,7 @@ pub async fn link_task_work(
     )
     .bind(task_id)
     .bind(work_id)
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|e| match &e {
         sqlx::Error::Database(db) if db.constraint().is_some() => {
@@ -223,6 +273,8 @@ pub async fn link_task_work(
         }
         _ => e.into(),
     })?;
+    ready_backlog_tasks(&mut tx, work_id, Some(&[task_id])).await?;
+    tx.commit().await?;
     Ok(tw)
 }
 
@@ -453,17 +505,25 @@ pub async fn bulk_link_tasks(
     work_id: Uuid,
     task_ids: &[Uuid],
 ) -> Result<i64, AppError> {
-    let _ = get_work_by_id(pool, work_id).await?;
-    let result = sqlx::query(
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT id FROM diraigent.work WHERE id = $1 FOR UPDATE")
+        .bind(work_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Work not found".into()))?;
+    let linked = sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO diraigent.task_work (task_id, work_id)
          SELECT unnest($2::uuid[]), $1
-         ON CONFLICT DO NOTHING",
+         ON CONFLICT DO NOTHING RETURNING task_id",
     )
     .bind(work_id)
     .bind(task_ids)
-    .execute(pool)
+    .fetch_all(&mut *tx)
     .await?;
-    Ok(result.rows_affected() as i64)
+    // Duplicate links are not a new scheduling event.
+    ready_backlog_tasks(&mut tx, work_id, Some(&linked)).await?;
+    tx.commit().await?;
+    Ok(linked.len() as i64)
 }
 
 pub async fn reorder_work_tasks(
