@@ -1,4 +1,4 @@
-import { Component, inject, signal, effect, OnDestroy, OnInit, DestroyRef, HostListener } from '@angular/core';
+import { Component, computed, inject, signal, effect, OnDestroy, OnInit, DestroyRef, HostListener } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
@@ -234,6 +234,40 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' 
                 </label>
                 <span class="block text-xs text-text-secondary mt-1 ml-7">{{ t('settings.storeDiffsHint') }}</span>
 
+                <!-- Spectator publication is opt-in and only changes on save. -->
+                <div class="space-y-3 border-t border-border pt-4">
+                  <h3 class="text-sm font-medium text-text-primary">{{ t('settings.spectatorSharing') }}</h3>
+                  <p id="spectator-warning" class="text-sm text-text-secondary">{{ t('settings.spectatorWarning') }}</p>
+                  <p class="text-xs text-text-secondary">{{ t('settings.spectatorEncryptionHint') }}</p>
+                  <label class="flex items-center gap-3">
+                    <input type="checkbox" [(ngModel)]="formSpectatorEnabled" [disabled]="savingProject()"
+                      aria-describedby="spectator-warning"
+                      class="w-4 h-4 rounded border-border text-accent focus:ring-accent bg-bg-subtle" />
+                    <span class="text-sm font-medium text-text-secondary">{{ t('settings.spectatorEnabled') }}</span>
+                  </label>
+                  <p class="text-xs text-text-secondary">{{ t('settings.spectatorSaveHint') }}</p>
+                  @if (spectatorLink(); as link) {
+                    <label class="block">
+                      <span class="block text-sm text-text-secondary mb-1">{{ t('settings.spectatorLink') }}</span>
+                      <input type="text" readonly [value]="link"
+                        class="w-full bg-bg-subtle text-text-primary text-sm rounded-lg px-3 py-2 border border-border" />
+                    </label>
+                    <div class="flex items-center gap-3">
+                      <button type="button" (click)="copySpectatorLink()" class="text-sm text-accent hover:underline">
+                        {{ t('settings.spectatorCopy') }}
+                      </button>
+                      <a [href]="link" target="_blank" rel="noopener noreferrer" class="text-sm text-accent hover:underline">
+                        {{ t('settings.spectatorOpen') }}
+                      </a>
+                      @if (spectatorCopyStatus()) {
+                        <span role="status" class="text-xs text-text-secondary">
+                          {{ t(spectatorCopyStatus() === 'copied' ? 'settings.spectatorCopied' : 'settings.spectatorCopyFailed') }}
+                        </span>
+                      }
+                    </div>
+                  }
+                </div>
+
                 <!-- Resolved paths (read-only info) -->
                 <div class="block">
                   <span class="block text-sm font-medium text-text-secondary mb-1">{{ t('settings.resolvedPath') }}</span>
@@ -337,6 +371,9 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' 
                     <span class="text-sm text-ctp-green">{{ t('settings.saved') }}</span>
                   }
                 </div>
+                @if (projectSaveError()) {
+                  <p role="alert" class="text-sm text-ctp-red">{{ t('settings.projectSaveFailed') }}</p>
+                }
               </div>
             </section>
 
@@ -1213,6 +1250,12 @@ export class SettingsPage implements OnInit, OnDestroy {
   formShowRelease = false;
   formUploadLogs = false;
   formStoreDiffs = false;
+  formSpectatorEnabled = false;
+  readonly spectatorLink = computed(() => {
+    const p = this.project();
+    return p?.metadata?.['spectator_enabled'] === true ? `/spectate/${p.id}` : null;
+  });
+  spectatorCopyStatus = signal<'copied' | 'failed' | null>(null);
   formDoneRetentionDays = 1;
   formObservationRetentionDays = 30;
   formChatProvider = 'opencode';
@@ -1220,6 +1263,7 @@ export class SettingsPage implements OnInit, OnDestroy {
   readonly providerOptions = ['opencode', 'claude-code', 'codex', 'anthropic', 'openai', 'copilot', 'ollama'];
   savingProject = signal(false);
   projectSaved = signal(false);
+  projectSaveError = signal(false);
 
   // CLAUDE.md
   formClaudeMd = '';
@@ -1336,6 +1380,9 @@ export class SettingsPage implements OnInit, OnDestroy {
 
   private loadProject(projectId: string): void {
     this.loading.set(true);
+    this.projectSaved.set(false);
+    this.projectSaveError.set(false);
+    this.spectatorCopyStatus.set(null);
     this.api.getProject(projectId).subscribe({
       next: p => {
         this.project.set(p);
@@ -1352,6 +1399,7 @@ export class SettingsPage implements OnInit, OnDestroy {
         this.formShowRelease = (p.metadata?.['show_release'] as boolean) ?? false;
         this.formUploadLogs = (p.metadata?.['upload_logs'] as boolean) ?? false;
         this.formStoreDiffs = (p.metadata?.['store_diffs'] as boolean) ?? false;
+        this.formSpectatorEnabled = p.metadata?.['spectator_enabled'] === true;
         this.formDoneRetentionDays = (p.metadata?.['done_retention_days'] as number) ?? 1;
         this.formObservationRetentionDays = (p.metadata?.['observation_retention_days'] as number) ?? 30;
         this.formChatProvider = (p.metadata?.['chat_provider'] as string) ?? 'opencode';
@@ -1395,10 +1443,12 @@ export class SettingsPage implements OnInit, OnDestroy {
 
   saveProject(): void {
     const pid = this.ctx.projectId();
-    if (!pid) return;
+    if (!pid || this.project()?.id !== pid || this.savingProject()) return;
 
     this.savingProject.set(true);
     this.projectSaved.set(false);
+    this.projectSaveError.set(false);
+    this.spectatorCopyStatus.set(null);
 
     const update: DgProjectUpdate = {
       name: this.formName,
@@ -1410,19 +1460,36 @@ export class SettingsPage implements OnInit, OnDestroy {
       git_mode: this.formGitMode,
       git_root: this.formGitRoot || null,
       project_root: this.formProjectRoot || null,
-      metadata: { ...(this.project()?.metadata || {}), auto_push: this.formAutoPush, show_release: this.formShowRelease, upload_logs: this.formUploadLogs, store_diffs: this.formStoreDiffs, done_retention_days: this.formDoneRetentionDays, observation_retention_days: this.formObservationRetentionDays, chat_provider: this.formChatProvider, chat_model: this.formChatModel || null },
+      metadata: { ...(this.project()?.metadata || {}), spectator_enabled: this.formSpectatorEnabled, auto_push: this.formAutoPush, show_release: this.formShowRelease, upload_logs: this.formUploadLogs, store_diffs: this.formStoreDiffs, done_retention_days: this.formDoneRetentionDays, observation_retention_days: this.formObservationRetentionDays, chat_provider: this.formChatProvider, chat_model: this.formChatModel || null },
     };
 
     this.api.updateProject(pid, update).subscribe({
       next: p => {
-        this.project.set(p);
         this.savingProject.set(false);
+        if (this.ctx.projectId() !== pid) return;
+        this.project.set(p);
+        this.formSpectatorEnabled = p.metadata?.['spectator_enabled'] === true;
         this.projectSaved.set(true);
         if (this.savedTimer) clearTimeout(this.savedTimer);
         this.savedTimer = setTimeout(() => this.projectSaved.set(false), 3000);
       },
-      error: () => this.savingProject.set(false),
+      error: () => {
+        this.savingProject.set(false);
+        if (this.ctx.projectId() === pid) this.projectSaveError.set(true);
+      },
     });
+  }
+
+  async copySpectatorLink(): Promise<void> {
+    const link = this.spectatorLink();
+    if (!link) return;
+    this.spectatorCopyStatus.set(null);
+    try {
+      await navigator.clipboard.writeText(new URL(link, window.location.origin).href);
+      if (this.spectatorLink() === link) this.spectatorCopyStatus.set('copied');
+    } catch {
+      if (this.spectatorLink() === link) this.spectatorCopyStatus.set('failed');
+    }
   }
 
   saveClaudeMd(): void {
