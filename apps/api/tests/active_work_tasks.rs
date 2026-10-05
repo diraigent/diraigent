@@ -20,8 +20,9 @@ async fn fixture(pool: &PgPool) -> (Uuid, Uuid) {
     .await
     .unwrap();
     let project = sqlx::query_scalar::<_, Uuid>(
-        "INSERT INTO diraigent.project (name, slug, owner_id, tenant_id)
-         VALUES ('Test', 'work-test', $1, $2) RETURNING id",
+        "INSERT INTO diraigent.project (name, slug, owner_id, tenant_id, package_id)
+         VALUES ('Test', 'work-test', $1, $2,
+                 (SELECT id FROM diraigent.package WHERE slug = 'software-dev')) RETURNING id",
     )
     .bind(user)
     .bind(tenant)
