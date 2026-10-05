@@ -40,7 +40,17 @@ final class TasksService {
         isLoading = true
         error = nil
         do {
-            let result: [DgTask] = try await apiClient.get(Endpoints.tasks(projectId))
+            var result: [DgTask] = []
+            var offset = 0
+            while true {
+                let page: PaginatedResponse<DgTask> = try await apiClient.get(
+                    Endpoints.tasks(projectId),
+                    query: ["limit": "100", "offset": String(offset)]
+                )
+                result.append(contentsOf: page.data)
+                guard page.hasMore, !page.data.isEmpty else { break }
+                offset = page.offset + page.data.count
+            }
             tasks = result
         } catch {
             self.error = error.localizedDescription
