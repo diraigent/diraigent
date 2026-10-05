@@ -45,7 +45,7 @@ pub fn ensure_access(project: &Project, tenant: Option<&Tenant>) -> Result<(), A
 
 /// Projections are not authorization: callers must first run `ensure_access`
 /// and verify that every child record belongs to the requested project.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct PublicProject {
     pub id: Uuid,
     pub name: String,
@@ -64,7 +64,7 @@ impl From<&Project> for PublicProject {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct PublicTask {
     pub id: Uuid,
     pub number: i64,
@@ -91,7 +91,7 @@ impl From<&Task> for PublicTask {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct PublicTaskDetail {
     #[serde(flatten)]
     pub task: PublicTask,
@@ -127,7 +127,7 @@ fn text_items(value: Option<&Value>) -> Vec<String> {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct PublicWork {
     pub id: Uuid,
     pub title: String,
@@ -150,7 +150,7 @@ impl From<&Work> for PublicWork {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct PublicKnowledge {
     pub id: Uuid,
     pub title: String,
@@ -171,7 +171,7 @@ impl From<&Knowledge> for PublicKnowledge {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct PublicDecision {
     pub id: Uuid,
     pub title: String,
