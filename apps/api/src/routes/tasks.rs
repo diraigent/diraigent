@@ -132,6 +132,8 @@ async fn create_task(
         super::work::refresh_auto_status_works(&state, task.id, agent_id).await;
     }
 
+    // Linking to started work may have promoted the new task to ready.
+    let task = state.db.get_task_by_id(task.id).await?;
     Ok(Json(task))
 }
 
