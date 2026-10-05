@@ -82,7 +82,7 @@ USER appuser
 ENV HOST=0.0.0.0 PORT=3000 SERVICE_NAME=diraigent-api
 
 LABEL org.opencontainers.image.title="diraigent-api" \
-      org.opencontainers.image.description="AI agent orchestration API — task state machine, playbooks, knowledge, audit" \
+      org.opencontainers.image.description="AI agent orchestration API — task state machine, knowledge, audit" \
       org.opencontainers.image.vendor="Zivue AS" \
       org.opencontainers.image.url="https://www.diraigent.com" \
       org.opencontainers.image.source="https://www.diraigent.com"

@@ -1,5 +1,3 @@
-//! OpenCode CLI provider for agentic playbook steps.
-
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
@@ -9,7 +7,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tokio::process::Command;
 
-use super::{ProviderConfig, ResolvedStep, StepOutput, StepProvider, TaskContext};
+use super::{ProviderConfig, ResolvedTask, TaskContext, TaskOutput, TaskProvider};
 
 pub struct OpenCodeProvider;
 
@@ -32,23 +30,23 @@ pub(crate) async fn run_command(binary: &Path) -> anyhow::Result<Command> {
 }
 
 #[async_trait]
-impl StepProvider for OpenCodeProvider {
+impl TaskProvider for OpenCodeProvider {
     async fn execute(
         &self,
-        step: &ResolvedStep,
+        step: &ResolvedTask,
         task: &TaskContext,
         config: &ProviderConfig,
-    ) -> anyhow::Result<StepOutput> {
+    ) -> anyhow::Result<TaskOutput> {
         execute_with_binary(Path::new("opencode"), step, task, config).await
     }
 }
 
 async fn execute_with_binary(
     binary: &Path,
-    step: &ResolvedStep,
+    step: &ResolvedTask,
     task: &TaskContext,
     config: &ProviderConfig,
-) -> anyhow::Result<StepOutput> {
+) -> anyhow::Result<TaskOutput> {
     let worktree = task
         .working_dir
         .as_deref()
@@ -119,7 +117,7 @@ async fn execute_with_binary(
     parse_events(&output.stdout)
 }
 
-fn parse_events(stdout: &[u8]) -> anyhow::Result<StepOutput> {
+fn parse_events(stdout: &[u8]) -> anyhow::Result<TaskOutput> {
     let mut parts: HashMap<String, String> = HashMap::new();
     let mut ordered = Vec::new();
     let mut input_tokens = 0;
@@ -171,7 +169,7 @@ fn parse_events(stdout: &[u8]) -> anyhow::Result<StepOutput> {
         .cloned()
         .collect::<Vec<_>>()
         .join("\n");
-    Ok(StepOutput {
+    Ok(TaskOutput {
         content,
         exit_code: 0,
         artifacts: HashMap::new(),

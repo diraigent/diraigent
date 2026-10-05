@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::models::*;
 
-use super::tasks::{check_dependencies_met, get_task_by_id, validate_playbook_step};
+use super::tasks::{check_dependencies_met, get_task_by_id};
 
 // ── State Transitions ──
 
@@ -13,165 +13,56 @@ pub async fn transition_task(
     pool: &PgPool,
     task_id: Uuid,
     target_state: &str,
-    playbook_step: Option<i32>,
 ) -> Result<Task, AppError> {
-    if target_state.is_empty() {
-        return Err(AppError::Validation("State cannot be empty".into()));
-    }
-
     let existing = get_task_by_id(pool, task_id).await?;
-
-    let effective_target = target_state.to_string();
-    let effective_step = playbook_step;
-    let target_state = &effective_target;
-    let playbook_step = effective_step;
-
     if !can_transition(&existing.state, target_state) {
         return Err(AppError::UnprocessableEntity(format!(
             "Cannot transition from '{}' to '{}'",
             existing.state, target_state
         )));
     }
-
-    // Validate caller-supplied playbook_step.
-    if let Some(step) = playbook_step {
-        validate_playbook_step(step).await?;
-    }
-
-    // Enforce dependency blocking: cannot transition to ready/wait:* if blockers are not done.
-    // Exception: when releasing from a step state (e.g. implement → ready), skip the check
-    // so agents can release blocked tasks back to the queue.
-    if (target_state == "ready" || is_wait_state(target_state))
-        && is_lifecycle_state(&existing.state)
-    {
+    if target_state == "ready" {
         check_dependencies_met(pool, task_id).await?;
     }
-
     let completed_at = if target_state == "done" {
         Some(Utc::now())
     } else {
         None
     };
-
-    // Clear agent when releasing (ready) or entering wait state between pipeline steps
-    let clear_agent = (target_state == "ready" || is_wait_state(target_state))
-        && !is_lifecycle_state(&existing.state);
-
-    let task = match (clear_agent, playbook_step) {
-        (true, Some(step)) => {
-            sqlx::query_as::<_, Task>(
-                "UPDATE diraigent.task
-                 SET state = $2, assigned_agent_id = NULL, claimed_at = NULL, completed_at = $3, playbook_step = $4, state_entered_at = now()
-                 WHERE id = $1 RETURNING *",
-            )
-            .bind(task_id)
-            .bind(target_state)
-            .bind(completed_at)
-            .bind(step)
-            .fetch_one(pool)
-            .await?
-        }
-        (true, None) => {
-            sqlx::query_as::<_, Task>(
-                "UPDATE diraigent.task
-                 SET state = $2, assigned_agent_id = NULL, claimed_at = NULL, completed_at = $3, state_entered_at = now()
-                 WHERE id = $1 RETURNING *",
-            )
-            .bind(task_id)
-            .bind(target_state)
-            .bind(completed_at)
-            .fetch_one(pool)
-            .await?
-        }
-        (false, Some(step)) => {
-            sqlx::query_as::<_, Task>(
-                "UPDATE diraigent.task SET state = $2, completed_at = $3, playbook_step = $4, state_entered_at = now()
-                 WHERE id = $1 RETURNING *",
-            )
-            .bind(task_id)
-            .bind(target_state)
-            .bind(completed_at)
-            .bind(step)
-            .fetch_one(pool)
-            .await?
-        }
-        (false, None) => {
-            sqlx::query_as::<_, Task>(
-                "UPDATE diraigent.task SET state = $2, completed_at = $3, state_entered_at = now()
-                 WHERE id = $1 RETURNING *",
-            )
-            .bind(task_id)
-            .bind(target_state)
-            .bind(completed_at)
-            .fetch_one(pool)
-            .await?
-        }
-    };
-
+    let clear_agent = matches!(
+        target_state,
+        "ready" | "backlog" | "human_review" | "cancelled"
+    );
+    let task = sqlx::query_as::<_, Task>(
+        "UPDATE diraigent.task SET state = $2, completed_at = $3, state_entered_at = now(),
+         assigned_agent_id = CASE WHEN $4 THEN NULL ELSE assigned_agent_id END,
+         claimed_at = CASE WHEN $4 THEN NULL ELSE claimed_at END WHERE id = $1 AND state = $5 RETURNING *"
+    ).bind(task_id).bind(target_state).bind(completed_at).bind(clear_agent).bind(&existing.state).fetch_optional(pool).await?
+        .ok_or_else(|| AppError::Conflict("Task state changed concurrently; reload before retrying".into()))?;
     Ok(task)
 }
 
 pub async fn claim_task(pool: &PgPool, task_id: Uuid, agent_id: Uuid) -> Result<Task, AppError> {
-    // Look up the task to determine the step name from its playbook
-    let existing = get_task_by_id(pool, task_id).await?;
-
-    // Claimable from "ready" or "wait:<step>"
-    let step_name = if existing.state == "ready" {
-        resolve_step_name(pool, &existing).await?
-    } else if let Some(next) = crate::models::wait_target(&existing.state) {
-        next.to_string()
-    } else {
-        return Err(AppError::UnprocessableEntity(
-            "Task is not in a claimable state (ready or wait:*)".into(),
-        ));
-    };
-
-    let current_state = &existing.state;
-
-    // Atomic: only claim if state hasn't changed
-    let task = sqlx::query_as::<_, Task>(
-        "UPDATE diraigent.task
-         SET state = $3, assigned_agent_id = $2, claimed_at = now(), state_entered_at = now()
-         WHERE id = $1 AND state = $4
-         RETURNING *",
-    )
-    .bind(task_id)
-    .bind(agent_id)
-    .bind(&step_name)
-    .bind(current_state)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::UnprocessableEntity("Task was claimed by another agent".into()))?;
-
-    Ok(task)
+    check_dependencies_met(pool, task_id).await?;
+    sqlx::query_as::<_, Task>(
+        "UPDATE diraigent.task SET state = 'working', assigned_agent_id = $2, claimed_at = now(), state_entered_at = now()
+         WHERE id = $1 AND state = 'ready' RETURNING *"
+    ).bind(task_id).bind(agent_id).fetch_optional(pool).await?
+        .ok_or_else(|| AppError::UnprocessableEntity("Task is not ready or was claimed by another agent".into()))
 }
 
-/// Public wrapper for route-level authz to determine the step a claim will enter.
-pub async fn resolve_claim_step_name(pool: &PgPool, task: &Task) -> Result<String, AppError> {
-    // For wait:<step> states, the step name is embedded in the state.
-    if let Some(next) = crate::models::wait_target(&task.state) {
-        return Ok(next.to_string());
-    }
-    resolve_step_name(pool, task).await
-}
-
-/// Resolve the current playbook step name for a task.
-/// Returns "implement" for tasks with a playbook (step 0 default), or "working" otherwise.
-pub(crate) async fn resolve_step_name(_pool: &PgPool, task: &Task) -> Result<String, AppError> {
-    if task.playbook_name.is_some() {
-        // Without DB access to the playbook YAML, default to "implement" (step 0).
-        // The orchestra pipeline handles precise step advancement via YAML lookup.
-        Ok("implement".to_string())
-    } else {
-        Ok("working".to_string())
-    }
+pub async fn resolve_task_mode(_pool: &PgPool, task: &Task) -> Result<String, AppError> {
+    Ok(task.context["mode"]
+        .as_str()
+        .unwrap_or("working")
+        .to_owned())
 }
 
 pub async fn release_task(pool: &PgPool, task_id: Uuid) -> Result<Task, AppError> {
     let existing = get_task_by_id(pool, task_id).await?;
 
     // Can only release from an active step (non-lifecycle state)
-    if is_lifecycle_state(&existing.state) {
+    if existing.state != "working" {
         return Err(AppError::UnprocessableEntity(
             "Task must be in an active step to release".into(),
         ));

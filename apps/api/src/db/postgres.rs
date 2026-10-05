@@ -87,19 +87,14 @@ impl DiraigentDb for PostgresDb {
     async fn update_task(&self, task_id: Uuid, req: &UpdateTask) -> Result<Task, AppError> {
         repository::update_task(&self.0, task_id, req).await
     }
-    async fn transition_task(
-        &self,
-        task_id: Uuid,
-        target_state: &str,
-        playbook_step: Option<i32>,
-    ) -> Result<Task, AppError> {
-        repository::transition_task(&self.0, task_id, target_state, playbook_step).await
+    async fn transition_task(&self, task_id: Uuid, target_state: &str) -> Result<Task, AppError> {
+        repository::transition_task(&self.0, task_id, target_state).await
     }
     async fn claim_task(&self, task_id: Uuid, agent_id: Uuid) -> Result<Task, AppError> {
         repository::claim_task(&self.0, task_id, agent_id).await
     }
-    async fn resolve_claim_step_name(&self, task: &Task) -> Result<String, AppError> {
-        repository::resolve_claim_step_name(&self.0, task).await
+    async fn resolve_task_mode(&self, task: &Task) -> Result<String, AppError> {
+        repository::resolve_task_mode(&self.0, task).await
     }
     async fn release_task(&self, task_id: Uuid) -> Result<Task, AppError> {
         repository::release_task(&self.0, task_id).await
@@ -487,46 +482,6 @@ impl DiraigentDb for PostgresDb {
         task_ids: &[Uuid],
     ) -> Result<Vec<Task>, AppError> {
         repository::reorder_work_tasks(&self.0, work_id, task_ids).await
-    }
-
-    // Step Templates
-    async fn create_step_template(
-        &self,
-        tenant_id: Uuid,
-        req: &CreateStepTemplate,
-        created_by: Uuid,
-    ) -> Result<StepTemplate, AppError> {
-        repository::create_step_template(&self.0, tenant_id, req, created_by).await
-    }
-    async fn get_step_template_by_id(&self, id: Uuid) -> Result<StepTemplate, AppError> {
-        repository::get_step_template_by_id(&self.0, id).await
-    }
-    async fn list_step_templates(
-        &self,
-        tenant_id: Uuid,
-        filters: &StepTemplateFilters,
-    ) -> Result<Vec<StepTemplate>, AppError> {
-        repository::list_step_templates(&self.0, tenant_id, filters).await
-    }
-    async fn update_step_template(
-        &self,
-        id: Uuid,
-        tenant_id: Uuid,
-        req: &UpdateStepTemplate,
-    ) -> Result<StepTemplate, AppError> {
-        repository::update_step_template(&self.0, id, tenant_id, req).await
-    }
-    async fn fork_step_template(
-        &self,
-        id: Uuid,
-        tenant_id: Uuid,
-        req: &UpdateStepTemplate,
-        created_by: Uuid,
-    ) -> Result<StepTemplate, AppError> {
-        repository::fork_step_template(&self.0, id, tenant_id, req, created_by).await
-    }
-    async fn delete_step_template(&self, id: Uuid, tenant_id: Uuid) -> Result<(), AppError> {
-        repository::delete_step_template(&self.0, id, tenant_id).await
     }
 
     // Events

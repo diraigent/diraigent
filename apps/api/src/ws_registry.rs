@@ -11,13 +11,6 @@ pub struct GitResponsePayload {
     pub data: serde_json::Value,
 }
 
-/// Payload returned for completed playbook requests.
-pub struct PlaybookResponsePayload {
-    pub success: bool,
-    pub error: Option<String>,
-    pub data: serde_json::Value,
-}
-
 type ModelReply = Result<diraigent_types::ChatModelCatalog, String>;
 type PendingModelRequest = (Uuid, oneshot::Sender<ModelReply>);
 
@@ -31,8 +24,6 @@ pub struct WsRegistry {
     connections: DashMap<Uuid, mpsc::UnboundedSender<WsMessage>>,
     /// Pending git requests: request_id -> oneshot sender
     pending_git: DashMap<String, oneshot::Sender<GitResponsePayload>>,
-    /// Pending playbook requests: request_id -> oneshot sender
-    pending_playbook: DashMap<String, oneshot::Sender<PlaybookResponsePayload>>,
     pending_models: DashMap<String, PendingModelRequest>,
     /// Active chat sessions: session_id -> mpsc sender for SSE events
     active_chats: DashMap<String, ActiveChat>,
@@ -51,7 +42,6 @@ impl WsRegistry {
         Self {
             connections: DashMap::new(),
             pending_git: DashMap::new(),
-            pending_playbook: DashMap::new(),
             pending_models: DashMap::new(),
             active_chats: DashMap::new(),
             session_agents: DashMap::new(),
@@ -135,23 +125,6 @@ impl WsRegistry {
     /// Complete a pending git request with a response.
     pub fn complete_git_request(&self, request_id: &str, response: GitResponsePayload) {
         if let Some((_, tx)) = self.pending_git.remove(request_id) {
-            let _ = tx.send(response);
-        }
-    }
-
-    /// Register a pending playbook request. Returns a receiver for the response.
-    pub fn register_playbook_request(
-        &self,
-        request_id: String,
-    ) -> oneshot::Receiver<PlaybookResponsePayload> {
-        let (tx, rx) = oneshot::channel();
-        self.pending_playbook.insert(request_id, tx);
-        rx
-    }
-
-    /// Complete a pending playbook request with a response.
-    pub fn complete_playbook_request(&self, request_id: &str, response: PlaybookResponsePayload) {
-        if let Some((_, tx)) = self.pending_playbook.remove(request_id) {
             let _ = tx.send(response);
         }
     }

@@ -101,9 +101,7 @@ pub const REPORT_KINDS: &[&str] = &[
 pub const MEMBERSHIP_STATUSES: &[&str] = &["active", "inactive", "suspended"];
 
 // ── State Machine (re-exported from shared crate) ──
-pub use diraigent_types::state_machine::{
-    can_transition, is_lifecycle_state, is_wait_state, wait_target,
-};
+pub use diraigent_types::state_machine::{can_transition, is_valid_state};
 
 // ── Domain Models ──
 
@@ -207,7 +205,6 @@ pub struct Project {
     pub description: Option<String>,
     pub owner_id: Uuid,
     pub parent_id: Option<Uuid>,
-    pub default_playbook_name: Option<String>,
     /// FK to diraigent.package — determines which domain enum values are valid
     /// for tasks, knowledge, observations, events, and integrations in this project.
     pub package_id: Option<Uuid>,
@@ -345,8 +342,6 @@ pub struct Task {
     pub assigned_role_id: Option<Uuid>,
     pub delegated_by: Option<Uuid>,
     pub delegated_at: Option<DateTime<Utc>>,
-    pub playbook_name: Option<String>,
-    pub playbook_step: Option<i32>,
     /// FK to the decision that originated this task (nullable).
     pub decision_id: Option<Uuid>,
     /// FK to a parent task for plan decomposition (nullable, self-referencing).
@@ -500,7 +495,6 @@ pub struct CreateProject {
 pub struct UpdateProject {
     pub name: Option<String>,
     pub description: Option<String>,
-    pub default_playbook_name: Option<String>,
     pub repo_url: Option<Option<String>>,
     /// Legacy path field — prefer `git_root` for new projects.
     pub repo_path: Option<Option<String>>,
@@ -524,7 +518,6 @@ pub struct CreateTask {
     pub urgent: Option<bool>,
     pub context: Option<serde_json::Value>,
     pub required_capabilities: Option<Vec<String>>,
-    pub playbook_name: Option<String>,
     /// Optional FK to the decision that originated this task.
     pub decision_id: Option<Uuid>,
     /// Optional work item to link the new task to (inserts into task_work join table).
@@ -542,8 +535,6 @@ pub struct UpdateTask {
     pub urgent: Option<bool>,
     pub context: Option<serde_json::Value>,
     pub required_capabilities: Option<Vec<String>>,
-    pub playbook_step: Option<i32>,
-    pub playbook_name: Option<String>,
     /// User-toggleable flag (bookmark).
     pub flagged: Option<bool>,
     /// File paths this task intends to modify (for branch overlap detection).
@@ -556,9 +547,6 @@ pub struct UpdateTask {
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct TransitionTask {
     pub state: String,
-    /// Optional playbook step index to set atomically with the state change.
-    /// Used by the orchestra to advance/regress the pipeline in a single call.
-    pub playbook_step: Option<i32>,
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -961,7 +949,6 @@ pub struct PromoteObservation {
     pub title: Option<String>,
     pub kind: Option<String>,
     pub urgent: Option<bool>,
-    pub playbook_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
@@ -1118,8 +1105,6 @@ pub struct DelegateTask {
 pub struct BulkTransition {
     pub task_ids: Vec<Uuid>,
     pub state: String,
-    /// Optional playbook step index to set atomically with the state change.
-    pub playbook_step: Option<i32>,
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -1190,7 +1175,6 @@ pub struct AgentContext {
     pub my_tasks: Vec<Task>,
     pub open_observations: Vec<Observation>,
     pub recent_events: Vec<Event>,
-    pub playbooks: Vec<serde_json::Value>,
 }
 
 // ── File Locks ──
@@ -1354,7 +1338,6 @@ pub struct ProjectMetrics {
     pub tasks_per_day: Vec<DayCount>,
     pub avg_time_in_state_hours: Vec<StateAvg>,
     pub agent_breakdown: Vec<AgentMetrics>,
-    pub playbook_completion: Vec<PlaybookMetrics>,
     /// Aggregated cost across all tasks in the project within the range.
     pub cost_summary: CostSummary,
     /// Per-task cost breakdown for tasks with non-zero spend.
@@ -1430,14 +1413,6 @@ pub struct AgentMetrics {
     pub tasks_completed: i64,
     pub tasks_in_progress: i64,
     pub avg_completion_hours: Option<f64>,
-}
-
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub struct PlaybookMetrics {
-    pub playbook_name: String,
-    pub total_tasks: i64,
-    pub completed_tasks: i64,
-    pub completion_rate: f64,
 }
 
 // ── Verification ──
@@ -1698,96 +1673,6 @@ pub struct CreateTaskLog {
 pub struct TaskLogFilters {
     pub task_id: Option<Uuid>,
     pub step_name: Option<String>,
-    pub limit: Option<i64>,
-    pub offset: Option<i64>,
-}
-
-// ── Step Templates ──
-
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
-pub struct StepTemplate {
-    pub id: Uuid,
-    /// Tenant that owns this template. NULL means global / visible to all tenants.
-    pub tenant_id: Option<Uuid>,
-    pub name: String,
-    pub description: Option<String>,
-    pub model: Option<String>,
-    pub budget: Option<f64>,
-    pub allowed_tools: Option<String>,
-    pub context_level: Option<String>,
-    pub on_complete: Option<String>,
-    pub retriable: Option<bool>,
-    pub max_cycles: Option<i32>,
-    pub timeout_minutes: Option<i32>,
-    pub mcp_servers: Option<serde_json::Value>,
-    pub agents: Option<serde_json::Value>,
-    pub agent: Option<String>,
-    pub settings: Option<serde_json::Value>,
-    pub env: Option<serde_json::Value>,
-    pub vars: Option<serde_json::Value>,
-    /// AI provider for this step (e.g. "anthropic", "openai", "ollama"). NULL defaults to "anthropic".
-    pub provider: Option<String>,
-    /// Override the default API endpoint for the chosen provider.
-    pub base_url: Option<String>,
-    pub tags: Vec<String>,
-    pub metadata: serde_json::Value,
-    pub created_by: Uuid,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub struct CreateStepTemplate {
-    pub name: String,
-    pub description: Option<String>,
-    pub model: Option<String>,
-    pub budget: Option<f64>,
-    pub allowed_tools: Option<String>,
-    pub context_level: Option<String>,
-    pub on_complete: Option<String>,
-    pub retriable: Option<bool>,
-    pub max_cycles: Option<i32>,
-    pub timeout_minutes: Option<i32>,
-    pub mcp_servers: Option<serde_json::Value>,
-    pub agents: Option<serde_json::Value>,
-    pub agent: Option<String>,
-    pub settings: Option<serde_json::Value>,
-    pub env: Option<serde_json::Value>,
-    pub vars: Option<serde_json::Value>,
-    pub provider: Option<String>,
-    pub base_url: Option<String>,
-    pub tags: Option<Vec<String>>,
-    pub metadata: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Deserialize, Default, utoipa::ToSchema)]
-pub struct UpdateStepTemplate {
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub model: Option<String>,
-    pub budget: Option<f64>,
-    pub allowed_tools: Option<String>,
-    pub context_level: Option<String>,
-    pub on_complete: Option<String>,
-    pub retriable: Option<bool>,
-    pub max_cycles: Option<i32>,
-    pub timeout_minutes: Option<i32>,
-    pub mcp_servers: Option<serde_json::Value>,
-    pub agents: Option<serde_json::Value>,
-    pub agent: Option<String>,
-    pub settings: Option<serde_json::Value>,
-    pub env: Option<serde_json::Value>,
-    pub vars: Option<serde_json::Value>,
-    pub provider: Option<String>,
-    pub base_url: Option<String>,
-    pub tags: Option<Vec<String>>,
-    pub metadata: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Deserialize, Default, utoipa::ToSchema)]
-pub struct StepTemplateFilters {
-    pub name: Option<String>,
-    pub tag: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
 }

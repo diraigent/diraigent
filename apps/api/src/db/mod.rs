@@ -63,14 +63,9 @@ pub trait DiraigentDb: Send + Sync {
         offset: i64,
     ) -> Result<Vec<Task>, AppError>;
     async fn update_task(&self, task_id: Uuid, req: &UpdateTask) -> Result<Task, AppError>;
-    async fn transition_task(
-        &self,
-        task_id: Uuid,
-        target_state: &str,
-        playbook_step: Option<i32>,
-    ) -> Result<Task, AppError>;
+    async fn transition_task(&self, task_id: Uuid, target_state: &str) -> Result<Task, AppError>;
     async fn claim_task(&self, task_id: Uuid, agent_id: Uuid) -> Result<Task, AppError>;
-    async fn resolve_claim_step_name(&self, task: &Task) -> Result<String, AppError>;
+    async fn resolve_task_mode(&self, task: &Task) -> Result<String, AppError>;
     async fn release_task(&self, task_id: Uuid) -> Result<Task, AppError>;
     async fn delete_task(&self, task_id: Uuid) -> Result<(), AppError>;
 
@@ -319,34 +314,6 @@ pub trait DiraigentDb: Send + Sync {
         work_id: Uuid,
         task_ids: &[Uuid],
     ) -> Result<Vec<Task>, AppError>;
-
-    // ── Step Templates ───────────────────────────────────────────────────────
-    async fn create_step_template(
-        &self,
-        tenant_id: Uuid,
-        req: &CreateStepTemplate,
-        created_by: Uuid,
-    ) -> Result<StepTemplate, AppError>;
-    async fn get_step_template_by_id(&self, id: Uuid) -> Result<StepTemplate, AppError>;
-    async fn list_step_templates(
-        &self,
-        tenant_id: Uuid,
-        filters: &StepTemplateFilters,
-    ) -> Result<Vec<StepTemplate>, AppError>;
-    async fn update_step_template(
-        &self,
-        id: Uuid,
-        tenant_id: Uuid,
-        req: &UpdateStepTemplate,
-    ) -> Result<StepTemplate, AppError>;
-    async fn fork_step_template(
-        &self,
-        id: Uuid,
-        tenant_id: Uuid,
-        req: &UpdateStepTemplate,
-        created_by: Uuid,
-    ) -> Result<StepTemplate, AppError>;
-    async fn delete_step_template(&self, id: Uuid, tenant_id: Uuid) -> Result<(), AppError>;
 
     // ── Events ────────────────────────────────────────────────────────────────
     async fn create_event(&self, project_id: Uuid, req: &CreateEvent) -> Result<Event, AppError>;

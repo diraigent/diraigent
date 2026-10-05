@@ -21,7 +21,7 @@ struct StateBadge: View {
             return .gray
         case "ready":
             return .blue
-        case "working", "implement", "review", "dream", "gather", "scope", "synthesize", "document":
+        case "working":
             return .orange
         case "done":
             return .green
@@ -30,7 +30,6 @@ struct StateBadge: View {
         case "human_review":
             return .purple
         default:
-            // Treat unknown states (playbook step names) as working
             return .orange
         }
     }
@@ -40,8 +39,7 @@ struct StateBadge: View {
     VStack(spacing: 8) {
         StateBadge(state: "backlog")
         StateBadge(state: "ready")
-        StateBadge(state: "implement")
-        StateBadge(state: "review")
+        StateBadge(state: "working")
         StateBadge(state: "done")
         StateBadge(state: "cancelled")
         StateBadge(state: "human_review")

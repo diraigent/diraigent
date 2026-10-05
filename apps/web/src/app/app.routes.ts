@@ -38,26 +38,6 @@ export const routes: Routes = [
     loadComponent: () => import('./features/decisions/decisions').then(m => m.DecisionsPage),
   },
   {
-    path: 'playbooks',
-    canActivate: [AuthGuard],
-    loadComponent: () => import('./features/playbooks/playbooks').then(m => m.PlaybooksPage),
-  },
-  {
-    path: 'playbooks/create',
-    canActivate: [AuthGuard],
-    loadComponent: () => import('./features/playbooks/playbook-builder').then(m => m.PlaybookBuilderPage),
-  },
-  {
-    path: 'playbooks/:id/edit',
-    canActivate: [AuthGuard],
-    loadComponent: () => import('./features/playbooks/playbook-builder').then(m => m.PlaybookBuilderPage),
-  },
-  {
-    path: 'step-templates',
-    redirectTo: 'playbooks',
-    pathMatch: 'full',
-  },
-  {
     path: 'goals',
     redirectTo: 'work',
     pathMatch: 'full',

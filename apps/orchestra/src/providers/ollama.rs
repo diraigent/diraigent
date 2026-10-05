@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use super::{ProviderConfig, ResolvedStep, StepOutput, StepProvider, TaskContext};
+use super::{ProviderConfig, ResolvedTask, TaskContext, TaskOutput, TaskProvider};
 
 // ── Default ────────────────────────────────────────────────────────────────
 
@@ -86,7 +86,7 @@ impl OllamaProvider {
     }
 
     /// Resolve the model from config, falling back to a sensible default.
-    fn model(config: &ProviderConfig, step: &ResolvedStep) -> String {
+    fn model(config: &ProviderConfig, step: &ResolvedTask) -> String {
         step.model
             .clone()
             .or_else(|| config.model.clone())
@@ -95,13 +95,13 @@ impl OllamaProvider {
 }
 
 #[async_trait]
-impl StepProvider for OllamaProvider {
+impl TaskProvider for OllamaProvider {
     async fn execute(
         &self,
-        step: &ResolvedStep,
+        step: &ResolvedTask,
         task: &TaskContext,
         config: &ProviderConfig,
-    ) -> anyhow::Result<StepOutput> {
+    ) -> anyhow::Result<TaskOutput> {
         let base_url = Self::base_url(config);
         let model = Self::model(config, step);
         let url = format!("{}/api/chat", base_url.trim_end_matches('/'));
@@ -224,7 +224,7 @@ impl StepProvider for OllamaProvider {
             "Ollama step completed"
         );
 
-        Ok(StepOutput {
+        Ok(TaskOutput {
             content: accumulated,
             exit_code: 0,
             artifacts: HashMap::new(),
@@ -253,8 +253,8 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     /// Helper: build a standard test step.
-    fn test_step() -> ResolvedStep {
-        ResolvedStep {
+    fn test_step() -> ResolvedTask {
+        ResolvedTask {
             name: "implement".into(),
             description: "Write some code".into(),
             model: None,
@@ -276,7 +276,6 @@ mod tests {
             task_id: "test-task-id".into(),
             project_id: "test-project-id".into(),
             project_context: r#"{"task": "do something"}"#.into(),
-            previous_step_output: None,
             working_dir: None,
             log_file: None,
             user_prompt: None,
@@ -516,7 +515,7 @@ mod tests {
             base_url: None,
             model: Some("config-model".to_string()),
         };
-        let step = ResolvedStep {
+        let step = ResolvedTask {
             name: "test".into(),
             description: "test".into(),
             model: Some("step-model".to_string()),

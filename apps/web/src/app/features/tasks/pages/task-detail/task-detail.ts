@@ -4,7 +4,6 @@ import { FormsModule } from '@angular/forms';
 import { DatePipe, SlicePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { SpTask, SpTaskUpdate, SpTaskComment, SpTaskDependencies, ChangedFileSummary, UpdateTaskRequest, RelatedItems, TaskScoreComponents } from '../../../../core/services/tasks-api.service';
-import { SpPlaybook } from '../../../../core/services/playbooks-api.service';
 import { TaskBranchStatus } from '../../../../core/services/git-api.service';
 import { SpVerification, VerificationStatus, VerificationKind } from '../../../../core/services/verifications-api.service';
 import {
@@ -130,35 +129,6 @@ import { ChangedFilesComponent } from '../../components/changed-files/changed-fi
         <div>
           <span class="text-text-muted text-xs">{{ t('tasks.created') }}</span>
           <p class="text-text-primary text-xs">{{ task().created_at | date:'medium' }}</p>
-        </div>
-        <div class="col-span-2">
-          <span class="text-text-muted text-xs">{{ t('tasks.playbook') }}</span>
-          <select (change)="onPlaybookChange($event)"
-            class="w-full bg-surface text-text-primary text-xs rounded px-2 py-1 border border-border mt-0.5">
-            <option value="" [selected]="!task().playbook_name">—</option>
-            @for (pb of playbooks(); track pb.id) {
-              <option [value]="pb.id" [selected]="pb.id === task().playbook_name">{{ pb.title }}</option>
-            }
-          </select>
-          @if (currentPlaybook(); as pb) {
-            <div class="flex items-center gap-0.5 mt-1.5 flex-wrap">
-              @for (step of pb.steps; track step.step; let i = $index; let last = $last) {
-                <button (click)="onStepClick(step.step)"
-                  class="px-2 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer
-                    {{ step.step === task().playbook_step
-                      ? 'bg-accent text-bg'
-                      : step.step < (task().playbook_step ?? 0)
-                        ? 'bg-ctp-green/15 text-ctp-green'
-                        : 'bg-surface-hover text-text-muted hover:text-text-secondary' }}"
-                  [title]="step.name + (step.model ? ' (' + step.model + ')' : '')">
-                  {{ step.name }}
-                </button>
-                @if (!last) {
-                  <span class="text-text-muted text-[10px]">›</span>
-                }
-              }
-            </div>
-          }
         </div>
       </div>
 
@@ -626,7 +596,6 @@ export class TaskDetailComponent {
   verifications = input<SpVerification[]>([]);
   changedFiles = input<ChangedFileSummary[]>([]);
   gitStatus = input<TaskBranchStatus | null>(null);
-  playbooks = input<SpPlaybook[]>([]);
   pushing = input(false);
   reverting = input(false);
   resolving = input(false);
@@ -648,8 +617,6 @@ export class TaskDetailComponent {
   addDepClick = output<string>();
   removeDep = output<string>();
   deleteClick = output<void>();
-  playbookChange = output<string | null>();
-  playbookStepChange = output<number>();
   inlineUpdate = output<UpdateTaskRequest>();
   navigateToTask = output<string>();
 
@@ -746,22 +713,8 @@ export class TaskDetailComponent {
     return VERIFICATION_KIND_COLORS[kind] ?? 'bg-surface-hover text-text-muted';
   }
 
-  currentPlaybook(): SpPlaybook | undefined {
-    const id = this.task().playbook_name;
-    if (!id) return undefined;
-    return this.playbooks().find(pb => pb.id === id);
-  }
 
-  onPlaybookChange(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
-    this.playbookChange.emit(value || null);
-  }
 
-  onStepClick(step: number): void {
-    if (step !== this.task().playbook_step) {
-      this.playbookStepChange.emit(step);
-    }
-  }
 
   copyId(): void {
     navigator.clipboard.writeText(this.task().id).then(() => {

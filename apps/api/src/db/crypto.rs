@@ -256,7 +256,6 @@ impl DiraigentDb for CryptoDb {
                     .map(|c| dek.encrypt_json(c, "task.context"))
                     .transpose()?,
                 required_capabilities: req.required_capabilities.clone(),
-                playbook_name: req.playbook_name.clone(),
                 decision_id: req.decision_id,
                 work_id: req.work_id,
                 file_scope: req.file_scope.clone(),
@@ -347,8 +346,6 @@ impl DiraigentDb for CryptoDb {
                     .map(|c| dek.encrypt_json(c, "task.context"))
                     .transpose()?,
                 required_capabilities: req.required_capabilities.clone(),
-                playbook_step: req.playbook_step,
-                playbook_name: req.playbook_name.clone(),
                 flagged: req.flagged,
                 file_scope: req.file_scope.clone(),
                 parent_id: req.parent_id,
@@ -361,16 +358,8 @@ impl DiraigentDb for CryptoDb {
         }
     }
 
-    async fn transition_task(
-        &self,
-        task_id: Uuid,
-        target_state: &str,
-        playbook_step: Option<i32>,
-    ) -> Result<Task, AppError> {
-        let mut task = self
-            .inner
-            .transition_task(task_id, target_state, playbook_step)
-            .await?;
+    async fn transition_task(&self, task_id: Uuid, target_state: &str) -> Result<Task, AppError> {
+        let mut task = self.inner.transition_task(task_id, target_state).await?;
         if let Some(dek) = self.dek_for_project(task.project_id).await? {
             Self::decrypt_task(&dek, &mut task)?;
         }
@@ -385,8 +374,8 @@ impl DiraigentDb for CryptoDb {
         Ok(task)
     }
 
-    async fn resolve_claim_step_name(&self, task: &Task) -> Result<String, AppError> {
-        delegate!(self, resolve_claim_step_name, task)
+    async fn resolve_task_mode(&self, task: &Task) -> Result<String, AppError> {
+        delegate!(self, resolve_task_mode, task)
     }
 
     async fn release_task(&self, task_id: Uuid) -> Result<Task, AppError> {
@@ -1092,46 +1081,6 @@ impl DiraigentDb for CryptoDb {
         task_ids: &[Uuid],
     ) -> Result<Vec<Task>, AppError> {
         delegate!(self, reorder_work_tasks, work_id, task_ids)
-    }
-
-    // ── Step Templates (no encrypted fields) ──
-    async fn create_step_template(
-        &self,
-        tenant_id: Uuid,
-        req: &CreateStepTemplate,
-        created_by: Uuid,
-    ) -> Result<StepTemplate, AppError> {
-        delegate!(self, create_step_template, tenant_id, req, created_by)
-    }
-    async fn get_step_template_by_id(&self, id: Uuid) -> Result<StepTemplate, AppError> {
-        delegate!(self, get_step_template_by_id, id)
-    }
-    async fn list_step_templates(
-        &self,
-        tenant_id: Uuid,
-        filters: &StepTemplateFilters,
-    ) -> Result<Vec<StepTemplate>, AppError> {
-        delegate!(self, list_step_templates, tenant_id, filters)
-    }
-    async fn update_step_template(
-        &self,
-        id: Uuid,
-        tenant_id: Uuid,
-        req: &UpdateStepTemplate,
-    ) -> Result<StepTemplate, AppError> {
-        delegate!(self, update_step_template, id, tenant_id, req)
-    }
-    async fn fork_step_template(
-        &self,
-        id: Uuid,
-        tenant_id: Uuid,
-        req: &UpdateStepTemplate,
-        created_by: Uuid,
-    ) -> Result<StepTemplate, AppError> {
-        delegate!(self, fork_step_template, id, tenant_id, req, created_by)
-    }
-    async fn delete_step_template(&self, id: Uuid, tenant_id: Uuid) -> Result<(), AppError> {
-        delegate!(self, delete_step_template, id, tenant_id)
     }
 
     // ── Events (no encrypted fields) ──

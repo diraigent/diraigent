@@ -28,4 +28,4 @@ Read `apps/api/CLAUDE.md` for API architecture when working there. Read `apps/or
 
 ## Architecture boundaries
 
-The API owns authentication, authorization and shared project/task data. Orchestra runs tools, resolves repository playbooks and manages task worktrees. The web and iOS clients use the authenticated API. A playbook defines optional stages and handoffs; the selected AI agent decides how to perform each stage. Provider-specific flags and capabilities belong in provider adapters, not shared task instructions.
+The API owns authentication, authorization and shared project/task data. Orchestra runs tools, coordinates direct task execution and manages task worktrees. The web and iOS clients use the authenticated API. Repository instructions and skills guide the selected AI agent. Tasks use backlog, ready, working, human_review, done and cancelled states. Provider-specific flags and capabilities belong in provider adapters, not shared task instructions.

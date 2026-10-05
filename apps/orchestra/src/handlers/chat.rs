@@ -1,5 +1,5 @@
 use crate::project::api::ProjectsApi;
-use crate::providers::{ProviderConfig, ProviderFactory, ResolvedStep, TaskContext};
+use crate::providers::{ProviderConfig, ProviderFactory, ResolvedTask, TaskContext};
 use crate::ws::protocol::{ChatSseEvent, DoneMessage, WsMessage};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -882,7 +882,7 @@ async fn summarize_via_provider(
         }
     };
 
-    let step = ResolvedStep {
+    let step = ResolvedTask {
         name: "summarize".into(),
         description: "You are a concise summarizer. Respond with bullet points only.".into(),
         model: Some("claude-haiku-4-5-20251001".into()),
@@ -901,7 +901,6 @@ async fn summarize_via_provider(
         task_id: "summarize".into(),
         project_id: project_id.to_string(),
         project_context: String::new(),
-        previous_step_output: None,
         working_dir: None,
         log_file: None,
         user_prompt: Some(prompt),
@@ -1485,7 +1484,7 @@ async fn stream_ollama_chat(
 
 // ── Fallback: non-streaming provider abstraction ──────────────────────────
 
-/// Fallback for unknown provider types: uses the `StepProvider` trait for a
+/// Fallback for unknown provider types: uses the `TaskProvider` trait for a
 /// single-shot completion and sends the result as a single text event.
 #[allow(clippy::too_many_arguments)]
 async fn stream_fallback_provider(
@@ -1513,7 +1512,7 @@ async fn stream_fallback_provider(
         }
     };
 
-    let step = ResolvedStep {
+    let step = ResolvedTask {
         name: "chat".into(),
         description: system_prompt.to_string(),
         model: Some(model.to_string()),
@@ -1532,7 +1531,6 @@ async fn stream_fallback_provider(
         task_id: format!("chat-{session_id}"),
         project_id: project_id.to_string(),
         project_context: String::new(),
-        previous_step_output: None,
         working_dir: None,
         log_file: None,
         user_prompt: Some(user_prompt.to_string()),

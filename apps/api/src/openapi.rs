@@ -76,7 +76,7 @@ use crate::scoring::TaskScore;
             // -- Metrics --
             MetricsQuery, ProjectMetrics, CostSummary, TaskCostRow,
             TaskSummary, DayCount, TokenDayCount, StateAvg,
-            AgentMetrics, PlaybookMetrics,
+            AgentMetrics,
             // -- Verifications --
             Verification, CreateVerification, UpdateVerification, VerificationFilters,
             // -- Changed Files --
@@ -89,8 +89,6 @@ use crate::scoring::TaskScore;
             Report, CreateReport, UpdateReport, ReportFilters, CompleteReport,
             // -- Task Logs --
             TaskLog, TaskLogSummary, CreateTaskLog, TaskLogFilters,
-            // -- Step Templates --
-            StepTemplate, CreateStepTemplate, UpdateStepTemplate, StepTemplateFilters,
             // -- Event Rules --
             EventObservationRule, CreateEventObservationRule,
             UpdateEventObservationRule, EventObservationRuleFilters,
@@ -116,7 +114,6 @@ use crate::scoring::TaskScore;
         (name = "knowledge", description = "Knowledge base entries"),
         (name = "decisions", description = "Architecture decision records"),
         (name = "observations", description = "Code smells, risks, and improvements"),
-        (name = "playbooks", description = "Task lifecycle playbooks"),
         (name = "events", description = "Project events"),
         (name = "integrations", description = "External service integrations"),
         (name = "roles", description = "Role definitions"),
@@ -130,7 +127,6 @@ use crate::scoring::TaskScore;
         (name = "tenants", description = "Multi-tenant management"),
         (name = "reports", description = "Generated reports"),
         (name = "task-logs", description = "Task execution logs"),
-        (name = "step-templates", description = "Reusable playbook step templates"),
         (name = "event-rules", description = "Event-to-observation rules"),
         (name = "provider-configs", description = "AI provider configurations"),
         (name = "ci", description = "CI/CD run tracking"),
@@ -889,56 +885,6 @@ fn register_all_paths(openapi: &mut utoipa::openapi::OpenApi) {
             summary: "Promote to task",
             op_id: "promote_observation",
         },
-        // ── Playbooks ──
-        R {
-            method: HttpMethod::Get,
-            path: "/v1/playbooks",
-            tag: "playbooks",
-            summary: "List playbooks",
-            op_id: "list_playbooks",
-        },
-        R {
-            method: HttpMethod::Post,
-            path: "/v1/playbooks",
-            tag: "playbooks",
-            summary: "Create playbook",
-            op_id: "create_playbook",
-        },
-        R {
-            method: HttpMethod::Get,
-            path: "/v1/playbooks/{id}",
-            tag: "playbooks",
-            summary: "Get playbook",
-            op_id: "get_playbook",
-        },
-        R {
-            method: HttpMethod::Put,
-            path: "/v1/playbooks/{id}",
-            tag: "playbooks",
-            summary: "Update playbook",
-            op_id: "update_playbook",
-        },
-        R {
-            method: HttpMethod::Delete,
-            path: "/v1/playbooks/{id}",
-            tag: "playbooks",
-            summary: "Delete playbook",
-            op_id: "delete_playbook",
-        },
-        R {
-            method: HttpMethod::Post,
-            path: "/v1/playbooks/{id}/sync",
-            tag: "playbooks",
-            summary: "Sync with parent",
-            op_id: "sync_playbook",
-        },
-        R {
-            method: HttpMethod::Get,
-            path: "/v1/git-strategies",
-            tag: "playbooks",
-            summary: "List git strategies",
-            op_id: "git_strategies",
-        },
         // ── Events ──
         R {
             method: HttpMethod::Get,
@@ -1587,49 +1533,6 @@ fn register_all_paths(openapi: &mut utoipa::openapi::OpenApi) {
             tag: "projects",
             summary: "Get settings",
             op_id: "get_settings",
-        },
-        // ── Step Templates ──
-        R {
-            method: HttpMethod::Get,
-            path: "/v1/{project_id}/step-templates",
-            tag: "step-templates",
-            summary: "List step templates",
-            op_id: "list_step_templates",
-        },
-        R {
-            method: HttpMethod::Post,
-            path: "/v1/{project_id}/step-templates",
-            tag: "step-templates",
-            summary: "Create step template",
-            op_id: "create_step_template",
-        },
-        R {
-            method: HttpMethod::Get,
-            path: "/v1/{project_id}/step-templates/{id}",
-            tag: "step-templates",
-            summary: "Get step template",
-            op_id: "get_step_template",
-        },
-        R {
-            method: HttpMethod::Put,
-            path: "/v1/{project_id}/step-templates/{id}",
-            tag: "step-templates",
-            summary: "Update step template",
-            op_id: "update_step_template",
-        },
-        R {
-            method: HttpMethod::Delete,
-            path: "/v1/{project_id}/step-templates/{id}",
-            tag: "step-templates",
-            summary: "Delete step template",
-            op_id: "delete_step_template",
-        },
-        R {
-            method: HttpMethod::Post,
-            path: "/v1/{project_id}/step-templates/{id}/fork",
-            tag: "step-templates",
-            summary: "Fork step template",
-            op_id: "fork_step_template",
         },
         // ── Provider Configs ──
         R {

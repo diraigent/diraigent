@@ -2,7 +2,6 @@ import { Component, inject, input, output, signal, OnChanges } from '@angular/co
 import { FormsModule } from '@angular/forms';
 import { TranslocoModule } from '@jsverse/transloco';
 import { SpTask, CreateTaskRequest, UpdateTaskRequest } from '../../../../core/services/tasks-api.service';
-import { PlaybooksApiService, SpPlaybook } from '../../../../core/services/playbooks-api.service';
 import { ModalWrapperComponent } from '../../../../shared/components/modal-wrapper/modal-wrapper';
 import { DiraigentApiService } from '../../../../core/services/diraigent-api.service';
 import { ProjectContext } from '../../../../core/services/project-context.service';
@@ -58,17 +57,6 @@ import { DEFAULT_TASK_KINDS } from '../../../../shared/ui-constants';
                 class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
                        focus:outline-none focus:ring-1 focus:ring-accent resize-y font-mono"></textarea>
             </div>
-            <div>
-              <label for="tf-playbook" class="block text-sm text-text-secondary mb-1">{{ t('tasks.playbook') }}</label>
-              <select id="tf-playbook" [(ngModel)]="formPlaybookId"
-                class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                       focus:outline-none focus:ring-1 focus:ring-accent">
-                <option value="">{{ t('tasks.noPlaybook') }}</option>
-                @for (pb of playbooks(); track pb.id) {
-                  <option [value]="pb.id">{{ pb.title }}</option>
-                }
-              </select>
-            </div>
             @if (!editing()) {
               <label for="tf-decompose" class="flex items-center gap-2 cursor-pointer select-none">
                 <input id="tf-decompose" type="checkbox" [(ngModel)]="formDecompose"
@@ -93,7 +81,6 @@ import { DEFAULT_TASK_KINDS } from '../../../../shared/ui-constants';
   `,
 })
 export class TaskFormComponent implements OnChanges {
-  private playbooksApi = inject(PlaybooksApiService);
   private projectApi = inject(DiraigentApiService);
   private ctx = inject(ProjectContext);
 
@@ -107,8 +94,6 @@ export class TaskFormComponent implements OnChanges {
   /** Dynamic kinds loaded from the project's package; falls back to DEFAULT_TASK_KINDS. */
   kinds = signal<string[]>(DEFAULT_TASK_KINDS);
 
-  playbooks = signal<SpPlaybook[]>([]);
-  private defaultPlaybookId = '';
 
   /** Cache: projectId → allowed task kinds to avoid redundant fetches. */
   private packageKindsCache = new Map<string, string[]>();
@@ -118,7 +103,6 @@ export class TaskFormComponent implements OnChanges {
   formUrgent = false;
   formSpec = '';
   formAcceptanceCriteria = '';
-  formPlaybookId = '';
   formDecompose = false;
 
   ngOnChanges(): void {
@@ -130,25 +114,19 @@ export class TaskFormComponent implements OnChanges {
       this.formSpec = (task.context?.['spec'] as string) ?? '';
       const criteria = task.context?.['acceptance_criteria'] as string[] | undefined;
       this.formAcceptanceCriteria = criteria?.join('\n') ?? '';
-      this.formPlaybookId = task.playbook_name ?? '';
-      this.loadPlaybooks();
+      this.loadProjectKinds();
     } else if (this.show()) {
       this.formTitle = '';
       this.formKind = 'feature';
       this.formUrgent = false;
       this.formSpec = '';
       this.formAcceptanceCriteria = '';
-      this.formPlaybookId = this.defaultPlaybookId;
       this.formDecompose = false;
-      this.loadPlaybooks();
+      this.loadProjectKinds();
     }
   }
 
-  private loadPlaybooks(): void {
-    this.playbooksApi.list().subscribe({
-      next: (items) => this.playbooks.set(items),
-    });
-
+  private loadProjectKinds(): void {
     const projectId = this.ctx.projectId();
     if (!projectId) return;
 
@@ -160,11 +138,6 @@ export class TaskFormComponent implements OnChanges {
 
     this.projectApi.getProject(projectId).subscribe({
       next: (proj) => {
-        this.defaultPlaybookId = proj.default_playbook_name ?? '';
-        if (!this.editing()) {
-          this.formPlaybookId = this.defaultPlaybookId;
-        }
-
         if (proj.package?.id) {
           this.loadPackageKinds(projectId, proj.package.id);
         } else {
@@ -236,7 +209,6 @@ export class TaskFormComponent implements OnChanges {
         urgent: this.formUrgent,
       };
       if (Object.keys(context).length > 0) req.context = context;
-      if (this.formPlaybookId.trim()) req.playbook_name = this.formPlaybookId.trim();
       this.submitCreate.emit(req);
     }
   }

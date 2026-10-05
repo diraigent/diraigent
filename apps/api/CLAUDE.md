@@ -38,22 +38,7 @@ backlog → ready → <step_name> → ready (next step) or done (final)
 ```
 
 Lifecycle states: `backlog`, `ready`, `done`, `cancelled`, `human_review`
-Step states: playbook step names (e.g. `implement`, `review`, `dream`) or `working` for tasks without a playbook.
-
-Valid transitions:
-- backlog → ready, cancelled
-- ready → \<step_name\>, backlog, cancelled
-- \<step_name\> → done (final step only), ready (release/rejection), cancelled
-- done → ready (reopen), backlog (reopen), human_review
-- human_review → done, ready, backlog
-- cancelled → backlog (reopen)
-
-Orchestra resolves repository YAML and manages pipeline advancement through its
-task source. The API validates requested state transitions; do not assume it can
-inspect playbooks stored on another worker machine. Stage completion and terminal
-task completion are distinct.
-
-Claiming a task (`POST /tasks/:id/claim`) atomically transitions it from `ready` to the current playbook step name.
+Task states are `backlog`, `ready`, `working`, `human_review`, `done`, and `cancelled`. Claiming atomically moves a ready task to working. Completion is terminal; no stage counters or playbook endpoints exist. Repository guidance and skills are interpreted by the worker's selected agent.
 
 ## Key Endpoints
 

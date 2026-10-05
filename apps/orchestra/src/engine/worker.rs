@@ -1,10 +1,10 @@
 use crate::crypto::Dek;
 use crate::engine::prompt;
-use crate::engine::step_profile::StepProfile;
+use crate::engine::task_profile::TaskProfile;
 use crate::engine::task_source::TaskSource;
 use crate::git::WorktreeManager;
 use crate::providers::{
-    ProviderConfig as ProviderCfg, ProviderFactory, ResolvedStep,
+    ProviderConfig as ProviderCfg, ProviderFactory, ResolvedTask,
     TaskContext as ProviderTaskContext,
 };
 use crate::task_id::TaskId;
@@ -34,9 +34,9 @@ const TOOLS_MERGE: &[&str] = &["Bash(*)", "Read", "Glob", "Grep"];
 
 /// Per-step configuration for AI cost optimization.
 ///
-/// Configuration is read from the playbook step JSONB with hardcoded
+/// Configuration is read from the task worker options with hardcoded
 /// fallback defaults based on step name.
-pub struct StepConfig {
+pub struct TaskConfig {
     /// Model override for this step. `None` means use CLI default.
     pub model: Option<String>,
     /// Budget in USD for `--max-budget-usd`. `None` means unlimited.
@@ -45,8 +45,8 @@ pub struct StepConfig {
     pub allowed_tools: Vec<String>,
     /// The step name (for logging).
     pub step_name: String,
-    /// The raw playbook step JSONB (for prompt context_level).
-    pub step_json: Option<Value>,
+    /// The raw task worker options (for prompt context_level).
+    pub worker_options: Option<Value>,
     /// MCP server configurations. Must be a JSON object with a top-level
     /// `"mcpServers"` key, e.g.:
     /// `{"mcpServers": {"fs": {"command": "npx", "args": [...]}}}`.
@@ -70,59 +70,56 @@ pub struct StepConfig {
     pub base_url: Option<String>,
 }
 
-impl StepConfig {
+impl TaskConfig {
     /// Resolve step-specific configuration.
     ///
-    /// Model priority: task context > playbook step JSONB > hardcoded step default.
+    /// Model priority: task context > task worker options > hardcoded step default.
     /// Hardcoded defaults always apply (sonnet for all steps), so `env_model` is
     /// intentionally not used — per-step defaults are more specific than a global env override.
-    pub fn for_step(
+    pub fn for_mode(
         step_name: &str,
-        step_json: Option<&Value>,
+        worker_options: Option<&Value>,
         task_model: Option<&str>,
         _env_model: Option<&str>,
     ) -> Self {
         // 1. Hardcoded defaults based on step profile
-        let profile = StepProfile::for_step(step_name);
-        let (default_model, default_budget, default_tools) = match profile {
-            StepProfile::Review => ("sonnet", 5.0, "readonly"),
-            StepProfile::Merge => ("sonnet", 2.5, "merge"),
-            StepProfile::Dream => ("sonnet", 4.0, "readonly"),
-            StepProfile::Implement => ("sonnet", 12.0, "full"),
+        let profile = TaskProfile::for_mode(step_name);
+        let default_tools = match profile {
+            TaskProfile::Review | TaskProfile::Research => "readonly",
+            _ => "full",
         };
-
-        // 2. Read overrides from playbook step JSONB
-        let step_model = step_json.and_then(|s| s["model"].as_str());
-        let step_budget = step_json.and_then(|s| s["budget"].as_f64());
-        let step_tools = step_json.and_then(|s| s["allowed_tools"].as_str());
+        // 2. Read overrides from task worker options
+        let step_model = worker_options.and_then(|s| s["model"].as_str());
+        let step_budget = worker_options.and_then(|s| s["budget"].as_f64());
+        let step_tools = worker_options.and_then(|s| s["allowed_tools"].as_str());
 
         // 3. Model: task > step JSON > hardcoded step default
         let model = task_model
             .map(|m| m.to_string())
             .or_else(|| step_model.map(|m| m.to_string()))
-            .or_else(|| Some(default_model.to_string()));
+            .or_else(|| _env_model.map(String::from));
 
         // 4. Budget: step JSON > hardcoded
-        let budget = Some(step_budget.unwrap_or(default_budget));
+        let budget = step_budget;
 
         // 5. Tools: step JSON preset > hardcoded preset
         let tools_preset = step_tools.unwrap_or(default_tools);
         let allowed_tools = tools_for_preset(tools_preset);
 
         // 6. MCP servers: written to temp file, passed as --mcp-config
-        let mcp_servers = step_json.and_then(|s| s.get("mcp_servers").cloned());
+        let mcp_servers = worker_options.and_then(|s| s.get("mcp_servers").cloned());
 
         // 7. Custom sub-agents: passed as --agents '<json>'
-        let agents = step_json.and_then(|s| s.get("agents").cloned());
+        let agents = worker_options.and_then(|s| s.get("agents").cloned());
 
         // 8. Specific agent to activate: passed as --agent <name>
-        let agent = step_json.and_then(|s| s["agent"].as_str().map(String::from));
+        let agent = worker_options.and_then(|s| s["agent"].as_str().map(String::from));
 
         // 9. Additional Claude settings (skills, etc.): passed as --settings '<json>'
-        let settings = step_json.and_then(|s| s.get("settings").cloned());
+        let settings = worker_options.and_then(|s| s.get("settings").cloned());
 
         // 10. Extra env vars: exported in wrapper script before exec
-        let env: HashMap<String, String> = step_json
+        let env: HashMap<String, String> = worker_options
             .and_then(|s| s.get("env"))
             .and_then(|e| e.as_object())
             .map(|obj| {
@@ -133,17 +130,17 @@ impl StepConfig {
             .unwrap_or_default();
 
         // 11. Provider: which AI provider to use (default: anthropic)
-        let provider = step_json.and_then(|s| s["provider"].as_str().map(String::from));
+        let provider = worker_options.and_then(|s| s["provider"].as_str().map(String::from));
 
         // 12. Base URL: override the default API endpoint for the provider
-        let base_url = step_json.and_then(|s| s["base_url"].as_str().map(String::from));
+        let base_url = worker_options.and_then(|s| s["base_url"].as_str().map(String::from));
 
-        StepConfig {
+        TaskConfig {
             model,
             budget,
             allowed_tools,
             step_name: step_name.to_string(),
-            step_json: step_json.cloned(),
+            worker_options: worker_options.cloned(),
             mcp_servers,
             agents,
             agent,
@@ -188,7 +185,7 @@ pub async fn run_worker(
     repo_root: &Path,
     agent_cli: &str,
     log_dir: &Path,
-    step_config: &StepConfig,
+    task_config: &TaskConfig,
     dek: Option<&Dek>,
     upload_logs: bool,
     store_diffs: bool,
@@ -196,11 +193,11 @@ pub async fn run_worker(
     let tid = TaskId::new(task_id);
     let branch_name = tid.branch_name();
 
-    // Sync repo playbooks, decisions, knowledge, and observations to the API (non-fatal: log errors and continue)
-    super::pipeline::sync_project_playbooks(api, repo_root).await;
-    super::pipeline::sync_project_decisions(api, repo_root).await;
-    super::pipeline::sync_project_knowledge(api, repo_root).await;
-    super::pipeline::sync_project_observations(api, repo_root).await;
+    // Sync repository decisions, knowledge, and observations to the API (non-fatal: log errors and continue)
+
+    super::repository_sync::sync_project_decisions(api, repo_root).await;
+    super::repository_sync::sync_project_knowledge(api, repo_root).await;
+    super::repository_sync::sync_project_observations(api, repo_root).await;
 
     // Create worktree
     let worktree_path = worktree_mgr.create_worktree(task_id).map_err(|e| {
@@ -223,8 +220,8 @@ pub async fn run_worker(
         &worktree_path,
         repo_root,
         agent_cli,
-        &step_config.step_name,
-        step_config.step_json.as_ref(),
+        &task_config.step_name,
+        task_config.worker_options.as_ref(),
         dek,
     )
     .await;
@@ -235,35 +232,35 @@ pub async fn run_worker(
     let log_file = log_dir.join(format!("{}.log", tid.worktree_dir_name()));
 
     // Log invocation with step config details
-    let model_info = step_config.model.as_deref().unwrap_or("default");
-    let budget_info = step_config
+    let model_info = task_config.model.as_deref().unwrap_or("default");
+    let budget_info = task_config
         .budget
         .map(|b| format!("${b:.1}"))
         .unwrap_or_else(|| "unlimited".into());
-    let mcp_info = if step_config.mcp_servers.is_some() {
+    let mcp_info = if task_config.mcp_servers.is_some() {
         " +mcp"
     } else {
         ""
     };
-    let agents_info = if step_config.agents.is_some() {
+    let agents_info = if task_config.agents.is_some() {
         " +agents"
     } else {
         ""
     };
-    let settings_info = if step_config.settings.is_some() {
+    let settings_info = if task_config.settings.is_some() {
         " +settings"
     } else {
         ""
     };
-    let env_info = if !step_config.env.is_empty() {
-        format!(" +env({})", step_config.env.len())
+    let env_info = if !task_config.env.is_empty() {
+        format!(" +env({})", task_config.env.len())
     } else {
         String::new()
     };
     info!(
         "worker {tid}: invoking claude (step={}, model={model_info}, budget={budget_info}, tools={}{}{}{}{})",
-        step_config.step_name,
-        step_config.allowed_tools.len(),
+        task_config.step_name,
+        task_config.allowed_tools.len(),
         mcp_info,
         agents_info,
         settings_info,
@@ -272,7 +269,7 @@ pub async fn run_worker(
 
     // Route to the correct provider based on step config.
     // OpenCode is the default agentic CLI; other providers remain explicit options.
-    let provider_name = step_config.provider.as_deref().unwrap_or("opencode");
+    let provider_name = task_config.provider.as_deref().unwrap_or("opencode");
     let start = std::time::Instant::now();
 
     let (result, cost_usd, input_tokens, output_tokens, api_turns, stop_reason, is_error) =
@@ -281,7 +278,7 @@ pub async fn run_worker(
             provider_name,
             project_id,
             task_id,
-            step_config,
+            task_config,
             &system_prompt,
             &user_prompt,
             &worktree_path,
@@ -318,23 +315,17 @@ pub async fn run_worker(
     //
     // Thresholds configurable via step JSON: scope_min_deletions (default 50),
     // scope_deletion_ratio (default 3). Set scope_min_deletions to 0 to disable.
-    let is_retriable = step_config
-        .step_json
-        .as_ref()
-        .map(crate::engine::step_profile::is_retriable)
-        .unwrap_or_else(|| {
-            matches!(
-                StepProfile::for_step(&step_config.step_name),
-                StepProfile::Implement
-            )
-        });
-    let scope_min_deletions: usize = step_config
-        .step_json
+    let is_retriable = crate::engine::task_profile::is_retriable(
+        task_config.worker_options.as_ref(),
+        &task_config.step_name,
+    );
+    let scope_min_deletions: usize = task_config
+        .worker_options
         .as_ref()
         .and_then(|s| s["scope_min_deletions"].as_u64())
         .unwrap_or(50) as usize;
-    let scope_deletion_ratio: usize = step_config
-        .step_json
+    let scope_deletion_ratio: usize = task_config
+        .worker_options
         .as_ref()
         .and_then(|s| s["scope_deletion_ratio"].as_u64())
         .unwrap_or(3) as usize;
@@ -393,9 +384,9 @@ pub async fn run_worker(
             "is_error": is_error,
             "has_changes": has_changes,
             "branch": &branch_name,
-            "step": &step_config.step_name,
+            "step": &task_config.step_name,
             "model": model_info,
-            "budget_usd": step_config.budget,
+            "budget_usd": task_config.budget,
         }),
     )
     .await;
@@ -446,7 +437,7 @@ pub async fn run_worker(
                     .upload_task_log(
                         project_id,
                         task_id,
-                        &step_config.step_name,
+                        &task_config.step_name,
                         &content,
                         &log_metadata,
                     )
@@ -525,7 +516,7 @@ async fn execute_via_provider(
     provider_name: &str,
     project_id: &str,
     task_id: &str,
-    step_config: &StepConfig,
+    task_config: &TaskConfig,
     system_prompt: &str,
     user_prompt: &str,
     worktree_path: &Path,
@@ -534,7 +525,7 @@ async fn execute_via_provider(
     let tid = TaskId::new(task_id);
 
     // 1. Create provider instance via factory
-    let provider: Box<dyn crate::providers::StepProvider> =
+    let provider: Box<dyn crate::providers::TaskProvider> =
         match ProviderFactory::create(provider_name) {
             Ok(p) => p,
             Err(e) => {
@@ -561,20 +552,16 @@ async fn execute_via_provider(
     // 3. Build ProviderConfig with step-level overrides.
     //
     // For the model field we use the *explicit* step-JSON model (if set) rather
-    // than `step_config.model`, because the latter includes a hardcoded
+    // than `task_config.model`, because the latter includes a hardcoded
     // fallback ("sonnet") that is Anthropic-specific and meaningless for other
-    // providers.  The explicit step model is the one the playbook author or
+    // providers.  The explicit step model is the one the worker configuration author or
     // task creator intentionally set.
-    let explicit_step_model = step_config
-        .step_json
-        .as_ref()
-        .and_then(|s| s["model"].as_str())
-        .map(String::from);
+    let explicit_step_model = task_config.model.clone();
 
     let provider_cfg = match resolved_cfg {
         Ok(cfg) => ProviderCfg {
             api_key: cfg["api_key"].as_str().map(String::from),
-            base_url: step_config
+            base_url: task_config
                 .base_url
                 .clone()
                 .or_else(|| cfg["base_url"].as_str().map(String::from)),
@@ -587,41 +574,41 @@ async fn execute_via_provider(
             warn!("worker {tid}: no provider config for '{provider_name}': {e}");
             ProviderCfg {
                 api_key: None,
-                base_url: step_config.base_url.clone(),
+                base_url: task_config.base_url.clone(),
                 model: explicit_step_model,
             }
         }
     };
 
     // 4. Build resolved step from step config
-    let step_description = step_config
-        .step_json
+    let task_description = task_config
+        .worker_options
         .as_ref()
         .and_then(|s| s["description"].as_str())
-        .unwrap_or(&step_config.step_name)
+        .unwrap_or(&task_config.step_name)
         .to_string();
 
-    let step = ResolvedStep {
-        name: step_config.step_name.clone(),
-        description: step_description,
+    let step = ResolvedTask {
+        name: task_config.step_name.clone(),
+        description: task_description,
         model: provider_cfg.model.clone(),
         allowed_tools: Some(
-            match step_config
-                .step_json
+            match task_config
+                .worker_options
                 .as_ref()
                 .and_then(|s| s["allowed_tools"].as_str())
             {
                 Some(preset) => preset.to_string(),
                 None if matches!(
-                    StepProfile::for_step(&step_config.step_name),
-                    StepProfile::Review | StepProfile::Dream
+                    TaskProfile::for_mode(&task_config.step_name),
+                    TaskProfile::Review | TaskProfile::Research
                 ) =>
                 {
                     "readonly".to_string()
                 }
                 None if matches!(
-                    StepProfile::for_step(&step_config.step_name),
-                    StepProfile::Merge
+                    TaskProfile::for_mode(&task_config.step_name),
+                    TaskProfile::Delivery
                 ) =>
                 {
                     "merge".to_string()
@@ -629,14 +616,14 @@ async fn execute_via_provider(
                 None => "full".to_string(),
             },
         ),
-        allowed_tools_list: step_config.allowed_tools.clone(),
-        budget: step_config.budget,
-        env: step_config.env.clone(),
+        allowed_tools_list: task_config.allowed_tools.clone(),
+        budget: task_config.budget,
+        env: task_config.env.clone(),
         system_prompt: Some(system_prompt.to_string()),
-        mcp_servers: step_config.mcp_servers.clone(),
-        agents: step_config.agents.clone(),
-        agent: step_config.agent.clone(),
-        settings: step_config.settings.clone(),
+        mcp_servers: task_config.mcp_servers.clone(),
+        agents: task_config.agents.clone(),
+        agent: task_config.agent.clone(),
+        settings: task_config.settings.clone(),
     };
 
     // 5. Build task context for the provider
@@ -644,7 +631,6 @@ async fn execute_via_provider(
         task_id: task_id.to_string(),
         project_id: project_id.to_string(),
         project_context: user_prompt.to_string(),
-        previous_step_output: None,
         working_dir: Some(worktree_path.to_path_buf()),
         log_file: Some(log_file.to_path_buf()),
         user_prompt: None,
@@ -774,43 +760,43 @@ mod tests {
 
     #[test]
     fn default_provider_is_opencode() {
-        let step_config = StepConfig::for_step("implement", None, None, None);
-        let provider_name = step_config.provider.as_deref().unwrap_or("opencode");
+        let task_config = TaskConfig::for_mode("implement", None, None, None);
+        let provider_name = task_config.provider.as_deref().unwrap_or("opencode");
         assert_eq!(provider_name, "opencode");
     }
 
     #[test]
     fn explicit_anthropic_provider_is_recognised() {
-        let step_json = serde_json::json!({"name": "implement", "provider": "anthropic"});
-        let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
-        let provider_name = step_config.provider.as_deref().unwrap_or("opencode");
+        let worker_options = serde_json::json!({"name": "implement", "provider": "anthropic"});
+        let task_config = TaskConfig::for_mode("implement", Some(&worker_options), None, None);
+        let provider_name = task_config.provider.as_deref().unwrap_or("opencode");
         assert_eq!(provider_name, "anthropic");
     }
 
     #[test]
-    fn openai_provider_is_extracted_from_step_json() {
-        let step_json = serde_json::json!({"name": "implement", "provider": "openai"});
-        let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
-        assert_eq!(step_config.provider.as_deref(), Some("openai"));
+    fn openai_provider_is_extracted_from_worker_options() {
+        let worker_options = serde_json::json!({"name": "implement", "provider": "openai"});
+        let task_config = TaskConfig::for_mode("implement", Some(&worker_options), None, None);
+        assert_eq!(task_config.provider.as_deref(), Some("openai"));
     }
 
     #[test]
-    fn ollama_provider_is_extracted_from_step_json() {
-        let step_json = serde_json::json!({"name": "implement", "provider": "ollama"});
-        let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
-        assert_eq!(step_config.provider.as_deref(), Some("ollama"));
+    fn ollama_provider_is_extracted_from_worker_options() {
+        let worker_options = serde_json::json!({"name": "implement", "provider": "ollama"});
+        let task_config = TaskConfig::for_mode("implement", Some(&worker_options), None, None);
+        assert_eq!(task_config.provider.as_deref(), Some("ollama"));
     }
 
     #[test]
-    fn base_url_extracted_from_step_json() {
-        let step_json = serde_json::json!({
+    fn base_url_extracted_from_worker_options() {
+        let worker_options = serde_json::json!({
             "name": "implement",
             "provider": "openai",
             "base_url": "https://my-proxy.example.com"
         });
-        let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
+        let task_config = TaskConfig::for_mode("implement", Some(&worker_options), None, None);
         assert_eq!(
-            step_config.base_url.as_deref(),
+            task_config.base_url.as_deref(),
             Some("https://my-proxy.example.com")
         );
     }
@@ -840,8 +826,8 @@ mod tests {
         mock_openai_completions(&server).await;
 
         let api = ProjectsApi::new(&server.uri(), "test-agent");
-        let step_json = serde_json::json!({"name": "implement", "provider": "openai"});
-        let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
+        let worker_options = serde_json::json!({"name": "implement", "provider": "openai"});
+        let task_config = TaskConfig::for_mode("implement", Some(&worker_options), None, None);
 
         let (_tmp, worktree, log_file) = test_paths();
         let (result, cost, inp, out, turns, stop_reason, is_error) = execute_via_provider(
@@ -849,7 +835,7 @@ mod tests {
             "openai",
             "proj-1",
             "task-1",
-            &step_config,
+            &task_config,
             "system prompt",
             "user prompt",
             &worktree,
@@ -889,8 +875,8 @@ mod tests {
         mock_ollama_chat(&server).await;
 
         let api = ProjectsApi::new(&server.uri(), "test-agent");
-        let step_json = serde_json::json!({"name": "implement", "provider": "ollama"});
-        let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
+        let worker_options = serde_json::json!({"name": "implement", "provider": "ollama"});
+        let task_config = TaskConfig::for_mode("implement", Some(&worker_options), None, None);
 
         let (_tmp, worktree, log_file) = test_paths();
         let (result, _, _, _, _, stop_reason, is_error) = execute_via_provider(
@@ -898,7 +884,7 @@ mod tests {
             "ollama",
             "proj-1",
             "task-1",
-            &step_config,
+            &task_config,
             "system prompt",
             "user prompt",
             &worktree,
@@ -930,7 +916,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "test-agent");
-        let step_config = StepConfig::for_step("implement", None, None, None);
+        let task_config = TaskConfig::for_mode("implement", None, None, None);
 
         // The Claude Code provider spawns `claude` CLI — in test env this will
         // fail because the CLI isn't available, but the provider routing should
@@ -941,7 +927,7 @@ mod tests {
             "claude-code",
             "proj-1",
             "task-1",
-            &step_config,
+            &task_config,
             "system prompt",
             "user prompt",
             &worktree,
@@ -969,7 +955,7 @@ mod tests {
             .await;
 
         let api = ProjectsApi::new(&server.uri(), "test-agent");
-        let step_config = StepConfig::for_step("implement", None, None, None);
+        let task_config = TaskConfig::for_mode("implement", None, None, None);
 
         let (_tmp, worktree, log_file) = test_paths();
         let (result, _, _, _, _, stop_reason, is_error) = execute_via_provider(
@@ -977,7 +963,7 @@ mod tests {
             "foobar",
             "proj-1",
             "task-1",
-            &step_config,
+            &task_config,
             "system prompt",
             "user prompt",
             &worktree,
@@ -1015,15 +1001,15 @@ mod tests {
 
         // Step config overrides base_url to point at the mock server
         let step_base_url = server.uri();
-        let step_json = serde_json::json!({
+        let worker_options = serde_json::json!({
             "name": "implement",
             "provider": "openai",
             "base_url": step_base_url
         });
-        let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
+        let task_config = TaskConfig::for_mode("implement", Some(&worker_options), None, None);
 
         assert_eq!(
-            step_config.base_url.as_deref(),
+            task_config.base_url.as_deref(),
             Some(step_base_url.as_str()),
             "step-level base_url should be set"
         );
@@ -1034,7 +1020,7 @@ mod tests {
             "openai",
             "proj-1",
             "task-1",
-            &step_config,
+            &task_config,
             "system",
             "user",
             &worktree,
@@ -1071,12 +1057,12 @@ mod tests {
         let api = ProjectsApi::new(&server.uri(), "test-agent");
 
         // Step config explicitly sets model to "gpt-4-turbo"
-        let step_json = serde_json::json!({
+        let worker_options = serde_json::json!({
             "name": "implement",
             "provider": "openai",
             "model": "gpt-4-turbo"
         });
-        let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
+        let task_config = TaskConfig::for_mode("implement", Some(&worker_options), None, None);
 
         let (_tmp, worktree, log_file) = test_paths();
         let (result, _, _, _, _, _, is_error) = execute_via_provider(
@@ -1084,7 +1070,7 @@ mod tests {
             "openai",
             "proj-1",
             "task-1",
-            &step_config,
+            &task_config,
             "system",
             "user",
             &worktree,
@@ -1119,13 +1105,13 @@ mod tests {
         // Using ollama because it doesn't require an API key, so the fallback
         // path (no stored config → no api_key) can still succeed.
         let server_url = server.uri();
-        let step_json = serde_json::json!({
+        let worker_options = serde_json::json!({
             "name": "implement",
             "provider": "ollama",
             "base_url": server_url,
             "model": "llama3"
         });
-        let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
+        let task_config = TaskConfig::for_mode("implement", Some(&worker_options), None, None);
 
         // Should succeed — Ollama doesn't need credentials, step-level overrides provide base_url
         let (_tmp, worktree, log_file) = test_paths();
@@ -1134,7 +1120,7 @@ mod tests {
             "ollama",
             "proj-1",
             "task-1",
-            &step_config,
+            &task_config,
             "system",
             "user",
             &worktree,
@@ -1204,11 +1190,11 @@ mod tests {
 
         // Test all API-based providers (claude-code requires CLI binary)
         for provider_name in ["anthropic", "openai", "copilot", "ollama"] {
-            let step_json = serde_json::json!({
+            let worker_options = serde_json::json!({
                 "name": "implement",
                 "provider": provider_name
             });
-            let step_config = StepConfig::for_step("implement", Some(&step_json), None, None);
+            let task_config = TaskConfig::for_mode("implement", Some(&worker_options), None, None);
 
             let (_tmp, worktree, log_file) = test_paths();
             let (result, _, _, _, _, stop_reason, is_error) = execute_via_provider(
@@ -1216,7 +1202,7 @@ mod tests {
                 provider_name,
                 "proj-1",
                 "task-1",
-                &step_config,
+                &task_config,
                 "system prompt",
                 "user prompt",
                 &worktree,

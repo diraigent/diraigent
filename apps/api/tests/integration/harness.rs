@@ -94,8 +94,7 @@ impl TestApp {
             .expect("Failed to connect to test database");
 
         // Run migrations
-        sqlx::migrate!("./migrations")
-            .run(&pool)
+        diraigent_api::migration_runner::run(&pool)
             .await
             .expect("Failed to run migrations");
 
@@ -103,8 +102,8 @@ impl TestApp {
         // First, resolve/create the user (inserts into auth_user).
         let dev_user_id = *DEV_USER;
         let user_id: Uuid = sqlx::query_scalar(
-            "INSERT INTO diraigent.auth_user (auth_user_id)
-             VALUES ($1)
+            "INSERT INTO diraigent.auth_user (user_id, auth_user_id)
+             VALUES ($1::uuid, $1::text)
              ON CONFLICT (auth_user_id) DO UPDATE SET auth_user_id = EXCLUDED.auth_user_id
              RETURNING user_id",
         )
@@ -254,19 +253,6 @@ impl TestApp {
             .await;
         assert_eq!(resp.status, StatusCode::OK, "create task: {}", resp.json);
         resp.json
-    }
-
-    /// Return a synthetic playbook name for tests.
-    ///
-    /// The runtime now resolves playbooks from repo YAML by name; task creation no
-    /// longer requires a DB playbook row to exist.
-    pub async fn create_playbook(&self, step_names: &[&str]) -> String {
-        let base = step_names.join("-");
-        if base.is_empty() {
-            "test-playbook".to_string()
-        } else {
-            base
-        }
     }
 
     /// Create a task with specific fields.

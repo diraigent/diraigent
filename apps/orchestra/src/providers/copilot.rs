@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use super::{ProviderConfig, ResolvedStep, StepOutput, StepProvider, TaskContext};
+use super::{ProviderConfig, ResolvedTask, TaskContext, TaskOutput, TaskProvider};
 
 const DEFAULT_BASE_URL: &str = "https://models.inference.ai.azure.com";
 const DEFAULT_MODEL: &str = "openai/gpt-4.1";
@@ -61,13 +61,13 @@ struct Delta {
 // ── Implementation ────────────────────────────────────────────────────────
 
 #[async_trait]
-impl StepProvider for CopilotProvider {
+impl TaskProvider for CopilotProvider {
     async fn execute(
         &self,
-        step: &ResolvedStep,
+        step: &ResolvedTask,
         task: &TaskContext,
         config: &ProviderConfig,
-    ) -> anyhow::Result<StepOutput> {
+    ) -> anyhow::Result<TaskOutput> {
         let base_url = config
             .base_url
             .as_deref()
@@ -94,7 +94,6 @@ impl StepProvider for CopilotProvider {
                 "task_id": task.task_id,
                 "project_id": task.project_id,
                 "project_context": task.project_context,
-                "previous_step_output": task.previous_step_output,
             })
             .to_string()
         };
@@ -137,7 +136,7 @@ impl StepProvider for CopilotProvider {
             return match status.as_u16() {
                 401 => {
                     tracing::warn!(provider = "copilot", "Authentication error (401)");
-                    Ok(StepOutput {
+                    Ok(TaskOutput {
                         content: format!("Authentication error: {error_body}"),
                         exit_code: 1,
                         artifacts: HashMap::from([("error_type".into(), "auth_error".into())]),
@@ -151,7 +150,7 @@ impl StepProvider for CopilotProvider {
                 }
                 429 => {
                     tracing::warn!(provider = "copilot", "Rate limit exceeded (429)");
-                    Ok(StepOutput {
+                    Ok(TaskOutput {
                         content: format!("Rate limit exceeded: {error_body}"),
                         exit_code: 2,
                         artifacts: HashMap::from([("error_type".into(), "rate_limit".into())]),
@@ -165,7 +164,7 @@ impl StepProvider for CopilotProvider {
                 }
                 404 => {
                     tracing::warn!(provider = "copilot", model = model, "Model not found (404)");
-                    Ok(StepOutput {
+                    Ok(TaskOutput {
                         content: format!("Model not found: {model} — {error_body}"),
                         exit_code: 3,
                         artifacts: HashMap::from([("error_type".into(), "model_not_found".into())]),
@@ -183,7 +182,7 @@ impl StepProvider for CopilotProvider {
                         status = code,
                         "Unexpected error from Copilot API"
                     );
-                    Ok(StepOutput {
+                    Ok(TaskOutput {
                         content: format!("Unexpected HTTP {code}: {error_body}"),
                         exit_code: 4,
                         artifacts: HashMap::from([(
@@ -259,7 +258,7 @@ impl StepProvider for CopilotProvider {
             "Chat completion finished"
         );
 
-        Ok(StepOutput {
+        Ok(TaskOutput {
             content,
             exit_code: 0,
             artifacts: Default::default(),
@@ -281,8 +280,8 @@ mod tests {
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    fn test_step() -> ResolvedStep {
-        ResolvedStep {
+    fn test_step() -> ResolvedTask {
+        ResolvedTask {
             name: "test".into(),
             description: "You are a test assistant.".into(),
             model: Some("openai/gpt-4.1-test".into()),
@@ -303,7 +302,6 @@ mod tests {
             task_id: "task-123".into(),
             project_id: "proj-456".into(),
             project_context: r#"{"spec":"do stuff"}"#.into(),
-            previous_step_output: None,
             working_dir: None,
             log_file: None,
             user_prompt: None,

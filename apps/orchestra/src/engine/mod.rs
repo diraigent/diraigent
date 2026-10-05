@@ -1,10 +1,11 @@
 pub mod context;
 pub mod local_source;
 pub mod orchestra_source;
-pub mod pipeline;
 pub mod prompt;
+pub mod repository_sync;
 pub mod scheduler;
 pub mod spawner;
-pub mod step_profile;
+pub mod task_policy;
+pub mod task_profile;
 pub mod task_source;
 pub mod worker;

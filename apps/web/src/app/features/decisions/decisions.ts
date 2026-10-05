@@ -11,7 +11,6 @@ import {
   DecisionStatus,
 } from '../../core/services/decisions-api.service';
 import { TasksApiService, CreateTaskRequest } from '../../core/services/tasks-api.service';
-import { PlaybooksApiService, SpPlaybook } from '../../core/services/playbooks-api.service';
 import { DECISION_STATUS_COLORS } from '../../shared/ui-constants';
 import { CrudFeatureBase } from '../../shared/crud-feature-base';
 import { ModalWrapperComponent } from '../../shared/components/modal-wrapper/modal-wrapper';
@@ -311,19 +310,6 @@ const STATUSES: DecisionStatus[] = ['proposed', 'accepted', 'rejected', 'superse
           <h2 class="text-lg font-semibold text-text-primary mb-1">{{ t('decisions.spawnTasksTitle') }}</h2>
           <p class="text-sm text-text-secondary mb-4">{{ t('decisions.spawnTasksDescription') }}</p>
 
-          <!-- Playbook selector -->
-          <div class="mb-4">
-            <label for="dec-spawn-playbook" class="block text-sm text-text-secondary mb-1">{{ t('decisions.spawnPlaybook') }}</label>
-            <select id="dec-spawn-playbook" [(ngModel)]="spawnPlaybookId"
-              class="w-full bg-surface text-text-primary text-sm rounded-lg px-3 py-2 border border-border
-                     focus:outline-none focus:ring-1 focus:ring-accent">
-              <option value="">{{ t('decisions.spawnNoPlaybook') }}</option>
-              @for (pb of spawnPlaybooks(); track pb.id) {
-                <option [value]="pb.id">{{ pb.title }}</option>
-              }
-            </select>
-          </div>
-
           <!-- Tasks list -->
           <div class="space-y-3 mb-4">
             @for (task of spawnTasks(); track $index; let i = $index) {
@@ -409,7 +395,6 @@ const STATUSES: DecisionStatus[] = ['proposed', 'accepted', 'rejected', 'superse
 export class DecisionsPage extends CrudFeatureBase<SpDecision> {
   private api = inject(DecisionsApiService);
   private tasksApi = inject(TasksApiService);
-  private playbooksApi = inject(PlaybooksApiService);
 
   readonly statuses = STATUSES;
 
@@ -426,8 +411,6 @@ export class DecisionsPage extends CrudFeatureBase<SpDecision> {
   // Spawn tasks state
   showSpawnTasks = signal(false);
   spawnSubmitting = signal(false);
-  spawnPlaybookId = '';
-  spawnPlaybooks = signal<SpPlaybook[]>([]);
   spawnTasks = signal<SpawnTaskItem[]>([]);
 
   formTitle = '';
@@ -621,11 +604,7 @@ export class DecisionsPage extends CrudFeatureBase<SpDecision> {
   openSpawnTasks(decision: SpDecision): void {
     const spec = this.buildDecisionSpec(decision);
     this.spawnTasks.set([{ title: `Implement: ${decision.title}`, kind: 'feature', urgent: false, spec }]);
-    this.spawnPlaybookId = '';
     this.spawnSubmitting.set(false);
-    this.playbooksApi.list().subscribe({
-      next: (pbs) => this.spawnPlaybooks.set(pbs),
-    });
     this.showSpawnTasks.set(true);
   }
 
@@ -655,9 +634,7 @@ export class DecisionsPage extends CrudFeatureBase<SpDecision> {
         urgent: t.urgent,
         context: t.spec.trim() ? { spec: t.spec.trim() } : {},
       };
-      if (this.spawnPlaybookId) {
-        req.playbook_name = this.spawnPlaybookId;
-      }
+
       if (decisionId) {
         req.decision_id = decisionId;
       }

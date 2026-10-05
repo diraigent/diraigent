@@ -71,11 +71,6 @@ post "/$P1/knowledge" '{"title":"Order State Machine","category":"pattern","cont
 post "/$P2/knowledge" '{"title":"React Native Build Process","category":"setup","content":"iOS builds use Fastlane with match for code signing. Android uses Gradle. Both build in GitHub Actions. TestFlight for iOS beta, Firebase App Distribution for Android.","tags":["build","ios","android"]}'
 post "/$P3/knowledge" '{"title":"Infrastructure Cost Guardrails","category":"convention","content":"All Terraform changes must include cost estimates via Infracost. Monthly budget alert at 80%. No instances larger than m5.2xlarge without VP approval. Spot instances for non-prod.","tags":["cost","policy","terraform"]}'
 
-echo "--- Creating playbooks ---"
-post "/playbooks" '{"title":"Standard Feature Pipeline","trigger_description":"New feature request","steps":[{"name":"dream","label":"Design"},{"name":"implement","label":"Implementation"},{"name":"review","label":"Code Review"},{"name":"test","label":"Testing"},{"name":"deploy","label":"Deploy"}],"tags":["feature","standard"]}'
-post "/playbooks" '{"title":"Hotfix Pipeline","trigger_description":"Critical production bug","steps":[{"name":"implement","label":"Fix"},{"name":"review","label":"Quick Review"},{"name":"deploy","label":"Deploy"}],"tags":["hotfix","urgent"]}'
-post "/playbooks" '{"title":"Infrastructure Change","trigger_description":"Infrastructure modification","steps":[{"name":"dream","label":"Plan"},{"name":"review","label":"Review"},{"name":"implement","label":"Apply"},{"name":"test","label":"Verify"}],"tags":["infrastructure"]}'
 
 echo ""
 echo "=== DONE ==="
-echo "Created: 3 projects, 4 roles, 3 agents, 18 tasks, 5 knowledge items, 3 playbooks"

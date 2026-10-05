@@ -1,7 +1,6 @@
 //! `TaskSource` implementation for local orchestration mode.
 //!
 //! State-mutating operations (claim, transition, cost, updates, locks) go to
-//! the local SQLite database. Read-through operations (projects, playbooks,
 //! knowledge, decisions, observations, provider config) are forwarded to the
 //! API via the inner `ProjectsApi`.
 
@@ -15,7 +14,6 @@ use crate::engine::context::ContextAssembler;
 use crate::engine::task_source::TaskSource;
 use crate::git::ChangedFile;
 use crate::project::api::ProjectsApi;
-use crate::repo_playbooks::{self, RepoPlaybook};
 
 /// Orchestra-local task source: owns the task state machine in SQLite,
 /// delegates metadata reads to the API.
@@ -29,111 +27,6 @@ impl OrchestraTaskSource {
     pub fn new(db: Db, api: ProjectsApi) -> Self {
         let context = ContextAssembler::new(api.clone());
         Self { db, api, context }
-    }
-
-    async fn load_repo_playbook_for_task(&self, task: &Value) -> Result<Option<RepoPlaybook>> {
-        let Some(playbook_name) = task["playbook_name"].as_str().filter(|s| !s.is_empty()) else {
-            return Ok(None);
-        };
-        let Some(project_id) = task["project_id"].as_str().filter(|s| !s.is_empty()) else {
-            return Ok(None);
-        };
-        let project = self.api.get_project(project_id).await?;
-        let repo_root = project["git_resolved_path"]
-            .as_str()
-            .or_else(|| project["resolved_path"].as_str());
-        let Some(repo_root) = repo_root else {
-            return Ok(None);
-        };
-        Ok(repo_playbooks::find_playbook_by_name(
-            std::path::Path::new(repo_root),
-            playbook_name,
-        ))
-    }
-
-    /// Resolve the playbook step name for a task (from repo playbook data).
-    async fn resolve_step_name(&self, task: &Value) -> Result<String> {
-        let Some(playbook) = self.load_repo_playbook_for_task(task).await? else {
-            return Ok("working".to_string());
-        };
-        let step_index = task["playbook_step"].as_i64().unwrap_or(0) as usize;
-        let name = playbook
-            .steps
-            .as_array()
-            .and_then(|steps| steps.get(step_index))
-            .and_then(|step| step["name"].as_str())
-            .unwrap_or("implement");
-        Ok(name.to_string())
-    }
-
-    /// Handle pipeline advancement: when a non-final step completes,
-    /// advance to next step instead of terminal "done".
-    async fn handle_pipeline_transition(
-        &self,
-        task_id: &str,
-        task: &Value,
-        target_state: &str,
-    ) -> Result<Value> {
-        let current_state = task["state"].as_str().unwrap_or("");
-
-        // Pipeline advancement: non-final step → "done" gets redirected
-        if target_state == "done"
-            && !diraigent_types::state_machine::is_lifecycle_state(current_state)
-            && let Some(playbook) = self.load_repo_playbook_for_task(task).await?
-        {
-            let current = task["playbook_step"].as_i64().unwrap_or(0) as usize;
-            let next = current + 1;
-            let total = playbook.steps.as_array().map(|a| a.len()).unwrap_or(0);
-
-            if next < total {
-                // More steps — advance pipeline
-                db::task_execution::advance_step(&self.db, task_id)?;
-                info!(
-                    "pipeline: task {} advanced to step {next}",
-                    &task_id[..12.min(task_id.len())]
-                );
-                return db::task_execution::get(&self.db, task_id)?
-                    .ok_or_else(|| anyhow::anyhow!("task not found after advance"));
-            }
-            // Final step — fall through to normal "done" transition
-        }
-
-        // Step regression: non-implement step releasing back to ready
-        if target_state == "ready"
-            && !diraigent_types::state_machine::is_lifecycle_state(current_state)
-            && let Some(playbook) = self.load_repo_playbook_for_task(task).await?
-        {
-            let current_step = task["playbook_step"].as_i64().unwrap_or(0) as usize;
-
-            if let Some(steps) = playbook.steps.as_array() {
-                let current_retriable = steps
-                    .get(current_step)
-                    .map(diraigent_types::state_machine::is_retriable_step)
-                    .unwrap_or(true);
-
-                if !current_retriable {
-                    // Find previous retriable step
-                    for prev in (0..current_step).rev() {
-                        if let Some(prev_step) = steps.get(prev)
-                            && diraigent_types::state_machine::is_retriable_step(prev_step)
-                        {
-                            db::task_execution::regress_step(&self.db, task_id, prev as i32)?;
-                            info!(
-                                "pipeline: task {} regressed to step {prev}",
-                                &task_id[..12.min(task_id.len())]
-                            );
-                            return db::task_execution::get(&self.db, task_id)?
-                                .ok_or_else(|| anyhow::anyhow!("task not found after regress"));
-                        }
-                    }
-                }
-            }
-        }
-
-        // Normal transition
-        db::task_execution::transition(&self.db, task_id, target_state)?;
-        db::task_execution::get(&self.db, task_id)?
-            .ok_or_else(|| anyhow::anyhow!("task not found after transition"))
     }
 }
 
@@ -154,7 +47,16 @@ impl TaskSource for OrchestraTaskSource {
     async fn get_task(&self, task_id: &str) -> Result<Value> {
         // Try local first, fall back to API
         if let Some(local) = db::task_execution::get(&self.db, task_id)? {
-            return Ok(local);
+            // SQLite owns execution state; the API owns the spec and worker options.
+            let mut task = self
+                .api
+                .get_task(task_id)
+                .await
+                .unwrap_or_else(|_| json!({}));
+            if let (Some(task), Some(local)) = (task.as_object_mut(), local.as_object()) {
+                task.extend(local.clone());
+            }
+            return Ok(task);
         }
         self.api.get_task(task_id).await
     }
@@ -171,7 +73,10 @@ impl TaskSource for OrchestraTaskSource {
                     let state = t["state"].as_str().unwrap_or("ready");
                     db::task_execution::insert(&self.db, id, project_id, state)?;
                     // Only add if not already in local list
-                    if !local.iter().any(|l| l["id"].as_str() == Some(id)) {
+                    if !local.iter().any(|l| l["id"].as_str() == Some(id))
+                        && db::task_execution::get(&self.db, id)?
+                            .is_some_and(|task| task["state"] == "ready")
+                    {
                         local.push(t);
                     }
                 }
@@ -188,8 +93,8 @@ impl TaskSource for OrchestraTaskSource {
         db::task_execution::insert(&self.db, task_id, project_id, state)?;
 
         // Resolve step name
-        let step_name = self.resolve_step_name(&task).await?;
-        db::task_execution::claim(&self.db, task_id, &step_name, self.agent_id())?;
+        let step_name = "working";
+        db::task_execution::claim(&self.db, task_id, self.agent_id())?;
         info!(
             "local: claimed {} → {step_name}",
             &task_id[..12.min(task_id.len())]
@@ -200,18 +105,9 @@ impl TaskSource for OrchestraTaskSource {
     }
 
     async fn transition_task(&self, task_id: &str, state: &str) -> Result<Value> {
-        let task = self.get_task(task_id).await?;
-        self.handle_pipeline_transition(task_id, &task, state).await
-    }
-
-    async fn transition_task_with_step(
-        &self,
-        task_id: &str,
-        state: &str,
-        _playbook_step: u64,
-    ) -> Result<Value> {
-        // In local mode, pipeline step is managed by handle_pipeline_transition
-        self.transition_task(task_id, state).await
+        db::task_execution::transition(&self.db, task_id, state)?;
+        db::task_execution::get(&self.db, task_id)?
+            .ok_or_else(|| anyhow::anyhow!("task not found after transition"))
     }
 
     async fn update_task(&self, task_id: &str, body: &Value) -> Result<Value> {
@@ -300,10 +196,6 @@ impl TaskSource for OrchestraTaskSource {
 
     async fn get_related_items(&self, task_id: &str) -> Result<Value> {
         self.api.get_related_items(task_id).await
-    }
-
-    async fn get_step_template(&self, template_id: &str) -> Result<Value> {
-        self.api.get_step_template(template_id).await
     }
 
     // ── Work items (API read-through) ──
@@ -422,5 +314,38 @@ impl TaskSource for OrchestraTaskSource {
     ) -> Result<Value> {
         db::task_logs::insert_log(&self.db, project_id, task_id, step_name, content)?;
         Ok(json!({}))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{method, path},
+    };
+    #[tokio::test]
+    async fn local_review_hold_keeps_remote_spec_and_worker_options() {
+        let server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = db::open(dir.path()).unwrap();
+        db::task_execution::insert(&db, "task-1", "proj-1", "human_review").unwrap();
+        let remote = json!({"id":"task-1","project_id":"proj-1","state":"ready",
+            "context":{"spec":"Review the change","mode":"review","worker":{"provider":"opencode"}}});
+        Mock::given(method("GET"))
+            .and(path("/tasks/task-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&remote))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/proj-1/tasks/ready"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([remote.clone()])))
+            .mount(&server)
+            .await;
+        let source = OrchestraTaskSource::new(db, ProjectsApi::new(&server.uri(), "agent"));
+        let task = source.get_task("task-1").await.unwrap();
+        assert_eq!(task["state"], "human_review");
+        assert_eq!(task["context"], remote["context"]);
+        assert!(source.get_ready_tasks("proj-1").await.unwrap().is_empty());
     }
 }

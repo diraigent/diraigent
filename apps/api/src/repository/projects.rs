@@ -41,8 +41,8 @@ pub async fn create_project(
         .ok_or_else(|| AppError::Validation("tenant_id is required".into()))?;
 
     let project = sqlx::query_as::<_, Project>(
-        "INSERT INTO diraigent.project (name, slug, description, owner_id, parent_id, repo_url, repo_path, default_branch, service_name, metadata, default_playbook_name, package_id, git_mode, git_root, project_root, tenant_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        "INSERT INTO diraigent.project (name, slug, description, owner_id, parent_id, repo_url, repo_path, default_branch, service_name, metadata, package_id, git_mode, git_root, project_root, tenant_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          RETURNING *",
     )
     .bind(&req.name)
@@ -55,7 +55,6 @@ pub async fn create_project(
     .bind(&default_branch)
     .bind(&req.service_name)
     .bind(&metadata)
-    .bind(None::<String>)
     .bind(package_id)
     .bind(&git_mode)
     .bind(&git_root)
@@ -132,10 +131,6 @@ pub async fn update_project(
         .as_deref()
         .or(existing.description.as_deref());
     let metadata = req.metadata.as_ref().unwrap_or(&existing.metadata);
-    let default_playbook_name = req
-        .default_playbook_name
-        .as_deref()
-        .or(existing.default_playbook_name.as_deref());
     let repo_url = match &req.repo_url {
         Some(val) => val.clone(),
         None => existing.repo_url.clone(),
@@ -183,16 +178,15 @@ pub async fn update_project(
     };
 
     let project = sqlx::query_as::<_, Project>(
-        "UPDATE diraigent.project SET name = $2, description = $3, metadata = $4, default_playbook_name = $5,
-                repo_url = $6, repo_path = $7, default_branch = $8, service_name = $9, package_id = $10,
-                git_mode = $11, git_root = $12, project_root = $13
+        "UPDATE diraigent.project SET name = $2, description = $3, metadata = $4,
+                repo_url = $5, repo_path = $6, default_branch = $7, service_name = $8, package_id = $9,
+                git_mode = $10, git_root = $11, project_root = $12
          WHERE id = $1 RETURNING *",
     )
     .bind(id)
     .bind(name)
     .bind(description)
     .bind(metadata)
-    .bind(default_playbook_name)
     .bind(repo_url)
     .bind(synced_repo_path)
     .bind(default_branch)

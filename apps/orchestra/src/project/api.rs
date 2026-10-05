@@ -167,26 +167,6 @@ impl ProjectsApi {
         .await
     }
 
-    /// Atomically transition a task to a new state and update its playbook_step.
-    ///
-    /// This is a convenience wrapper that performs `transition_task` followed by
-    /// `update_task` to set the `playbook_step`. Both calls must succeed for the
-    /// operation to be considered successful. If the transition succeeds but the
-    /// update fails, the error from the update is returned.
-    pub async fn transition_task_with_step(
-        &self,
-        task_id: &str,
-        state: &str,
-        playbook_step: u64,
-    ) -> Result<Value> {
-        self.transition_task(task_id, state).await?;
-        self.update_task(
-            task_id,
-            &serde_json::json!({"playbook_step": playbook_step}),
-        )
-        .await
-    }
-
     pub async fn update_task(&self, task_id: &str, body: &Value) -> Result<Value> {
         self.put(&format!("/tasks/{task_id}"), body).await
     }
@@ -275,12 +255,6 @@ impl ProjectsApi {
 
     pub async fn update_agent(&self, agent_id: &str, body: &Value) -> Result<Value> {
         self.put(&format!("/agents/{agent_id}"), body).await
-    }
-
-    // ── Playbook operations ──────────────────────────────────
-
-    pub async fn get_step_template(&self, template_id: &str) -> Result<Value> {
-        self.get(&format!("/step-templates/{template_id}")).await
     }
 
     /// Record LLM token usage and cost for a task step. Values are accumulated
@@ -637,14 +611,7 @@ impl crate::engine::task_source::TaskSource for ProjectsApi {
     async fn transition_task(&self, task_id: &str, state: &str) -> Result<Value> {
         ProjectsApi::transition_task(self, task_id, state).await
     }
-    async fn transition_task_with_step(
-        &self,
-        task_id: &str,
-        state: &str,
-        playbook_step: u64,
-    ) -> Result<Value> {
-        ProjectsApi::transition_task_with_step(self, task_id, state, playbook_step).await
-    }
+
     async fn update_task(&self, task_id: &str, body: &Value) -> Result<Value> {
         ProjectsApi::update_task(self, task_id, body).await
     }
@@ -699,10 +666,6 @@ impl crate::engine::task_source::TaskSource for ProjectsApi {
     }
     async fn get_related_items(&self, task_id: &str) -> Result<Value> {
         ProjectsApi::get_related_items(self, task_id).await
-    }
-
-    async fn get_step_template(&self, template_id: &str) -> Result<Value> {
-        ProjectsApi::get_step_template(self, template_id).await
     }
 
     async fn get_work_items(&self, project_id: &str) -> Result<Vec<Value>> {

@@ -272,7 +272,7 @@ pub async fn get_agent_context(
     // 8. Ready tasks matching agent's capabilities
     let ready_tasks = sqlx::query_as::<_, Task>(
         "SELECT t.* FROM diraigent.task t
-         WHERE t.project_id = $1 AND (t.state = 'ready' OR t.state LIKE 'wait:%')
+         WHERE t.project_id = $1 AND t.state = 'ready'
            AND NOT EXISTS (
                SELECT 1 FROM diraigent.task_dependency td
                JOIN diraigent.task dep ON td.depends_on = dep.id
@@ -309,9 +309,6 @@ pub async fn get_agent_context(
     // 11. Recent events
     let recent_events = list_recent_events(pool, project_id, 20).await?;
 
-    // 12. Playbooks (global)
-    let playbooks: Vec<serde_json::Value> = vec![];
-
     Ok(Some(AgentContext {
         agent,
         membership,
@@ -324,7 +321,6 @@ pub async fn get_agent_context(
         my_tasks,
         open_observations,
         recent_events,
-        playbooks,
     }))
 }
 

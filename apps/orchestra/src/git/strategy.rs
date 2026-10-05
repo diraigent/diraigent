@@ -1,37 +1,9 @@
-//! Immutable git strategies that control branch/merge/push behavior per-playbook.
+//! Immutable git strategies that control branch/merge/push behavior per-project.
 //!
 //! Strategies are fixed — users select one, they cannot define custom ones.
-//! Resolution order: playbook metadata → project git_mode fallback.
+//! Resolution order: project metadata → project git_mode fallback.
 
 use serde_json::Value;
-
-use crate::repo_playbooks;
-
-/// Per-step git action: what git operation to perform after this step completes.
-///
-/// This allows mid-pipeline merges/pushes without dedicated "merge" steps.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum GitAction {
-    /// No git action after this step.
-    None,
-    /// Merge the task branch into the strategy's target branch.
-    Merge,
-    /// Push the task branch to the remote.
-    Push,
-}
-
-impl GitAction {
-    /// Parse a `GitAction` from a playbook step JSON object.
-    ///
-    /// Reads the `"git_action"` field. Defaults to `None` if absent or unrecognised.
-    pub fn from_step_json(step: &Value) -> Self {
-        match step.get("git_action").and_then(|v| v.as_str()) {
-            Some("merge") => GitAction::Merge,
-            Some("push") => GitAction::Push,
-            _ => GitAction::None,
-        }
-    }
-}
 
 /// Predefined git workflow strategy.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,7 +27,7 @@ pub enum GitStrategy {
 }
 
 impl GitStrategy {
-    /// Strategy ID as stored in playbook metadata.
+    /// Strategy ID as stored in project metadata.
     pub fn id(&self) -> &'static str {
         match self {
             GitStrategy::Merge { .. } => "merge",
@@ -65,14 +37,14 @@ impl GitStrategy {
         }
     }
 
-    /// Resolve strategy from playbook metadata JSON.
+    /// Resolve strategy from project metadata JSON.
     ///
     /// Falls back to `Merge` (to default) for git-enabled projects,
     /// `NoGit` when `project_git_mode` is `"none"`.
     ///
     /// `work_branch` is provided externally (from task→work item lookup) and
     /// only used when the strategy is `feature_branch`.
-    pub fn from_playbook_metadata(
+    pub fn from_project_metadata(
         metadata: &Value,
         project_git_mode: &str,
         work_branch: Option<String>,
@@ -196,17 +168,16 @@ impl GitStrategy {
     }
 }
 
-/// Resolve the git strategy for a task from repo/YAML playbook metadata.
+/// Resolve the git strategy for a task from project metadata.
 ///
-/// Returns `Merge { target_branch: None }` as fallback when the task has no
-/// playbook or the playbook fetch fails.
+/// Defaults to merge into the project default branch.
 pub async fn resolve_strategy(
     api: &dyn crate::engine::task_source::TaskSource,
     task_data: Option<&Value>,
     project_git_mode: &str,
-) -> GitStrategy {
+) -> anyhow::Result<GitStrategy> {
     if project_git_mode == "none" {
-        return GitStrategy::NoGit;
+        return Ok(GitStrategy::NoGit);
     }
 
     let default_merge = GitStrategy::Merge {
@@ -214,45 +185,25 @@ pub async fn resolve_strategy(
     };
 
     let Some(task) = task_data else {
-        return default_merge;
+        return Ok(default_merge);
     };
-
-    let playbook_name = task["playbook_name"].as_str().unwrap_or("");
-    if playbook_name.is_empty() {
-        return default_merge;
-    }
 
     let project_id = task["project_id"].as_str().unwrap_or("");
-    let project = match api.get_project(project_id).await {
-        Ok(project) => project,
-        Err(e) => {
-            tracing::warn!("failed to fetch project {project_id} for git strategy: {e}");
-            return default_merge;
-        }
-    };
-    let repo_root = project["git_resolved_path"]
-        .as_str()
-        .or_else(|| project["resolved_path"].as_str());
-    let Some(repo_root) = repo_root else {
-        return default_merge;
-    };
-    let Some(playbook) =
-        repo_playbooks::find_playbook_by_name(std::path::Path::new(repo_root), playbook_name)
-    else {
-        tracing::warn!("failed to load playbook {playbook_name} for git strategy");
-        return default_merge;
-    };
+    let project = api.get_project(project_id).await?;
+    let metadata = &project["metadata"];
 
-    let metadata = &playbook.metadata;
-    let work_branch = if metadata.get("git_strategy").and_then(|v| v.as_str())
-        == Some("feature_branch")
-    {
-        resolve_work_branch(api, task).await
-    } else {
-        None
-    };
+    let work_branch =
+        if metadata.get("git_strategy").and_then(|v| v.as_str()) == Some("feature_branch") {
+            resolve_work_branch(api, task).await
+        } else {
+            None
+        };
 
-    GitStrategy::from_playbook_metadata(metadata, project_git_mode, work_branch)
+    Ok(GitStrategy::from_project_metadata(
+        metadata,
+        project_git_mode,
+        work_branch,
+    ))
 }
 
 /// Derive the work branch name for a task by looking up its linked work items.
@@ -324,7 +275,7 @@ mod tests {
     fn default_when_no_metadata() {
         let meta = serde_json::json!({});
         assert_eq!(
-            GitStrategy::from_playbook_metadata(&meta, "standalone", None),
+            GitStrategy::from_project_metadata(&meta, "standalone", None),
             GitStrategy::Merge {
                 target_branch: None
             }
@@ -335,7 +286,7 @@ mod tests {
     fn no_git_when_project_mode_none() {
         let meta = serde_json::json!({"git_strategy": "merge"});
         assert_eq!(
-            GitStrategy::from_playbook_metadata(&meta, "none", None),
+            GitStrategy::from_project_metadata(&meta, "none", None),
             GitStrategy::NoGit
         );
     }
@@ -344,7 +295,7 @@ mod tests {
     fn branch_only_from_metadata() {
         let meta = serde_json::json!({"git_strategy": "branch_only"});
         assert_eq!(
-            GitStrategy::from_playbook_metadata(&meta, "standalone", None),
+            GitStrategy::from_project_metadata(&meta, "standalone", None),
             GitStrategy::BranchOnly
         );
     }
@@ -356,7 +307,7 @@ mod tests {
             "git_target_branch": "staging"
         });
         assert_eq!(
-            GitStrategy::from_playbook_metadata(&meta, "standalone", None),
+            GitStrategy::from_project_metadata(&meta, "standalone", None),
             GitStrategy::Merge {
                 target_branch: Some("staging".to_string())
             }
@@ -367,7 +318,7 @@ mod tests {
     fn merge_without_target_branch() {
         let meta = serde_json::json!({"git_strategy": "merge"});
         assert_eq!(
-            GitStrategy::from_playbook_metadata(&meta, "standalone", None),
+            GitStrategy::from_project_metadata(&meta, "standalone", None),
             GitStrategy::Merge {
                 target_branch: None
             }
@@ -378,7 +329,7 @@ mod tests {
     fn old_merge_to_default_compat() {
         let meta = serde_json::json!({"git_strategy": "merge_to_default"});
         assert_eq!(
-            GitStrategy::from_playbook_metadata(&meta, "standalone", None),
+            GitStrategy::from_project_metadata(&meta, "standalone", None),
             GitStrategy::Merge {
                 target_branch: None
             }
@@ -392,7 +343,7 @@ mod tests {
             "git_target_branch": "staging"
         });
         assert_eq!(
-            GitStrategy::from_playbook_metadata(&meta, "standalone", None),
+            GitStrategy::from_project_metadata(&meta, "standalone", None),
             GitStrategy::Merge {
                 target_branch: Some("staging".to_string())
             }
@@ -403,7 +354,7 @@ mod tests {
     fn branch_to_target_defaults_to_develop() {
         let meta = serde_json::json!({"git_strategy": "branch_to_target"});
         assert_eq!(
-            GitStrategy::from_playbook_metadata(&meta, "standalone", None),
+            GitStrategy::from_project_metadata(&meta, "standalone", None),
             GitStrategy::Merge {
                 target_branch: Some("develop".to_string())
             }
@@ -414,7 +365,7 @@ mod tests {
     fn feature_branch_with_work_item() {
         let meta = serde_json::json!({"git_strategy": "feature_branch"});
         assert_eq!(
-            GitStrategy::from_playbook_metadata(
+            GitStrategy::from_project_metadata(
                 &meta,
                 "standalone",
                 Some("work/user-auth".to_string())
@@ -429,7 +380,7 @@ mod tests {
     fn feature_branch_without_work_item_falls_back_to_merge() {
         let meta = serde_json::json!({"git_strategy": "feature_branch"});
         assert_eq!(
-            GitStrategy::from_playbook_metadata(&meta, "standalone", None),
+            GitStrategy::from_project_metadata(&meta, "standalone", None),
             GitStrategy::Merge {
                 target_branch: None
             }
@@ -440,7 +391,7 @@ mod tests {
     fn unknown_strategy_falls_back_to_merge() {
         let meta = serde_json::json!({"git_strategy": "yolo_deploy"});
         assert_eq!(
-            GitStrategy::from_playbook_metadata(&meta, "standalone", None),
+            GitStrategy::from_project_metadata(&meta, "standalone", None),
             GitStrategy::Merge {
                 target_branch: None
             }
@@ -501,30 +452,6 @@ mod tests {
     #[test]
     fn catalog_has_4_entries() {
         assert_eq!(GitStrategy::catalog().len(), 4);
-    }
-
-    #[test]
-    fn git_action_from_step_json_none_when_absent() {
-        let step = serde_json::json!({"name": "implement"});
-        assert_eq!(GitAction::from_step_json(&step), GitAction::None);
-    }
-
-    #[test]
-    fn git_action_from_step_json_merge() {
-        let step = serde_json::json!({"name": "implement", "git_action": "merge"});
-        assert_eq!(GitAction::from_step_json(&step), GitAction::Merge);
-    }
-
-    #[test]
-    fn git_action_from_step_json_push() {
-        let step = serde_json::json!({"name": "implement", "git_action": "push"});
-        assert_eq!(GitAction::from_step_json(&step), GitAction::Push);
-    }
-
-    #[test]
-    fn git_action_from_step_json_unknown_defaults_to_none() {
-        let step = serde_json::json!({"name": "implement", "git_action": "yolo"});
-        assert_eq!(GitAction::from_step_json(&step), GitAction::None);
     }
 
     #[test]

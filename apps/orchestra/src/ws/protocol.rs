@@ -47,15 +47,6 @@ pub enum WsMessage {
         git_ref: Option<String>,
     },
 
-    #[serde(rename = "playbook.request")]
-    PlaybookRequest {
-        request_id: String,
-        project_id: Uuid,
-        operation: String,
-        name: Option<String>,
-        content: Option<serde_json::Value>,
-    },
-
     // API -> Orchestra: cancel an active chat session
     #[serde(rename = "chat.cancel")]
     ChatCancel { session_id: String },
@@ -73,13 +64,7 @@ pub enum WsMessage {
         error: Option<String>,
         data: serde_json::Value,
     },
-    #[serde(rename = "playbook.response")]
-    PlaybookResponse {
-        request_id: String,
-        success: bool,
-        error: Option<String>,
-        data: serde_json::Value,
-    },
+
     #[serde(rename = "heartbeat")]
     Heartbeat,
 }

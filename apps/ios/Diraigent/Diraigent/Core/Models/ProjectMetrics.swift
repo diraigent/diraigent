@@ -39,14 +39,7 @@ struct StateAvg: Codable, Sendable {
     let avgHours: Double?
 }
 
-/// Playbook completion metrics.
-struct PlaybookMetricEntry: Codable, Sendable {
-    let playbookId: UUID?
-    let playbookTitle: String?
-    let totalTasks: Int?
-    let completedTasks: Int?
-    let completionRate: Double?
-}
+
 
 /// Per-task cost row.
 struct TaskCostRow: Codable, Sendable {
@@ -65,7 +58,6 @@ struct ProjectMetrics: Codable, Sendable {
     let tasksPerDay: [DayCount]?
     let avgTimeInStateHours: [StateAvg]?
     let agentBreakdown: [AgentMetricEntry]?
-    let playbookCompletion: [PlaybookMetricEntry]?
     let costSummary: CostSummary?
     let taskCosts: [TaskCostRow]?
 }

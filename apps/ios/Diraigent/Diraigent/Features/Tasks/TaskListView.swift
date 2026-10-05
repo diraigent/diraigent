@@ -12,18 +12,13 @@ struct TaskListView: View {
     @State private var stateFilter: String = "all"
     @State private var showCreateTask = false
 
-    private static let stateFilters = ["all", "backlog", "ready", "working", "done", "cancelled"]
+    private static let stateFilters = ["all", "backlog", "ready", "working", "human_review", "done", "cancelled"]
 
     private var tasksService: TasksService { appState.tasksService }
 
     private var filteredTasks: [DgTask] {
         tasksService.tasks.filter { task in
             guard stateFilter != "all" else { return true }
-            if stateFilter == "working" {
-                // "working" matches any non-lifecycle state (implement, review, dream, etc.)
-                let lifecycleStates = ["backlog", "ready", "done", "cancelled", "human_review"]
-                return !lifecycleStates.contains(task.state.lowercased())
-            }
             return task.state.lowercased() == stateFilter
         }
     }
@@ -161,7 +156,7 @@ struct TaskStateBadge: View {
         case "ready": "circle"
         case "backlog": "circle.dashed"
         case "human_review": "person.circle"
-        default: "gearshape" // working/implement/review etc
+        default: "gearshape" // Working or unknown historical state
         }
     }
 

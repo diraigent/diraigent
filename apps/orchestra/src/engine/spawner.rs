@@ -10,8 +10,8 @@ use crate::git::WorktreeManager;
 
 /// How long a task stays in the lock queue before being retried regardless.
 const LOCK_QUEUE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
-use crate::engine::pipeline;
-use crate::engine::step_profile;
+use crate::engine::task_policy;
+use crate::engine::task_profile;
 use crate::engine::worker;
 use crate::git::strategy as git_strategy;
 use crate::project::paths as project_paths;
@@ -131,7 +131,6 @@ pub async fn spawn_worker(
         .and_then(|t| t["title"].as_str().map(|s| s.to_string()))
         .unwrap_or_default();
 
-    // Resolve per-project paths early so we can use git_root for repo playbook resolution.
     let (git_mode, git_root, working_dir, auto_push, default_branch, upload_logs, store_diffs) =
         match project_paths::resolve_project_paths(api.as_ref(), project_id, &config.projects_path)
             .await
@@ -159,35 +158,36 @@ pub async fn spawn_worker(
             }
         };
 
-    // Resolve playbook step (name + full JSONB config), with repo playbook override support
-    let (step_name, step_json) =
-        pipeline::resolve_step(api.as_ref(), task_data.as_ref(), git_root.as_deref()).await;
+    let step_name = task_data
+        .as_ref()
+        .and_then(|task| task["context"]["mode"].as_str())
+        .unwrap_or("working")
+        .to_owned();
+    let worker_options = task_data
+        .as_ref()
+        .and_then(|task| task["context"].get("worker"))
+        .cloned();
 
     // Resolve effective max_cycles: step JSON > project metadata > global config.
-    let project_max_cycles = pipeline::resolve_max_implement_cycles(
+    let project_max_cycles = task_policy::resolve_max_implement_cycles(
         api.as_ref(),
         project_id,
         config.max_implement_cycles,
     )
     .await;
-    let effective_max_cycles = step_json
+    let effective_max_cycles = worker_options
         .as_ref()
         .and_then(|s| s["max_cycles"].as_u64())
         .map(|v| v as u32)
         .unwrap_or(project_max_cycles);
 
     // Loop detection: cancel tasks that have failed too many times.
-    let step_retriable = step_json
-        .as_ref()
-        .map(step_profile::is_retriable)
-        .unwrap_or_else(|| {
-            step_profile::StepProfile::for_step(&step_name) == step_profile::StepProfile::Implement
-        });
+    let step_retriable = task_profile::is_retriable(worker_options.as_ref(), &step_name);
     if effective_max_cycles > 0 && step_retriable {
-        let cycles = pipeline::count_blocker_cycles(api.as_ref(), task_id).await;
+        let cycles = task_policy::count_blocker_cycles(api.as_ref(), task_id).await;
         if cycles >= effective_max_cycles {
             warn!(
-                "loop-detect {tid}: {cycles} failed implement cycles (max={effective_max_cycles}), cancelling",
+                "loop-detect {tid}: {cycles} failed implement cycles (max={effective_max_cycles}), requesting human review",
             );
             let reason = format!(
                 "Needs human review: {cycles} failed implement cycles (threshold: {effective_max_cycles}).",
@@ -195,7 +195,7 @@ pub async fn spawn_worker(
             if let Err(e) = api.post_task_update(task_id, "blocker", &reason).await {
                 warn!("loop-detect {tid}: failed to post blocker: {e}");
             }
-            if let Err(e) = api.transition_task(task_id, "ready").await {
+            if let Err(e) = api.transition_task(task_id, "human_review").await {
                 warn!("loop-detect {tid}: failed to release task: {e}");
             } else {
                 worker::post_worker_event(
@@ -264,26 +264,33 @@ pub async fn spawn_worker(
         .as_ref()
         .and_then(|t| t["context"]["model"].as_str().map(|s| s.to_string()));
 
-    // Build step-specific config from playbook JSONB with hardcoded fallbacks
-    let step_config = worker::StepConfig::for_step(
+    // Resolve task and worker configuration
+    let task_config = worker::TaskConfig::for_mode(
         &step_name,
-        step_json.as_ref(),
+        worker_options.as_ref(),
         task_model.as_deref(),
         config.worker_model.as_deref(),
     );
 
-    // Resolve git strategy from playbook metadata
+    // Resolve project Git policy
     let git_strategy =
-        git_strategy::resolve_strategy(api.as_ref(), task_data.as_ref(), &git_mode).await;
+        match git_strategy::resolve_strategy(api.as_ref(), task_data.as_ref(), &git_mode).await {
+            Ok(strategy) => strategy,
+            Err(error) => {
+                warn!("spawn {tid}: cannot resolve project Git policy: {error}");
+                let _ = api.transition_task(task_id, "human_review").await;
+                return;
+            }
+        };
 
-    let model_info = step_config.model.as_deref().unwrap_or("default");
+    let model_info = task_config.model.as_deref().unwrap_or("default");
     info!(
         "spawn {tid}: step={step_name} model={model_info} budget={} tools={} git={}",
-        step_config
+        task_config
             .budget
             .map(|b| format!("${b:.1}"))
             .unwrap_or_else(|| "∞".into()),
-        step_config.allowed_tools.len(),
+        task_config.allowed_tools.len(),
         git_strategy.id(),
     );
 
@@ -347,7 +354,7 @@ pub async fn spawn_worker(
                 repo_root_for_worker,
                 &agent_cli,
                 &log_dir,
-                &step_config,
+                &task_config,
                 dek.as_ref(),
                 upload_logs,
                 store_diffs,
@@ -361,6 +368,8 @@ pub async fn spawn_worker(
                             "worker {sid} completed with error: stop_reason={} cost=${:.2} turns={} duration={}s",
                             result.stop_reason, result.cost_usd, result.api_turns, result.duration_seconds
                         );
+                        let _ = api_clone.post_task_update(&task_id_owned, "blocker", &format!("Worker failed: {}", result.stop_reason)).await;
+                        let _ = api_clone.transition_task(&task_id_owned, "human_review").await;
                     }
                 }
                 Err(e) => {
@@ -373,13 +382,11 @@ pub async fn spawn_worker(
                         warn!("worker {sid}: failed to post blocker: {be}");
                     }
 
-                    // Transition task to cancelled to prevent infinite crash loop.
-                    // Infrastructure errors (worktree creation, git issues) are not
-                    // transient — re-picking the task will just crash again.
-                    if let Err(te) = api_clone.transition_task(&task_id_owned, "cancelled").await {
-                        warn!("worker {sid}: failed to cancel crashed task: {te}");
+                    // Hold failed execution for review and preserve its worktree.
+                    if let Err(te) = api_clone.transition_task(&task_id_owned, "human_review").await {
+                        warn!("worker {sid}: failed to hold crashed task for review: {te}");
                     } else {
-                        info!("worker {sid}: cancelled crashed task to prevent retry loop");
+                        info!("worker {sid}: held crashed task for review");
                     }
 
                     worker::post_worker_event(
@@ -417,18 +424,6 @@ mod tests {
 
     fn new_lock_queue() -> LockQueue {
         Arc::new(Mutex::new(HashMap::new()))
-    }
-
-    fn standard_playbook() -> serde_json::Value {
-        serde_json::json!({
-            "id": "pb-1",
-            "steps": [
-                {"name": "implement", "step": 0},
-                {"name": "review", "step": 1},
-                {"name": "merge", "step": 2},
-                {"name": "dream", "step": 3}
-            ]
-        })
     }
 
     fn project_json(metadata: Option<serde_json::Value>) -> serde_json::Value {
@@ -470,7 +465,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spawn_worker_cancels_at_loop_detect_threshold() {
+    async fn spawn_worker_holds_at_loop_detect_threshold() {
         let server = MockServer::start().await;
         let task_id = "task-1";
         let project_id = "proj-1";
@@ -478,15 +473,9 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/tasks/task-1"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": task_id, "title": "Test task", "state": "implement",
-                "playbook_id": "pb-1", "playbook_step": 0, "context": {}
+                "id": task_id, "title": "Test task", "state": "working",
+                "context": {}
             })))
-            .mount(&server)
-            .await;
-
-        Mock::given(method("GET"))
-            .and(path("/playbooks/pb-1"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(standard_playbook()))
             .mount(&server)
             .await;
 
@@ -550,15 +539,9 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/tasks/task-1"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": task_id, "title": "Test task", "state": "implement",
-                "playbook_id": "pb-1", "playbook_step": 0, "context": {}
+                "id": task_id, "title": "Test task", "state": "working",
+                "context": {}
             })))
-            .mount(&server)
-            .await;
-
-        Mock::given(method("GET"))
-            .and(path("/playbooks/pb-1"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(standard_playbook()))
             .mount(&server)
             .await;
 
@@ -618,15 +601,9 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/tasks/task-1"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": task_id, "title": "Test task", "state": "implement",
-                "playbook_id": "pb-1", "playbook_step": 0, "context": {}
+                "id": task_id, "title": "Test task", "state": "working",
+                "context": {}
             })))
-            .mount(&server)
-            .await;
-
-        Mock::given(method("GET"))
-            .and(path("/playbooks/pb-1"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(standard_playbook()))
             .mount(&server)
             .await;
 
@@ -670,15 +647,9 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/tasks/task-1"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": task_id, "title": "Test task", "state": "review",
-                "playbook_id": "pb-1", "playbook_step": 1, "context": {}
+                "id": task_id, "title": "Test task", "state": "working",
+                "context": {"mode": "review"}
             })))
-            .mount(&server)
-            .await;
-
-        Mock::given(method("GET"))
-            .and(path("/playbooks/pb-1"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(standard_playbook()))
             .mount(&server)
             .await;
 
@@ -714,7 +685,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spawn_worker_project_override_max_cycles_1_triggers_cancellation() {
+    async fn spawn_worker_project_override_max_cycles_1_requires_review() {
         let server = MockServer::start().await;
         let task_id = "task-1";
         let project_id = "proj-1";
@@ -722,15 +693,9 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/tasks/task-1"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": task_id, "title": "Test task", "state": "implement",
-                "playbook_id": "pb-1", "playbook_step": 0, "context": {}
+                "id": task_id, "title": "Test task", "state": "working",
+                "context": {}
             })))
-            .mount(&server)
-            .await;
-
-        Mock::given(method("GET"))
-            .and(path("/playbooks/pb-1"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(standard_playbook()))
             .mount(&server)
             .await;
 
@@ -796,15 +761,9 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/tasks/task-1"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": task_id, "title": "Test task", "state": "implement",
-                "playbook_id": "pb-1", "playbook_step": 0, "context": {}
+                "id": task_id, "title": "Test task", "state": "working",
+                "context": {}
             })))
-            .mount(&server)
-            .await;
-
-        Mock::given(method("GET"))
-            .and(path("/playbooks/pb-1"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(standard_playbook()))
             .mount(&server)
             .await;
 
@@ -859,16 +818,9 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/tasks/task-1"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": task_id, "title": "Test task", "state": "implement",
-                "playbook_id": "pb-1", "playbook_step": 0,
-                "context": { "files": ["src/*.rs"] }
+                "id": task_id, "title": "Test task", "state": "working",
+                                "context": { "files": ["src/*.rs"] }
             })))
-            .mount(&server)
-            .await;
-
-        Mock::given(method("GET"))
-            .and(path("/playbooks/pb-1"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(standard_playbook()))
             .mount(&server)
             .await;
 

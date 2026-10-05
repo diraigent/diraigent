@@ -29,12 +29,12 @@
     <h1>your codebase deserves a system,<br>not a suggestion</h1>
     <p class="hero-sub">
       a self-hosted software factory &mdash; define goals, agents decompose and execute them
-      through enforced pipelines, with humans in the loop where it matters.
+      in isolated worktrees, with humans in the loop where it matters.
     </p>
     <div class="hero-tags">
       <span class="tag">self-hosted</span>
       <span class="tag">rust-powered</span>
-      <span class="tag">pipeline-enforced</span>
+      <span class="tag">task orchestration</span>
       <span class="tag">multi-agent</span>
       <span class="tag">human-in-the-loop</span>
     </div>
@@ -80,14 +80,14 @@
 
     <div class="differentiator">
       <div class="diff-text">
-        <span class="tag tag--mauve">pipelines</span>
-        <h3>pipelines that agents cannot skip</h3>
-        <p>Define multi-step playbooks with a validated state machine. Each step has entry conditions, exit criteria, and quality gates. Agents follow the pipeline exactly &mdash; no improvising, no shortcuts. If a step fails verification, the agent goes back.</p>
+        <span class="tag tag--mauve">execution</span>
+        <h3>tasks with clear ownership and review</h3>
+        <p>Agents claim ready tasks, work in isolated Git worktrees, and report results. Use repository guidance and skills for the work, and request human review when needed. Orchestra coordinates execution and delivery.</p>
       </div>
       <div class="diff-image">
         <picture>
-          <source srcset="landing/screenshot-playbook.webp" type="image/webp">
-          <img src="landing/screenshot-playbook.png" alt="Playbook pipeline view" width="1280" height="800" loading="lazy">
+          <source srcset="landing/screenshot-goals.webp" type="image/webp">
+          <img src="landing/screenshot-goals.png" alt="Task board" width="1280" height="800" loading="lazy">
         </picture>
       </div>
     </div>
@@ -96,7 +96,7 @@
       <div class="diff-text">
         <span class="tag tag--blue">goals</span>
         <h3>goals decompose into parallel tasks</h3>
-        <p>Describe a high-level goal. Diraigent breaks it into concrete tasks, assigns playbooks, and dispatches agents in parallel. Epics, features, milestones &mdash; all visible on a kanban board with drag-and-drop ordering.</p>
+        <p>Describe a high-level goal. Diraigent breaks it into concrete tasks, dispatches agents in parallel. Epics, features, milestones &mdash; all visible on a kanban board with drag-and-drop ordering.</p>
       </div>
       <div class="diff-image">
         <picture>
@@ -172,7 +172,7 @@
             <td class="cmp-highlight"><span class="cmp-yes">&#10003;</span></td>
           </tr>
           <tr>
-            <td>Enforced pipeline state machine</td>
+            <td>Task ownership and Git delivery</td>
             <td><span class="cmp-no">&mdash;</span></td>
             <td><span class="cmp-no">&mdash;</span></td>
             <td><span class="cmp-no">&mdash;</span></td>
@@ -259,7 +259,7 @@
         <div class="step-number">2</div>
         <div class="step-body">
           <h3>diraigent decomposes it</h3>
-          <p>The system breaks your goal into concrete tasks, selects playbooks, and queues work for agents.</p>
+          <p>The system breaks your goal into concrete tasks, queues work for agents.</p>
         </div>
       </div>
 
@@ -316,8 +316,8 @@
     <h2 class="section-title">get started in minutes</h2>
     <p class="section-intro">
       run diraigent on your own infrastructure.<br>
-      requires currently <a href="https://docs.anthropic.com/en/docs/claude-code" target="_blank" rel="noopener">claude code</a> &mdash;
-      the orchestra spawns claude code workers in isolated git worktrees for each task.
+      uses OpenCode by default, with Codex and Claude Code optional.
+      Orchestra runs the selected agent in an isolated git worktree for each task.
     </p>
     <div class="hero-cta">
       <a href="https://github.com/diraigent/diraigent" target="_blank" rel="noopener" class="btn btn-primary">view on github</a>
@@ -330,16 +330,15 @@ curl -LO https://github.com/diraigent/diraigent/blob/main/startup/start.sh
 curl -LO https://github.com/diraigent/diraigent/blob/main/startup/.env.example
 cp .env.example .env    # edit .env for your setup
 chmod +x start.sh
-./start.sh              # registers agent, seeds playbooks, starts everything
+./start.sh              # registers agent and starts everything
       </code></pre>
     </div>
 
     <h3 class="section-subtitle">after startup</h3>
     <ol class="after-startup-steps">
       <li><strong>create a project</strong> &mdash; point it at your git repo (must have a main branch)</li>
-      <li><strong>chat with the assistant</strong> &mdash; see if claude answers</li>
-      <li><strong>clone a playbook</strong> &mdash; pick one of the defaults and clone it into your project</li>
-      <li><strong>create a task</strong> &mdash; attach the playbook, fill in spec and acceptance criteria</li>
+      <li><strong>chat with the assistant</strong> &mdash; verify the configured agent responds</li>
+      <li><strong>create a task</strong> &mdash; fill in spec and acceptance criteria</li>
       <li>the orchestra picks it up and starts working</li>
     </ol>
 
@@ -363,7 +362,7 @@ chmod +x start.sh
     <p class="footer-copy">
       built by <a href="https://zivue.com">zivue</a> &middot; <a href="https://github.com/diraigent/diraigent" target="_blank" rel="noopener">github</a> &middot; <a href="https://discord.gg/tfaYmvTw" target="_blank" rel="noopener">discord</a>
     </p>
-    <p class="footer-tagline">built with rust. powered by claude code.</p>
+    <p class="footer-tagline">built with rust. runs your chosen agent.</p>
   </footer>
 
 </div>

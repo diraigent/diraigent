@@ -17,8 +17,6 @@ struct DgTask: Codable, Identifiable, Sendable {
     let inputTokens: Int?
     let outputTokens: Int?
     let parentId: UUID?
-    let playbookId: UUID?
-    let playbookStep: Int?
     let decisionId: UUID?
     let delegatedBy: UUID?
     let createdBy: String?

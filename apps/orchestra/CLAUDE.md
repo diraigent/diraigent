@@ -11,7 +11,7 @@ These instructions apply to OpenCode, Codex, Claude Code and other supported pro
 - Preserve unrelated code and other contributors' changes. Use focused edits with whichever tools the provider supports, then inspect the diff. Do not blindly replace a file or restore it to a branch snapshot.
 - Run the supplied validation when relevant. If no test command is supplied, find the repository's normal checks and choose those that verify the changed behavior. Diagnose failures before retrying; distinguish failures introduced by this task from baseline problems.
 - Report meaningful progress and final evidence through `agent-cli`. Create observations or follow-up tasks when they are actionable; do not manufacture a quota of suggestions.
-- Complete the assigned step with `agent-cli transition <task_id> done` only after its actual work and validation are complete. Orchestra handles playbook advancement. A review step may report findings through the API but must not edit implementation files.
+- Complete the assigned task with `agent-cli transition <task_id> done` only after its actual work and validation are complete. Orchestra handles Git delivery. A review task may report findings through the API but must not edit implementation files.
 
 ## Git and data integrity
 
@@ -29,10 +29,6 @@ A missing file list or test command is not a blocker. An explicit contradictory 
 
 Post a specific blocker with the evidence and the missing information or dependency. Do not mark unfinished work done. Releasing a task to `ready` makes it eligible for immediate retry; do not repeatedly release and retry the same failure without a change that can resolve it. Use the available project controls to defer unresolved work, or report that a human needs to defer it. Do not invent an unsupported `blocked` state.
 
-## Playbooks and providers
+## Task execution and providers
 
-Playbooks are optional stage policies, not scripts for the agent's internal reasoning. Definitions live in `.diraigent/playbooks/`; tasks refer to `playbook_name`. Repository YAML may override a bundled default. See `.diraigent/playbooks/README.md` for the schema and examples.
-
-Leave `provider` and `model` unset to inherit the worker configuration. Tool presets, budget limits and provider-specific options are applied by the selected adapter; support differs between providers. Do not assume Claude flag names or a dollar budget are portable enforcement mechanisms.
-
-Lifecycle states include `backlog`, `ready`, `done`, `cancelled` and `human_review`; active step names come from the selected playbook. Use the CLI/runtime's supported transitions and report the state returned, rather than assuming a transition completed a whole pipeline.
+Execution uses a fixed lifecycle: `backlog → ready → working → done`, with `human_review` and `cancelled` for intervention. Repository guidance and skills provide task instructions; there are no configurable stage pipelines. Optional worker settings live in `context.worker`, and Git delivery policy lives in project metadata.

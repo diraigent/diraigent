@@ -19,14 +19,12 @@ mod memberships;
 mod metrics;
 mod observations;
 mod packages;
-mod playbooks;
 mod projects;
 mod provider_configs;
 mod related;
 mod reports;
 mod roles;
 mod search;
-mod step_templates;
 mod task_logs;
 mod tasks;
 mod tenants;
@@ -50,14 +48,12 @@ pub use memberships::*;
 pub use metrics::*;
 pub use observations::*;
 pub use packages::*;
-pub use playbooks::*;
 pub use projects::*;
 pub use provider_configs::*;
 pub use related::*;
 pub use reports::*;
 pub use roles::*;
 pub use search::*;
-pub use step_templates::*;
 pub use task_logs::*;
 pub use tasks::*;
 pub use tenants::*;
@@ -102,7 +98,6 @@ pub(crate) enum Table {
     ProviderConfig,
     Report,
     Role,
-    StepTemplate,
     Task,
     Tenant,
     TenantMember,
@@ -129,7 +124,6 @@ impl Table {
             Table::ProviderConfig => "provider_config",
             Table::Report => "report",
             Table::Role => "role",
-            Table::StepTemplate => "step_template",
             Table::Task => "task",
             Table::Tenant => "tenant",
             Table::TenantMember => "tenant_member",

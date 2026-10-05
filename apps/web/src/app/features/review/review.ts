@@ -151,14 +151,6 @@ export interface ReviewTask {
                     @if (taskDescription(item.task)) {
                       <p class="text-sm text-text-secondary mt-1 line-clamp-2">{{ taskDescription(item.task) }}</p>
                     }
-                    @if (item.task.playbook_step !== null && item.task.playbook_step !== undefined) {
-                      <p class="text-xs text-text-secondary mt-1">
-                        {{ t('review.completedStep') }}: {{ item.task.playbook_step + 1 }}
-                        @if (item.task.playbook_name) {
-                          <span class="opacity-60"> ({{ item.task.playbook_name | slice:0:8 }})</span>
-                        }
-                      </p>
-                    }
                   </div>
                   <button (click)="toggleExpand(item)"
                     class="p-1.5 text-text-secondary hover:text-text-primary rounded transition-colors shrink-0">

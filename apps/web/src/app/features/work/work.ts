@@ -39,7 +39,6 @@ import {
 import { TaskFormComponent } from '../tasks/components/task-form/task-form';
 import { TaskListComponent } from '../tasks/pages/task-list/task-list';
 import { VerificationsApiService, SpVerification } from '../../core/services/verifications-api.service';
-import { PlaybooksApiService, SpPlaybook } from '../../core/services/playbooks-api.service';
 import { GitApiService, BranchInfo, MainPushStatus, TaskBranchStatus } from '../../core/services/git-api.service';
 import { ChatService } from '../../core/services/chat.service';
 import { ModalWrapperComponent } from '../../shared/components/modal-wrapper/modal-wrapper';
@@ -516,7 +515,6 @@ function parseCriteria(value: unknown): string[] {
                       [detailVerifications]="taskDetailVerifications()"
                       [detailChangedFiles]="taskDetailChangedFiles()"
                       [detailGitStatus]="taskDetailGitStatus()"
-                      [detailPlaybooks]="goalPlaybooks()"
                       [detailPushing]="taskDetailPushing()"
                       [detailReverting]="taskDetailReverting()"
                       [detailResolving]="taskDetailResolving()"
@@ -535,8 +533,7 @@ function parseCriteria(value: unknown): string[] {
                       (flagToggle)="onLinkedTaskFlagToggle($event.task, $event.flagged)"
                       (detailAddDep)="onLinkedTaskAddDep($event)"
                       (detailRemoveDep)="onLinkedTaskRemoveDep($event)"
-                      (detailPlaybookChange)="onLinkedTaskPlaybookChange($event)"
-                      (detailPlaybookStepChange)="onLinkedTaskPlaybookStepChange($event)" />
+                      />
                   </div>
                 }
               </div>
@@ -632,7 +629,6 @@ function parseCriteria(value: unknown): string[] {
               [detailVerifications]="taskDetailVerifications()"
               [detailChangedFiles]="taskDetailChangedFiles()"
               [detailGitStatus]="taskDetailGitStatus()"
-              [detailPlaybooks]="goalPlaybooks()"
               [detailPushing]="taskDetailPushing()"
               [detailReverting]="taskDetailReverting()"
               [detailResolving]="taskDetailResolving()"
@@ -652,8 +648,7 @@ function parseCriteria(value: unknown): string[] {
               (flagToggle)="onUnlinkedTaskFlagToggle($event.task, $event.flagged)"
               (detailAddDep)="onUnlinkedTaskAddDep($event)"
               (detailRemoveDep)="onUnlinkedTaskRemoveDep($event)"
-              (detailPlaybookChange)="onUnlinkedTaskPlaybookChange($event)"
-              (detailPlaybookStepChange)="onUnlinkedTaskPlaybookStepChange($event)" />
+                      />
           </div>
         }
 
@@ -683,7 +678,6 @@ function parseCriteria(value: unknown): string[] {
                 [detailVerifications]="taskDetailVerifications()"
                 [detailChangedFiles]="taskDetailChangedFiles()"
                 [detailGitStatus]="taskDetailGitStatus()"
-                [detailPlaybooks]="goalPlaybooks()"
                 [detailPushing]="taskDetailPushing()"
                 [detailReverting]="taskDetailReverting()"
                 [detailResolving]="taskDetailResolving()"
@@ -702,8 +696,7 @@ function parseCriteria(value: unknown): string[] {
                 (flagToggle)="onUnlinkedTaskFlagToggle($event.task, $event.flagged)"
                 (detailAddDep)="onUnlinkedTaskAddDep($event)"
                 (detailRemoveDep)="onUnlinkedTaskRemoveDep($event)"
-                (detailPlaybookChange)="onUnlinkedTaskPlaybookChange($event)"
-                (detailPlaybookStepChange)="onUnlinkedTaskPlaybookStepChange($event)" />
+                      />
             }
           </div>
         }
@@ -744,7 +737,6 @@ function parseCriteria(value: unknown): string[] {
                   [detailVerifications]="taskDetailVerifications()"
                   [detailChangedFiles]="taskDetailChangedFiles()"
                   [detailGitStatus]="taskDetailGitStatus()"
-                  [detailPlaybooks]="goalPlaybooks()"
                   [detailPushing]="taskDetailPushing()"
                   [detailReverting]="taskDetailReverting()"
                   [detailResolving]="taskDetailResolving()"
@@ -763,8 +755,7 @@ function parseCriteria(value: unknown): string[] {
                   (flagToggle)="onUnlinkedTaskFlagToggle($event.task, $event.flagged)"
                   (detailAddDep)="onUnlinkedTaskAddDep($event)"
                   (detailRemoveDep)="onUnlinkedTaskRemoveDep($event)"
-                  (detailPlaybookChange)="onUnlinkedTaskPlaybookChange($event)"
-                  (detailPlaybookStepChange)="onUnlinkedTaskPlaybookStepChange($event)" />
+                      />
               }
               @if (achievedGoals().length === 0 && doneUnlinkedTasks().length === 0) {
                 <p class="text-text-secondary text-sm ml-6">{{ t('common.empty') }}</p>
@@ -809,7 +800,6 @@ function parseCriteria(value: unknown): string[] {
                   [detailVerifications]="taskDetailVerifications()"
                   [detailChangedFiles]="taskDetailChangedFiles()"
                   [detailGitStatus]="taskDetailGitStatus()"
-                  [detailPlaybooks]="goalPlaybooks()"
                   [detailPushing]="taskDetailPushing()"
                   [detailReverting]="taskDetailReverting()"
                   [detailResolving]="taskDetailResolving()"
@@ -828,8 +818,7 @@ function parseCriteria(value: unknown): string[] {
                   (flagToggle)="onUnlinkedTaskFlagToggle($event.task, $event.flagged)"
                   (detailAddDep)="onUnlinkedTaskAddDep($event)"
                   (detailRemoveDep)="onUnlinkedTaskRemoveDep($event)"
-                  (detailPlaybookChange)="onUnlinkedTaskPlaybookChange($event)"
-                  (detailPlaybookStepChange)="onUnlinkedTaskPlaybookStepChange($event)" />
+                      />
               }
               @if (archivedGoals().length === 0 && cancelledUnlinkedTasks().length === 0) {
                 <p class="text-text-secondary text-sm ml-6">{{ t('common.empty') }}</p>
@@ -959,7 +948,6 @@ export class WorkPage {
   private api = inject(WorkApiService);
   private tasksApi = inject(TasksApiService);
   private verificationsApi = inject(VerificationsApiService);
-  private playbooksApi = inject(PlaybooksApiService);
   private ctx = inject(ProjectContext);
   private git = inject(GitApiService);
   private chat = inject(ChatService);
@@ -1047,7 +1035,6 @@ export class WorkPage {
   taskDetailPushing = signal(false);
   taskDetailReverting = signal(false);
   taskDetailResolving = signal(false);
-  goalPlaybooks = signal<SpPlaybook[]>([]);
   executeLoading = signal(false);
   planExecuteLoading = signal(false);
   createAndExecuteLoading = signal(false);
@@ -1130,11 +1117,6 @@ export class WorkPage {
     }
     // Read deep-link query param once on init
     this.pendingWorkId = this.route.snapshot.queryParamMap.get('workId');
-    this.playbooksApi.list()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (pbs) => this.goalPlaybooks.set(pbs),
-      });
     effect(() => {
       this.ctx.projectId();
       this.selected.set(null);
@@ -2076,27 +2058,7 @@ export class WorkPage {
     });
   }
 
-  onLinkedTaskPlaybookChange(playbookId: string | null): void {
-    const task = this.selectedLinkedTask();
-    if (!task) return;
-    this.tasksApi.update(task.id, { playbook_name: playbookId, playbook_step: playbookId ? 0 : null }).subscribe({
-      next: () => {
-        const sel = this.selected();
-        if (sel) this.loadLinkedTasks(sel.id);
-      },
-    });
-  }
 
-  onLinkedTaskPlaybookStepChange(step: number): void {
-    const task = this.selectedLinkedTask();
-    if (!task) return;
-    this.tasksApi.update(task.id, { playbook_step: step }).subscribe({
-      next: () => {
-        const sel = this.selected();
-        if (sel) this.loadLinkedTasks(sel.id);
-      },
-    });
-  }
 
   // --- Unlinked tasks ---
 
@@ -2193,21 +2155,7 @@ export class WorkPage {
     });
   }
 
-  onUnlinkedTaskPlaybookChange(playbookId: string | null): void {
-    const task = this.selectedUnlinkedTask();
-    if (!task) return;
-    this.tasksApi.update(task.id, { playbook_name: playbookId, playbook_step: playbookId ? 0 : null }).subscribe({
-      next: () => this.loadUnlinkedTasks(),
-    });
-  }
 
-  onUnlinkedTaskPlaybookStepChange(step: number): void {
-    const task = this.selectedUnlinkedTask();
-    if (!task) return;
-    this.tasksApi.update(task.id, { playbook_step: step }).subscribe({
-      next: () => this.loadUnlinkedTasks(),
-    });
-  }
 
   // --- Task form (goal-linked only) ---
 

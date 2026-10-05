@@ -5,7 +5,6 @@ import { TranslocoModule } from '@jsverse/transloco';
 import { SpTask, SpTaskUpdate, SpTaskComment, SpTaskDependencies, ChangedFileSummary, UpdateTaskRequest, RelatedItems, TaskScoreComponents } from '../../../../core/services/tasks-api.service';
 import { BranchInfo, TaskBranchStatus } from '../../../../core/services/git-api.service';
 import { SpVerification } from '../../../../core/services/verifications-api.service';
-import { SpPlaybook } from '../../../../core/services/playbooks-api.service';
 import { taskStateColor, taskTransitions } from '../../../../shared/ui-constants';
 import { TaskDetailComponent } from '../task-detail/task-detail';
 
@@ -335,7 +334,6 @@ type SortDir = 'asc' | 'desc';
                   [verifications]="detailVerifications()"
                   [changedFiles]="detailChangedFiles()"
                   [gitStatus]="detailGitStatus()"
-                  [playbooks]="detailPlaybooks()"
                   [pushing]="detailPushing()"
                   [reverting]="detailReverting()"
                   [resolving]="detailResolving()"
@@ -357,8 +355,6 @@ type SortDir = 'asc' | 'desc';
                   (addDepClick)="detailAddDep.emit($event)"
                   (removeDep)="detailRemoveDep.emit($event)"
                   (deleteClick)="detailDelete.emit()"
-                  (playbookChange)="detailPlaybookChange.emit($event)"
-                  (playbookStepChange)="detailPlaybookStepChange.emit($event)"
                   (inlineUpdate)="detailInlineUpdate.emit($event)"
                   (navigateToTask)="detailNavigateToTask.emit($event)" />
               </div>
@@ -424,7 +420,6 @@ export class TaskListComponent {
   detailVerifications = input<SpVerification[]>([]);
   detailChangedFiles = input<ChangedFileSummary[]>([]);
   detailGitStatus = input<TaskBranchStatus | null>(null);
-  detailPlaybooks = input<SpPlaybook[]>([]);
   detailPushing = input(false);
   detailReverting = input(false);
   detailResolving = input(false);
@@ -457,13 +452,11 @@ export class TaskListComponent {
   detailAddDep = output<string>();
   detailRemoveDep = output<string>();
   detailDelete = output<void>();
-  detailPlaybookChange = output<string | null>();
-  detailPlaybookStepChange = output<number>();
   detailInlineUpdate = output<UpdateTaskRequest>();
   detailNavigateToTask = output<string>();
 
   readonly Math = Math;
-  states = input<string[]>(['backlog', 'ready', 'working', 'implement', 'review', 'merge', 'human_review', 'done', 'cancelled']);
+  states = input<string[]>(['backlog', 'ready', 'working', 'human_review', 'done', 'cancelled']);
   kinds = input<string[]>(['feature', 'bug', 'refactor', 'docs', 'test', 'research', 'chore', 'spike']);
   readonly bulkTransitionTargets = ['backlog', 'ready', 'done', 'cancelled'];
   openMenuId = signal<string | null>(null);

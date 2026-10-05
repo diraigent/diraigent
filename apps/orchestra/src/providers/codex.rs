@@ -1,5 +1,3 @@
-//! Codex CLI provider for agentic playbook steps.
-
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
@@ -10,28 +8,28 @@ use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
-use super::{ProviderConfig, ResolvedStep, StepOutput, StepProvider, TaskContext};
+use super::{ProviderConfig, ResolvedTask, TaskContext, TaskOutput, TaskProvider};
 
 pub struct CodexProvider;
 
 #[async_trait]
-impl StepProvider for CodexProvider {
+impl TaskProvider for CodexProvider {
     async fn execute(
         &self,
-        step: &ResolvedStep,
+        step: &ResolvedTask,
         task: &TaskContext,
         config: &ProviderConfig,
-    ) -> anyhow::Result<StepOutput> {
+    ) -> anyhow::Result<TaskOutput> {
         execute_with_binary(Path::new("codex"), step, task, config).await
     }
 }
 
 async fn execute_with_binary(
     binary: &Path,
-    step: &ResolvedStep,
+    step: &ResolvedTask,
     task: &TaskContext,
     config: &ProviderConfig,
-) -> anyhow::Result<StepOutput> {
+) -> anyhow::Result<TaskOutput> {
     let worktree = task
         .working_dir
         .as_deref()
@@ -104,7 +102,7 @@ async fn execute_with_binary(
     parse_events(&output.stdout)
 }
 
-fn parse_events(stdout: &[u8]) -> anyhow::Result<StepOutput> {
+fn parse_events(stdout: &[u8]) -> anyhow::Result<TaskOutput> {
     let mut content = None;
     let mut input_tokens = 0;
     let mut output_tokens = 0;
@@ -133,7 +131,7 @@ fn parse_events(stdout: &[u8]) -> anyhow::Result<StepOutput> {
     if !completed {
         bail!("Codex CLI returned no completed turn");
     }
-    Ok(StepOutput {
+    Ok(TaskOutput {
         content: content.unwrap_or_default(),
         exit_code: 0,
         artifacts: HashMap::new(),
@@ -182,7 +180,7 @@ mod tests {
         .unwrap();
         std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
 
-        let step = ResolvedStep {
+        let step = ResolvedTask {
             name: "review".into(),
             description: "Review".into(),
             model: Some("test-model".into()),
@@ -206,7 +204,6 @@ mod tests {
             task_id: "task-1".into(),
             project_id: "project-1".into(),
             project_context: "User request".into(),
-            previous_step_output: None,
             working_dir: Some(temp.path().to_path_buf()),
             log_file: Some(log_file.clone()),
             user_prompt: None,

@@ -101,26 +101,6 @@ async fn create_task(
 
     let task = state.db.create_task(project_id, &req, user_id).await?;
 
-    // Tasks with a playbook name start in ready and should emit the transition event.
-    if task.playbook_name.is_some() && task.state == "ready" {
-        state.fire_event(
-            task.project_id,
-            "task.transitioned",
-            "task",
-            task.id,
-            agent_id,
-            Some(user_id),
-            serde_json::json!({
-                "task_id": task.id,
-                "title": task.title,
-                "from": "backlog",
-                "to": "ready",
-                "playbook_name": task.playbook_name,
-                "playbook_step": task.playbook_step,
-            }),
-        );
-    }
-
     // If work_id provided, link the new task to the work item atomically
     if let Some(work_id) = req.work_id {
         state.db.link_task_work(work_id, task.id).await?;
@@ -474,9 +454,9 @@ async fn transition_task(
     .await?;
     let old_state = before.state.clone();
 
-    // Completing a "review" step additionally requires review authority.
+    // Completing a review task additionally requires review authority.
     // (execute check already passed above)
-    if req.state == "done" && old_state == "review" {
+    if req.state == "done" && before.context["mode"].as_str() == Some("review") {
         require_authority(
             state.db.as_ref(),
             agent_id,
@@ -487,16 +467,13 @@ async fn transition_task(
         .await?;
     }
 
-    let task = state
-        .db
-        .transition_task(task_id, &req.state, req.playbook_step)
-        .await?;
+    let task = state.db.transition_task(task_id, &req.state).await?;
 
-    // Auto-release file locks when task completes, is cancelled, or advances
-    // to the next pipeline step (step → ready advancement).
-    if matches!(task.state.as_str(), "done" | "cancelled")
-        || (task.state == "ready" && !is_lifecycle_state(&old_state))
-    {
+    // Release locks when execution stops, keeping the worktree available.
+    if matches!(
+        task.state.as_str(),
+        "done" | "cancelled" | "ready" | "backlog" | "human_review"
+    ) {
         let _ = state.db.release_file_locks_for_task(task_id).await;
     }
 
@@ -550,9 +527,8 @@ async fn claim_task(
             "Task state is managed by orchestra — claim via orchestra".into(),
         ));
     }
-    // Fetch task, then check authority for the playbook step being entered.
     // "review" step accepts either execute or review authority.
-    let step_name = state.db.resolve_claim_step_name(&before).await?;
+    let step_name = state.db.resolve_task_mode(&before).await?;
     let allowed = authorities_for_claim(&step_name);
     ensure_any_authority_on(state.db.as_ref(), agent_id, user_id, before, &allowed).await?;
 
@@ -822,7 +798,6 @@ async fn create_task_comment(
 enum BulkAction {
     Transition {
         target_state: String,
-        playbook_step: Option<i32>,
     },
     Delegate {
         delegated_by: Uuid,
@@ -884,17 +859,13 @@ async fn bulk_operate(
         };
 
         let result = match action {
-            BulkAction::Transition {
-                target_state,
-                playbook_step,
-            } => {
+            BulkAction::Transition { target_state } => {
                 bulk_transition_single(
                     state,
                     project_id,
                     *task_id,
                     task,
                     target_state,
-                    *playbook_step,
                     agent_id,
                     user_id,
                 )
@@ -942,27 +913,23 @@ async fn bulk_transition_single(
     task_id: Uuid,
     task: &Task,
     target_state: &str,
-    playbook_step: Option<i32>,
     agent_id: Option<Uuid>,
     user_id: Uuid,
 ) -> Result<(), String> {
     let old_state = task.state.clone();
     if target_state == "done"
-        && old_state == "review"
+        && task.context["mode"].as_str() == Some("review")
         && let Err(e) =
             require_authority(state.db.as_ref(), agent_id, user_id, project_id, "review").await
     {
         return Err(e.to_string());
     }
-    match state
-        .db
-        .transition_task(task_id, target_state, playbook_step)
-        .await
-    {
+    match state.db.transition_task(task_id, target_state).await {
         Ok(new_task) => {
-            if matches!(new_task.state.as_str(), "done" | "cancelled")
-                || (new_task.state == "ready" && !is_lifecycle_state(&old_state))
-            {
+            if matches!(
+                new_task.state.as_str(),
+                "done" | "cancelled" | "ready" | "backlog" | "human_review"
+            ) {
                 let _ = state.db.release_file_locks_for_task(task_id).await;
             }
             crate::metrics::record_task_transition(&old_state, &new_task.state);
@@ -1050,7 +1017,6 @@ async fn bulk_transition_tasks(
     require_authority(state.db.as_ref(), agent_id, user_id, project_id, "execute").await?;
     let action = BulkAction::Transition {
         target_state: req.state,
-        playbook_step: req.playbook_step,
     };
     let (succeeded, failed) = bulk_operate(
         &state,

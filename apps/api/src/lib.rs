@@ -8,6 +8,7 @@ pub mod db;
 pub mod error;
 pub mod event_triggers;
 pub mod metrics;
+pub mod migration_runner;
 pub mod models;
 pub mod openapi;
 pub mod package_cache;

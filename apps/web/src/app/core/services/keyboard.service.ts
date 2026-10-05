@@ -98,7 +98,6 @@ export class KeyboardService {
     '3': '/decisions',
     '4': '/',           // dashboard
     '5': '/pipelines',
-    '6': '/playbooks',
     '7': '/knowledge',
     '8': '/audit',
     '9': '/settings',
@@ -170,15 +169,6 @@ export class KeyboardService {
       ],
     },
     {
-      id: 'playbooks', path: '/playbooks',
-      actions: [
-        { id: 'create', label: 'New', key: 'n' },
-        { id: 'edit', label: 'Edit', key: 'e' },
-        { id: 'delete', label: 'Delete', key: 'D' },
-        { id: 'templates', label: 'Step Templates', key: 'T' },
-      ],
-    },
-    {
       id: 'knowledge', path: '/knowledge',
       actions: [
         { id: 'create', label: 'New', key: 'n' },
@@ -237,7 +227,6 @@ export class KeyboardService {
     { key: '3', description: 'Decisions', group: 'Navigation' },
     { key: '4', description: 'Dashboard', group: 'Navigation' },
     { key: '5', description: 'Pipelines', group: 'Navigation' },
-    { key: '6', description: 'Playbooks', group: 'Navigation' },
     { key: '7', description: 'Knowledge', group: 'Navigation' },
     { key: '8', description: 'Audit', group: 'Navigation' },
     { key: '9', description: 'Settings', group: 'Navigation' },

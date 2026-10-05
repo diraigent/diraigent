@@ -11,7 +11,6 @@ struct Project: Codable, Identifiable, Sendable {
     let repoUrl: String?
     let repoPath: String?
     let serviceName: String?
-    let defaultPlaybookId: UUID?
     let metadata: [String: AnyCodable]?
     let createdAt: String?
     let updatedAt: String?

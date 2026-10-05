@@ -3,8 +3,7 @@ import { HttpParams } from '@angular/common/http';
 import { EMPTY, Observable } from 'rxjs';
 import { BaseCrudApiService } from './base-crud-api.service';
 
-/** Well-known task states. Playbooks may define additional step states dynamically. */
-export type TaskState = 'backlog' | 'ready' | 'working' | 'implement' | 'review' | 'merge' | 'dream' | 'human_review' | 'done' | 'cancelled' | `wait:${string}` | (string & {});
+export type TaskState = 'backlog' | 'ready' | 'working' | 'human_review' | 'done' | 'cancelled';
 /** Well-known task kinds. Packages may define additional kinds dynamically. */
 export type TaskKind = 'feature' | 'bug' | 'chore' | 'spike' | 'refactor' | 'docs' | 'test' | 'research' | (string & {});
 export type UpdateKind = 'progress' | 'blocker' | 'question' | 'artifact' | 'note';
@@ -31,8 +30,6 @@ export interface SpTask {
   assigned_role_id: string | null;
   delegated_by: string | null;
   delegated_at: string | null;
-  playbook_name: string | null;
-  playbook_step: number | null;
   decision_id: string | null;
   created_by: string;
   created_at: string;
@@ -113,7 +110,6 @@ export interface CreateTaskRequest {
   urgent?: boolean;
   context?: Record<string, unknown>;
   required_capabilities?: string[];
-  playbook_name?: string;
   decision_id?: string;
   work_id?: string;
   parent_id?: string;
@@ -125,8 +121,6 @@ export interface UpdateTaskRequest {
   urgent?: boolean;
   context?: Record<string, unknown>;
   required_capabilities?: string[];
-  playbook_name?: string | null;
-  playbook_step?: number | null;
   flagged?: boolean;
 }
 

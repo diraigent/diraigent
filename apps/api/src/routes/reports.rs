@@ -1,8 +1,3 @@
-use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
-use axum::routing::{get, post};
-use axum::{Json, Router};
-use uuid::Uuid;
 use crate::AppState;
 use crate::auth::AuthUser;
 use crate::authz::{
@@ -11,9 +6,11 @@ use crate::authz::{
 use crate::error::AppError;
 use crate::models::*;
 use crate::validation;
-
-/// Repo/YAML playbook name used for report research tasks.
-const RESEARCHER_PLAYBOOK_NAME: &str = "research";
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use uuid::Uuid;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -59,6 +56,7 @@ async fn create(
             r.title, r.kind, r.prompt, project_id, r.id
         ),
         "report_id": r.id.to_string(),
+        "mode": "research",
         "notes": format!("This task was auto-created for report {}. Post results to POST /{}/reports/{}/complete", r.id, project_id, r.id),
     });
 
@@ -68,7 +66,6 @@ async fn create(
         urgent: None,
         context: Some(task_context),
         required_capabilities: None,
-        playbook_name: Some(RESEARCHER_PLAYBOOK_NAME.to_string()),
         decision_id: None,
         work_id: None,
         file_scope: None,
@@ -91,26 +88,9 @@ async fn create(
             };
             let r = state.db.update_report(r.id, &update_req).await?;
 
-            // Fire task creation event
-            if task.state == "ready" {
-                state.fire_event(
-                    project_id,
-                    "task.transitioned",
-                    "task",
-                    task.id,
-                    agent_id,
-                    Some(user_id),
-                    serde_json::json!({
-                        "task_id": task.id,
-                        "title": task.title,
-                        "from": "backlog",
-                        "to": "ready",
-                        "playbook_name": task.playbook_name,
-                        "playbook_step": task.playbook_step,
-                        "report_id": r.id,
-                    }),
-                );
-            }
+            state.db.transition_task(task.id, "ready").await?;
+            state.fire_event(project_id, "task.transitioned", "task", task.id,
+                agent_id, Some(user_id), serde_json::json!({"task_id": task.id, "from": "backlog", "to": "ready", "report_id": r.id}));
 
             Ok(Json(r))
         }

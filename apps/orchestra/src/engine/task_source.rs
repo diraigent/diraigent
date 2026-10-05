@@ -28,12 +28,6 @@ pub trait TaskSource: Send + Sync {
     async fn get_ready_tasks(&self, project_id: &str) -> Result<Vec<Value>>;
     async fn claim_task(&self, task_id: &str) -> Result<Value>;
     async fn transition_task(&self, task_id: &str, state: &str) -> Result<Value>;
-    async fn transition_task_with_step(
-        &self,
-        task_id: &str,
-        state: &str,
-        playbook_step: u64,
-    ) -> Result<Value>;
     async fn update_task(&self, task_id: &str, body: &Value) -> Result<Value>;
     async fn create_task(&self, project_id: &str, body: &Value) -> Result<Value>;
     async fn add_dependency(&self, task_id: &str, depends_on: &str) -> Result<Value>;
@@ -63,10 +57,6 @@ pub trait TaskSource: Send + Sync {
     async fn get_context_for_task(&self, project_id: &str, task_id: &str) -> Result<Value>;
     async fn get_verifications(&self, project_id: &str, task_id: &str) -> Result<Vec<Value>>;
     async fn get_related_items(&self, task_id: &str) -> Result<Value>;
-
-    // ── Playbooks ──
-
-    async fn get_step_template(&self, template_id: &str) -> Result<Value>;
 
     // ── Work items ──
 

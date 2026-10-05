@@ -1,7 +1,7 @@
 //! Claude Code CLI provider — wraps the Claude Code CLI subprocess.
 //!
 //! Spawns `claude -p` in a PTY via `script`, reads the stream-json log file
-//! for cost/token metrics, and returns a [`StepOutput`] with full telemetry.
+//! for cost/token metrics, and returns a [`TaskOutput`] with full telemetry.
 //!
 //! Registered as both `"claude-code"` (canonical) and `"anthropic"` (legacy alias).
 
@@ -18,19 +18,19 @@ use tracing::{error, warn};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-use super::{ProviderConfig, ResolvedStep, StepOutput, StepProvider, TaskContext};
+use super::{ProviderConfig, ResolvedTask, TaskContext, TaskOutput, TaskProvider};
 
 /// Provider that executes steps via the Claude Code CLI.
 pub struct ClaudeCodeProvider;
 
 #[async_trait]
-impl StepProvider for ClaudeCodeProvider {
+impl TaskProvider for ClaudeCodeProvider {
     async fn execute(
         &self,
-        step: &ResolvedStep,
+        step: &ResolvedTask,
         task: &TaskContext,
         _config: &ProviderConfig,
-    ) -> anyhow::Result<StepOutput> {
+    ) -> anyhow::Result<TaskOutput> {
         let worktree = task
             .working_dir
             .as_ref()
@@ -47,7 +47,7 @@ impl StepProvider for ClaudeCodeProvider {
         let (cost, input_tokens, output_tokens, turns, stop, is_err, result_text) =
             parse_result_from_log(log_file).await;
 
-        Ok(StepOutput {
+        Ok(TaskOutput {
             content: result_text,
             exit_code: if is_err { 1 } else { 0 },
             artifacts: HashMap::new(),
@@ -66,7 +66,7 @@ async fn run_claude(
     user_prompt: &str,
     worktree: &Path,
     log_file: &Path,
-    config: &ResolvedStep,
+    config: &ResolvedTask,
 ) -> anyhow::Result<()> {
     // Write prompts to temp files to avoid OS ARG_MAX limits.
     let temp_name = log_file

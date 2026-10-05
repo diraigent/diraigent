@@ -30,8 +30,6 @@ pub struct WorkFile {
     #[serde(default)]
     pub project_path: Option<PathBuf>,
     #[serde(default)]
-    pub playbook: Option<String>,
-    #[serde(default)]
     pub tasks: Vec<TaskDef>,
     /// If true and tasks is empty, auto-create a single task from the work item.
     #[serde(default = "default_true")]
@@ -126,8 +124,6 @@ impl LocalTaskSource {
                 "urgent": false,
                 "flagged": false,
                 "context": context,
-                "playbook_name": work.playbook,
-                "playbook_step": 0,
                 "created_at": chrono::Utc::now().to_rfc3339(),
             });
 
@@ -155,8 +151,6 @@ impl LocalTaskSource {
                     "urgent": task_def.urgent.unwrap_or(false),
                     "flagged": false,
                     "context": context,
-                    "playbook_name": work.playbook,
-                    "playbook_step": 0,
                     "created_at": chrono::Utc::now().to_rfc3339(),
                 });
 
@@ -237,7 +231,10 @@ impl TaskSource for LocalTaskSource {
     async fn claim_task(&self, task_id: &str) -> Result<Value> {
         let mut tasks = self.tasks.lock().unwrap();
         if let Some(t) = tasks.get_mut(task_id) {
-            t.data["state"] = json!("implement");
+            if t.data["state"] != "ready" {
+                bail!("task {task_id} is not ready");
+            }
+            t.data["state"] = json!("working");
             Ok(t.data.clone())
         } else {
             bail!("task {task_id} not found")
@@ -247,24 +244,12 @@ impl TaskSource for LocalTaskSource {
     async fn transition_task(&self, task_id: &str, state: &str) -> Result<Value> {
         let mut tasks = self.tasks.lock().unwrap();
         if let Some(t) = tasks.get_mut(task_id) {
+            let current = t.data["state"].as_str().unwrap_or("");
+            if !diraigent_types::state_machine::can_transition(current, state) {
+                bail!("invalid transition: {current} → {state}");
+            }
             t.data["state"] = json!(state);
             tracing::info!("local: task {} → {state}", &task_id[..12]);
-            Ok(t.data.clone())
-        } else {
-            bail!("task {task_id} not found")
-        }
-    }
-
-    async fn transition_task_with_step(
-        &self,
-        task_id: &str,
-        state: &str,
-        playbook_step: u64,
-    ) -> Result<Value> {
-        let mut tasks = self.tasks.lock().unwrap();
-        if let Some(t) = tasks.get_mut(task_id) {
-            t.data["state"] = json!(state);
-            t.data["playbook_step"] = json!(playbook_step);
             Ok(t.data.clone())
         } else {
             bail!("task {task_id} not found")
@@ -403,10 +388,6 @@ impl TaskSource for LocalTaskSource {
 
     async fn get_related_items(&self, _task_id: &str) -> Result<Value> {
         Ok(json!({"knowledge": [], "decisions": [], "observations": []}))
-    }
-
-    async fn get_step_template(&self, _template_id: &str) -> Result<Value> {
-        bail!("no step templates in local mode")
     }
 
     // ── Work items (no-op) ──

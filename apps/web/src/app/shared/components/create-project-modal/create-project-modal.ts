@@ -4,14 +4,13 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { TranslocoModule } from '@jsverse/transloco';
 import { catchError, of } from 'rxjs';
 import { DiraigentApiService, DgProject, DgPackage, DgGitMode } from '../../../core/services/diraigent-api.service';
-import { PlaybooksApiService, SpPlaybook } from '../../../core/services/playbooks-api.service';
 import { AgentsApiService, SpAgent } from '../../../core/services/agents-api.service';
 import { SpRole, TeamApiService } from '../../../core/services/team-api.service';
 import { ModalWrapperComponent } from '../modal-wrapper/modal-wrapper';
 
-type WizardStep = 'project' | 'playbook' | 'agent' | 'done';
+type WizardStep = 'project' | 'agent' | 'done';
 
-const STEP_LIST: WizardStep[] = ['project', 'playbook', 'agent', 'done'];
+const STEP_LIST: WizardStep[] = ['project', 'agent', 'done'];
 
 @Component({
   selector: 'app-create-project-modal',
@@ -233,89 +232,6 @@ const STEP_LIST: WizardStep[] = ['project', 'playbook', 'agent', 'done'];
           </div>
         }
 
-        <!-- Step 2: Select Default Playbook -->
-        @if (step() === 'playbook') {
-          <h2 class="text-lg font-semibold text-text-primary mb-2">{{ t('projects.wizard.playbookTitle') }}</h2>
-          <p class="text-sm text-text-secondary mb-5">{{ t('projects.wizard.playbookHint') }}</p>
-
-          <div class="space-y-4">
-            @if (loadingPlaybooks()) {
-              <p class="text-sm text-text-secondary">{{ t('common.loading') }}</p>
-            } @else {
-              <!-- Default Playbooks -->
-              @if (defaultPlaybooks().length > 0) {
-                <div>
-                  <span class="block text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">{{ t('projects.wizard.defaultPlaybooks') }}</span>
-                  <div class="grid grid-cols-2 gap-3">
-                    @for (pb of defaultPlaybooks(); track pb.id) {
-                      <button (click)="selectPlaybook(pb)" type="button"
-                        class="text-left p-3 rounded-lg border transition-colors"
-                        [class.border-accent]="selectedPlaybook()?.id === pb.id"
-                        [class.bg-accent/5]="selectedPlaybook()?.id === pb.id"
-                        [class.border-border]="selectedPlaybook()?.id !== pb.id"
-                        [class.hover:border-accent]="selectedPlaybook()?.id !== pb.id">
-                        <span class="block text-sm font-medium text-text-primary">{{ pb.title }}</span>
-                        <span class="block text-xs text-text-secondary mt-1 line-clamp-2">{{ pb.trigger_description }}</span>
-                        @if (pb.steps.length > 0) {
-                          <span class="block text-xs text-text-secondary mt-1">{{ pb.steps.length }} {{ pb.steps.length === 1 ? 'step' : 'steps' }}</span>
-                        }
-                      </button>
-                    }
-                  </div>
-                </div>
-              }
-
-              <!-- Your Playbooks -->
-              @if (tenantPlaybooks().length > 0) {
-                <div>
-                  <span class="block text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">{{ t('projects.wizard.yourPlaybooks') }}</span>
-                  <div class="grid grid-cols-2 gap-3">
-                    @for (pb of tenantPlaybooks(); track pb.id) {
-                      <button (click)="selectPlaybook(pb)" type="button"
-                        class="text-left p-3 rounded-lg border transition-colors"
-                        [class.border-accent]="selectedPlaybook()?.id === pb.id"
-                        [class.bg-accent/5]="selectedPlaybook()?.id === pb.id"
-                        [class.border-border]="selectedPlaybook()?.id !== pb.id"
-                        [class.hover:border-accent]="selectedPlaybook()?.id !== pb.id">
-                        <span class="block text-sm font-medium text-text-primary">{{ pb.title }}</span>
-                        <span class="block text-xs text-text-secondary mt-1 line-clamp-2">{{ pb.trigger_description }}</span>
-                        @if (pb.steps.length > 0) {
-                          <span class="block text-xs text-text-secondary mt-1">{{ pb.steps.length }} {{ pb.steps.length === 1 ? 'step' : 'steps' }}</span>
-                        }
-                      </button>
-                    }
-                  </div>
-                </div>
-              }
-
-              @if (defaultPlaybooks().length === 0 && tenantPlaybooks().length === 0) {
-                <p class="text-sm text-text-secondary">{{ t('projects.wizard.noPlaybooks') }}</p>
-              }
-            }
-
-            @if (playbookError()) {
-              <p class="text-sm text-ctp-red">{{ playbookError() }}</p>
-            }
-
-            <div class="flex gap-3 pt-2">
-              <button (click)="skipPlaybook()" type="button"
-                class="flex-1 px-4 py-2 text-sm text-text-secondary hover:text-text-primary border border-border
-                       rounded-lg hover:bg-surface transition-colors">
-                {{ t('common.skip') }}
-              </button>
-              <button (click)="confirmPlaybook()" type="button" [disabled]="!selectedPlaybook() || savingPlaybook()"
-                class="flex-1 px-4 py-2 text-sm font-medium bg-accent text-bg rounded-lg
-                       hover:opacity-90 disabled:opacity-50 transition-opacity">
-                @if (savingPlaybook()) {
-                  {{ t('common.saving') }}
-                } @else {
-                  {{ t('projects.wizard.setPlaybook') }}
-                }
-              </button>
-            </div>
-          </div>
-        }
-
         <!-- Step 3: Assign Agent -->
         @if (step() === 'agent') {
           <h2 class="text-lg font-semibold text-text-primary mb-2">{{ t('projects.wizard.agentTitle') }}</h2>
@@ -398,29 +314,6 @@ const STEP_LIST: WizardStep[] = ['project', 'playbook', 'agent', 'done'];
               </div>
             </div>
 
-            <!-- Playbook -->
-            <div class="flex items-start gap-3 p-3 rounded-lg bg-surface border border-border">
-              @if (configuredPlaybook()) {
-                <div class="w-6 h-6 rounded-full bg-ctp-green/20 flex items-center justify-center shrink-0 mt-0.5">
-                  <svg class="w-3.5 h-3.5 text-ctp-green" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                  </svg>
-                </div>
-                <div>
-                  <span class="block text-sm font-medium text-text-primary">{{ t('projects.wizard.summaryPlaybook') }}</span>
-                  <span class="block text-xs text-text-secondary">{{ configuredPlaybook()?.title }}</span>
-                </div>
-              } @else {
-                <div class="w-6 h-6 rounded-full bg-surface flex items-center justify-center shrink-0 mt-0.5 border border-border">
-                  <span class="text-xs text-text-secondary">—</span>
-                </div>
-                <div>
-                  <span class="block text-sm font-medium text-text-secondary">{{ t('projects.wizard.summaryPlaybook') }}</span>
-                  <span class="block text-xs text-text-secondary">{{ t('projects.wizard.skipped') }}</span>
-                </div>
-              }
-            </div>
-
             <!-- Agent -->
             <div class="flex items-start gap-3 p-3 rounded-lg bg-surface border border-border">
               @if (configuredAgent()) {
@@ -458,7 +351,6 @@ const STEP_LIST: WizardStep[] = ['project', 'playbook', 'agent', 'done'];
 })
 export class CreateProjectModalComponent implements OnInit, AfterViewInit {
   private api = inject(DiraigentApiService);
-  private playbooksApi = inject(PlaybooksApiService);
   private agentsApi = inject(AgentsApiService);
   private teamApi = inject(TeamApiService);
 
@@ -503,14 +395,6 @@ export class CreateProjectModalComponent implements OnInit, AfterViewInit {
     { value: 'none', labelKey: 'projects.wizard.gitNoneLabel', descKey: 'projects.wizard.gitNoneDesc' },
   ];
 
-  // Step 2: Playbook selection
-  playbooks = signal<SpPlaybook[]>([]);
-  loadingPlaybooks = signal(false);
-  selectedPlaybook = signal<SpPlaybook | null>(null);
-  savingPlaybook = signal(false);
-  playbookError = signal('');
-  configuredPlaybook = signal<SpPlaybook | null>(null);
-
   // Step 3: Agent assignment
   agents = signal<SpAgent[]>([]);
   roles = signal<SpRole[]>([]);
@@ -525,14 +409,6 @@ export class CreateProjectModalComponent implements OnInit, AfterViewInit {
   get selectedPackage(): DgPackage | null {
     if (!this.packageSlug) return null;
     return this.packages().find(p => p.slug === this.packageSlug) ?? null;
-  }
-
-  get defaultPlaybooks(): () => SpPlaybook[] {
-    return () => this.playbooks().filter(p => p.tenant_id === null);
-  }
-
-  get tenantPlaybooks(): () => SpPlaybook[] {
-    return () => this.playbooks().filter(p => p.tenant_id !== null);
   }
 
   ngOnInit(): void {
@@ -574,7 +450,6 @@ export class CreateProjectModalComponent implements OnInit, AfterViewInit {
     }
   }
 
-  /** Step 1 → create project, then advance to playbook step */
   onSubmitProject(): void {
     const name = this.name.trim();
     if (!name) return;
@@ -599,7 +474,7 @@ export class CreateProjectModalComponent implements OnInit, AfterViewInit {
       next: (project) => {
         this.saving.set(false);
         this.createdProject.set(project);
-        this.goToPlaybookStep();
+        this.goToAgentStep();
       },
       error: (err: HttpErrorResponse) => {
         this.saving.set(false);
@@ -609,80 +484,10 @@ export class CreateProjectModalComponent implements OnInit, AfterViewInit {
     });
   }
 
-  /** Load playbooks and advance to step 2 */
-  private goToPlaybookStep(): void {
-    this.step.set('playbook');
-    this.stepIndex.set(1);
-    this.loadingPlaybooks.set(true);
-
-    this.playbooksApi.list().pipe(
-      catchError(() => of([] as SpPlaybook[])),
-    ).subscribe(playbooks => {
-      this.playbooks.set(playbooks);
-      this.loadingPlaybooks.set(false);
-    });
-  }
-
-  selectPlaybook(pb: SpPlaybook): void {
-    this.selectedPlaybook.set(pb);
-  }
-
-  /** Confirm playbook selection — clone if shared, then set as default */
-  confirmPlaybook(): void {
-    const pb = this.selectedPlaybook();
-    const project = this.createdProject();
-    if (!pb || !project) return;
-
-    this.savingPlaybook.set(true);
-    this.playbookError.set('');
-
-    // If it's a shared default (tenant_id === null), clone it first
-    if (pb.tenant_id === null) {
-      this.playbooksApi.create({
-        title: pb.title,
-        trigger_description: pb.trigger_description,
-        steps: pb.steps,
-        tags: pb.tags,
-        initial_state: pb.initial_state,
-        metadata: pb.metadata,
-      }).subscribe({
-        next: (cloned) => {
-          this.setPlaybookOnProject(project.id, cloned);
-        },
-        error: (err) => {
-          this.savingPlaybook.set(false);
-          const msg = err?.error?.message || err?.error || 'Failed to clone playbook';
-          this.playbookError.set(typeof msg === 'string' ? msg : JSON.stringify(msg));
-        },
-      });
-    } else {
-      this.setPlaybookOnProject(project.id, pb);
-    }
-  }
-
-  private setPlaybookOnProject(projectId: string, pb: SpPlaybook): void {
-    this.api.updateProject(projectId, { default_playbook_name: pb.id }).subscribe({
-      next: () => {
-        this.savingPlaybook.set(false);
-        this.configuredPlaybook.set(pb);
-        this.goToAgentStep();
-      },
-      error: (err) => {
-        this.savingPlaybook.set(false);
-        const msg = err?.error?.message || err?.error || 'Failed to set playbook';
-        this.playbookError.set(typeof msg === 'string' ? msg : JSON.stringify(msg));
-      },
-    });
-  }
-
-  skipPlaybook(): void {
-    this.goToAgentStep();
-  }
-
   /** Load agents/roles and advance to step 3 */
   private goToAgentStep(): void {
     this.step.set('agent');
-    this.stepIndex.set(2);
+    this.stepIndex.set(1);
     this.loadingAgents.set(true);
 
     let agentsLoaded = false;
@@ -739,7 +544,7 @@ export class CreateProjectModalComponent implements OnInit, AfterViewInit {
 
   private goToDone(): void {
     this.step.set('done');
-    this.stepIndex.set(3);
+    this.stepIndex.set(2);
   }
 
   onDone(): void {

@@ -30,7 +30,6 @@ struct SyncBatch {
 struct TaskStatePush {
     task_id: String,
     state: String,
-    playbook_step: Option<i32>,
     assigned_agent_id: Option<String>,
     claimed_at: Option<String>,
     completed_at: Option<String>,
@@ -69,6 +68,12 @@ async fn receive_sync(
 
     // 1. Upsert task states (only for orchestra-managed tasks)
     for ts in &batch.task_states {
+        if !crate::models::is_valid_state(&ts.state) {
+            return Err(AppError::Validation(format!(
+                "invalid task state: {}",
+                ts.state
+            )));
+        }
         let task_id: uuid::Uuid = ts
             .task_id
             .parse()
@@ -77,19 +82,17 @@ async fn receive_sync(
         let rows = sqlx::query(
             r#"UPDATE diraigent.task
                SET state = $1,
-                   playbook_step = COALESCE($2, playbook_step),
-                   assigned_agent_id = $3::uuid,
-                   claimed_at = $4::timestamptz,
-                   completed_at = $5::timestamptz,
-                   state_entered_at = COALESCE($6::timestamptz, now()),
-                   input_tokens = COALESCE($7, input_tokens),
-                   output_tokens = COALESCE($8, output_tokens),
-                   cost_usd = COALESCE($9, cost_usd),
+                   assigned_agent_id = $2::uuid,
+                   claimed_at = $3::timestamptz,
+                   completed_at = $4::timestamptz,
+                   state_entered_at = COALESCE($5::timestamptz, now()),
+                   input_tokens = COALESCE($6, input_tokens),
+                   output_tokens = COALESCE($7, output_tokens),
+                   cost_usd = COALESCE($8, cost_usd),
                    updated_at = now()
-               WHERE id = $10 AND state_managed_by = 'orchestra'"#,
+               WHERE id = $9 AND state_managed_by = 'orchestra'"#,
         )
         .bind(&ts.state)
-        .bind(ts.playbook_step)
         .bind(&ts.assigned_agent_id)
         .bind(&ts.claimed_at)
         .bind(&ts.completed_at)

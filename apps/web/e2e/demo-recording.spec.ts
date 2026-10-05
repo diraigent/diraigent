@@ -2,7 +2,6 @@
  * Playwright demo recording for README animated GIF.
  *
  * Records a scripted walkthrough of the Diraigent UI:
- *   Dashboard → Work (expand goal) → Review Queue → Chat → Playbook
  *
  * Usage:
  *   cd apps/web
@@ -63,14 +62,6 @@ async function setupMocks(page: Page) {
     if (path.match(/^work\/(.+)\/tasks/)) return route.fulfill({ json: mock.tasks.data.slice(0, 3) });
     if (path === `${PROJECT_ID}/git/main-status`) return route.fulfill({ json: mock.mainPushStatus });
     if (path === `${PROJECT_ID}/git/branches`) return route.fulfill({ json: mock.branches });
-    if (path.match(/^playbooks\/(.+)/)) {
-      const pbId = path.match(/^playbooks\/(.+)/)![1];
-      const pb = mock.playbooks.find((p: Record<string, unknown>) => p.id === pbId);
-      return route.fulfill({ json: pb || mock.playbooks[0] });
-    }
-    if (path === 'playbooks' || path.match(/^playbooks$/)) return route.fulfill({ json: mock.playbooks });
-    if (path === `${PROJECT_ID}/step-templates`) return route.fulfill({ json: mock.stepTemplates });
-    if (path === 'git-strategies') return route.fulfill({ json: mock.gitStrategies });
     if (path.match(new RegExp(`^${PROJECT_ID}/observations`))) return route.fulfill({ json: mock.observations });
     if (path.match(new RegExp(`^${PROJECT_ID}/decisions`))) return route.fulfill({ json: mock.decisions });
     if (path.match(/^agents/)) return route.fulfill({ json: [] });
@@ -176,7 +167,7 @@ test.describe('Demo recording', () => {
         msgs.push({ role: 'user', content: 'Yes, create a subtask for the TLS investigation' });
         msgs.push({
           role: 'assistant',
-          content: 'Done. Created task **#16 — Investigate Redis TLS certificate rotation** with the Research Spike playbook.\n\n' +
+          content: 'Done. Created task **#16 — Investigate Redis TLS certificate rotation** as a research task.\n\n' +
             'The task includes:\n' +
             '- Check TLS cert expiry and renewal configuration\n' +
             '- Test connection stability after cert rotation\n' +
@@ -196,13 +187,9 @@ test.describe('Demo recording', () => {
       await page.waitForTimeout(2000);
     }
 
-    // ── Scene 5: Playbooks ──────────────────────────────
-    await page.locator('a:has-text("Playbooks")').click();
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1500);
 
-    // Navigate to edit the first playbook directly
-    await page.goto('/playbooks/pb-001/edit');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 

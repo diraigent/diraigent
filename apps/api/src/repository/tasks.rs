@@ -5,7 +5,6 @@ use crate::error::AppError;
 use crate::models::*;
 
 use super::projects::get_project_by_id;
-use super::transitions::resolve_step_name;
 use super::{Table, delete_by_id, fetch_by_id};
 
 const TASK_FILTERS_WHERE: &str = "WHERE project_id = $1 \
@@ -25,8 +24,7 @@ pub async fn create_task(
     req: &CreateTask,
     created_by: Uuid,
 ) -> Result<Task, AppError> {
-    // Verify project exists and get default playbook
-    let project = get_project_by_id(pool, project_id).await?;
+    get_project_by_id(pool, project_id).await?;
 
     let kind = req.kind.as_deref().unwrap_or("feature");
 
@@ -38,18 +36,11 @@ pub async fn create_task(
     let file_scope = req.file_scope.clone().unwrap_or_default();
     let urgent = req.urgent.unwrap_or(false);
 
-    // Use explicit playbook_name, or fall back to project default
-    let playbook_name = req
-        .playbook_name
-        .clone()
-        .or_else(|| project.default_playbook_name.clone());
-
-    // Tasks with a playbook start as "ready"; tasks without stay in "backlog".
-    let initial_state = if playbook_name.is_some() { "ready" } else { "backlog" };
+    let initial_state = "backlog";
 
     let task = sqlx::query_as::<_, Task>(
-        "INSERT INTO diraigent.task (project_id, title, kind, state, urgent, context, required_capabilities, playbook_name, playbook_step, decision_id, created_by, file_scope, parent_id, state_entered_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())
+        "INSERT INTO diraigent.task (project_id, title, kind, state, urgent, context, required_capabilities, decision_id, created_by, file_scope, parent_id, state_entered_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())
          RETURNING *",
     )
     .bind(project_id)
@@ -59,8 +50,6 @@ pub async fn create_task(
     .bind(urgent)
     .bind(&context)
     .bind(&capabilities)
-    .bind(playbook_name.as_deref())
-    .bind(if playbook_name.is_some() { Some(0i32) } else { None })
     .bind(req.decision_id)
     .bind(created_by)
     .bind(&file_scope)
@@ -167,7 +156,7 @@ pub async fn list_ready_tasks(
     let tasks = sqlx::query_as::<_, Task>(
         "SELECT t.* FROM diraigent.task t
          WHERE t.project_id = $1
-           AND (t.state = 'ready' OR t.state LIKE 'wait:%')
+           AND t.state = 'ready'
            AND NOT EXISTS (
                SELECT 1 FROM diraigent.task_dependency td
                JOIN diraigent.task t2 ON td.depends_on = t2.id
@@ -185,27 +174,8 @@ pub async fn list_ready_tasks(
     Ok(tasks)
 }
 
-/// Validates that a playbook_step value is non-negative.
-pub(crate) async fn validate_playbook_step(step: i32) -> Result<(), AppError> {
-    if step < 0 {
-        return Err(AppError::UnprocessableEntity(
-            "playbook_step cannot be negative".into(),
-        ));
-    }
-    Ok(())
-}
-
 pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Result<Task, AppError> {
     let existing = get_task_by_id(pool, task_id).await?;
-
-    let playbook_name = req
-        .playbook_name
-        .as_deref()
-        .or(existing.playbook_name.as_deref());
-
-    if let Some(step) = req.playbook_step {
-        validate_playbook_step(step).await?;
-    }
 
     let title = req.title.as_deref().unwrap_or(&existing.title);
     let kind = req.kind.as_deref().unwrap_or(&existing.kind);
@@ -215,7 +185,6 @@ pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Resu
         .required_capabilities
         .as_ref()
         .unwrap_or(&existing.required_capabilities);
-    let playbook_step = req.playbook_step.or(existing.playbook_step);
     let flagged = req.flagged.unwrap_or(existing.flagged);
     let file_scope = req.file_scope.as_ref().unwrap_or(&existing.file_scope);
 
@@ -227,7 +196,7 @@ pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Resu
 
     let task = sqlx::query_as::<_, Task>(
         "UPDATE diraigent.task
-         SET title = $2, kind = $3, urgent = $4, context = $5, required_capabilities = $6, playbook_step = $7, playbook_name = $8, flagged = $9, file_scope = $10, parent_id = $11
+         SET title = $2, kind = $3, urgent = $4, context = $5, required_capabilities = $6, flagged = $7, file_scope = $8, parent_id = $9
          WHERE id = $1 RETURNING *",
     )
     .bind(task_id)
@@ -236,8 +205,6 @@ pub async fn update_task(pool: &PgPool, task_id: Uuid, req: &UpdateTask) -> Resu
     .bind(urgent)
     .bind(context)
     .bind(capabilities)
-    .bind(playbook_step)
-    .bind(playbook_name)
     .bind(flagged)
     .bind(file_scope)
     .bind(parent_id)
@@ -564,9 +531,9 @@ pub async fn delegate_task(
     to_agent_id: Uuid,
     role_id: Option<Uuid>,
 ) -> Result<Task, AppError> {
-    // Look up task to resolve step name if needed
-    let existing = get_task_by_id(pool, task_id).await?;
-    let step_name = resolve_step_name(pool, &existing).await?;
+    // Verify the task exists before assigning execution.
+    get_task_by_id(pool, task_id).await?;
+    let step_name = "working";
 
     let task = sqlx::query_as::<_, Task>(
         "UPDATE diraigent.task
@@ -580,7 +547,7 @@ pub async fn delegate_task(
     .bind(to_agent_id)
     .bind(role_id)
     .bind(delegated_by_agent_id)
-    .bind(&step_name)
+    .bind(step_name)
     .fetch_optional(pool)
     .await?
     .ok_or_else(|| AppError::NotFound("Task not found".into()))?;
@@ -669,29 +636,4 @@ pub async fn list_subtasks(
     .fetch_all(pool)
     .await?;
     Ok(tasks)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // ── validate_playbook_step tests ──
-
-    #[tokio::test]
-    async fn validate_playbook_step_negative_step_is_rejected() {
-        let result = validate_playbook_step(-1).await;
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("cannot be negative"),
-            "expected 'cannot be negative', got: {err_msg}"
-        );
-    }
-
-    #[tokio::test]
-    async fn validate_playbook_step_non_negative_is_ok() {
-        assert!(validate_playbook_step(0).await.is_ok());
-        assert!(validate_playbook_step(5).await.is_ok());
-        assert!(validate_playbook_step(100).await.is_ok());
-    }
 }

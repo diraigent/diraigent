@@ -14,10 +14,8 @@ pub enum TaskState {
     Cancelled,
     HumanReview,
     Backlog,
-    /// A `wait:<step>` pause state.
-    Wait(String),
-    /// An active playbook step (e.g. "implement", "review").
-    Step(String),
+    Working,
+    Unknown(String),
 }
 
 impl TaskState {
@@ -29,11 +27,8 @@ impl TaskState {
             STATE_CANCELLED => Self::Cancelled,
             STATE_HUMAN_REVIEW => Self::HumanReview,
             STATE_BACKLOG => Self::Backlog,
-            other if other.starts_with("wait:") => {
-                Self::Wait(other.strip_prefix("wait:").unwrap_or("unknown").to_string())
-            }
-            "" => Self::Step(String::new()), // empty/missing
-            other => Self::Step(other.to_string()),
+            "working" => Self::Working,
+            other => Self::Unknown(other.to_owned()),
         }
     }
 }

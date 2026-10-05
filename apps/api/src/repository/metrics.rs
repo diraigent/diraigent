@@ -16,7 +16,6 @@ pub async fn get_project_metrics(
     let tasks_per_day = get_tasks_per_day(pool, project_id, since).await?;
     let avg_time_in_state = get_avg_time_in_state(pool, project_id, since).await?;
     let agent_breakdown = get_agent_breakdown(pool, project_id, since).await?;
-    let playbook_completion = get_playbook_completion(pool, project_id, since).await?;
     let cost_summary = get_cost_summary(pool, project_id, since).await?;
     let task_costs = get_task_costs(pool, project_id, since).await?;
     let tokens_per_day = get_tokens_per_day(pool, project_id, since).await?;
@@ -28,7 +27,6 @@ pub async fn get_project_metrics(
         tasks_per_day,
         avg_time_in_state_hours: avg_time_in_state,
         agent_breakdown,
-        playbook_completion,
         cost_summary,
         task_costs,
         tokens_per_day,
@@ -164,48 +162,6 @@ async fn get_agent_breakdown(
             avg_completion_hours: r.4,
         })
         .collect())
-}
-
-async fn get_playbook_completion(
-    pool: &PgPool,
-    project_id: Uuid,
-    since: chrono::DateTime<Utc>,
-) -> Result<Vec<PlaybookMetrics>, AppError> {
-    let rows: Vec<(String, i64, i64)> = sqlx::query_as(
-        "SELECT
-            t.playbook_name,
-            COUNT(*)::bigint AS total_tasks,
-            COUNT(*) FILTER (WHERE t.state = 'done')::bigint AS completed_tasks
-         FROM diraigent.task t
-         WHERE t.project_id = $1
-           AND t.playbook_name IS NOT NULL
-           AND t.created_at >= $2
-         GROUP BY t.playbook_name
-         ORDER BY t.playbook_name",
-    )
-    .bind(project_id)
-    .bind(since)
-    .fetch_all(pool)
-    .await?;
-
-    let metrics = rows
-        .into_iter()
-        .map(|(playbook_name, total_tasks, completed_tasks)| {
-            let completion_rate = if total_tasks > 0 {
-                completed_tasks as f64 / total_tasks as f64
-            } else {
-                0.0
-            };
-            PlaybookMetrics {
-                playbook_name,
-                total_tasks,
-                completed_tasks,
-                completion_rate,
-            }
-        })
-        .collect();
-
-    Ok(metrics)
 }
 
 async fn get_cost_summary(

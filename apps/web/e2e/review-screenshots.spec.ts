@@ -53,19 +53,7 @@ test.describe('Branch review screenshots', () => {
     await page.screenshot({ path: `${DIR}/decisions.png`, fullPage: false });
   });
 
-  test('playbooks', async ({ page }) => {
-    await page.goto('/playbooks');
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(1000);
-    await page.screenshot({ path: `${DIR}/playbooks.png`, fullPage: false });
-  });
 
-  test('playbook builder', async ({ page }) => {
-    await page.goto('/playbooks/pb-001/edit');
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(1000);
-    await page.screenshot({ path: `${DIR}/playbook-builder.png`, fullPage: false });
-  });
 
   test('pipelines', async ({ page }) => {
     await page.goto('/pipelines');

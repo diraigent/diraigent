@@ -5,14 +5,14 @@ use tokio::task::JoinHandle;
 use tracing::{error, info, warn};
 
 use crate::config::{ActiveTasks, LockQueue};
-use crate::engine::pipeline::{self, StepOutcome};
 use crate::engine::task_source::TaskSource;
-use crate::git::strategy::GitAction;
+use crate::git::strategy::GitStrategy;
+
 use crate::project::api::retry_api_call;
 use crate::project::paths as project_paths;
 use crate::task_id::TaskId;
 
-/// Collect finished tasks and process them (check pipeline state, merge/cleanup).
+/// Collect finished tasks and process them (check task state, merge/cleanup).
 /// Returns `true` if any file locks were released (triggers immediate re-poll for queued tasks).
 pub async fn reap_finished(
     api: &dyn TaskSource,
@@ -46,7 +46,7 @@ pub async fn reap_finished(
     results.iter().any(|released| *released)
 }
 
-/// Process a single reaped task: join the handle, check pipeline state, and merge/cleanup.
+/// Process a single reaped task: join the handle, check task state, and merge/cleanup.
 /// Returns `true` if file locks were released (so queued tasks can be retried).
 async fn process_reaped_task(
     api: &dyn TaskSource,
@@ -61,11 +61,11 @@ async fn process_reaped_task(
             info!("reaped worker {tid}");
         }
         Err(e) => {
-            error!("worker {tid} panicked: {e} — skipping pipeline advancement and merge");
+            error!("worker {tid} panicked: {e} — skipping merge");
             let msg = format!(
                 "Worker panicked (JoinHandle error): {e}. \
                  Worktree preserved for inspection. \
-                 Pipeline advancement and merge skipped."
+                 Merge skipped."
             );
             if let Err(comment_err) = api.post_comment(&task_id, &msg).await {
                 warn!("failed to post blocker comment for {tid}: {comment_err}");
@@ -74,121 +74,35 @@ async fn process_reaped_task(
         }
     }
 
-    // Check if there's a next pipeline step
-    let outcome = match check_project_pipeline(api, &task_id, projects_path).await {
+    // Verify the worker left the task in a safe final state
+    let outcome = match check_task_outcome(api, &task_id).await {
         Ok(outcome) => outcome,
         Err(e) => {
             error!(
-                "check_next_step API error for {tid}: {e} — skipping merge to avoid pushing incomplete work"
+                "completion check API error for {tid}: {e} — skipping merge to avoid pushing incomplete work"
             );
             let msg = format!(
-                "Pipeline advancement failed: {e}. \
+                "Task completion check failed: {e}. \
                  Merge skipped to avoid pushing incomplete work. \
                  Manual intervention may be needed."
             );
             if let Err(comment_err) = api.post_comment(&task_id, &msg).await {
-                warn!("failed to post pipeline-error comment for {tid}: {comment_err}");
+                warn!("failed to post completion-error comment for {tid}: {comment_err}");
             }
+            let _ = api.transition_task(&task_id, "human_review").await;
             return false;
         }
     };
 
     // Track project_id for file lock release on terminal outcomes.
-    let mut release_lock_project_id: Option<String> = None;
+    let release_lock_project_id: Option<String>;
 
     match outcome {
-        StepOutcome::Continue => {
-            tracing::debug!("task {tid} pipeline continues");
+        TaskOutcome::Retry { project_id } => {
+            release_lock_project_id = Some(project_id);
+            tracing::debug!("task {tid} released for retry");
         }
-        StepOutcome::ContinueWithGitAction {
-            project_id,
-            git_strategy,
-            git_action,
-        } => {
-            let wm = match project_paths::create_project_wm(api, &project_id, projects_path).await {
-                Ok(wm) => wm,
-                Err(e) => {
-                    error!(
-                        "reap {tid}: failed to resolve project WM for {project_id}: {e} — skipping git action"
-                    );
-                    return false;
-                }
-            };
-
-            match git_action {
-                GitAction::Merge => {
-                    let target = git_strategy
-                        .merge_target(wm.default_branch())
-                        .unwrap_or_else(|| wm.default_branch());
-                    // Collect stats before merge (branch is deleted after successful merge)
-                    let branch_name = TaskId::new(&task_id).branch_name();
-                    let changed_files = wm.collect_changed_files(&task_id).unwrap_or_default();
-                    let (insertions, deletions) =
-                        wm.diff_insertion_deletion_stats(&task_id).unwrap_or((0, 0));
-                    match wm.merge_to_branch(&task_id, target) {
-                        Ok(_) => {
-                            info!("mid-pipeline merge for {tid} to {target} succeeded");
-                            let file_paths: Vec<&str> =
-                                changed_files.iter().map(|f| f.path.as_str()).collect();
-                            emit_merge_event(
-                                api,
-                                &project_id,
-                                &task_id,
-                                &branch_name,
-                                target,
-                                &file_paths,
-                                insertions,
-                                deletions,
-                            )
-                            .await;
-                            wm.remove_worktree(&task_id);
-                        }
-                        Err(e) => {
-                            error!("mid-pipeline merge failed for {tid}: {e} — keeping branch");
-                            emit_merge_error_event(
-                                api,
-                                &project_id,
-                                &task_id,
-                                &branch_name,
-                                target,
-                                &format!("{e:#}"),
-                            )
-                            .await;
-                            let msg = format!(
-                                "Mid-pipeline merge to {target} failed: {e}. \
-                                 Worktree preserved for manual resolution."
-                            );
-                            if let Err(comment_err) = api.post_comment(&task_id, &msg).await {
-                                warn!(
-                                    "failed to post merge-failure comment for {tid}: {comment_err}"
-                                );
-                            }
-                        }
-                    }
-                }
-                GitAction::Push => {
-                    if wm.is_git_enabled() {
-                        match wm.push_task_branch(&task_id) {
-                            Ok(_) => {
-                                info!("mid-pipeline push for {tid} succeeded");
-                            }
-                            Err(e) => {
-                                error!("mid-pipeline push failed for {tid}: {e} — continuing");
-                                let msg =
-                                    format!("Mid-pipeline push failed: {e}. Pipeline continues.");
-                                if let Err(comment_err) = api.post_comment(&task_id, &msg).await {
-                                    warn!(
-                                        "failed to post push-failure comment for {tid}: {comment_err}"
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-                GitAction::None => {}
-            }
-        }
-        StepOutcome::AllDone {
+        TaskOutcome::Done {
             project_id,
             git_strategy,
         } => {
@@ -199,7 +113,15 @@ async fn process_reaped_task(
                     error!(
                         "reap {tid}: failed to resolve project WM for {project_id}: {e} — skipping merge"
                     );
-                    return false;
+                    let _ = api
+                        .post_comment(
+                            &task_id,
+                            &format!("Git delivery blocked: {e}. Worktree preserved for review."),
+                        )
+                        .await;
+                    let _ = api.transition_task(&task_id, "human_review").await;
+                    let _ = api.release_file_locks(&project_id, &task_id).await;
+                    return true;
                 }
             };
 
@@ -283,10 +205,11 @@ async fn process_reaped_task(
                 wm.remove_worktree(&task_id);
             }
         }
-        StepOutcome::AlreadyReady => {
+        TaskOutcome::AwaitingReview { project_id } => {
+            release_lock_project_id = Some(project_id);
             tracing::debug!("task {tid} in human_review — no action needed");
         }
-        StepOutcome::Cancelled { project_id } => {
+        TaskOutcome::Cancelled { project_id } => {
             release_lock_project_id = Some(project_id.clone());
             info!("task {tid} cancelled — removing worktree (no merge)");
             if let Ok(wm) = project_paths::create_project_wm(api, &project_id, projects_path).await
@@ -303,11 +226,11 @@ async fn process_reaped_task(
                 warn!("failed to post cancellation comment for {tid}: {e}");
             }
         }
-        StepOutcome::UnexpectedState(state) => {
+        TaskOutcome::UnexpectedState(state) => {
             warn!("task {tid} in unexpected state '{state}' — skipping merge, keeping worktree");
             let msg = format!(
                 "Task in unexpected state \'{state}\' after worker completed — \
-                 skipping merge and pipeline advancement. \
+                 skipping merge. \
                  Worktree preserved for investigation."
             );
             if let Err(comment_err) = api.post_comment(&task_id, &msg).await {
@@ -322,8 +245,7 @@ async fn process_reaped_task(
         }
     }
 
-    // Release file locks for terminal outcomes.
-    // Continue/ContinueWithGitAction/AlreadyReady keep locks since the task is still in-pipeline.
+    // Release execution locks after the worker stops; review retains the worktree.
     let mut locks_released = false;
     if let Some(ref pid) = release_lock_project_id {
         match api.release_file_locks(pid, &task_id).await {
@@ -354,29 +276,45 @@ async fn process_reaped_task(
     locks_released
 }
 
-/// Resolve the task's own repository before inspecting its YAML pipeline.
-/// A missing repository or failed lookup remains an error, preserving the worktree.
-async fn check_project_pipeline(
-    api: &dyn TaskSource,
-    task_id: &str,
-    projects_path: &Path,
-) -> anyhow::Result<StepOutcome> {
+#[derive(Debug, PartialEq)]
+enum TaskOutcome {
+    Retry {
+        project_id: String,
+    },
+    Done {
+        project_id: String,
+        git_strategy: GitStrategy,
+    },
+    Cancelled {
+        project_id: String,
+    },
+    AwaitingReview {
+        project_id: String,
+    },
+    UnexpectedState(String),
+}
+async fn check_task_outcome(api: &dyn TaskSource, task_id: &str) -> anyhow::Result<TaskOutcome> {
     let tid = TaskId::new(task_id);
     let task = retry_api_call("get_task", &tid, || api.get_task(task_id)).await?;
-    let paths = if task["state"] == "ready"
-        && task["playbook_name"]
-            .as_str()
-            .is_some_and(|name| !name.is_empty())
-    {
-        let project_id = task["project_id"]
-            .as_str()
-            .ok_or_else(|| anyhow::anyhow!("task {tid}: missing project_id"))?;
-        Some(project_paths::resolve_project_paths(api, project_id, projects_path).await?)
-    } else {
-        None
-    };
-    let git_root = paths.as_ref().and_then(|paths| paths.git_root.as_deref());
-    pipeline::check_next_step_for_task(api, task_id, &task, git_root).await
+    let project_id = task["project_id"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("task missing project_id"))?
+        .to_owned();
+    match task["state"].as_str().unwrap_or("") {
+        "done" => {
+            let project = api.get_project(&project_id).await?;
+            let mode = project["git_mode"].as_str().unwrap_or("standalone");
+            let strategy = crate::git::strategy::resolve_strategy(api, Some(&task), mode).await?;
+            Ok(TaskOutcome::Done {
+                project_id,
+                git_strategy: strategy,
+            })
+        }
+        "cancelled" => Ok(TaskOutcome::Cancelled { project_id }),
+        "human_review" | "backlog" => Ok(TaskOutcome::AwaitingReview { project_id }),
+        "ready" => Ok(TaskOutcome::Retry { project_id }),
+        other => Ok(TaskOutcome::UnexpectedState(other.to_owned())),
+    }
 }
 
 // ── Git event helpers ──
@@ -454,66 +392,52 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    #[tokio::test]
+    async fn human_review_is_held_without_loading_a_git_policy() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/tasks/task-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id":"task-1", "project_id":"proj-1", "state":"human_review"
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/proj-1"))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(0)
+            .mount(&server)
+            .await;
+        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        assert_eq!(
+            check_task_outcome(&api, "task-1").await.unwrap(),
+            TaskOutcome::AwaitingReview {
+                project_id: "proj-1".to_owned()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn unavailable_git_policy_prevents_completion_delivery() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/tasks/task-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id":"task-1", "project_id":"proj-1", "state":"done"
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/proj-1"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+        let api = ProjectsApi::new(&server.uri(), "test-agent");
+        assert!(check_task_outcome(&api, "task-1").await.is_err());
+    }
+
     fn new_lock_queue() -> LockQueue {
         Arc::new(Mutex::new(HashMap::new()))
-    }
-
-    #[tokio::test]
-    async fn ready_playbook_resolves_the_tasks_project_repository() {
-        let server = MockServer::start().await;
-        let root = tempfile::tempdir().unwrap();
-        let repo = root.path().join("another-project/repo");
-        std::fs::create_dir_all(repo.join(".diraigent/playbooks")).unwrap();
-        std::fs::write(
-            repo.join(".diraigent/playbooks/custom.yaml"),
-            "title: Custom\nsteps:\n  - name: implement\n    git_action: push\n  - name: review\n",
-        )
-        .unwrap();
-        Mock::given(method("GET"))
-            .and(path("/tasks/task-1"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id":"task-1", "project_id":"proj-2", "state":"ready",
-                "playbook_name":"custom", "playbook_step":1
-            })))
-            .expect(1)
-            .mount(&server)
-            .await;
-        Mock::given(method("GET")).and(path("/proj-2"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id":"proj-2", "git_mode":"standalone", "git_root":"another-project/repo", "metadata":{}
-            }))).mount(&server).await;
-        let api = ProjectsApi::new(&server.uri(), "test-agent");
-        let result = check_project_pipeline(&api, "task-1", root.path())
-            .await
-            .unwrap();
-        assert!(
-            matches!(result, StepOutcome::ContinueWithGitAction { project_id, git_action: GitAction::Push, .. } if project_id == "proj-2")
-        );
-    }
-
-    #[tokio::test]
-    async fn unresolved_project_preserves_pipeline_error() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/tasks/task-1"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id":"task-1", "project_id":"missing-project", "state":"ready",
-                "playbook_name":"standard-lifecycle", "playbook_step":0
-            })))
-            .mount(&server)
-            .await;
-        Mock::given(method("GET"))
-            .and(path("/missing-project"))
-            .respond_with(ResponseTemplate::new(404))
-            .mount(&server)
-            .await;
-        let api = ProjectsApi::new(&server.uri(), "test-agent");
-        let root = tempfile::tempdir().unwrap();
-        assert!(
-            check_project_pipeline(&api, "task-1", root.path())
-                .await
-                .is_err()
-        );
     }
 
     /// Mount a project mock that returns git_mode="none" so create_project_wm
@@ -540,7 +464,7 @@ mod tests {
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(serde_json::json!({
-                        "id": "task-1", "state": "done", "playbook_id": null, "playbook_step": 0,
+                        "id": "task-1", "state": "done",
                         "project_id": "proj-1"
                     }))
                     .set_delay(std::time::Duration::from_millis(200)),
@@ -687,7 +611,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/tasks/task-1"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": "task-1", "state": "done", "playbook_id": null, "playbook_step": 0,
+                "id": "task-1", "state": "done",
                 "project_id": project_id,
             })))
             .mount(&server)
@@ -723,7 +647,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/tasks/task-1"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": task_id, "state": "cancelled", "playbook_id": null, "playbook_step": 0,
+                "id": task_id, "state": "cancelled",
                 "project_id": project_id,
             })))
             .mount(&server)
@@ -768,7 +692,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/tasks/task-1"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "id": "task-1", "state": "done", "playbook_id": null, "playbook_step": 0,
+                "id": "task-1", "state": "done",
                 "project_id": project_id,
             })))
             .mount(&server)

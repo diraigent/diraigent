@@ -116,22 +116,6 @@ async function setupMocks(page: Page) {
       return route.fulfill({ json: mock.branches });
     }
 
-    // Playbooks — individual playbook or list
-    if (path.match(/^playbooks\/(.+)/)) {
-      const pbId = path.match(/^playbooks\/(.+)/)![1];
-      const pb = mock.playbooks.find((p: Record<string, unknown>) => p.id === pbId);
-      return route.fulfill({ json: pb || mock.playbooks[0] });
-    }
-    if (path === 'playbooks' || path.match(/^playbooks$/)) {
-      return route.fulfill({ json: mock.playbooks });
-    }
-    if (path === `${PROJECT_ID}/step-templates`) {
-      return route.fulfill({ json: mock.stepTemplates });
-    }
-    if (path === 'git-strategies') {
-      return route.fulfill({ json: mock.gitStrategies });
-    }
-
     // Observations
     if (path.match(new RegExp(`^${PROJECT_ID}/observations`))) {
       return route.fulfill({ json: mock.observations });
@@ -231,8 +215,8 @@ test.describe('Landing page screenshots', () => {
       const messages = [
         { role: 'user', content: 'What tasks are currently blocked?' },
         { role: 'assistant', content: 'There is one blocked task:\n\n**#15 — Migrate user sessions to Redis** (feature, implement)\n\nBlocker: Redis cluster connection fails intermittently. The issue appears to be related to TLS certificate rotation. I recommend checking the cert expiry and renewal configuration.\n\nWould you like me to create a subtask to investigate the Redis TLS setup?' },
-        { role: 'user', content: 'Yes, create that subtask and assign it to the research spike playbook.' },
-        { role: 'assistant', content: 'Done. Created task **#16 — Investigate Redis TLS certificate rotation** with the Research Spike playbook. It\'s now in the ready queue and will be picked up by the next available agent.\n\nThe task includes:\n- Spec: Check TLS cert expiry, test renewal flow, document rotation procedure\n- Acceptance criteria: Redis connection stable after cert rotation\n- Parent: #15 (Migrate user sessions to Redis)' },
+        { role: 'user', content: 'Yes, create that subtask and make it a research task.' },
+        { role: 'assistant', content: 'Done. Created task **#16 — Investigate Redis TLS certificate rotation** as a research task. It\'s now in the ready queue and will be picked up by the next available agent.\n\nThe task includes:\n- Spec: Check TLS cert expiry, test renewal flow, document rotation procedure\n- Acceptance criteria: Redis connection stable after cert rotation\n- Parent: #15 (Migrate user sessions to Redis)' },
       ];
       localStorage.setItem(`diraigent-chat-${pid}`, JSON.stringify(messages));
     });
@@ -244,11 +228,4 @@ test.describe('Landing page screenshots', () => {
     await screenshot(page, 'screenshot-chat');
   });
 
-  test('playbook builder', async ({ page }) => {
-    // Navigate to edit the first playbook
-    await page.goto('/playbooks/pb-001/edit');
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(1000);
-    await screenshot(page, 'screenshot-playbook');
-  });
 });

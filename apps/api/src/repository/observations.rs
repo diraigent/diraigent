@@ -125,13 +125,7 @@ pub async fn promote_observation(
     let kind = req.kind.clone().unwrap_or_else(|| "chore".to_string());
     let urgent = req.urgent.unwrap_or(false);
 
-    // Resolve project defaults before starting the transaction (read-only).
-    let project = get_project_by_id(pool, obs.project_id).await?;
-    let playbook_name = req
-        .playbook_name
-        .clone()
-        .or_else(|| project.default_playbook_name.clone());
-    let initial_state = if playbook_name.is_some() { "ready" } else { "backlog" };
+    let initial_state = "backlog";
     let context = serde_json::Value::Object(Default::default());
     let capabilities: Vec<String> = vec![];
     let success_criteria = serde_json::json!([]);
@@ -163,23 +157,17 @@ pub async fn promote_observation(
     let task = sqlx::query_as::<_, Task>(
         "INSERT INTO diraigent.task
              (project_id, title, kind, state, urgent, context, required_capabilities,
-              playbook_name, playbook_step, decision_id, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+              decision_id, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING *",
     )
     .bind(obs.project_id)
     .bind(&title)
     .bind(&kind)
-    .bind(&initial_state)
+    .bind(initial_state)
     .bind(urgent)
     .bind(&context)
     .bind(&capabilities)
-    .bind(playbook_name.as_deref())
-    .bind(if playbook_name.is_some() {
-        Some(0i32)
-    } else {
-        None
-    })
     .bind(Option::<Uuid>::None) // decision_id
     .bind(created_by)
     .fetch_one(&mut *tx)

@@ -1,6 +1,6 @@
-//! Provider abstraction for step execution.
+//! Provider abstraction for task execution.
 //!
-//! This module defines the [`StepProvider`] trait and a [`ProviderFactory`] for
+//! This module defines the [`TaskProvider`] trait and a [`ProviderFactory`] for
 //! creating provider instances by name. Seven providers are registered:
 //!
 //! - `claude-code` — Claude Code CLI subprocess (agentic, PTY, tools)
@@ -28,9 +28,8 @@ use serde_json::Value;
 
 // ── Shared types ────────────────────────────────────────────────────────────
 
-/// A playbook step with all template variables substituted and fields resolved.
 #[derive(Debug, Clone)]
-pub struct ResolvedStep {
+pub struct ResolvedTask {
     /// Step name (e.g. "implement", "review").
     pub name: String,
     /// Fully-resolved description/prompt for the step.
@@ -66,8 +65,6 @@ pub struct TaskContext {
     pub project_id: String,
     /// Serialised project context (JSON string).
     pub project_context: String,
-    /// Output from the previous step, if any.
-    pub previous_step_output: Option<String>,
     /// Working directory (git worktree path). Required by Claude Code provider.
     pub working_dir: Option<PathBuf>,
     /// Log file path for PTY recording. Required by Claude Code provider.
@@ -89,16 +86,16 @@ pub struct ProviderConfig {
     pub model: Option<String>,
 }
 
-/// The output produced by a provider after executing a step.
+/// The output produced by a provider after executing a task.
 #[derive(Debug, Clone)]
-pub struct StepOutput {
+pub struct TaskOutput {
     /// The textual content returned by the provider.
     pub content: String,
     /// Process exit code (0 = success).
     pub exit_code: i32,
     /// Optional key-value artifacts produced during execution.
     pub artifacts: HashMap<String, String>,
-    /// Total cost in USD for the step execution.
+    /// Total cost in USD for task execution.
     pub cost_usd: f64,
     /// Number of input tokens consumed.
     pub input_tokens: u64,
@@ -114,19 +111,18 @@ pub struct StepOutput {
 
 // ── Trait ────────────────────────────────────────────────────────────────────
 
-/// Trait for executing a playbook step via a specific LLM provider.
 ///
 /// Implementors handle the details of calling the provider's API or spawning
 /// a subprocess (as in the Claude Code case).
 #[async_trait]
-pub trait StepProvider: Send + Sync {
+pub trait TaskProvider: Send + Sync {
     /// Execute the given step in the context of the given task.
     async fn execute(
         &self,
-        step: &ResolvedStep,
+        step: &ResolvedTask,
         task: &TaskContext,
         config: &ProviderConfig,
-    ) -> anyhow::Result<StepOutput>;
+    ) -> anyhow::Result<TaskOutput>;
 }
 
 // ── Factory ─────────────────────────────────────────────────────────────────
@@ -136,16 +132,16 @@ pub trait StepProvider: Send + Sync {
 #[error("unknown provider: \"{0}\"")]
 pub struct UnknownProviderError(String);
 
-/// Factory that creates [`StepProvider`] instances by provider name.
+/// Factory that creates [`TaskProvider`] instances by provider name.
 pub struct ProviderFactory;
 
 impl ProviderFactory {
-    /// Create a boxed [`StepProvider`] for the given provider name.
+    /// Create a boxed [`TaskProvider`] for the given provider name.
     ///
     /// Known providers: `"opencode"`, `"claude-code"`, `"codex"`, `"anthropic"`, `"openai"`, `"copilot"`, `"ollama"`.
     ///
     /// Returns [`UnknownProviderError`] for any unrecognised name.
-    pub fn create(provider_name: &str) -> Result<Box<dyn StepProvider>, UnknownProviderError> {
+    pub fn create(provider_name: &str) -> Result<Box<dyn TaskProvider>, UnknownProviderError> {
         match provider_name {
             "opencode" => Ok(Box::new(opencode::OpenCodeProvider)),
             "claude-code" => Ok(Box::new(claude_code::ClaudeCodeProvider)),
@@ -219,8 +215,8 @@ mod tests {
         assert!(result.is_err(), "empty provider name should return error");
     }
 
-    fn test_step() -> ResolvedStep {
-        ResolvedStep {
+    fn test_step() -> ResolvedTask {
+        ResolvedTask {
             name: "test".into(),
             description: "test step".into(),
             model: None,
@@ -241,7 +237,6 @@ mod tests {
             task_id: "test-task-id".into(),
             project_id: "test-project-id".into(),
             project_context: "{}".into(),
-            previous_step_output: None,
             working_dir: None,
             log_file: None,
             user_prompt: None,

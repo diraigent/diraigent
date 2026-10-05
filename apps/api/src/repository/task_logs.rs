@@ -10,7 +10,7 @@ pub async fn create_task_log(
     agent_id: Option<Uuid>,
     req: &CreateTaskLog,
 ) -> Result<TaskLog, AppError> {
-    let step_name = req.step_name.as_deref().unwrap_or("implement");
+    let step_name = req.step_name.as_deref().unwrap_or("working");
     let metadata = req
         .metadata
         .clone()

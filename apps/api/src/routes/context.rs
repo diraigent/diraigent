@@ -24,7 +24,6 @@ pub struct ContextQuery {
 
 /// Single call that loads everything an agent needs to operate on a project:
 /// role, authorities, knowledge (scoped), decisions, integrations, ready tasks,
-/// current tasks, open observations, recent events, and playbooks.
 ///
 /// Pass `?task_id=<uuid>` to enable semantic ranking of knowledge entries by
 /// cosine similarity to the task spec. Falls back to the full list when the

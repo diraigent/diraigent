@@ -1,10 +1,9 @@
 pub mod chat;
 pub mod chat_models;
-pub mod default_playbooks;
 pub mod state_machine;
-pub mod step_profile;
 pub mod sync;
+pub mod task_profile;
 
 pub use chat::{ChatSseEvent, DoneMessage};
 pub use chat_models::ChatModelCatalog;
-pub use step_profile::StepProfile;
+pub use task_profile::TaskProfile;

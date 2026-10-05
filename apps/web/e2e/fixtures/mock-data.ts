@@ -16,7 +16,6 @@ export const projects = [
     slug: 'acme-platform',
     description: 'Main product platform',
     parent_id: null,
-    default_playbook_name: 'pb-001',
     repo_url: 'https://github.com/acme/platform',
     repo_path: '/projects/acme-platform',
     default_branch: 'main',
@@ -50,17 +49,13 @@ export const metrics = {
   })),
   avg_time_in_state_hours: [
     { state: 'ready', avg_hours: 0.3 },
-    { state: 'implement', avg_hours: 1.2 },
-    { state: 'review', avg_hours: 0.5 },
+    { state: 'working', avg_hours: 1.2 },
+    { state: 'working', avg_hours: 0.5 },
     { state: 'done', avg_hours: null },
   ],
   agent_breakdown: [
     { agent_id: AGENT_ID, agent_name: 'claude-agent-1', tasks_completed: 18, tasks_in_progress: 3, avg_completion_hours: 0.8 },
     { agent_id: '22222222-3333-4444-5555-666666666666', agent_name: 'claude-agent-2', tasks_completed: 13, tasks_in_progress: 3, avg_completion_hours: 1.1 },
-  ],
-  playbook_completion: [
-    { playbook_name: 'pb-001', playbook_title: 'Standard Development', total_tasks: 35, completed_tasks: 28, completion_rate: 80.0 },
-    { playbook_name: 'pb-002', playbook_title: 'Research Spike', total_tasks: 12, completed_tasks: 3, completion_rate: 25.0 },
   ],
   cost_summary: {
     total_input_tokens: 45_200_000,
@@ -78,17 +73,17 @@ export const metrics = {
 
 export const tasks = {
   data: [
-    mkTask(1, 'Add user authentication flow', 'feature', 'implement', true),
-    mkTask(2, 'Fix payment webhook retry logic', 'bug', 'implement', false),
-    mkTask(3, 'Refactor database connection pooling', 'refactor', 'review', false),
+    mkTask(1, 'Add user authentication flow', 'feature', 'working', true),
+    mkTask(2, 'Fix payment webhook retry logic', 'bug', 'working', false),
+    mkTask(3, 'Refactor database connection pooling', 'refactor', 'working', false),
     mkTask(4, 'Add OpenTelemetry tracing to API', 'feature', 'ready', false),
     mkTask(5, 'Write integration tests for billing module', 'test', 'ready', true),
-    mkTask(6, 'Migrate to new email provider SDK', 'chore', 'implement', false),
-    mkTask(7, 'Add rate limiting per API key', 'feature', 'implement', false),
+    mkTask(6, 'Migrate to new email provider SDK', 'chore', 'working', false),
+    mkTask(7, 'Add rate limiting per API key', 'feature', 'working', false),
     mkTask(8, 'Document deployment runbook', 'docs', 'done', false),
-    mkTask(9, 'Optimize image upload pipeline', 'feature', 'implement', false),
+    mkTask(9, 'Optimize image upload pipeline', 'feature', 'working', false),
     mkTask(10, 'Fix timezone handling in scheduler', 'bug', 'ready', false),
-    mkTask(11, 'Add CSV export to reports', 'feature', 'implement', false),
+    mkTask(11, 'Add CSV export to reports', 'feature', 'working', false),
     mkTask(12, 'Update dependency versions', 'chore', 'done', false),
   ],
   total: 12,
@@ -113,7 +108,7 @@ export const reviewTasks = [
 
 export const blockerTasks = [
   {
-    ...mkTask(15, 'Migrate user sessions to Redis', 'feature', 'implement', false),
+    ...mkTask(15, 'Migrate user sessions to Redis', 'feature', 'working', false),
     _blockerUpdates: [
       { kind: 'blocker', content: 'Redis cluster connection fails intermittently. Need to check TLS cert rotation.' },
     ],
@@ -136,55 +131,8 @@ export const decisions = [
   { id: 'dec1', project_id: PROJECT_ID, title: 'Use JWT with short-lived tokens + refresh', status: 'accepted', rationale: 'Better security posture than long-lived tokens. Refresh tokens allow session management.', alternatives: 'Session cookies, API keys', superseded_by: null, created_by: AGENT_ID, created_at: '2026-03-10T10:00:00Z', updated_at: '2026-03-10T10:00:00Z' },
 ];
 
-export const playbooks = [
-  {
-    id: 'pb-001',
-    tenant_id: null,
-    title: 'Standard Development',
-    trigger_description: 'Use for all feature and bug fix tasks',
-    steps: [
-      { name: 'implement', description: 'Write the code changes', on_complete: '', step: 0, model: 'sonnet', budget: 5.0, allowed_tools: 'full' },
-      { name: 'review', description: 'Review the implementation for quality', on_complete: '', step: 1, model: 'opus', budget: 2.0, allowed_tools: 'readonly' },
-      { name: 'merge', description: 'Merge the changes to the default branch', on_complete: '', step: 2, git_action: 'merge' },
-    ],
-    tags: ['default', 'development'],
-    initial_state: 'ready',
-    metadata: { git_strategy: 'merge_to_default' },
-    created_at: '2026-02-01T10:00:00Z',
-    created_by: 'system',
-    updated_at: '2026-03-01T10:00:00Z',
-  },
-  {
-    id: 'pb-002',
-    tenant_id: null,
-    title: 'Research Spike',
-    trigger_description: 'For exploratory tasks that need investigation before implementation',
-    steps: [
-      { name: 'dream', description: 'Research and propose an approach', on_complete: '', step: 0, model: 'opus', budget: 3.0, allowed_tools: 'readonly', context_level: 'dream' },
-      { name: 'implement', description: 'Implement the proposed approach', on_complete: '', step: 1, model: 'sonnet', budget: 5.0, allowed_tools: 'full' },
-      { name: 'review', description: 'Review the implementation', on_complete: '', step: 2, model: 'opus', budget: 2.0, allowed_tools: 'readonly' },
-    ],
-    tags: ['research', 'spike'],
-    initial_state: 'ready',
-    metadata: { git_strategy: 'merge_to_default' },
-    created_at: '2026-02-01T10:00:00Z',
-    created_by: 'system',
-    updated_at: '2026-03-01T10:00:00Z',
-  },
-];
 
-export const stepTemplates = [
-  { id: 'st1', tenant_id: null, name: 'implement', description: 'Write code changes following the task spec', model: 'sonnet', budget: 5.0, allowed_tools: 'full', context_level: 'full', on_complete: null, retriable: true, max_cycles: 3, timeout_minutes: null, mcp_servers: null, agents: null, agent: null, settings: null, env: null, vars: null, tags: ['core'], metadata: {}, created_by: 'system', created_at: '2026-02-01T10:00:00Z', updated_at: '2026-02-01T10:00:00Z' },
-  { id: 'st2', tenant_id: null, name: 'review', description: 'Review implementation for quality and correctness', model: 'opus', budget: 2.0, allowed_tools: 'readonly', context_level: 'full', on_complete: null, retriable: false, max_cycles: null, timeout_minutes: null, mcp_servers: null, agents: null, agent: null, settings: null, env: null, vars: null, tags: ['core'], metadata: {}, created_by: 'system', created_at: '2026-02-01T10:00:00Z', updated_at: '2026-02-01T10:00:00Z' },
-  { id: 'st3', tenant_id: null, name: 'dream', description: 'Research and propose an approach before implementation', model: 'opus', budget: 3.0, allowed_tools: 'readonly', context_level: 'dream', on_complete: null, retriable: false, max_cycles: null, timeout_minutes: null, mcp_servers: null, agents: null, agent: null, settings: null, env: null, vars: null, tags: ['research'], metadata: {}, created_by: 'system', created_at: '2026-02-01T10:00:00Z', updated_at: '2026-02-01T10:00:00Z' },
-];
 
-export const gitStrategies = [
-  { id: 'merge_to_default', name: 'Merge to default', description: 'Merge task branch to the default branch on completion' },
-  { id: 'branch_only', name: 'Branch only', description: 'Create a branch but do not merge automatically' },
-  { id: 'feature_branch', name: 'Feature branch (per goal)', description: 'Tasks branch from a goal branch and merge back into it' },
-  { id: 'no_git', name: 'No git', description: 'No git operations' },
-];
 
 export const mainPushStatus = {
   ahead: 3,
@@ -214,14 +162,12 @@ function mkTask(num: number, title: string, kind: string, state: string, urgent:
     state,
     urgent,
     context: { spec: `Implement ${title.toLowerCase()}`, files: ['src/main.rs'], test_cmd: 'cargo test', acceptance_criteria: [`${title} works correctly`, 'All tests pass'] },
-    assigned_agent_id: state === 'implement' || state === 'review' ? AGENT_ID : null,
-    claimed_at: state === 'implement' || state === 'review' ? '2026-03-14T10:00:00Z' : null,
+    assigned_agent_id: state === 'working' ? AGENT_ID : null,
+    claimed_at: state === 'working' ? '2026-03-14T10:00:00Z' : null,
     required_capabilities: [],
     assigned_role_id: null,
     delegated_by: null,
     delegated_at: null,
-    playbook_name: 'pb-001',
-    playbook_step: state === 'implement' ? 0 : state === 'review' ? 1 : null,
     decision_id: null,
     created_by: 'user',
     created_at: '2026-03-14T09:00:00Z',
@@ -267,11 +213,10 @@ export const verifications = [
 ];
 
 export const auditEntries = [
-  { id: 'aud1', project_id: PROJECT_ID, entity_type: 'task', entity_id: 'task-0001-0000-0000-0000-000000000000', action: 'transition', actor_id: AGENT_ID, actor_type: 'agent', detail: { from: 'ready', to: 'implement' }, created_at: '2026-03-14T10:00:00Z' },
-  { id: 'aud2', project_id: PROJECT_ID, entity_type: 'task', entity_id: 'task-0003-0000-0000-0000-000000000000', action: 'transition', actor_id: AGENT_ID, actor_type: 'agent', detail: { from: 'implement', to: 'done' }, created_at: '2026-03-14T11:30:00Z' },
+  { id: 'aud1', project_id: PROJECT_ID, entity_type: 'task', entity_id: 'task-0001-0000-0000-0000-000000000000', action: 'transition', actor_id: AGENT_ID, actor_type: 'agent', detail: { from: 'ready', to: 'working' }, created_at: '2026-03-14T10:00:00Z' },
+  { id: 'aud2', project_id: PROJECT_ID, entity_type: 'task', entity_id: 'task-0003-0000-0000-0000-000000000000', action: 'transition', actor_id: AGENT_ID, actor_type: 'agent', detail: { from: 'working', to: 'done' }, created_at: '2026-03-14T11:30:00Z' },
   { id: 'aud3', project_id: PROJECT_ID, entity_type: 'work', entity_id: 'w1', action: 'create', actor_id: null, actor_type: 'user', detail: { title: 'User Authentication System' }, created_at: '2026-03-13T09:00:00Z' },
   { id: 'aud4', project_id: PROJECT_ID, entity_type: 'task', entity_id: 'task-0008-0000-0000-0000-000000000000', action: 'transition', actor_id: AGENT_ID, actor_type: 'agent', detail: { from: 'review', to: 'done' }, created_at: '2026-03-14T16:00:00Z' },
-  { id: 'aud5', project_id: PROJECT_ID, entity_type: 'playbook', entity_id: 'pb-001', action: 'update', actor_id: null, actor_type: 'user', detail: { field: 'steps' }, created_at: '2026-03-12T14:00:00Z' },
 ];
 
 export const reports = [
@@ -294,8 +239,8 @@ export const roles = [
 ];
 
 export const agents = [
-  { id: AGENT_ID, name: 'claude-agent-1', status: 'online', capabilities: ['implement', 'review', 'dream'], last_heartbeat: '2026-03-14T15:00:00Z', created_at: '2026-02-01T10:00:00Z', updated_at: '2026-03-14T15:00:00Z' },
-  { id: '22222222-3333-4444-5555-666666666666', name: 'claude-agent-2', status: 'online', capabilities: ['implement', 'review'], last_heartbeat: '2026-03-14T14:55:00Z', created_at: '2026-02-15T10:00:00Z', updated_at: '2026-03-14T14:55:00Z' },
+  { id: AGENT_ID, name: 'claude-agent-1', status: 'online', capabilities: ['working', 'review', 'dream'], last_heartbeat: '2026-03-14T15:00:00Z', created_at: '2026-02-01T10:00:00Z', updated_at: '2026-03-14T15:00:00Z' },
+  { id: '22222222-3333-4444-5555-666666666666', name: 'claude-agent-2', status: 'online', capabilities: ['working', 'review'], last_heartbeat: '2026-03-14T14:55:00Z', created_at: '2026-02-15T10:00:00Z', updated_at: '2026-03-14T14:55:00Z' },
 ];
 
 export const tenant = {

@@ -1,7 +1,7 @@
 //! OpenAI provider — calls the OpenAI-compatible chat completions API.
 //!
 //! Sends requests to `{base_url}/v1/chat/completions` with streaming enabled,
-//! parses SSE chunks, and accumulates the response content into [`StepOutput`].
+//! parses SSE chunks, and accumulates the response content into [`TaskOutput`].
 //!
 //! Error mapping:
 //! - HTTP 401 → auth error (exit_code 1)
@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use super::{ProviderConfig, ResolvedStep, StepOutput, StepProvider, TaskContext};
+use super::{ProviderConfig, ResolvedTask, TaskContext, TaskOutput, TaskProvider};
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com";
 const DEFAULT_MODEL: &str = "gpt-4o";
@@ -58,13 +58,13 @@ struct Delta {
 // ── Implementation ────────────────────────────────────────────────────────
 
 #[async_trait]
-impl StepProvider for OpenAIProvider {
+impl TaskProvider for OpenAIProvider {
     async fn execute(
         &self,
-        step: &ResolvedStep,
+        step: &ResolvedTask,
         task: &TaskContext,
         config: &ProviderConfig,
-    ) -> anyhow::Result<StepOutput> {
+    ) -> anyhow::Result<TaskOutput> {
         let base_url = config
             .base_url
             .as_deref()
@@ -91,7 +91,6 @@ impl StepProvider for OpenAIProvider {
                 "task_id": task.task_id,
                 "project_id": task.project_id,
                 "project_context": task.project_context,
-                "previous_step_output": task.previous_step_output,
             })
             .to_string()
         };
@@ -135,7 +134,7 @@ impl StepProvider for OpenAIProvider {
             return match status.as_u16() {
                 401 => {
                     tracing::warn!(provider = "openai", "Authentication error (401)");
-                    Ok(StepOutput {
+                    Ok(TaskOutput {
                         content: format!("Authentication error: {error_body}"),
                         exit_code: 1,
                         artifacts: HashMap::from([("error_type".into(), "auth_error".into())]),
@@ -149,7 +148,7 @@ impl StepProvider for OpenAIProvider {
                 }
                 429 => {
                     tracing::warn!(provider = "openai", "Rate limit exceeded (429)");
-                    Ok(StepOutput {
+                    Ok(TaskOutput {
                         content: format!("Rate limit exceeded: {error_body}"),
                         exit_code: 2,
                         artifacts: HashMap::from([("error_type".into(), "rate_limit".into())]),
@@ -163,7 +162,7 @@ impl StepProvider for OpenAIProvider {
                 }
                 404 => {
                     tracing::warn!(provider = "openai", model = model, "Model not found (404)");
-                    Ok(StepOutput {
+                    Ok(TaskOutput {
                         content: format!("Model not found: {model} — {error_body}"),
                         exit_code: 3,
                         artifacts: HashMap::from([("error_type".into(), "model_not_found".into())]),
@@ -181,7 +180,7 @@ impl StepProvider for OpenAIProvider {
                         status = code,
                         "Unexpected error from OpenAI API"
                     );
-                    Ok(StepOutput {
+                    Ok(TaskOutput {
                         content: format!("Unexpected HTTP {code}: {error_body}"),
                         exit_code: 4,
                         artifacts: HashMap::from([(
@@ -265,7 +264,7 @@ impl StepProvider for OpenAIProvider {
             "Chat completion finished"
         );
 
-        Ok(StepOutput {
+        Ok(TaskOutput {
             content,
             exit_code: 0,
             artifacts: Default::default(),
@@ -287,8 +286,8 @@ mod tests {
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    fn test_step() -> ResolvedStep {
-        ResolvedStep {
+    fn test_step() -> ResolvedTask {
+        ResolvedTask {
             name: "test".into(),
             description: "You are a test assistant.".into(),
             model: Some("gpt-4o-test".into()),
@@ -309,7 +308,6 @@ mod tests {
             task_id: "task-123".into(),
             project_id: "proj-456".into(),
             project_context: r#"{"spec":"do stuff"}"#.into(),
-            previous_step_output: None,
             working_dir: None,
             log_file: None,
             user_prompt: None,

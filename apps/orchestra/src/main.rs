@@ -17,7 +17,6 @@ mod providers;
 mod repo_decisions;
 mod repo_knowledge;
 mod repo_observations;
-mod repo_playbooks;
 mod sync;
 mod task_id;
 mod util;
@@ -164,9 +163,8 @@ async fn main() -> Result<()> {
                 let mut meta = agent["metadata"].clone();
                 if let Some(obj) = meta.as_object_mut() {
                     obj.insert("version".into(), serde_json::json!(version));
-                    obj.insert("playbook_protocol".into(), serde_json::json!(1));
                 } else {
-                    meta = serde_json::json!({"runtime": "orchestra", "version": version, "playbook_protocol": 1});
+                    meta = serde_json::json!({"runtime": "orchestra", "version": version});
                 }
                 if let Err(e) = api
                     .update_agent(&config.agent_id, &serde_json::json!({"metadata": meta}))
@@ -333,23 +331,6 @@ fn scoped_projects(projects: Vec<Value>, project_id: Option<&str>) -> Vec<Value>
     }
 }
 
-/// Prefer a repo/YAML playbook named `research`, else fall back to the project's default.
-fn find_research_playbook_name(project: &Value) -> Option<String> {
-    let repo_root = project["git_resolved_path"]
-        .as_str()
-        .or_else(|| project["resolved_path"].as_str())?;
-    if crate::repo_playbooks::find_playbook_by_name(std::path::Path::new(repo_root), "research")
-        .is_some()
-    {
-        Some("research".to_string())
-    } else {
-        project["default_playbook_name"]
-            .as_str()
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
-    }
-}
-
 /// Poll all projects for work items in 'ready' status and create tasks from them.
 ///
 /// For each ready work item, the function:
@@ -366,11 +347,6 @@ async fn process_ready_work_items(api: &ProjectsApi, projects: &[Value]) {
             None => continue,
         };
 
-        let default_playbook_name = project["default_playbook_name"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
-
         let work_items = match api.list_work_items_by_status(project_id, "ready").await {
             Ok(w) => w,
             Err(e) => {
@@ -380,15 +356,7 @@ async fn process_ready_work_items(api: &ProjectsApi, projects: &[Value]) {
         };
 
         for work_item in &work_items {
-            if let Err(e) = process_single_work_item(
-                api,
-                project_id,
-                work_item,
-                &default_playbook_name,
-                project,
-            )
-            .await
-            {
+            if let Err(e) = process_single_work_item(api, project_id, work_item, project).await {
                 let work_id = work_item["id"].as_str().unwrap_or("unknown");
                 error!("work: failed to process work item {work_id}: {e:#}");
             }
@@ -401,8 +369,7 @@ async fn process_single_work_item(
     api: &ProjectsApi,
     project_id: &str,
     work_item: &Value,
-    default_playbook_name: &str,
-    project: &Value,
+    _project: &Value,
 ) -> Result<()> {
     let work_id = work_item["id"]
         .as_str()
@@ -415,17 +382,12 @@ async fn process_single_work_item(
     api.update_work_item_status(work_id, "processing").await?;
 
     // 2. Determine task parameters based on intent_type
-    let (kind, playbook_name, urgent, decompose) = match intent_type {
-        "simple" => ("feature", default_playbook_name.to_string(), false, false),
-        "hotfix" => ("bug", default_playbook_name.to_string(), true, false),
-        "investigation" => {
-            let research_pb = find_research_playbook_name(project)
-                .unwrap_or_else(|| default_playbook_name.to_string());
-            ("research", research_pb, false, false)
-        }
-        "refactor" => ("refactor", default_playbook_name.to_string(), false, false),
-        // "complex", null/missing, or any unknown type → decompose
-        _ => ("feature", default_playbook_name.to_string(), false, true),
+    let (kind, urgent, decompose) = match intent_type {
+        "simple" => ("feature", false, false),
+        "hotfix" => ("bug", true, false),
+        "investigation" => ("research", false, false),
+        "refactor" => ("refactor", false, false),
+        _ => ("feature", false, true),
     };
 
     // 3. Build task body
@@ -441,8 +403,8 @@ async fn process_single_work_item(
         "kind": kind,
         "context": context,
     });
-    if !playbook_name.is_empty() {
-        task_body["playbook_name"] = serde_json::json!(playbook_name);
+    if kind == "research" {
+        task_body["context"]["mode"] = serde_json::json!("research");
     }
     if urgent {
         task_body["urgent"] = serde_json::json!(true);
@@ -456,6 +418,9 @@ async fn process_single_work_item(
 
     // 5. Link the task to the work item
     api.link_task_to_work_item(work_id, task_id).await?;
+
+    // Queue only after linking, so a worker can resolve the work item's Git policy.
+    api.transition_task(task_id, "ready").await?;
 
     // 6. Transition work item to 'active'
     api.update_work_item_status(work_id, "active").await?;
@@ -543,22 +508,23 @@ async fn run_headless(args: &[String]) -> Result<()> {
             continue;
         }
 
-        // Resolve step
         let task_data = source.get_task(task_id).await.ok();
-        let (step_name, step_json) =
-            engine::pipeline::resolve_step(source.as_ref(), task_data.as_ref(), Some(&repo_root))
-                .await;
+        let step_name = task_data
+            .as_ref()
+            .and_then(|t| t["context"]["mode"].as_str())
+            .unwrap_or("working");
+        let worker_options = task_data.as_ref().and_then(|t| t["context"].get("worker"));
 
-        let step_config = engine::worker::StepConfig::for_step(
-            &step_name,
-            step_json.as_ref(),
+        let task_config = engine::worker::TaskConfig::for_mode(
+            step_name,
+            worker_options,
             None,
             worker_model.as_deref(),
         );
 
         info!(
             "headless: step={step_name} model={}",
-            step_config.model.as_deref().unwrap_or("default")
+            task_config.model.as_deref().unwrap_or("default")
         );
 
         // Create worktree manager
@@ -577,7 +543,7 @@ async fn run_headless(args: &[String]) -> Result<()> {
             &repo_root,
             &agent_cli,
             &log_dir,
-            &step_config,
+            &task_config,
             None,  // no encryption in headless mode
             false, // don't upload logs
             false, // don't store diffs
@@ -592,9 +558,13 @@ async fn run_headless(args: &[String]) -> Result<()> {
                     result.output_tokens,
                     result.duration_seconds,
                 );
-                // Transition to done
-                if let Err(e) = source.transition_task(task_id, "done").await {
-                    warn!("headless: failed to transition {tid} to done: {e}");
+                let next_state = if result.is_error {
+                    "human_review"
+                } else {
+                    "done"
+                };
+                if let Err(e) = source.transition_task(task_id, next_state).await {
+                    warn!("headless: failed to transition {tid} to {next_state}: {e}");
                 }
             }
             Err(e) => {

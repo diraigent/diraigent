@@ -97,7 +97,7 @@ async fn main() -> anyhow::Result<()> {
     };
     sqlx::query("SELECT 1").execute(&pool).await?;
     tracing::info!("PostgreSQL connected");
-    sqlx::migrate!("./migrations").run(&pool).await?;
+    diraigent_api::migration_runner::run(&pool).await?;
     tracing::info!("PostgreSQL migrations applied");
     let dek_cache = crypto::DekCache::new();
     let raw_db: Arc<dyn db::DiraigentDb> = Arc::new(db::PostgresDb(pool.clone()));

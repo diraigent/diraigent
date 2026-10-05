@@ -60,6 +60,16 @@ export async function setupMocks(page: Page) {
       return route.fulfill({ json: { depends_on: [], blocks: [] } });
     }
 
+    if (path.match(/^tasks\/.*\/changed-files/)) {
+      return route.fulfill({ json: [] });
+    }
+    if (path.match(/^tasks\/.*\/related/)) {
+      return route.fulfill({ json: { knowledge: [], decisions: [], observations: [] } });
+    }
+    if (path === `${PROJECT_ID}/work/summaries`) {
+      return route.fulfill({ json: [] });
+    }
+
     // Task branch status
     if (path.includes(`${PROJECT_ID}/git/task-branch`)) {
       return route.fulfill({ json: { branch: 'agent/task-xxx', exists: true, is_pushed: true, ahead_remote: 0, behind_remote: 0, last_commit: 'abc', last_commit_message: 'fix', behind_default: 0, has_conflict: false } });
@@ -100,22 +110,6 @@ export async function setupMocks(page: Page) {
     }
     if (path === `${PROJECT_ID}/git/branches`) {
       return route.fulfill({ json: mock.branches });
-    }
-
-    // Playbooks
-    if (path.match(/^projects\/[^/]+\/playbooks\/(.+)/)) {
-      const pbId = path.match(/^projects\/[^/]+\/playbooks\/(.+)/)![1];
-      const pb = mock.playbooks.find((p: Record<string, unknown>) => p.id === pbId);
-      return route.fulfill({ json: pb || mock.playbooks[0] });
-    }
-    if (path === `projects/${PROJECT_ID}/playbooks`) {
-      return route.fulfill({ json: mock.playbooks });
-    }
-    if (path === `${PROJECT_ID}/step-templates`) {
-      return route.fulfill({ json: mock.stepTemplates });
-    }
-    if (path === 'git-strategies') {
-      return route.fulfill({ json: mock.gitStrategies });
     }
 
     // Observations

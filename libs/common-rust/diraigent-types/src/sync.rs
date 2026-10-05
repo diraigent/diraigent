@@ -9,7 +9,6 @@
 pub struct TaskStateSummary {
     pub task_id: String,
     pub state: String,
-    pub playbook_step: Option<i32>,
     pub assigned_agent_id: Option<String>,
     pub claimed_at: Option<String>,
     pub completed_at: Option<String>,

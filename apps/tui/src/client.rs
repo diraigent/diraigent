@@ -17,8 +17,6 @@ pub struct Project {
     pub slug: String,
     pub description: Option<String>,
     #[serde(default)]
-    pub default_playbook_id: Option<Uuid>,
-    #[serde(default)]
     pub default_branch: Option<String>,
     #[serde(default)]
     pub repo_url: Option<String>,
@@ -49,8 +47,6 @@ pub struct Task {
     pub assigned_agent_id: Option<Uuid>,
     #[serde(default)]
     pub context: serde_json::Value,
-    pub playbook_id: Option<Uuid>,
-    pub playbook_step: Option<i32>,
     #[serde(default)]
     pub created_at: Option<String>,
     #[serde(default)]
@@ -538,8 +534,6 @@ pub struct ProjectMetrics {
     #[serde(default)]
     pub agent_breakdown: Vec<AgentMetrics>,
     #[serde(default)]
-    pub playbook_completion: Vec<PlaybookMetrics>,
-    #[serde(default)]
     pub cost_summary: Option<CostSummary>,
     #[serde(default)]
     pub task_costs: Vec<TaskCostRow>,
@@ -601,20 +595,6 @@ pub struct AgentMetrics {
     pub tasks_in_progress: i64,
     #[serde(default)]
     pub avg_completion_hours: Option<f64>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct PlaybookMetrics {
-    #[serde(default)]
-    pub playbook_id: Option<Uuid>,
-    #[serde(default)]
-    pub playbook_title: String,
-    #[serde(default)]
-    pub total_tasks: i64,
-    #[serde(default)]
-    pub completed_tasks: i64,
-    #[serde(default)]
-    pub completion_rate: f64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

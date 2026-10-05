@@ -283,9 +283,7 @@ struct TaskDetailView: View {
                 if let completed = task.completedAt {
                     MetadataItem(label: "Completed", value: formatDate(completed))
                 }
-                if let step = task.playbookStep {
-                    MetadataItem(label: "Playbook Step", value: "\(step)")
-                }
+
                 if task.assignedAgentId != nil {
                     MetadataItem(label: "Assigned Agent", value: task.assignedAgentId?.uuidString.prefix(8).description ?? "—")
                 }

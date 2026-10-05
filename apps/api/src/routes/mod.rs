@@ -23,7 +23,6 @@ mod metrics;
 mod observations;
 mod orchestra_sync;
 mod packages;
-mod playbooks;
 mod projects;
 mod provider_configs;
 mod reports;
@@ -32,7 +31,6 @@ mod search;
 mod settings;
 mod source;
 mod sse;
-mod step_templates;
 mod task_logs;
 mod tasks;
 pub(crate) mod tenants;
@@ -86,7 +84,6 @@ pub fn router() -> Router<AppState> {
         .merge(decisions::routes())
         .merge(observations::routes())
         .merge(packages::routes())
-        .merge(playbooks::routes())
         .merge(event_rules::routes())
         .merge(events::routes())
         .merge(integrations::routes())
@@ -107,7 +104,6 @@ pub fn router() -> Router<AppState> {
         .merge(logs::routes())
         .merge(tenants::routes())
         .merge(settings::routes())
-        .merge(step_templates::routes())
         .merge(provider_configs::routes())
         .merge(reports::routes())
         .merge(task_logs::routes())

@@ -2,7 +2,7 @@
 
 **Your codebase deserves a system, not a suggestion.**
 
-A self-hosted software factory — define goals, agents decompose and execute them through enforced pipelines, with humans in the loop where it matters.
+A self-hosted software factory — define goals, agents decompose and execute them in isolated worktrees, with humans in the loop where it matters.
 
 ![Diraigent demo](apps/landing/public/assets/images/demo.gif)
 
@@ -16,7 +16,7 @@ Most AI coding tools fall into one of three traps:
 
 Diraigent is none of these. It's a structured, self-hosted platform where:
 
-- **Playbook pipelines enforce every step** — multi-step workflows with a validated state machine. Agents can't skip steps, improvise, or bypass quality gates.
+- **Agents execute tasks directly** — repository guidance and skills guide the work, with isolated worktrees and optional human review.
 - **Goals decompose into parallel tasks** — describe what you want at any level, Diraigent breaks it into concrete tasks and dispatches agents in parallel.
 - **Humans decide what matters** — merge conflicts, ambiguous requirements, and quality gate failures surface in a review queue. Agents handle the routine; you handle the judgment calls.
 - **Your project gets smarter over time** — knowledge entries, architectural decisions, and observations accumulate as agents work. The next task starts with everything the last one learned.
@@ -28,7 +28,7 @@ Diraigent is none of these. It's a structured, self-hosted platform where:
 | Capability | IDE Copilots | SaaS Agents | Open-Source Agents | Agent Orchestrators | **Diraigent** |
 |---|---|---|---|---|---|
 | Multi-agent parallel execution | — | ✓ | — | ✓ | **✓** |
-| Enforced pipeline state machine | — | — | — | — | **✓** |
+| Task ownership and Git delivery | — | — | — | — | **✓** |
 | Goal-to-task decomposition | — | ~ | — | — | **✓** |
 | Persistent project knowledge | — | — | — | — | **✓** |
 | Human-in-the-loop review queue | — | — | — | — | **✓** |
@@ -41,7 +41,7 @@ Diraigent is none of these. It's a structured, self-hosted platform where:
 
 ## Quickstart
 
-Prerequisites: Docker, Docker Compose, and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) authenticated (`claude login`).
+Prerequisites: Docker, Docker Compose, and model-provider credentials for OpenCode (the default agent). Claude Code and Codex are optional providers.
 
 ```bash
 curl -LO https://raw.githubusercontent.com/diraigent/diraigent/main/startup/docker-compose.yml
@@ -72,8 +72,7 @@ Images are published on Docker Hub: [`diraigent/api`](https://hub.docker.com/r/d
 
 1. **Create a project** — in the dashboard, create a new project and point it at your git repo's default branch
 2. **Chat with the assistant** — open the project chat and verify Claude responds
-3. **Clone a playbook** — pick one of the seeded defaults and clone it into your project
-4. **Create a task** — attach the playbook, fill in spec and acceptance criteria
+3. **Create a task** — fill in spec and acceptance criteria
 5. The orchestra picks it up and starts working
 
 ### Git credentials
@@ -103,7 +102,7 @@ Without credentials, agents can still work locally but push/merge to the remote 
 | Component | Description |
 |-----------|-------------|
 | **API** | Rust/Axum REST API. PostgreSQL backend (sqlx). JWT JWKS auth. WebSocket agent communication. |
-| **Orchestra** | Polls API for ready tasks, runs OpenCode by default in isolated git worktrees, auto-advances playbook pipelines. |
+| **Orchestra** | Polls API for ready tasks, runs OpenCode by default in isolated git worktrees, coordinates task completion and Git delivery. |
 | **Web** | Angular 21 + Tailwind CSS 4 + Catppuccin themes. Full project management dashboard. |
 | **TUI** | Ratatui terminal interface (experimental). |
 
@@ -111,48 +110,23 @@ Without credentials, agents can still work locally but push/merge to the remote 
 
 ### Tasks and the State Machine
 
-Tasks advance through playbook steps automatically. Each step is a full claim → work → done cycle.
+Tasks use a fixed lifecycle:
 
 ```
-backlog → ready → <step_name> → done
-                             ↘ cancelled
-done → ready (pipeline advance to next step)
-done → human_review → done | ready | backlog
+backlog → ready → working → done
+                    ↘ human_review → ready | done | backlog
+                    ↘ cancelled
 ```
 
-Step names come from the task's playbook (e.g. `implement`, `review`, `dream`). Tasks carry structured context: `spec`, `files`, `test_cmd`, `acceptance_criteria`, `notes`. Transitions are validated — agents can't skip steps.
+Orchestra claims ready tasks, runs the selected agent in a worktree, and integrates successfully completed work. Repository instructions and skills guide the agent. Optional review can use a separate dependent task or `human_review`; configurable stage pipelines have been retired.
 
-### Playbooks
+Task context can include `spec`, `files`, `test_cmd`, `acceptance_criteria`, and `notes`. File paths are discovery hints unless explicitly restricted by the user. Optional `context.mode` selects a review or research task, and `context.worker` can override provider/model/tool settings. OpenCode remains the default, with Codex and Claude Code optional.
 
-Reusable multi-step workflows attached to tasks. The orchestra auto-advances tasks through pipeline steps. Each step can configure: model, budget, tool preset (`full`/`readonly`), MCP servers, sub-agents, and environment variables.
+Git delivery policy lives in project `metadata.git_strategy` (`merge_to_default`, `branch_only`, or `feature_branch`), with the target from `metadata.git_target_branch` or the project's default branch. Missing Git roots retain the work for human review.
 
-Playbooks use a `git_strategy` metadata field (e.g. `merge_to_default`) to control how completed work is integrated.
+### Upgrading from playbooks
 
-OpenCode is the default provider for playbook steps. Authenticate a model
-provider with the OpenCode CLI in the orchestra container, then leave the
-step provider blank or select **OpenCode CLI**. Claude Code and Codex remain
-available as explicit options.
-
-Set `OPENCODE_MODEL=provider/model` in the worker's private environment to
-choose its default model for both tasks and project chat. Explicit task models
-and project chat models take precedence. Orchestra supports OpenCode V1 and V2;
-V2 runs with a private server so the worker's environment applies to each run.
-
-The web and iOS chat model pickers discover available models with `opencode models`
-on the connected orchestra, in the project's working directory. Search or refresh
-the list, select a model for subsequent messages, or enter a model ID manually
-when discovery is unavailable. Selections are saved per project and provider;
-they do not change OpenCode's configuration. Catalogs are cached for 60 seconds
-on each worker, and Refresh bypasses that cache. Provider credentials stay on the worker.
-
-To run a step with the Codex CLI, select **Codex CLI** as its provider (or set
-`"provider": "codex"` in the step JSON). The orchestra runs `codex exec` in the
-task worktree. `readonly` steps use the read-only sandbox; `full` and `merge`
-steps use the workspace-write sandbox. Set a Codex model explicitly in the step
-if needed; otherwise the CLI's configured default applies. The orchestra image
-includes the CLI. Supply `CODEX_API_KEY` or `CODEX_ACCESS_TOKEN` in the runtime
-environment for non-interactive authentication. The Codex sandbox inside a
-container also requires the host to permit Linux user namespaces.
+Stop all workers before upgrading the API and worker together. Migration 047 removes playbook references and step templates and holds unfinished legacy playbook tasks in `human_review`. Review those tasks and any former YAML Git overrides before releasing them to `ready`. Existing committed migrations remain unchanged; fresh databases apply the historical migrations followed by retirement.
 
 ### Projects, Roles, and Knowledge
 

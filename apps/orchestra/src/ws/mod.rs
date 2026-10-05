@@ -229,57 +229,6 @@ async fn connect_and_run(
                 };
 
                 match ws_msg {
-                    WsMessage::PlaybookRequest {
-                        request_id,
-                        project_id,
-                        operation,
-                        name,
-                        content,
-                    } => {
-                        let sender = tx.clone();
-                        let api = api.clone();
-                        let projects_path = projects_path.to_path_buf();
-                        tokio::spawn(async move {
-                            let result = async {
-                                let paths = crate::project::paths::resolve_project_paths(
-                                    &api,
-                                    &project_id.to_string(),
-                                    &projects_path,
-                                )
-                                .await?;
-                                let root = paths
-                                    .git_root
-                                    .ok_or_else(|| anyhow::anyhow!("Project has no repository"))?;
-                                crate::handlers::playbooks::operate(
-                                    &root,
-                                    &operation,
-                                    name.as_deref(),
-                                    content,
-                                )
-                            }
-                            .await;
-                            let (success, data, error) = match result {
-                                Ok(data) => (true, data, None),
-                                Err(error) => {
-                                    warn!(%request_id, %error, "playbook operation failed");
-                                    (
-                                        false,
-                                        serde_json::Value::Null,
-                                        Some(
-                                            "Playbook operation failed; check Orchestra logs"
-                                                .into(),
-                                        ),
-                                    )
-                                }
-                            };
-                            let _ = sender.send(WsMessage::PlaybookResponse {
-                                request_id,
-                                success,
-                                data,
-                                error,
-                            });
-                        });
-                    }
                     WsMessage::ChatModelsRequest {
                         request_id,
                         project_id,
