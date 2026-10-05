@@ -36,6 +36,9 @@ fn publication_routes() -> Router<AppState> {
         .route("/projects/{project_id}/knowledge/{id}", get(knowledge))
         .route("/projects/{project_id}/decisions", get(decisions))
         .route("/projects/{project_id}/decisions/{id}", get(decision))
+        // An explicit catch-all survives merging with the authenticated router's
+        // routes; nested fallbacks alone can lose to another matching prefix.
+        .route("/{*path}", get(|| async { not_found() }))
         .fallback(|| async { not_found() })
         .layer(middleware::from_fn(read_only_no_store))
 }

@@ -65,8 +65,9 @@ async fn send(app: &Router, method: Method, url: &str) -> (StatusCode, Value) {
     let status = response.status();
     if url.starts_with("/v1/spectator/") {
         assert_eq!(
-            response.headers().get(header::CACHE_CONTROL).unwrap(),
-            "no-store"
+            response.headers().get(header::CACHE_CONTROL),
+            Some(&axum::http::HeaderValue::from_static("no-store")),
+            "missing no-store for {url} ({status})"
         );
     }
     let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
