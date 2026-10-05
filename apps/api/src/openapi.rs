@@ -9,6 +9,9 @@ use utoipa::{Modify, OpenApi};
 
 use crate::models::*;
 use crate::scoring::TaskScore;
+use crate::spectator::{
+    PublicDecision, PublicKnowledge, PublicProject, PublicTask, PublicTaskDetail, PublicWork,
+};
 
 /// OpenAPI document with all schemas registered.
 #[derive(OpenApi)]
@@ -16,7 +19,7 @@ use crate::scoring::TaskScore;
     info(
         title = "Diraigent API",
         description = "AI-agent-first project management API. Built with Rust/Axum.\n\n\
-            All endpoints under `/v1` require authentication via Bearer token (JWT) \
+            Except for the opt-in GET-only `/v1/spectator/projects/{project_id}` publication routes, endpoints under `/v1` require authentication via Bearer token (JWT) \
             or Agent API key (`dak_` prefix).",
         version = "0.1.0",
         license(name = "MIT"),
@@ -27,6 +30,7 @@ use crate::scoring::TaskScore;
     modifiers(&SecurityAddon, &PathsAddon),
     components(
         schemas(
+            PublicProject, PublicTask, PublicTaskDetail, PublicWork, PublicKnowledge, PublicDecision,
             // -- Agents --
             Agent, AgentRegistered, CreateAgent, UpdateAgent, HeartbeatRequest,
             // -- Packages --
@@ -168,10 +172,122 @@ struct PathsAddon;
 impl Modify for PathsAddon {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
         register_all_paths(openapi);
+        register_spectator_paths(openapi);
     }
 }
 
 // ── Path Registration ──────────────────────────────────────────────────────
+
+fn register_spectator_paths(openapi: &mut utoipa::openapi::OpenApi) {
+    for (suffix, schema, list, op_id) in [
+        ("", "PublicProject", false, "spectator_project"),
+        ("/tasks", "PublicTask", true, "spectator_tasks"),
+        ("/tasks/{id}", "PublicTaskDetail", false, "spectator_task"),
+        ("/work", "PublicWork", true, "spectator_work_list"),
+        ("/work/{id}", "PublicWork", false, "spectator_work"),
+        (
+            "/knowledge",
+            "PublicKnowledge",
+            true,
+            "spectator_knowledge_list",
+        ),
+        (
+            "/knowledge/{id}",
+            "PublicKnowledge",
+            false,
+            "spectator_knowledge",
+        ),
+        ("/decisions", "PublicDecision", true, "spectator_decisions"),
+        (
+            "/decisions/{id}",
+            "PublicDecision",
+            false,
+            "spectator_decision",
+        ),
+    ] {
+        let url = format!("/v1/spectator/projects/{{project_id}}{suffix}");
+        let dto = serde_json::json!({"$ref": format!("#/components/schemas/{schema}")});
+        let response_schema = if list {
+            serde_json::json!({
+                "type": "object", "required": ["data", "total", "limit", "offset", "has_more"],
+                "properties": {
+                    "data": {"type": "array", "items": dto},
+                    "total": {"type": "integer", "format": "int64"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                    "offset": {"type": "integer", "minimum": 0},
+                    "has_more": {"type": "boolean"}
+                }
+            })
+        } else {
+            dto
+        };
+        let mut parameters: Vec<_> = extract_path_params(&url)
+            .iter()
+            .map(|name| path_param(name))
+            .collect();
+        if list {
+            for (name, description) in [
+                ("limit", "Default 20; clamped to 1..100"),
+                ("offset", "Default 0; negative values rejected"),
+            ] {
+                parameters.push(
+                    path::ParameterBuilder::new()
+                        .name(name)
+                        .parameter_in(path::ParameterIn::Query)
+                        .description(Some(description))
+                        .schema(Some(
+                            ObjectBuilder::new()
+                                .schema_type(schema::Type::Integer)
+                                .build(),
+                        ))
+                        .build(),
+                );
+            }
+        }
+        let content = ContentBuilder::new()
+            .schema(Some(
+                serde_json::from_value::<RefOr<schema::Schema>>(response_schema)
+                    .expect("spectator response schema"),
+            ))
+            .build();
+        let operation = path::OperationBuilder::new()
+            .tag("Spectator")
+            .summary(Some("Read explicitly published project content"))
+            .description(Some(
+                "Anonymous GET only. Publication and non-encrypted tenant checked on every request. \
+                 All responses use Cache-Control: no-store. Missing, private, encrypted, and foreign \
+                 IDs return the same 404. No membership or write access is granted. Unrecognized \
+                 query parameters are ignored.",
+            ))
+            .operation_id(Some(op_id))
+            .securities(Some(Vec::<SecurityRequirement>::new()))
+            .parameters(Some(parameters))
+            .response(
+                "200",
+                ResponseBuilder::new()
+                    .description("Published content")
+                    .content("application/json", content)
+                    .build(),
+            )
+            .response(
+                "400",
+                ResponseBuilder::new().description("Invalid UUID or pagination").build(),
+            )
+            .response(
+                "404",
+                ResponseBuilder::new().description("Spectator project not found").build(),
+            )
+            .response(
+                "405",
+                ResponseBuilder::new().description("Only GET is supported").build(),
+            )
+            .build();
+        openapi
+            .paths
+            .paths
+            .insert(url, path::PathItem::new(HttpMethod::Get, operation));
+    }
+}
 
 /// Compact route definition.
 struct R {

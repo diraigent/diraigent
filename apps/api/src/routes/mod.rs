@@ -30,6 +30,7 @@ mod roles;
 mod search;
 mod settings;
 mod source;
+mod spectator;
 mod sse;
 mod task_logs;
 mod tasks;
@@ -75,6 +76,7 @@ where
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .merge(spectator::routes())
         .merge(projects::routes())
         .merge(tasks::routes())
         .merge(changed_files::routes())
