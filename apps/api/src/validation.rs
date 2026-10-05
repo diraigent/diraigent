@@ -145,6 +145,7 @@ pub fn validate_create_project(req: &CreateProject) -> Result<(), AppError> {
     }
     if let Some(ref m) = req.metadata {
         validate_json_payload(m, "metadata")?;
+        crate::spectator::validate_metadata(m)?;
     }
     if let Some(ref mode) = req.git_mode {
         validate_enum_member(mode, VALID_GIT_MODES, "git_mode")?;
@@ -175,6 +176,7 @@ pub fn validate_update_project(req: &UpdateProject) -> Result<(), AppError> {
     }
     if let Some(ref m) = req.metadata {
         validate_json_payload(m, "metadata")?;
+        crate::spectator::validate_metadata(m)?;
     }
     if let Some(ref mode) = req.git_mode {
         validate_enum_member(mode, VALID_GIT_MODES, "git_mode")?;
