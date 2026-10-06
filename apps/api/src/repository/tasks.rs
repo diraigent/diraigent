@@ -125,7 +125,7 @@ pub async fn list_tasks(
     };
 
     let sql = format!(
-        "SELECT * FROM diraigent.task {}{} ORDER BY created_at DESC LIMIT {} OFFSET {}",
+        "SELECT * FROM diraigent.task {}{} ORDER BY created_at DESC, id ASC LIMIT {} OFFSET {}",
         TASK_FILTERS_WHERE, extra_where, limit_param, offset_param
     );
     let mut query = sqlx::query_as::<_, Task>(&sql)

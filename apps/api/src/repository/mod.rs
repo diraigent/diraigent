@@ -160,6 +160,7 @@ where
 }
 
 /// Generate `list_*` and `count_*` functions for a filtered, paginated query.
+/// Lists use newest-first ordering, with ascending IDs to break timestamp ties.
 ///
 /// Usage:
 /// ```ignore
@@ -208,7 +209,7 @@ macro_rules! list_and_count {
                 .max()
                 .unwrap_or(0);
             let sql = format!(
-                "SELECT * FROM diraigent.{} {} ORDER BY created_at DESC LIMIT ${} OFFSET ${}",
+                "SELECT * FROM diraigent.{} {} ORDER BY created_at DESC, id ASC LIMIT ${} OFFSET ${}",
                 $table,
                 filter_sql,
                 max_param + 1,

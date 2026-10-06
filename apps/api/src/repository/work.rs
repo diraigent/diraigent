@@ -109,7 +109,7 @@ pub async fn list_works(
            AND ($4::uuid IS NULL OR parent_work_id = $4)
            AND (NOT $5 OR parent_work_id IS NULL)
            AND (cardinality($8::text[]) = 0 OR status != ALL($8))
-         ORDER BY sort_order ASC, created_at DESC
+         ORDER BY sort_order ASC, created_at DESC, id ASC
          LIMIT $6 OFFSET $7",
     )
     .bind(project_id)
