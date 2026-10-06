@@ -23,6 +23,7 @@
 //!   work.success_criteria      → "work.success_criteria"
 //!   work.metadata              → "work.metadata"
 //!   work_comment.content       → "work_comment.content"
+//!   mcp_server_credentials.secret → "mcp.credentials:{server_id}"
 
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -200,6 +201,77 @@ macro_rules! delegate {
 
 #[async_trait]
 impl DiraigentDb for CryptoDb {
+    // ── Approved project MCP registry (only credentials are encrypted) ──
+    async fn get_mcp_server(&self, project_id: Uuid, id: Uuid) -> Result<McpServer, AppError> {
+        self.inner.get_mcp_server(project_id, id).await
+    }
+    async fn resolve_mcp_credentials(
+        &self,
+        project_id: Uuid,
+        id: Uuid,
+        revision: i64,
+    ) -> Result<McpSecret, AppError> {
+        let secret = self
+            .inner
+            .resolve_mcp_credentials(project_id, id, revision)
+            .await?;
+        match self.dek_for_project(project_id).await? {
+            Some(dek) => Ok(McpSecret(
+                dek.decrypt_json(&secret.0, &format!("mcp.credentials:{id}"))?,
+            )),
+            None => Ok(secret),
+        }
+    }
+    async fn list_mcp_servers(&self, project_id: Uuid) -> Result<Vec<McpServer>, AppError> {
+        self.inner.list_mcp_servers(project_id).await
+    }
+    async fn create_mcp_server(
+        &self,
+        project_id: Uuid,
+        configuration: &McpConfiguration,
+    ) -> Result<McpServer, AppError> {
+        self.inner
+            .create_mcp_server(project_id, configuration)
+            .await
+    }
+    async fn update_mcp_server(
+        &self,
+        project_id: Uuid,
+        id: Uuid,
+        req: &McpServerUpdate,
+    ) -> Result<McpServer, AppError> {
+        self.inner.update_mcp_server(project_id, id, req).await
+    }
+    async fn write_mcp_credentials(
+        &self,
+        project_id: Uuid,
+        id: Uuid,
+        revision: i64,
+        keys: &[String],
+        secret: &McpSecret,
+    ) -> Result<McpServer, AppError> {
+        let encrypted = match self.dek_for_project(project_id).await? {
+            Some(dek) => McpSecret(dek.encrypt_json(&secret.0, &format!("mcp.credentials:{id}"))?),
+            None => McpSecret(secret.0.clone()),
+        };
+        self.inner
+            .write_mcp_credentials(project_id, id, revision, keys, &encrypted)
+            .await
+    }
+    async fn set_mcp_approval(
+        &self,
+        project_id: Uuid,
+        id: Uuid,
+        revision: i64,
+        actor: Option<Uuid>,
+    ) -> Result<McpServer, AppError> {
+        self.inner
+            .set_mcp_approval(project_id, id, revision, actor)
+            .await
+    }
+    async fn delete_mcp_server(&self, project_id: Uuid, id: Uuid) -> Result<(), AppError> {
+        self.inner.delete_mcp_server(project_id, id).await
+    }
     // ── Health ──
     async fn health_check(&self) -> bool {
         self.inner.health_check().await

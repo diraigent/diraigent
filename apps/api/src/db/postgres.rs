@@ -19,6 +19,58 @@ impl PostgresDb {
 
 #[async_trait]
 impl DiraigentDb for PostgresDb {
+    // Approved project MCP registry
+    async fn get_mcp_server(&self, project_id: Uuid, id: Uuid) -> Result<McpServer, AppError> {
+        repository::get_mcp_server(&self.0, project_id, id).await
+    }
+    async fn resolve_mcp_credentials(
+        &self,
+        project_id: Uuid,
+        id: Uuid,
+        revision: i64,
+    ) -> Result<McpSecret, AppError> {
+        repository::resolve_mcp_credentials(&self.0, project_id, id, revision).await
+    }
+    async fn list_mcp_servers(&self, project_id: Uuid) -> Result<Vec<McpServer>, AppError> {
+        repository::list_mcp_servers(&self.0, project_id).await
+    }
+    async fn create_mcp_server(
+        &self,
+        project_id: Uuid,
+        configuration: &McpConfiguration,
+    ) -> Result<McpServer, AppError> {
+        repository::create_mcp_server(&self.0, project_id, configuration).await
+    }
+    async fn update_mcp_server(
+        &self,
+        project_id: Uuid,
+        id: Uuid,
+        req: &McpServerUpdate,
+    ) -> Result<McpServer, AppError> {
+        repository::update_mcp_server(&self.0, project_id, id, req).await
+    }
+    async fn write_mcp_credentials(
+        &self,
+        project_id: Uuid,
+        id: Uuid,
+        revision: i64,
+        keys: &[String],
+        secret: &McpSecret,
+    ) -> Result<McpServer, AppError> {
+        repository::write_mcp_credentials(&self.0, project_id, id, revision, keys, secret).await
+    }
+    async fn set_mcp_approval(
+        &self,
+        project_id: Uuid,
+        id: Uuid,
+        revision: i64,
+        actor: Option<Uuid>,
+    ) -> Result<McpServer, AppError> {
+        repository::set_mcp_approval(&self.0, project_id, id, revision, actor).await
+    }
+    async fn delete_mcp_server(&self, project_id: Uuid, id: Uuid) -> Result<(), AppError> {
+        repository::delete_mcp_server(&self.0, project_id, id).await
+    }
     async fn health_check(&self) -> bool {
         sqlx::query("SELECT 1").execute(&self.0).await.is_ok()
     }

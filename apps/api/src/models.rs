@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+pub use diraigent_types::mcp::*;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::path::PathBuf;
 use uuid::Uuid;
@@ -1964,4 +1965,53 @@ pub struct DashboardProjectSummary {
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct DashboardQuery {
     pub days: Option<i32>,
+}
+// ── Approved project MCP registry ──
+
+#[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
+pub struct McpServer {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    #[sqlx(json)]
+    pub configuration: McpConfiguration,
+    pub revision: i64,
+    pub enabled: bool,
+    pub approved_revision: Option<i64>,
+    pub approved_by: Option<Uuid>,
+    pub approved_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub credential_keys: Vec<String>,
+}
+
+#[derive(Clone, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct McpCredentialWrite {
+    pub revision: i64,
+    pub credentials: std::collections::BTreeMap<String, String>,
+}
+impl std::fmt::Debug for McpCredentialWrite {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("McpCredentialWrite([REDACTED])")
+    }
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct McpRevision {
+    pub revision: i64,
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct McpServerUpdate {
+    pub revision: i64,
+    pub configuration: McpConfiguration,
+}
+
+/// Internal credential envelope; deliberately neither Serializable nor Debug.
+pub struct McpSecret(pub serde_json::Value);
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct McpResolution {
+    pub contract_version: u32,
+    pub servers: Vec<McpServer>,
 }

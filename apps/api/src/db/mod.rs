@@ -22,6 +22,42 @@ use crate::models::*;
 #[allow(clippy::too_many_arguments)]
 #[async_trait]
 pub trait DiraigentDb: Send + Sync {
+    // ── Approved project MCP registry ─────────────────────────────────────────
+    async fn get_mcp_server(&self, project_id: Uuid, id: Uuid) -> Result<McpServer, AppError>;
+    async fn resolve_mcp_credentials(
+        &self,
+        project_id: Uuid,
+        id: Uuid,
+        revision: i64,
+    ) -> Result<McpSecret, AppError>;
+    async fn list_mcp_servers(&self, project_id: Uuid) -> Result<Vec<McpServer>, AppError>;
+    async fn create_mcp_server(
+        &self,
+        project_id: Uuid,
+        configuration: &McpConfiguration,
+    ) -> Result<McpServer, AppError>;
+    async fn update_mcp_server(
+        &self,
+        project_id: Uuid,
+        id: Uuid,
+        req: &McpServerUpdate,
+    ) -> Result<McpServer, AppError>;
+    async fn write_mcp_credentials(
+        &self,
+        project_id: Uuid,
+        id: Uuid,
+        revision: i64,
+        keys: &[String],
+        secret: &McpSecret,
+    ) -> Result<McpServer, AppError>;
+    async fn set_mcp_approval(
+        &self,
+        project_id: Uuid,
+        id: Uuid,
+        revision: i64,
+        actor: Option<Uuid>,
+    ) -> Result<McpServer, AppError>;
+    async fn delete_mcp_server(&self, project_id: Uuid, id: Uuid) -> Result<(), AppError>;
     // ── Health ────────────────────────────────────────────────────────────────
     async fn health_check(&self) -> bool;
 
