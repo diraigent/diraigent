@@ -193,6 +193,9 @@ cargo fmt && cargo clippy --all --quiet
 cd apps/web && npm run lint
 ```
 
+For macOS SDK/linker errors during Rust builds, see
+[macOS Rust build troubleshooting](docs/macos-rust-builds.md).
+
 ### Running with PostgreSQL
 
 ```bash
