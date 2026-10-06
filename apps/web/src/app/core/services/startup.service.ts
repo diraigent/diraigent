@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { TenantApiService } from './tenant-api.service';
 import { getAuthConfig } from '../config/oauth-config';
 import { environment } from '../../../environments/environment';
+import { isSpectatorUrl } from './spectator-api.service';
 
 @Injectable({ providedIn: 'root' })
 export class StartupService {
@@ -23,6 +24,10 @@ export class StartupService {
       this.initialized = true;
       return;
     }
+
+    // Public viewing never initializes a member session or unlocks a tenant.
+    // Exit links reload the normal entry point to run the usual OAuth startup.
+    if (isSpectatorUrl(window.location.pathname)) return;
 
     // Check if the API requires authentication
     const authRequired = await this.checkAuthRequired();

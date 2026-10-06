@@ -7,6 +7,15 @@ import { StartupService } from '../services/startup.service';
 import { environment } from '../../../environments/environment';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
+  const publicBase = `${environment.apiServer}/spectator/`;
+  if (req.url.startsWith(publicBase)) {
+    return next(req.clone({
+      headers: req.headers.delete('Authorization').delete('X-Dev-User-Id'),
+      withCredentials: false,
+      credentials: 'omit',
+    }));
+  }
+
   const oauth = inject(OAuthService);
   const auth = inject(AuthService);
   const startup = inject(StartupService);

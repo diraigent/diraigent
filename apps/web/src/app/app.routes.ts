@@ -4,6 +4,10 @@ import { AuthCallbackPage } from './features/auth/pages/auth-callback/auth-callb
 
 export const routes: Routes = [
   {
+    path: 'spectate/:projectId',
+    loadComponent: () => import('./features/spectator/spectator').then(m => m.SpectatorPage),
+  },
+  {
     path: '',
     loadComponent: () => import('./features/landing/landing').then(m => m.LandingPage),
   },
