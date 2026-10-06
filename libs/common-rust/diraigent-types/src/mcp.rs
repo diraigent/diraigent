@@ -44,3 +44,41 @@ pub struct McpConfiguration {
     #[serde(default)]
     pub credential_bindings: BTreeMap<String, String>,
 }
+
+/// Sanitized bridge payloads: never include upstream errors, URLs or secrets.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpCheckResult {
+    pub server_id: uuid::Uuid,
+    pub revision: i64,
+    pub status: McpCheckStatus,
+    pub approved_tools: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpCheckStatus {
+    Connected,
+    Denied,
+    Failed,
+    TimedOut,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpAuditEvent {
+    pub project_id: uuid::Uuid,
+    pub task_id: uuid::Uuid,
+    pub server_id: uuid::Uuid,
+    pub revision: i64,
+    pub tool_name: Option<String>,
+    pub outcome: McpAuditOutcome,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpAuditOutcome {
+    Succeeded,
+    Denied,
+    Failed,
+    TimedOut,
+    Cancelled,
+}
