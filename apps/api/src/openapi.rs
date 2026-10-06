@@ -101,6 +101,8 @@ use crate::spectator::{
             // -- Provider Configs --
             ProviderConfig, CreateProviderConfig, UpdateProviderConfig,
             ProviderConfigFilters, ResolvedProviderConfig,
+            McpServer, McpConfiguration, McpTransport, McpToolPermission, McpToolAccess,
+            McpCredentialWrite, McpRevision, McpServerUpdate, McpResolution,
             // -- CI --
             ForgejoIntegration, CiRun, CiJob, CiStep, CiRunFilters,
             CiRunWithJobs, CiJobWithSteps,
@@ -133,6 +135,7 @@ use crate::spectator::{
         (name = "task-logs", description = "Task execution logs"),
         (name = "event-rules", description = "Event-to-observation rules"),
         (name = "provider-configs", description = "AI provider configurations"),
+        (name = "mcp-servers", description = "Approved project MCP registry and runtime resolution"),
         (name = "ci", description = "CI/CD run tracking"),
         (name = "git", description = "Git operations"),
         (name = "context", description = "Agent operating context"),
@@ -173,10 +176,104 @@ impl Modify for PathsAddon {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
         register_all_paths(openapi);
         register_spectator_paths(openapi);
+        register_mcp_paths(openapi);
     }
 }
 
 // ── Path Registration ──────────────────────────────────────────────────────
+
+fn register_mcp_paths(openapi: &mut utoipa::openapi::OpenApi) {
+    for (suffix, method, request, response, list) in [
+        ("", "get", None, "McpServer", true),
+        ("", "post", Some("McpConfiguration"), "McpServer", false),
+        ("/resolve", "get", None, "McpResolution", false),
+        ("/{id}", "get", None, "McpServer", false),
+        ("/{id}", "put", Some("McpServerUpdate"), "McpServer", false),
+        ("/{id}", "delete", None, "", false),
+        (
+            "/{id}/credentials",
+            "put",
+            Some("McpCredentialWrite"),
+            "McpServer",
+            false,
+        ),
+        (
+            "/{id}/approve",
+            "post",
+            Some("McpRevision"),
+            "McpServer",
+            false,
+        ),
+        (
+            "/{id}/disable",
+            "post",
+            Some("McpRevision"),
+            "McpServer",
+            false,
+        ),
+        (
+            "/{id}/credentials/resolve",
+            "post",
+            Some("McpRevision"),
+            "",
+            false,
+        ),
+    ] {
+        let url = format!("/v1/{{project_id}}/mcp-servers{suffix}");
+        let schema = serde_json::json!({"$ref":format!("#/components/schemas/{response}")});
+        let schema = if list {
+            serde_json::json!({"type":"array","items":schema})
+        } else {
+            schema
+        };
+        let mut parameters = vec![
+            serde_json::json!({"name":"project_id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}),
+        ];
+        if suffix.contains("{id}") {
+            parameters.push(serde_json::json!({"name":"id","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}));
+        }
+        let status = if method == "delete" {
+            "204"
+        } else if suffix.is_empty() && method == "post" {
+            "201"
+        } else {
+            "200"
+        };
+        let mut operation = serde_json::json!({"tags":["mcp-servers"],"security":[{"bearer_token":[]}],"parameters":parameters,"responses":{status:{"description":"Success","content":{"application/json":{"schema":schema}}},"403":{"description":"Unauthorized identity or project/tenant access"},"409":{"description":"Stale revision or unapproved server"}}});
+        operation["operationId"] = serde_json::json!(format!(
+            "mcp_{method}{}",
+            suffix.replace('/', "_").replace(['{', '}'], "")
+        ));
+        operation["responses"]["401"] =
+            serde_json::json!({"description":"Authentication or required authority missing"});
+        operation["responses"]["400"] = serde_json::json!({"description":"Invalid MCP configuration or missing credential binding"});
+        operation["responses"]["404"] =
+            serde_json::json!({"description":"Project or server not found"});
+        if suffix.ends_with("credentials/resolve") {
+            operation["responses"][status]["content"]["application/json"]["schema"] =
+                serde_json::json!({"type":"object","additionalProperties":{"type":"string"}});
+        }
+        if method == "delete" {
+            operation["responses"][status]
+                .as_object_mut()
+                .unwrap()
+                .remove("content");
+        }
+        if let Some(request) = request {
+            operation["requestBody"] = serde_json::json!({"required":true,"content":{"application/json":{"schema":{"$ref":format!("#/components/schemas/{request}")}}}});
+        }
+        let item = openapi.paths.paths.entry(url).or_default();
+        let op: path::Operation =
+            serde_json::from_value(operation).expect("valid MCP OpenAPI operation");
+        match method {
+            "get" => item.get = Some(op),
+            "post" => item.post = Some(op),
+            "put" => item.put = Some(op),
+            "delete" => item.delete = Some(op),
+            _ => unreachable!(),
+        }
+    }
+}
 
 fn register_spectator_paths(openapi: &mut utoipa::openapi::OpenApi) {
     for (suffix, schema, list, op_id) in [

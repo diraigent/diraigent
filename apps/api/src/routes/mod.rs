@@ -18,6 +18,7 @@ mod integrations;
 mod knowledge;
 mod locks;
 mod logs;
+pub(crate) mod mcp_servers;
 mod members;
 mod metrics;
 mod observations;
@@ -91,6 +92,7 @@ pub fn router() -> Router<AppState> {
         .merge(integrations::routes())
         .merge(roles::routes())
         .merge(members::routes())
+        .merge(mcp_servers::routes())
         .merge(audit::routes())
         .merge(context::routes())
         .merge(webhooks::routes())
