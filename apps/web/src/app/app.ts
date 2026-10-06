@@ -1,5 +1,5 @@
-import { Component, inject, AfterViewInit, OnDestroy, signal, effect } from '@angular/core';
-import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import { Component, inject, Injector, AfterViewInit, OnDestroy, signal, effect } from '@angular/core';
+import { NavigationEnd, NavigationStart, Router, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { SidebarComponent } from './shared/components/sidebar/sidebar';
 import { ChatDrawerComponent } from './features/chat/chat-drawer';
@@ -9,13 +9,18 @@ import { CreateProjectService } from './shared/services/create-project.service';
 import { ChatService } from './core/services/chat.service';
 import { KeyboardService } from './core/services/keyboard.service';
 import { KeyboardHelpComponent } from './shared/components/keyboard-help/keyboard-help';
+import { isSpectatorUrl } from './core/services/spectator-api.service';
 
 @Component({
   selector: 'app-root',
   standalone: true,
   imports: [RouterOutlet, SidebarComponent, ChatDrawerComponent, CreateProjectModalComponent, KeyboardHelpComponent],
   template: `
-    @if (auth.isLoggedIn()) {
+    @if (isSpectatorRoute()) {
+      <main id="main-content" class="min-h-dvh bg-bg-subtle text-text-primary" tabindex="-1">
+        <router-outlet />
+      </main>
+    } @else if (auth.isLoggedIn()) {
       <app-sidebar #sidebar [class.hidden]="chat.fullscreen()" />
       <div class="h-dvh flex flex-col min-w-0 overflow-x-hidden"
            [class.lg:ml-64]="!chat.fullscreen()">
@@ -97,9 +102,12 @@ import { KeyboardHelpComponent } from './shared/components/keyboard-help/keyboar
 export class App implements AfterViewInit, OnDestroy {
   private router = inject(Router);
   auth = inject(AuthService);
-  createProject = inject(CreateProjectService);
-  chat = inject(ChatService);
-  keyboard = inject(KeyboardService);
+  private injector = inject(Injector);
+  // Do not construct services that bootstrap private projects/chat in the public shell.
+  get createProject() { return this.injector.get(CreateProjectService); }
+  get chat() { return this.injector.get(ChatService); }
+  get keyboard() { return this.injector.get(KeyboardService); }
+  isSpectatorRoute = signal(isSpectatorUrl(window.location.pathname));
 
   /** True when the current URL is the landing page (root path). */
   isLandingRoute = signal(false);
@@ -118,14 +126,26 @@ export class App implements AfterViewInit, OnDestroy {
     // Track whether we're on the landing page
     this.isLandingRoute.set(this.router.url === '/');
     this.router.events
-      .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
-      .subscribe(e => this.isLandingRoute.set(e.urlAfterRedirects === '/'));
+      .pipe(filter((e): e is NavigationEnd | NavigationStart => e instanceof NavigationEnd || e instanceof NavigationStart))
+      .subscribe(e => {
+        const url = e instanceof NavigationEnd ? e.urlAfterRedirects : e.url;
+        // A fresh public entry also tears down existing member polling/SSE/chat.
+        if (e instanceof NavigationStart && isSpectatorUrl(url) && !this.isSpectatorRoute()) {
+          window.location.assign(url);
+        }
+        this.isSpectatorRoute.set(isSpectatorUrl(url));
+        this.isLandingRoute.set(url === '/');
+      });
 
-    // Attach global keyboard shortcuts
-    this.detachKeyboard = this.keyboard.attach();
+    effect(() => {
+      this.detachKeyboard?.();
+      this.detachKeyboard = null;
+      if (!this.isSpectatorRoute()) this.detachKeyboard = this.keyboard.attach();
+    });
 
     // React to scrollToChat signal from ChatService (e.g. openWithMessage from goals/tasks)
     effect(() => {
+      if (this.isSpectatorRoute()) return;
       if (this.chat.scrollToChat()) {
         this.scrollToChat();
         this.chat.scrollToChat.set(false);
