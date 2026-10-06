@@ -18,6 +18,34 @@ use crate::project::api::ProjectsApi;
 
 const CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 
+/// Runtime configuration is not task prose. Strip it before context serialization.
+pub fn sanitize_prompt_context(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            object.retain(|key, _| {
+                !matches!(
+                    key.as_str(),
+                    "worker"
+                        | "mcp"
+                        | "mcp_servers"
+                        | "mcpServers"
+                        | "credentials"
+                        | "credential_bindings"
+                )
+            });
+            for value in object.values_mut() {
+                sanitize_prompt_context(value);
+            }
+        }
+        Value::Array(array) => {
+            for value in array {
+                sanitize_prompt_context(value);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Cached entry with expiry.
 struct CacheEntry {
     value: Value,
@@ -47,7 +75,9 @@ impl ContextAssembler {
         // When task_id is provided, use the API's context endpoint for semantic ranking.
         // This is the fallback until we have local embedding support.
         if let Some(tid) = task_id {
-            return self.api.get_context_for_task(project_id, tid).await;
+            let mut context = self.api.get_context_for_task(project_id, tid).await?;
+            sanitize_prompt_context(&mut context);
+            return Ok(context);
         }
 
         // Project-level context: assemble from cached lists
@@ -70,12 +100,14 @@ impl ContextAssembler {
             })
             .await?;
 
-        Ok(json!({
+        let mut context = json!({
             "knowledge": knowledge,
             "decisions": decisions,
             "observations": observations,
             "tasks": [],
-        }))
+        });
+        sanitize_prompt_context(&mut context);
+        Ok(context)
     }
 
     /// Invalidate cache for a project (e.g., after a task modifies knowledge).

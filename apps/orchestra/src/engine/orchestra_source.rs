@@ -32,6 +32,16 @@ impl OrchestraTaskSource {
 
 #[async_trait]
 impl TaskSource for OrchestraTaskSource {
+    async fn resolve_mcp_sessions(
+        &self,
+        project: &str,
+        task: &str,
+        profile: crate::engine::task_profile::TaskProfile,
+        provider: &str,
+        selection: Option<crate::engine::mcp::Selection>,
+    ) -> Result<crate::engine::mcp::Sessions> {
+        crate::engine::mcp::resolve(&self.api, project, task, profile, provider, selection).await
+    }
     fn agent_id(&self) -> &str {
         self.api.agent_id()
     }

@@ -104,6 +104,8 @@ enum Operation {
 }
 
 pub struct Broker {
+    shutdown: Option<oneshot::Sender<()>>,
+    runner: Option<tokio::task::JoinHandle<()>>,
     sender: mpsc::Sender<Request>,
     secret: Uuid,
     project: Uuid,
@@ -174,11 +176,15 @@ impl Broker {
         let (sender, receiver) = mpsc::channel(limits.queue_capacity);
         let max_bytes = limits.max_bytes;
         let call_timeout = limits.call_timeout;
-        tokio::spawn(run(
+        let (shutdown, cancelled) = oneshot::channel();
+        let runner = tokio::spawn(run(
             transport, receiver, approval, profile, registry, audit, limits, discovered, task,
+            cancelled,
         ));
         Ok((
             Self {
+                shutdown: Some(shutdown),
+                runner: Some(runner),
                 sender,
                 secret,
                 project,
@@ -197,6 +203,13 @@ impl Broker {
 
     pub async fn tools_list(&self, access: &TaskAccess) -> Result<Value, BrokerError> {
         self.request(access, Operation::List).await
+    }
+
+    pub async fn shutdown(&mut self) {
+        self.shutdown.take();
+        if let Some(runner) = self.runner.take() {
+            let _ = runner.await;
+        }
     }
 
     pub async fn tools_call(
@@ -248,6 +261,13 @@ impl Broker {
             .await
             .map_err(|_| BrokerError::Timeout)?
             .map_err(|_| BrokerError::Disconnected)?
+    }
+}
+
+impl Drop for Broker {
+    fn drop(&mut self) {
+        // Wake even an in-flight operation; the actor closes the upstream.
+        self.shutdown.take();
     }
 }
 
@@ -398,10 +418,12 @@ async fn run(
     limits: Limits,
     discovered: BTreeMap<String, Value>,
     task: Uuid,
+    mut cancelled: oneshot::Receiver<()>,
 ) {
     let deadline = tokio::time::Instant::now() + limits.lifetime;
     loop {
         let request = tokio::select! {
+            _ = &mut cancelled => break,
             r = receiver.recv() => match r { Some(r) => r, None => break },
             _ = tokio::time::sleep_until(deadline) => break,
             _ = transport.exited() => break,
@@ -427,6 +449,12 @@ async fn run(
             }
         };
         let result = tokio::select! {
+            _ = &mut cancelled => {
+                audit.record(McpAuditEvent { project_id: approval.project_id, task_id: task,
+                    server_id: approval.server_id, revision: approval.revision, tool_name,
+                    outcome: McpAuditOutcome::Cancelled });
+                break;
+            },
             _ = reply.closed() => {
                 audit.record(McpAuditEvent { project_id: approval.project_id, task_id: task,
                     server_id: approval.server_id, revision: approval.revision, tool_name,

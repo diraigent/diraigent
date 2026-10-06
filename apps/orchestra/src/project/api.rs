@@ -16,6 +16,42 @@ pub struct ProjectsApi {
 }
 
 impl ProjectsApi {
+    pub(crate) async fn mcp_get(
+        &self,
+        path: &str,
+    ) -> Result<Value, diraigent_orchestra::mcp::BrokerError> {
+        self.mcp_request(self.client.get(format!("{}{}", self.base_url, path)))
+            .await
+    }
+
+    pub(crate) async fn mcp_post(
+        &self,
+        path: &str,
+        body: &Value,
+    ) -> Result<Value, diraigent_orchestra::mcp::BrokerError> {
+        self.mcp_request(
+            self.client
+                .post(format!("{}{}", self.base_url, path))
+                .json(body),
+        )
+        .await
+    }
+
+    async fn mcp_request(
+        &self,
+        request: reqwest::RequestBuilder,
+    ) -> Result<Value, diraigent_orchestra::mcp::BrokerError> {
+        use diraigent_orchestra::mcp::BrokerError;
+        let response = self
+            .build_request(request)
+            .send()
+            .await
+            .map_err(|_| BrokerError::Upstream)?;
+        if !response.status().is_success() {
+            return Err(BrokerError::Denied);
+        }
+        response.json().await.map_err(|_| BrokerError::Protocol)
+    }
     pub fn new(base_url: &str, agent_id: &str) -> Self {
         let api_token = std::env::var("DIRAIGENT_API_TOKEN")
             .ok()
@@ -589,6 +625,16 @@ fn as_array(val: &Value) -> Vec<Value> {
 
 #[async_trait::async_trait]
 impl crate::engine::task_source::TaskSource for ProjectsApi {
+    async fn resolve_mcp_sessions(
+        &self,
+        project: &str,
+        task: &str,
+        profile: crate::engine::task_profile::TaskProfile,
+        provider: &str,
+        selection: Option<crate::engine::mcp::Selection>,
+    ) -> Result<crate::engine::mcp::Sessions> {
+        crate::engine::mcp::resolve(self, project, task, profile, provider, selection).await
+    }
     fn agent_id(&self) -> &str {
         self.agent_id.as_deref().unwrap_or("")
     }
