@@ -1,7 +1,7 @@
-import { HttpInterceptorFn } from '@angular/common/http';
+import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { OAuthService } from 'angular-oauth2-oidc';
-import { tap } from 'rxjs';
+import { tap, throwError } from 'rxjs';
 import { AuthService } from '../services/auth.service';
 import { StartupService } from '../services/startup.service';
 import { environment } from '../../../environments/environment';
@@ -22,6 +22,13 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   if (!req.url.startsWith(environment.apiServer)) {
     return next(req);
+  }
+
+  if (auth.readOnly() && !['GET', 'HEAD'].includes(req.method)) {
+    return throwError(() => new HttpErrorResponse({
+      status: 403, statusText: 'Read-only account',
+      error: { error: 'This account is read-only' }, url: req.url,
+    }));
   }
 
   const token = oauth.getAccessToken();

@@ -37,9 +37,15 @@ import { isSpectatorUrl } from './core/services/spectator-api.service';
             </button>
           </div>
           <div class="w-full pl-10 pr-4 lg:px-6">
+            @if (auth.readOnly()) {
+              <p role="status" class="my-4 rounded-lg border border-border p-3 text-text-secondary">
+                Read-only account — browse the app; changes and agent execution are disabled.
+              </p>
+            }
             <router-outlet />
           </div>
         </main>
+        @if (!auth.readOnly()) {
         <div id="chat-panel" class="overflow-hidden"
              [class.border-t]="!chat.fullscreen()"
              [class.border-border]="!chat.fullscreen()"
@@ -47,9 +53,10 @@ import { isSpectatorUrl } from './core/services/spectator-api.service';
              [class.min-h-0]="!chat.collapsed() || chat.fullscreen()">
           <app-chat-drawer />
         </div>
+        }
       </div>
       <!-- Mobile jump-to-chat FAB: visible only on mobile when chat panel is out of viewport -->
-      @if (showChatFab() && !chat.fullscreen()) {
+      @if (!auth.readOnly() && showChatFab() && !chat.fullscreen()) {
         <button
           (click)="scrollToChat()"
           class="fixed bottom-6 right-6 z-50 lg:hidden w-14 h-14 rounded-full bg-accent text-white shadow-lg
@@ -61,7 +68,7 @@ import { isSpectatorUrl } from './core/services/spectator-api.service';
           </svg>
         </button>
       }
-      @if (createProject.isOpen()) {
+      @if (!auth.readOnly() && createProject.isOpen()) {
         <app-create-project-modal
           [parentProjects]="createProject.parentProjects()"
           (created)="createProject.notifyCreated($event)"

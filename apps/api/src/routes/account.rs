@@ -18,13 +18,20 @@ pub fn routes() -> Router<AppState> {
 #[derive(Serialize)]
 struct AccountResponse {
     user_id: Uuid,
+    read_only: bool,
 }
 
 /// `GET /v1/account`
 ///
 /// Returns the authenticated user's internal ID.
-async fn get_account(AuthUser(user_id): AuthUser) -> Json<AccountResponse> {
-    Json(AccountResponse { user_id })
+async fn get_account(
+    State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
+) -> Result<Json<AccountResponse>, AppError> {
+    Ok(Json(AccountResponse {
+        user_id,
+        read_only: crate::auth::is_read_only(&state, user_id).await?,
+    }))
 }
 
 /// `GET /v1/account/export`

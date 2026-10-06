@@ -1496,7 +1496,7 @@ pub struct CreateChangedFiles {
 
 // ── Tenant Models ──
 
-pub const TENANT_ROLES: &[&str] = &["owner", "admin", "member"];
+pub const TENANT_ROLES: &[&str] = &["owner", "admin", "member", "viewer"];
 pub const ENCRYPTION_MODES: &[&str] = &["none", "login_derived", "passphrase"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]

@@ -57,6 +57,7 @@ export class StartupService {
     if (hasValidToken && !hasAuthCode) {
       // Fast path: token exists and is not expired — mark initialized immediately,
       // load discovery + set up refresh in background.
+      await this.auth.loadAccountAccess();
       this.auth.markInitialized();
       this.oauth.loadDiscoveryDocumentAndTryLogin()
         .then(() => this.oauth.setupAutomaticSilentRefresh())
@@ -88,11 +89,12 @@ export class StartupService {
           this._loginFailed = true;
         }
       }
+      await this.auth.loadAccountAccess();
       this.auth.markInitialized();
     }
 
     // Auto-unlock encryption for login-derived tenants (fire-and-forget)
-    this.tryUnlockEncryption();
+    if (!this.auth.readOnly()) this.tryUnlockEncryption();
 
     this.initialized = true;
   }

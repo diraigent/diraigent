@@ -21,7 +21,7 @@ export interface TenantMember {
   id: string;
   tenant_id: string;
   user_id: string;
-  role: 'owner' | 'admin' | 'member';
+  role: 'owner' | 'admin' | 'member' | 'viewer';
   created_at: string;
   updated_at: string;
 }

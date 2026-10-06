@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { PLATFORM_ID } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { Router } from '@angular/router';
@@ -9,6 +9,22 @@ import { environment } from '../../../environments/environment';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
+  readonly readOnly = signal(false);
+
+  async loadAccountAccess(): Promise<void> {
+    const token = this.getAccessToken();
+    if (!token) return;
+    // Fail closed in the UI when account permissions cannot be loaded.
+    this.readOnly.set(true);
+    try {
+      const response = await fetch(`${environment.apiServer}/account`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return;
+      const account = await response.json();
+      this.readOnly.set(account.read_only !== false);
+    } catch { /* Keep read-only until access can be verified. */ }
+  }
   private _isLoggedIn = new BehaviorSubject<boolean>(false);
   readonly isLoggedIn$: Observable<boolean> = this._isLoggedIn.pipe(distinctUntilChanged());
 
@@ -94,6 +110,7 @@ export class AuthService {
   }
 
   clearSession(redirectHome = false): void {
+    this.readOnly.set(false);
     this._isLoggedIn.next(false);
     this._user.next(null);
     if (redirectHome) {

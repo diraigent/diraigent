@@ -15,6 +15,43 @@ use crate::error::AppError;
 /// Resolved authenticated user. Extracted from JWT → local auth_user table.
 pub struct AuthUser(pub Uuid);
 
+/// A viewer membership restricts the entire account, including agent keys.
+/// This deliberately prevents creating a second workspace to escape demo mode.
+pub async fn is_read_only(state: &AppState, user_id: Uuid) -> Result<bool, AppError> {
+    Ok(sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM diraigent.tenant_member WHERE user_id = $1 AND role = 'viewer')",
+    )
+    .bind(user_id)
+    .fetch_one(&state.pool)
+    .await?)
+}
+
+fn viewer_request_allowed(method: &axum::http::Method, path: &str) -> bool {
+    if !matches!(*method, axum::http::Method::GET | axum::http::Method::HEAD) {
+        return false;
+    }
+    // Worker channels can execute tools; key/export endpoints expose credentials.
+    !path.split('/').any(|segment| {
+        matches!(
+            segment,
+            "ws" | "stream" | "keys" | "dek" | "export" | "providers"
+        )
+    })
+}
+
+async fn authorize_account(
+    state: &AppState,
+    parts: &Parts,
+    user_id: Uuid,
+) -> Result<AuthUser, AppError> {
+    if is_read_only(state, user_id).await?
+        && !viewer_request_allowed(&parts.method, parts.uri.path())
+    {
+        return Err(AppError::Forbidden("This account is read-only".into()));
+    }
+    Ok(AuthUser(user_id))
+}
+
 /// In-memory cache for auth_user_id → user_id, avoiding per-request profile DB lookups.
 const USER_CACHE_TTL_SECS: u64 = 300; // 5 minutes
 
@@ -161,7 +198,7 @@ impl FromRequestParts<AppState> for AuthUser {
                 .map_err(|_| AppError::Unauthorized("Invalid DEV_USER_ID format".into()))?;
             // Ensure the auth_user row exists so tenant_member FK won't fail.
             let _ = state.db.ensure_dev_user(user_id).await;
-            return Ok(AuthUser(user_id));
+            return authorize_account(state, parts, user_id).await;
         }
 
         // Header-based dev auth: X-Dev-User-Id header bypasses JWT validation.
@@ -176,7 +213,7 @@ impl FromRequestParts<AppState> for AuthUser {
                 .map_err(|_| AppError::Unauthorized("Invalid X-Dev-User-Id format".into()))?;
             // Ensure the auth_user row exists so tenant_member FK won't fail.
             let _ = state.db.ensure_dev_user(user_id).await;
-            return Ok(AuthUser(user_id));
+            return authorize_account(state, parts, user_id).await;
         }
 
         // Extract token from Authorization header only.
@@ -209,7 +246,7 @@ impl FromRequestParts<AppState> for AuthUser {
                     crate::metrics::record_auth_failure("invalid_agent_key");
                     AppError::Unauthorized("Invalid or revoked agent API key".into())
                 })?;
-            return Ok(AuthUser(owner_id));
+            return authorize_account(state, parts, owner_id).await;
         }
 
         let jwt_header = decode_header(token)
@@ -246,7 +283,7 @@ impl FromRequestParts<AppState> for AuthUser {
 
         // Check cache first
         if let Some(cached) = state.user_cache.get(auth_user_id).await {
-            return Ok(AuthUser(cached));
+            return authorize_account(state, parts, cached).await;
         }
 
         let user_id = state
@@ -260,6 +297,32 @@ impl FromRequestParts<AppState> for AuthUser {
 
         state.user_cache.set(auth_user_id.clone(), user_id).await;
 
-        Ok(AuthUser(user_id))
+        authorize_account(state, parts, user_id).await
+    }
+}
+
+#[cfg(test)]
+mod viewer_tests {
+    use super::*;
+    use axum::http::Method;
+
+    #[test]
+    fn viewer_blocks_writes_and_privileged_read_channels() {
+        for method in [Method::POST, Method::PUT, Method::PATCH, Method::DELETE] {
+            assert!(!viewer_request_allowed(&method, "/v1/tasks/id"));
+            assert!(!viewer_request_allowed(&method, "/v1/tenants"));
+        }
+        for path in [
+            "/v1/agents/id/ws",
+            "/v1/review/stream",
+            "/v1/account/export",
+            "/v1/tenants/id/encryption/dek",
+            "/v1/tenants/id/members/id/keys",
+            "/v1/id/providers",
+        ] {
+            assert!(!viewer_request_allowed(&Method::GET, path));
+        }
+        assert!(viewer_request_allowed(&Method::GET, "/v1/account"));
+        assert!(viewer_request_allowed(&Method::GET, "/v1/id/tasks"));
     }
 }
