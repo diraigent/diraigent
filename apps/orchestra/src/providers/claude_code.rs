@@ -104,17 +104,8 @@ async fn run_claude(
         .map(|b| format!(" --max-budget-usd {b:.1}"))
         .unwrap_or_default();
 
-    // Write MCP config to a temp file if specified.
-    let mcp_flag = if let Some(mcp) = &config.mcp_servers {
-        let mcp_file = temp_dir.join("mcp_config.json");
-        let mcp_json = serde_json::to_string_pretty(mcp).unwrap_or_default();
-        tokio::fs::write(&mcp_file, &mcp_json)
-            .await
-            .context("write MCP config to temp file")?;
-        format!(" --mcp-config '{}'", mcp_file.display())
-    } else {
-        String::new()
-    };
+    // Only the future broker adapter may supply MCP flags; no raw JSON files.
+    let mcp_flag = String::new();
 
     // Pass custom sub-agents as --agents '<json>' if specified.
     let agents_flag = if let Some(agents) = &config.agents {

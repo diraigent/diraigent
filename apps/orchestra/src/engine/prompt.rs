@@ -116,7 +116,10 @@ pub async fn build_user_prompt(
     );
 
     let _project_json = project_res.ok();
-    let task_json = task_res.ok();
+    let task_json = task_res.ok().map(|mut task| {
+        super::context::sanitize_prompt_context(&mut task);
+        task
+    });
 
     // Build related context section (task-relevant knowledge/decisions/observations).
     // Only included for full-context steps (implement/dream), not minimal (review).
@@ -155,6 +158,7 @@ pub async fn build_user_prompt(
                 if let Some(dek) = dek {
                     crate::crypto::decrypt_json_recursive(dek, &mut v, "context");
                 }
+                super::context::sanitize_prompt_context(&mut v);
                 serde_json::to_string_pretty(&v).unwrap_or_default()
             })
             .unwrap_or_default()
@@ -167,6 +171,7 @@ pub async fn build_user_prompt(
                     crate::crypto::decrypt_json_recursive(dek, &mut v, "context");
                 }
                 trim_context(&mut v, &context_level);
+                super::context::sanitize_prompt_context(&mut v);
                 serde_json::to_string_pretty(&v).unwrap_or_default()
             })
             .unwrap_or_default()

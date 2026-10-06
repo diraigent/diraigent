@@ -47,11 +47,6 @@ pub struct TaskConfig {
     pub step_name: String,
     /// The raw task worker options (for prompt context_level).
     pub worker_options: Option<Value>,
-    /// MCP server configurations. Must be a JSON object with a top-level
-    /// `"mcpServers"` key, e.g.:
-    /// `{"mcpServers": {"fs": {"command": "npx", "args": [...]}}}`.
-    /// Written to a temp file and passed as `--mcp-config <file>`.
-    pub mcp_servers: Option<Value>,
     /// Custom sub-agent definitions passed as `--agents <json>`.
     /// Each key is an agent name, value is `{description, prompt}`.
     pub agents: Option<Value>,
@@ -106,9 +101,6 @@ impl TaskConfig {
         let tools_preset = step_tools.unwrap_or(default_tools);
         let allowed_tools = tools_for_preset(tools_preset);
 
-        // 6. MCP servers: written to temp file, passed as --mcp-config
-        let mcp_servers = worker_options.and_then(|s| s.get("mcp_servers").cloned());
-
         // 7. Custom sub-agents: passed as --agents '<json>'
         let agents = worker_options.and_then(|s| s.get("agents").cloned());
 
@@ -141,7 +133,6 @@ impl TaskConfig {
             allowed_tools,
             step_name: step_name.to_string(),
             worker_options: worker_options.cloned(),
-            mcp_servers,
             agents,
             agent,
             settings,
@@ -190,6 +181,12 @@ pub async fn run_worker(
     upload_logs: bool,
     store_diffs: bool,
 ) -> Result<WorkerResult> {
+    if let Err(error) = crate::engine::mcp::selection(task_config.worker_options.as_ref()) {
+        let _ = api
+            .post_task_update(task_id, "blocker", &error.to_string())
+            .await;
+        return Err(error);
+    }
     let tid = TaskId::new(task_id);
     let branch_name = tid.branch_name();
 
@@ -237,7 +234,12 @@ pub async fn run_worker(
         .budget
         .map(|b| format!("${b:.1}"))
         .unwrap_or_else(|| "unlimited".into());
-    let mcp_info = if task_config.mcp_servers.is_some() {
+    let mcp_info = if task_config
+        .worker_options
+        .as_ref()
+        .and_then(|o| o.get("mcp"))
+        .is_some()
+    {
         " +mcp"
     } else {
         ""
@@ -588,7 +590,35 @@ async fn execute_via_provider(
         .unwrap_or(&task_config.step_name)
         .to_string();
 
-    let step = ResolvedTask {
+    let sessions = async {
+        let selection = crate::engine::mcp::selection(task_config.worker_options.as_ref())?;
+        api.resolve_mcp_sessions(
+            project_id,
+            task_id,
+            TaskProfile::for_mode(&task_config.step_name),
+            provider_name,
+            selection,
+        )
+        .await
+    }
+    .await;
+    let sessions = match sessions {
+        Ok(sessions) => sessions,
+        Err(error) => {
+            let msg = format!("MCP execution refused: {error}");
+            let _ = api.post_task_update(task_id, "blocker", &msg).await;
+            return (
+                Err(anyhow::anyhow!(msg)),
+                0.0,
+                0,
+                0,
+                0,
+                "mcp_error".into(),
+                true,
+            );
+        }
+    };
+    let mut step = ResolvedTask {
         name: task_config.step_name.clone(),
         description: task_description,
         model: provider_cfg.model.clone(),
@@ -620,7 +650,7 @@ async fn execute_via_provider(
         budget: task_config.budget,
         env: task_config.env.clone(),
         system_prompt: Some(system_prompt.to_string()),
-        mcp_servers: task_config.mcp_servers.clone(),
+        mcp_servers: Some(sessions),
         agents: task_config.agents.clone(),
         agent: task_config.agent.clone(),
         settings: task_config.settings.clone(),
@@ -642,7 +672,11 @@ async fn execute_via_provider(
         provider_cfg.model.as_deref().unwrap_or("default"),
         provider_cfg.base_url.as_deref().unwrap_or("default"),
     );
-    match provider.execute(&step, &task_ctx, &provider_cfg).await {
+    let output = provider.execute(&step, &task_ctx, &provider_cfg).await;
+    if let Some(sessions) = &mut step.mcp_servers {
+        sessions.shutdown().await;
+    }
+    match output {
         Ok(output) => {
             info!(
                 "worker {tid}: provider '{provider_name}' completed (exit_code={}, cost=${:.2})",
@@ -732,6 +766,7 @@ mod tests {
 
     /// Mount a mock for OpenAI chat completions endpoint.
     async fn mock_openai_completions(server: &MockServer) {
+        mock_no_mcp(server).await;
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
             .respond_with(
@@ -745,6 +780,7 @@ mod tests {
 
     /// Mount a mock for Ollama chat endpoint.
     async fn mock_ollama_chat(server: &MockServer) {
+        mock_no_mcp(server).await;
         Mock::given(method("POST"))
             .and(path("/api/chat"))
             .respond_with(
@@ -757,6 +793,17 @@ mod tests {
     }
 
     // ── Provider routing decision tests ──────────────────────
+
+    async fn mock_no_mcp(server: &MockServer) {
+        Mock::given(method("GET"))
+            .and(path("/proj-1/mcp-servers/resolve"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"contract_version": 1, "servers": []})),
+            )
+            .mount(server)
+            .await;
+    }
 
     #[test]
     fn default_provider_is_opencode() {

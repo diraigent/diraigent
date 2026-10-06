@@ -28,7 +28,7 @@ use serde_json::Value;
 
 // ── Shared types ────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ResolvedTask {
     /// Step name (e.g. "implement", "review").
     pub name: String,
@@ -46,8 +46,8 @@ pub struct ResolvedTask {
     pub env: HashMap<String, String>,
     /// System prompt (static CLAUDE.md-based prompt, used by Claude Code provider).
     pub system_prompt: Option<String>,
-    /// MCP server configurations (JSON object with `"mcpServers"` key).
-    pub mcp_servers: Option<Value>,
+    /// Opaque task-local broker connections, never raw provider configuration.
+    pub mcp_servers: Option<crate::engine::mcp::Sessions>,
     /// Custom sub-agent definitions (JSON object, key=name, value={description, prompt}).
     pub agents: Option<Value>,
     /// Name of a configured agent to activate.
@@ -135,23 +135,70 @@ pub struct UnknownProviderError(String);
 /// Factory that creates [`TaskProvider`] instances by provider name.
 pub struct ProviderFactory;
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum McpCapability {
+    BrokerAdapter,
+    Unsupported,
+}
+
+struct GuardedProvider {
+    name: String,
+    inner: Box<dyn TaskProvider>,
+}
+#[async_trait]
+impl TaskProvider for GuardedProvider {
+    async fn execute(
+        &self,
+        step: &ResolvedTask,
+        task: &TaskContext,
+        config: &ProviderConfig,
+    ) -> anyhow::Result<TaskOutput> {
+        if step.mcp_servers.as_ref().is_some_and(|s| !s.0.is_empty()) {
+            ProviderFactory::require_mcp(&self.name)?;
+            anyhow::bail!(
+                "Provider '{}' MCP broker adapter is not implemented yet; refusing to ignore approved MCP access",
+                self.name
+            );
+        }
+        self.inner.execute(step, task, config).await
+    }
+}
+
 impl ProviderFactory {
+    pub fn mcp_capability(name: &str) -> McpCapability {
+        match name {
+            "claude-code" | "codex" | "opencode" => McpCapability::BrokerAdapter,
+            _ => McpCapability::Unsupported,
+        }
+    }
+    pub fn require_mcp(name: &str) -> anyhow::Result<()> {
+        if Self::mcp_capability(name) == McpCapability::Unsupported {
+            anyhow::bail!(
+                "Provider '{name}' does not support MCP; select claude-code, codex or opencode with a broker adapter"
+            );
+        }
+        Ok(())
+    }
     /// Create a boxed [`TaskProvider`] for the given provider name.
     ///
     /// Known providers: `"opencode"`, `"claude-code"`, `"codex"`, `"anthropic"`, `"openai"`, `"copilot"`, `"ollama"`.
     ///
     /// Returns [`UnknownProviderError`] for any unrecognised name.
     pub fn create(provider_name: &str) -> Result<Box<dyn TaskProvider>, UnknownProviderError> {
-        match provider_name {
-            "opencode" => Ok(Box::new(opencode::OpenCodeProvider)),
-            "claude-code" => Ok(Box::new(claude_code::ClaudeCodeProvider)),
-            "codex" => Ok(Box::new(codex::CodexProvider)),
-            "anthropic" => Ok(Box::new(anthropic::AnthropicProvider)),
-            "openai" => Ok(Box::new(openai::OpenAIProvider)),
-            "copilot" => Ok(Box::new(copilot::CopilotProvider)),
-            "ollama" => Ok(Box::new(ollama::OllamaProvider)),
-            other => Err(UnknownProviderError(other.to_string())),
-        }
+        let inner: Box<dyn TaskProvider> = match provider_name {
+            "opencode" => Box::new(opencode::OpenCodeProvider),
+            "claude-code" => Box::new(claude_code::ClaudeCodeProvider),
+            "codex" => Box::new(codex::CodexProvider),
+            "anthropic" => Box::new(anthropic::AnthropicProvider),
+            "openai" => Box::new(openai::OpenAIProvider),
+            "copilot" => Box::new(copilot::CopilotProvider),
+            "ollama" => Box::new(ollama::OllamaProvider),
+            other => return Err(UnknownProviderError(other.to_string())),
+        };
+        Ok(Box::new(GuardedProvider {
+            name: provider_name.into(),
+            inner,
+        }))
     }
 }
 

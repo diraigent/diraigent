@@ -16,6 +16,24 @@ use crate::git::ChangedFile;
 /// implementation can provide tasks from files/stdin.
 #[async_trait]
 pub trait TaskSource: Send + Sync {
+    /// Local/Git sources have no approval authority. API-backed implementations
+    /// override this and resolve fresh registry state, without caching secrets.
+    async fn resolve_mcp_sessions(
+        &self,
+        project: &str,
+        task: &str,
+        profile: crate::engine::task_profile::TaskProfile,
+        provider: &str,
+        selection: Option<crate::engine::mcp::Selection>,
+    ) -> Result<crate::engine::mcp::Sessions> {
+        let _ = (project, task, profile, provider);
+        if selection.is_some_and(|s| !s.servers.is_empty()) {
+            anyhow::bail!(
+                "Local MCP configuration is unapproved; use the authenticated project registry"
+            );
+        }
+        Ok(crate::engine::mcp::Sessions::default())
+    }
     // ── Identity ──
 
     fn agent_id(&self) -> &str;
