@@ -156,6 +156,43 @@ function parseCriteria(value: unknown): string[] {
         </div>
       </div>
 
+      @if (deepLinkError()) {
+        <p role="alert" class="text-ctp-red text-sm mb-6">{{ t('common.error') }}</p>
+      }
+      @if (deepLinkedTask(); as task) {
+        <div class="mb-6" data-testid="deep-linked-task">
+          <app-task-list
+            [compact]="true"
+            [tasks]="[selectedUnlinkedTask()?.id === task.id ? selectedUnlinkedTask()! : task]"
+            [selectedId]="selectedUnlinkedTask()?.id ?? null"
+            [detailUpdates]="taskDetailUpdates()"
+            [detailComments]="taskDetailComments()"
+            [detailDependencies]="taskDetailDependencies()"
+            [detailVerifications]="taskDetailVerifications()"
+            [detailChangedFiles]="taskDetailChangedFiles()"
+            [detailGitStatus]="taskDetailGitStatus()"
+            [detailPushing]="taskDetailPushing()"
+            [detailReverting]="taskDetailReverting()"
+            [detailResolving]="taskDetailResolving()"
+            [detailRelatedItems]="taskDetailRelatedItems()"
+            [detailLoading]="taskDetailLoading()"
+            (taskSelect)="selectUnlinkedTask($event)"
+            (stateChange)="onUnlinkedTaskStateChange($event.task, $event.target)"
+            (detailTransition)="onUnlinkedTaskStateChange(selectedUnlinkedTask()!, $event)"
+            (detailClaim)="onTaskClaim()"
+            (detailPush)="onTaskPush($event)"
+            (detailResolve)="onTaskResolve(selectedUnlinkedTask()!)"
+            (detailRevert)="onTaskRevert(selectedUnlinkedTask()!)"
+            (detailPostUpdate)="onUnlinkedTaskPostUpdate($event)"
+            (detailPostComment)="onUnlinkedTaskPostComment($event)"
+            (detailDelete)="onUnlinkedTaskDelete()"
+            (detailInlineUpdate)="onUnlinkedTaskInlineUpdate($event)"
+            (flagToggle)="onUnlinkedTaskFlagToggle($event.task, $event.flagged)"
+            (detailAddDep)="onUnlinkedTaskAddDep($event)"
+            (detailRemoveDep)="onUnlinkedTaskRemoveDep($event)" />
+        </div>
+      }
+
       <!-- Goal Filters -->
       <div class="flex flex-wrap gap-3 mb-6">
         <input
@@ -621,7 +658,7 @@ function parseCriteria(value: unknown): string[] {
               [compact]="true"
               [tasks]="activeUnlinkedTasks()"
               [loading]="false"
-              [selectedId]="selectedUnlinkedTask()?.id ?? null"
+              [selectedId]="deepLinkedTask()?.id === selectedUnlinkedTask()?.id ? null : selectedUnlinkedTask()?.id ?? null"
               [branchMap]="branchMap()"
               [detailUpdates]="taskDetailUpdates()"
               [detailComments]="taskDetailComments()"
@@ -670,7 +707,7 @@ function parseCriteria(value: unknown): string[] {
                 [compact]="true"
                 [tasks]="backlogUnlinkedTasks()"
                 [loading]="false"
-                [selectedId]="selectedUnlinkedTask()?.id ?? null"
+                [selectedId]="deepLinkedTask()?.id === selectedUnlinkedTask()?.id ? null : selectedUnlinkedTask()?.id ?? null"
                 [branchMap]="branchMap()"
                 [detailUpdates]="taskDetailUpdates()"
                 [detailComments]="taskDetailComments()"
@@ -729,7 +766,7 @@ function parseCriteria(value: unknown): string[] {
                   [compact]="true"
                   [tasks]="doneUnlinkedTasks()"
                   [loading]="false"
-                  [selectedId]="selectedUnlinkedTask()?.id ?? null"
+                  [selectedId]="deepLinkedTask()?.id === selectedUnlinkedTask()?.id ? null : selectedUnlinkedTask()?.id ?? null"
                   [branchMap]="branchMap()"
                   [detailUpdates]="taskDetailUpdates()"
                   [detailComments]="taskDetailComments()"
@@ -792,7 +829,7 @@ function parseCriteria(value: unknown): string[] {
                   [compact]="true"
                   [tasks]="cancelledUnlinkedTasks()"
                   [loading]="false"
-                  [selectedId]="selectedUnlinkedTask()?.id ?? null"
+                  [selectedId]="deepLinkedTask()?.id === selectedUnlinkedTask()?.id ? null : selectedUnlinkedTask()?.id ?? null"
                   [branchMap]="branchMap()"
                   [detailUpdates]="taskDetailUpdates()"
                   [detailComments]="taskDetailComments()"
@@ -1117,16 +1154,36 @@ export class WorkPage {
     }
     // Read deep-link query param once on init
     this.pendingWorkId = this.route.snapshot.queryParamMap.get('workId');
-    effect(() => {
-      this.ctx.projectId();
+    effect((onCleanup) => {
+      const projectId = this.ctx.projectId();
       this.selected.set(null);
       this.selectedLinkedTask.set(null);
       this.selectedUnlinkedTask.set(null);
+      this.deepLinkedTask.set(null);
       this.loadGoals();
       this.loadUnlinkedTasks();
       this.startGitPolling();
+      const taskId = this.route.snapshot.queryParamMap.get('taskId');
+      this.deepLinkError.set(false);
+      if (taskId) {
+        const subscription = this.tasksApi.get(taskId).subscribe({
+          next: task => {
+            if (task.project_id !== projectId) {
+              this.deepLinkError.set(true);
+              return;
+            }
+            this.deepLinkedTask.set(task);
+            this.selectUnlinkedTask(task);
+          },
+          error: () => this.deepLinkError.set(true),
+        });
+        onCleanup(() => subscription.unsubscribe());
+      }
     });
   }
+
+  deepLinkedTask = signal<SpTask | null>(null);
+  deepLinkError = signal(false);
 
   // --- Git polling ---
 
@@ -2068,6 +2125,17 @@ export class WorkPage {
       next: (res) => {
         this.unlinkedTasks.set(res.data);
         this.unlinkedTasksLoading.set(false);
+        const linkedTask = this.deepLinkedTask();
+        if (linkedTask) {
+          this.tasksApi.get(linkedTask.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: task => {
+              if (this.deepLinkedTask()?.id !== task.id) return;
+              this.deepLinkedTask.set(task);
+              if (this.selectedUnlinkedTask()?.id === task.id) this.selectedUnlinkedTask.set(task);
+            },
+            error: () => this.deepLinkedTask.set(null),
+          });
+        }
       },
       error: () => {
         this.unlinkedTasks.set([]);
