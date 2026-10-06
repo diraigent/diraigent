@@ -1,6 +1,7 @@
 import { Component, inject, signal, computed, effect } from '@angular/core';
 import { DatePipe, JsonPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
 import { AuditApiService, SpAuditEntry } from '../../core/services/audit-api.service';
 import { ProjectContext } from '../../core/services/project-context.service';
@@ -12,7 +13,7 @@ const ACTION_COLORS = AUDIT_ACTION_COLORS;
 @Component({
   selector: 'app-audit',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, DatePipe, JsonPipe],
+  imports: [TranslocoModule, FormsModule, DatePipe, JsonPipe, RouterLink],
   template: `
     <div class="p-3 sm:p-6" *transloco="let t">
       <!-- Header -->
@@ -122,7 +123,15 @@ const ACTION_COLORS = AUDIT_ACTION_COLORS;
               @if (selected()!.actor_name) {
                 <div class="text-xs text-text-secondary">{{ t('audit.actor') }}: {{ selected()!.actor_name }}</div>
               }
-              <div class="text-xs text-text-secondary break-all">{{ t('audit.entityId') }}: {{ selected()!.entity_id }}</div>
+              <div class="text-xs text-text-secondary break-all">
+                {{ t('audit.entityId') }}:
+                @if (selected()!.entity_type === 'task' && selected()!.action !== 'deleted') {
+                  <a [routerLink]="['/work']" [queryParams]="{ taskId: selected()!.entity_id }"
+                    class="text-accent underline hover:opacity-80">{{ selected()!.entity_id }}</a>
+                } @else {
+                  {{ selected()!.entity_id }}
+                }
+              </div>
             </div>
 
             <!-- Before/After diff -->
