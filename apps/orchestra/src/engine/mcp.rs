@@ -60,6 +60,15 @@ pub struct Connection {
 }
 
 impl Connection {
+    #[cfg(test)]
+    pub(crate) fn test_connection(server_id: Uuid, broker: Broker, access: TaskAccess) -> Self {
+        Self {
+            server_id,
+            broker,
+            access,
+            tools: None,
+        }
+    }
     pub async fn tools_list(&self) -> Result<Value, BrokerError> {
         let mut result = self.broker.tools_list(&self.access).await?;
         if let Some(names) = &self.tools {
