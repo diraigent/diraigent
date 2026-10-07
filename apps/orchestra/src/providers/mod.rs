@@ -155,10 +155,12 @@ impl TaskProvider for GuardedProvider {
     ) -> anyhow::Result<TaskOutput> {
         if step.mcp_servers.as_ref().is_some_and(|s| !s.0.is_empty()) {
             ProviderFactory::require_mcp(&self.name)?;
-            anyhow::bail!(
-                "Provider '{}' MCP broker adapter is not implemented yet; refusing to ignore approved MCP access",
-                self.name
-            );
+            if self.name != "claude-code" {
+                anyhow::bail!(
+                    "Provider '{}' MCP broker adapter is not implemented yet; refusing to ignore approved MCP access",
+                    self.name
+                );
+            }
         }
         self.inner.execute(step, task, config).await
     }

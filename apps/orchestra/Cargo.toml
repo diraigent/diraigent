@@ -46,6 +46,9 @@ async-trait = "0.1.64"
 thiserror.workspace = true
 rusqlite = { version = "0.32", features = ["bundled"] }
 tempfile = "3"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
 
 [dev-dependencies]
 wiremock = "0.6"
