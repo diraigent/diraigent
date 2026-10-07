@@ -2,6 +2,23 @@ import {expect,test} from '@playwright/test';
 import {API,PROJECT_ID,setupMocks} from './fixtures/setup';
 import {projects} from './fixtures/mock-data';
 
+test('an inaccessible saved workspace recovers to the current account workspace', async ({page}) => {
+  await setupMocks(page);
+  const current = '00000000-0000-0000-0000-000000000001';
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem('seeded-workspace')) {
+      localStorage.setItem('diraigent-workspace', '00000000-0000-0000-0000-000000000099');
+      sessionStorage.setItem('seeded-workspace', 'true');
+    }
+  });
+  await page.route(`${API}/tenants`, r => r.fulfill({json:[{id:current,name:'Current workspace'}]}));
+  await page.goto('/work');
+  await expect.poll(async () => {
+    try { return await page.evaluate(() => localStorage.getItem('diraigent-workspace')); }
+    catch { return null; }
+  }).toBe(current);
+});
+
 test('workspace switching selects the workspace header and clears the previous project',async({page})=>{
   await setupMocks(page);
   const second='00000000-0000-0000-0000-000000000002';

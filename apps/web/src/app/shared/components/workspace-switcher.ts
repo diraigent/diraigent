@@ -17,6 +17,16 @@ export class WorkspaceSwitcher {
   selected=signal(localStorage.getItem('diraigent-workspace')??'');
   constructor() { this.api.listTenants().subscribe({next:ws=>{
     this.workspaces.set(ws);
+    if (this.selected() && !ws.some(w => w.id === this.selected())) {
+      // A saved selection may belong to a previous login or revoked membership.
+      if (ws.length) this.select(ws[0].id);
+      else {
+        localStorage.removeItem('diraigent-workspace');
+        localStorage.removeItem('diraigent-project');
+        window.location.assign('/work');
+      }
+      return;
+    }
     if(!this.selected() && ws.length) this.selected.set(ws[0].id);
   }}); }
   select(id:string) {
