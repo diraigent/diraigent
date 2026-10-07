@@ -43,6 +43,25 @@ impl FromRequestParts<AppState> for TenantContext {
     ) -> Result<Self, Self::Rejection> {
         let AuthUser(user_id) = AuthUser::from_request_parts(parts, state).await?;
 
+        if let Some(header) = parts.headers.get("X-Tenant-Id") {
+            let tenant_id = header
+                .to_str()
+                .ok()
+                .and_then(|v| Uuid::parse_str(v).ok())
+                .ok_or_else(|| AppError::Validation("Invalid workspace selection".into()))?;
+            let member = state
+                .db
+                .get_tenant_member_for_user(tenant_id, user_id)
+                .await?
+                .ok_or_else(|| {
+                    AppError::Forbidden("You are not a member of this workspace".into())
+                })?;
+            return Ok(TenantContext {
+                tenant_id,
+                role: member.role,
+            });
+        }
+
         // Look up the user's existing tenant membership.
         let tenant = match state.db.get_tenant_for_user(user_id).await? {
             Some(t) => t,

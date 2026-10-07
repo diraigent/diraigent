@@ -182,5 +182,14 @@ async fn list_agent_tasks(
         }
     }
     let tasks = state.db.list_agent_tasks(agent_id, &pagination).await?;
-    Ok(Json(tasks))
+    let mut visible = Vec::new();
+    for task in tasks {
+        if crate::project_access::role(&state.pool, user_id, task.project_id)
+            .await?
+            .is_some()
+        {
+            visible.push(task);
+        }
+    }
+    Ok(Json(visible))
 }

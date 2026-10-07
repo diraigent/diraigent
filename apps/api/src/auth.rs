@@ -13,13 +13,14 @@ use crate::AppState;
 use crate::error::AppError;
 
 /// Resolved authenticated user. Extracted from JWT → local auth_user table.
+#[derive(Clone, Copy)]
 pub struct AuthUser(pub Uuid);
 
 /// A viewer membership restricts the entire account, including agent keys.
 /// This deliberately prevents creating a second workspace to escape demo mode.
 pub async fn is_read_only(state: &AppState, user_id: Uuid) -> Result<bool, AppError> {
     Ok(sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS (SELECT 1 FROM diraigent.tenant_member WHERE user_id = $1 AND role = 'viewer')",
+        "SELECT EXISTS (SELECT 1 FROM diraigent.tenant_member WHERE user_id=$1 AND role='viewer') OR (EXISTS (SELECT 1 FROM diraigent.tenant_member WHERE user_id=$1) AND NOT EXISTS (SELECT 1 FROM diraigent.tenant_member WHERE user_id=$1 AND role IN ('owner','admin')) AND NOT EXISTS (SELECT 1 FROM diraigent.project p WHERE diraigent.human_project_role($1,p.id) IN ('editor','manager')))",
     )
     .bind(user_id)
     .fetch_one(&state.pool)
@@ -41,7 +42,7 @@ fn viewer_request_allowed(method: &axum::http::Method, path: &str) -> bool {
 
 async fn authorize_account(
     state: &AppState,
-    parts: &Parts,
+    parts: &mut Parts,
     user_id: Uuid,
 ) -> Result<AuthUser, AppError> {
     if is_read_only(state, user_id).await?
@@ -49,6 +50,8 @@ async fn authorize_account(
     {
         return Err(AppError::Forbidden("This account is read-only".into()));
     }
+    crate::project_access::authorize_request(state, parts, user_id).await?;
+    parts.extensions.insert(AuthUser(user_id));
     Ok(AuthUser(user_id))
 }
 
@@ -182,6 +185,9 @@ impl FromRequestParts<AppState> for AuthUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
+        if let Some(user) = parts.extensions.get::<AuthUser>() {
+            return Ok(*user);
+        }
         // Both dev bypasses are disabled when PRODUCTION=true to prevent
         // impersonation in internet-exposed deployments.
         let is_production = state.is_production;

@@ -472,6 +472,34 @@ fn set_operation(pi: &mut path::PathItem, method: &HttpMethod, op: path::Operati
 /// Register all 228 API routes.
 fn register_all_paths(openapi: &mut utoipa::openapi::OpenApi) {
     let routes: &[R] = &[
+        R {
+            method: HttpMethod::Get,
+            path: "/v1/{project}/people",
+            tag: "projects",
+            summary: "List explicit human project permissions (manager only)",
+            op_id: "list_project_people",
+        },
+        R {
+            method: HttpMethod::Post,
+            path: "/v1/{project}/people",
+            tag: "projects",
+            summary: "Grant viewer, editor or manager access to a workspace member",
+            op_id: "grant_project_person",
+        },
+        R {
+            method: HttpMethod::Get,
+            path: "/v1/{project}/people/me",
+            tag: "projects",
+            summary: "Get the current human project role and read-only status",
+            op_id: "my_project_access",
+        },
+        R {
+            method: HttpMethod::Delete,
+            path: "/v1/{project}/people/{user}",
+            tag: "projects",
+            summary: "Revoke explicit project access",
+            op_id: "remove_project_person",
+        },
         // ── Health ──
         R {
             method: HttpMethod::Get,

@@ -24,6 +24,11 @@ normal first-login flow creates an owner workspace. A separate administrator
 owns and maintains the demo workspace. Credentials should be provided privately,
 never stored in repository fixtures or documentation.
 
+For a demo of an existing project, add only its explicit `viewer` project grant
+as described in [Shared workspace access](workspace-access.md). Other projects
+in the workspace stay inaccessible. The demo still sees the selected project's
+normal data, so choose a project suitable for sharing.
+
 Migration 049 adds the role without modifying earlier migrations. It does not
 create a login, grant access, or publish projects. Existing spectator opt-ins
 remain explicit and independent of this account.

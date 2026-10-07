@@ -173,7 +173,7 @@ impl FromRequestParts<AppState> for OptionalAgentId {
 
 /// Verify that the caller has `manage` authority on at least one project in the tenant.
 ///
-/// Human users pass through (implicit tenant authority). Agents must hold
+/// Human users need workspace owner or admin access. Agents must hold
 /// `manage` on at least one project to mutate tenant-level resources like
 /// roles and memberships.
 pub async fn require_tenant_manage_authority(
@@ -183,19 +183,14 @@ pub async fn require_tenant_manage_authority(
     tenant_id: Uuid,
 ) -> Result<(), crate::error::AppError> {
     if agent_id.is_none() {
-        // Human user — verify they belong to this tenant.
-        let user_tenant = db.get_tenant_for_user(user_id).await.map_err(|_| {
-            crate::error::AppError::Unauthorized("Failed to resolve user tenant".into())
-        })?;
-        match user_tenant {
-            Some(t) if t.id == tenant_id => return Ok(()),
-            _ => {
-                crate::metrics::record_auth_failure("tenant_mismatch");
-                return Err(crate::error::AppError::Forbidden(
-                    "You are not a member of this tenant".into(),
-                ));
-            }
-        }
+        let member = db.get_tenant_member_for_user(tenant_id, user_id).await?;
+        return if member.is_some_and(|m| matches!(m.role.as_str(), "owner" | "admin")) {
+            Ok(())
+        } else {
+            Err(crate::error::AppError::Forbidden(
+                "Workspace administration required".into(),
+            ))
+        };
     }
     let aid = agent_id.unwrap();
     let has = db.check_tenant_manage_authority(aid, tenant_id).await?;
@@ -253,9 +248,16 @@ pub async fn require_authority(
             )));
         }
     } else {
-        // Human user — verify tenant alignment. Human users have implicit
-        // authority on all projects within their tenant.
+        // Human user — verify project access and the requested authority.
         verify_user_project_tenant(db, user_id, project_id).await?;
+        if !db
+            .check_user_project_authority(user_id, project_id, authority)
+            .await?
+        {
+            return Err(crate::error::AppError::Forbidden(
+                "Insufficient project authority".into(),
+            ));
+        }
     }
     Ok(())
 }
@@ -275,15 +277,25 @@ pub async fn require_any_authority(
             }
         }
         crate::metrics::record_auth_failure("insufficient_authority");
-        return Err(crate::error::AppError::Unauthorized(format!(
+        Err(crate::error::AppError::Unauthorized(format!(
             "Agent lacks any of {:?} authority on this project",
             authorities
-        )));
+        )))
     } else {
         // Human user — verify tenant alignment.
         verify_user_project_tenant(db, user_id, project_id).await?;
+        for authority in authorities {
+            if db
+                .check_user_project_authority(user_id, project_id, authority)
+                .await?
+            {
+                return Ok(());
+            }
+        }
+        Err(crate::error::AppError::Forbidden(
+            "Insufficient project authority".into(),
+        ))
     }
-    Ok(())
 }
 
 /// Verify that the authenticated user belongs to the same tenant as the project.

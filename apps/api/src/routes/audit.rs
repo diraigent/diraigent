@@ -34,12 +34,22 @@ async fn list_audit(
 
 async fn entity_history(
     State(state): State<AppState>,
-    AuthUser(_user_id): AuthUser,
+    AuthUser(user_id): AuthUser,
     Path((entity_type, entity_id)): Path<(String, Uuid)>,
 ) -> Result<Json<Vec<AuditEntry>>, AppError> {
     let entries = state
         .db
         .get_entity_history(&entity_type, entity_id, 100)
         .await?;
-    Ok(Json(entries))
+    let mut visible = Vec::new();
+    for entry in entries {
+        if state
+            .db
+            .check_user_project_tenant(user_id, entry.project_id)
+            .await?
+        {
+            visible.push(entry);
+        }
+    }
+    Ok(Json(visible))
 }

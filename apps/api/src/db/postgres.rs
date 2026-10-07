@@ -99,6 +99,24 @@ impl DiraigentDb for PostgresDb {
     ) -> Result<Vec<Project>, AppError> {
         repository::list_projects_for_tenant(&self.0, tenant_id, p).await
     }
+    async fn list_projects_for_user(
+        &self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+        p: &Pagination,
+    ) -> Result<Vec<Project>, AppError> {
+        repository::list_projects_for_user(&self.0, tenant_id, user_id, p).await
+    }
+    async fn check_user_project_authority(
+        &self,
+        user_id: Uuid,
+        project_id: Uuid,
+        authority: &str,
+    ) -> Result<bool, AppError> {
+        Ok(crate::project_access::role(&self.0, user_id, project_id)
+            .await?
+            .is_some_and(|r| crate::project_access::permits(&r, authority)))
+    }
     async fn update_project(&self, id: Uuid, req: &UpdateProject) -> Result<Project, AppError> {
         repository::update_project(&self.0, id, req).await
     }

@@ -58,9 +58,31 @@ struct ChangedFilePush {
 
 async fn receive_sync(
     State(state): State<AppState>,
-    AuthUser(_user_id): AuthUser,
+    AuthUser(user_id): AuthUser,
     Json(batch): Json<SyncBatch>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    // Validate every target before applying any batch writes. Workspace ownership
+    // elsewhere must never authorize updates to inaccessible projects.
+    let ids = batch
+        .task_states
+        .iter()
+        .map(|t| &t.task_id)
+        .chain(batch.task_updates.iter().map(|t| &t.task_id))
+        .chain(batch.changed_files.iter().map(|t| &t.task_id));
+    for raw in ids {
+        let id = raw
+            .parse::<uuid::Uuid>()
+            .map_err(|_| AppError::Validation("Invalid task ID".into()))?;
+        let task = state.db.get_task_by_id(id).await?;
+        crate::authz::require_authority(
+            state.db.as_ref(),
+            None,
+            user_id,
+            task.project_id,
+            "create",
+        )
+        .await?;
+    }
     let pool = &state.pool;
     let mut synced_tasks = 0u32;
     let mut synced_updates = 0u32;

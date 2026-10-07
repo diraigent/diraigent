@@ -10,7 +10,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const publicBase = `${environment.apiServer}/spectator/`;
   if (req.url.startsWith(publicBase)) {
     return next(req.clone({
-      headers: req.headers.delete('Authorization').delete('X-Dev-User-Id'),
+      headers: req.headers.delete('Authorization').delete('X-Dev-User-Id').delete('X-Tenant-Id'),
       withCredentials: false,
       credentials: 'omit',
     }));
@@ -32,12 +32,16 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   }
 
   const token = oauth.getAccessToken();
+  const selectedWorkspace = localStorage.getItem('diraigent-workspace');
+  const scopedReq = selectedWorkspace ? req.clone({setHeaders:{'X-Tenant-Id':selectedWorkspace}}) : req;
   if (!token) {
-    return next(req);
+    return next(scopedReq);
   }
 
-  const authReq = req.clone({
-    setHeaders: { Authorization: `Bearer ${token}` },
+  const authReq = scopedReq.clone({
+    setHeaders: {
+      Authorization: `Bearer ${token}`,
+    },
   });
 
   return next(authReq).pipe(

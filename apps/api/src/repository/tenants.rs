@@ -205,6 +205,7 @@ pub async fn check_user_project_tenant(
             FROM diraigent.project p
             JOIN diraigent.tenant_member tm ON p.tenant_id = tm.tenant_id
             WHERE p.id = $1 AND tm.user_id = $2
+              AND diraigent.human_project_role($2,p.id) IS NOT NULL
         )",
     )
     .bind(project_id)

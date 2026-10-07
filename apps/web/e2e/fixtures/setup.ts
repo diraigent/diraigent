@@ -14,6 +14,10 @@ export async function setupMocks(page: Page) {
     const path = new URL(url).pathname.replace('/v1/', '').replace('/v1', '');
     const search = new URL(url).search;
 
+    if (path.endsWith("/people/me")) return route.fulfill({json:{role:"manager",read_only:false}});
+
+    if (path === "tenants") return route.fulfill({json:[]});
+
     // Config
     if (path === 'config') {
       return route.fulfill({ json: mock.config });

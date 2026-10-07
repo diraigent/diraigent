@@ -29,11 +29,12 @@
 
   <!-- Project switcher -->
   <div class="px-3 py-2 border-b border-border">
+    <app-workspace-switcher />
     <app-project-switcher />
   </div>
 
   <!-- No agents CTA -->
-  @if (!hasAgents()) {
+  @if (!auth.readOnly() && !hasAgents()) {
     <div class="mx-3 mt-2 p-3 rounded-lg border border-accent/30 bg-accent/10" *transloco="let t">
       <p class="text-sm font-medium text-accent mb-1">{{ t('nav.noAgents') }}</p>
       <p class="text-xs text-text-secondary mb-2">{{ t('nav.noAgentsHint') }}</p>

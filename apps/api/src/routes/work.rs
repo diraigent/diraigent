@@ -226,6 +226,14 @@ async fn link_task(
         "decide",
     )
     .await?;
+    ensure_authority_on(
+        state.db.as_ref(),
+        agent_id,
+        user_id,
+        state.db.get_task_by_id(req.task_id).await?,
+        "create",
+    )
+    .await?;
     let tw = state.db.link_task_work(work_id, req.task_id).await?;
     refresh_auto_status_works(&state, req.task_id, agent_id).await;
     Ok(Json(tw))
@@ -333,7 +341,17 @@ async fn list_work_tasks_handler(
     let limit = q.limit.unwrap_or(50).min(100);
     let offset = q.offset.unwrap_or(0);
     let tasks = state.db.list_work_tasks(work_id, limit, offset).await?;
-    Ok(Json(tasks))
+    let mut visible = Vec::new();
+    for task in tasks {
+        if state
+            .db
+            .check_user_project_tenant(user_id, task.project_id)
+            .await?
+        {
+            visible.push(task);
+        }
+    }
+    Ok(Json(visible))
 }
 
 async fn bulk_link_tasks_handler(
@@ -351,6 +369,16 @@ async fn bulk_link_tasks_handler(
         "decide",
     )
     .await?;
+    for id in &req.task_ids {
+        ensure_authority_on(
+            state.db.as_ref(),
+            agent_id,
+            user_id,
+            state.db.get_task_by_id(*id).await?,
+            "create",
+        )
+        .await?;
+    }
     let linked = state.db.bulk_link_tasks(work_id, &req.task_ids).await?;
     // Refresh auto-status for all affected tasks
     for task_id in &req.task_ids {

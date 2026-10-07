@@ -20,21 +20,16 @@ async fn get_dashboard_summary(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
     OptionalAgentId(_agent_id): OptionalAgentId,
+    tenant: crate::tenant::TenantContext,
     Query(query): Query<DashboardQuery>,
 ) -> Result<Json<DashboardSummary>, AppError> {
     let days = query.days.unwrap_or(30).clamp(1, 365);
 
-    // Get all projects for this user's tenant
-    let tenant = state
-        .db
-        .get_tenant_for_user(user_id)
-        .await?
-        .ok_or_else(|| AppError::Forbidden("User has no tenant".into()))?;
-
     let projects = state
         .db
-        .list_projects_for_tenant(
-            tenant.id,
+        .list_projects_for_user(
+            tenant.tenant_id,
+            user_id,
             &Pagination {
                 limit: Some(100),
                 offset: Some(0),

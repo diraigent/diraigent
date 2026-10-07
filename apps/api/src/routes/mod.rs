@@ -24,6 +24,7 @@ mod metrics;
 mod observations;
 mod orchestra_sync;
 mod packages;
+mod people;
 mod projects;
 mod provider_configs;
 mod reports;
@@ -78,6 +79,7 @@ where
 pub fn router() -> Router<AppState> {
     Router::new()
         .merge(spectator::routes())
+        .merge(people::routes())
         .merge(projects::routes())
         .merge(tasks::routes())
         .merge(changed_files::routes())

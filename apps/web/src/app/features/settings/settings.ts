@@ -1,3 +1,5 @@
+import { ProjectPeople } from './project-people';
+import { WorkspacePeople } from './workspace-people';
 import { Component, computed, inject, signal, effect, OnDestroy, OnInit, DestroyRef, HostListener } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -20,16 +22,18 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [TranslocoModule, FormsModule, CreateAgentModalComponent],
+  imports: [WorkspacePeople,ProjectPeople,TranslocoModule, FormsModule, CreateAgentModalComponent],
   template: `
     <div class="p-3 sm:p-6" *transloco="let t">
       <h1 class="text-2xl font-semibold text-text-primary mb-3 sm:mb-6">{{ t('settings.title') }}</h1>
 
+      <app-workspace-people />
       @if (loading()) {
         <p class="text-text-secondary text-sm">{{ t('common.loading') }}</p>
       } @else if (!project()) {
         <p class="text-text-secondary text-sm">{{ t('settings.noProject') }}</p>
       } @else {
+        <app-project-people [projectId]="project()!.id" />
         <!-- Tab bar -->
         <div class="flex items-center justify-between mb-4">
           <div class="flex items-center gap-1 bg-surface rounded-lg border border-border p-1">

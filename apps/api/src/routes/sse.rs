@@ -60,23 +60,30 @@ async fn review_stream(
     Query(params): Query<TicketQuery>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, StatusCode> {
     // Consume the ticket — single-use, 60-second TTL.
-    state
+    let user = state
         .sse_tickets
         .consume(params.ticket)
         .await
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     let rx = state.review_tx.subscribe();
-    let stream = BroadcastStream::new(rx).filter_map(|result| async move {
-        match result {
-            Ok(event) => {
-                let data = serde_json::to_string(&event).ok()?;
-                Some(Ok::<Event, Infallible>(
-                    Event::default().event("review_update").data(data),
-                ))
+    let stream = BroadcastStream::new(rx).filter_map(move |result| {
+        let state = state.clone();
+        async move {
+            match result {
+                Ok(event) => {
+                    crate::project_access::role(&state.pool, user, event.project_id)
+                        .await
+                        .ok()
+                        .flatten()?;
+                    let data = serde_json::to_string(&event).ok()?;
+                    Some(Ok::<Event, Infallible>(
+                        Event::default().event("review_update").data(data),
+                    ))
+                }
+                // Lagged: subscriber fell behind; skip rather than disconnect.
+                Err(_) => None,
             }
-            // Lagged: subscriber fell behind; skip rather than disconnect.
-            Err(_) => None,
         }
     });
 
@@ -105,16 +112,23 @@ async fn agent_stream(
     State(state): State<AppState>,
     Query(params): Query<TicketQuery>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, StatusCode> {
-    state
+    let user = state
         .sse_tickets
         .consume(params.ticket)
         .await
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     let rx = state.agent_tx.subscribe();
-    let stream = BroadcastStream::new(rx).filter_map(|result| async move {
+    let stream = BroadcastStream::new(rx).filter_map(move |result| {
+        let state = state.clone();
+        async move {
         match result {
             Ok(event) => {
+                // Agents are workspace resources. Recheck access on every event,
+                // including after membership revocation on an already open stream.
+                let visible: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM diraigent.agent a JOIN diraigent.tenant_member m ON m.user_id=a.owner_id JOIN diraigent.tenant_member caller ON caller.tenant_id=m.tenant_id WHERE a.id=$1 AND caller.user_id=$2 AND caller.role IN ('owner','admin'))")
+                    .bind(event.agent_id).bind(user).fetch_one(&state.pool).await.ok()?;
+                if !visible { return None; }
                 let data = serde_json::to_string(&event).ok()?;
                 Some(Ok::<Event, Infallible>(
                     Event::default().event("agent_update").data(data),
@@ -122,7 +136,7 @@ async fn agent_stream(
             }
             Err(_) => None,
         }
-    });
+    }});
 
     Ok(Sse::new(stream).keep_alive(
         KeepAlive::new()

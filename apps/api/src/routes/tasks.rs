@@ -86,7 +86,14 @@ async fn create_task(
 
     // If work_id provided, verify the work item exists before creating the task
     if let Some(work_id) = req.work_id {
-        let _ = state.db.get_work_by_id(work_id).await?;
+        ensure_authority_on(
+            state.db.as_ref(),
+            agent_id,
+            user_id,
+            state.db.get_work_by_id(work_id).await?,
+            "decide",
+        )
+        .await?;
     }
 
     // If parent_id provided, verify the parent task exists and belongs to the same project
@@ -284,7 +291,18 @@ async fn list_task_works(
     let task = state.db.get_task_by_id(task_id).await?;
     require_membership(state.db.as_ref(), agent_id, user_id, task.project_id).await?;
     let ids = state.db.get_work_ids_for_task(task_id).await?;
-    Ok(Json(ids))
+    let mut visible = Vec::new();
+    for id in ids {
+        let work = state.db.get_work_by_id(id).await?;
+        if state
+            .db
+            .check_user_project_tenant(user_id, work.project_id)
+            .await?
+        {
+            visible.push(id);
+        }
+    }
+    Ok(Json(visible))
 }
 
 /// Return direct child tasks of a given parent task.
@@ -634,7 +652,31 @@ async fn list_dependencies(
         state.db.get_task_by_id(task_id).await?,
     )
     .await?;
-    let deps = state.db.list_dependencies(task_id).await?;
+    let mut deps = state.db.list_dependencies(task_id).await?;
+    let mut depends_on = Vec::new();
+    for dep in deps.depends_on {
+        let task = state.db.get_task_by_id(dep.depends_on).await?;
+        if state
+            .db
+            .check_user_project_tenant(user_id, task.project_id)
+            .await?
+        {
+            depends_on.push(dep);
+        }
+    }
+    let mut blocks = Vec::new();
+    for dep in deps.blocks {
+        let task = state.db.get_task_by_id(dep.task_id).await?;
+        if state
+            .db
+            .check_user_project_tenant(user_id, task.project_id)
+            .await?
+        {
+            blocks.push(dep);
+        }
+    }
+    deps.depends_on = depends_on;
+    deps.blocks = blocks;
     Ok(Json(deps))
 }
 
@@ -651,6 +693,13 @@ async fn add_dependency(
         user_id,
         state.db.get_task_by_id(task_id).await?,
         "create",
+    )
+    .await?;
+    ensure_member(
+        state.db.as_ref(),
+        agent_id,
+        user_id,
+        state.db.get_task_by_id(req.depends_on).await?,
     )
     .await?;
     let dep = state.db.add_dependency(task_id, req.depends_on).await?;

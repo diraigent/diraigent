@@ -86,12 +86,13 @@ async fn create_project(
 
 async fn list_projects(
     State(state): State<AppState>,
+    AuthUser(user_id): AuthUser,
     tenant: TenantContext,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<Vec<ProjectResponse>>, AppError> {
     let projects = state
         .db
-        .list_projects_for_tenant(tenant.tenant_id, &pagination)
+        .list_projects_for_user(tenant.tenant_id, user_id, &pagination)
         .await?;
     let mut responses = Vec::with_capacity(projects.len());
     for p in projects {
@@ -192,6 +193,9 @@ async fn get_project_children(
     let children = state.db.get_project_children(project_id).await?;
     let mut responses = Vec::with_capacity(children.len());
     for p in children {
+        if !state.db.check_user_project_tenant(user_id, p.id).await? {
+            continue;
+        }
         responses.push(build_response(&state, p).await?);
     }
     Ok(Json(responses))
@@ -214,6 +218,9 @@ async fn get_project_tree(
     let tree = state.db.get_project_tree(project_id).await?;
     let mut responses = Vec::with_capacity(tree.len());
     for p in tree {
+        if !state.db.check_user_project_tenant(user_id, p.id).await? {
+            continue;
+        }
         responses.push(build_response(&state, p).await?);
     }
     Ok(Json(responses))

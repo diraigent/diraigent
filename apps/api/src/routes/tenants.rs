@@ -117,9 +117,9 @@ async fn list_tenants(
     AuthUser(user_id): AuthUser,
     Query(_filters): Query<TenantFilters>,
 ) -> Result<Json<Vec<Tenant>>, AppError> {
-    // Only return the caller's own tenant — never expose other tenants.
-    let tenant = state.db.get_tenant_for_user(user_id).await?;
-    Ok(Json(tenant.into_iter().collect()))
+    // Return all workspaces the caller belongs to.
+    let tenants=sqlx::query_as::<_,Tenant>("SELECT t.* FROM diraigent.tenant t JOIN diraigent.tenant_member m ON m.tenant_id=t.id WHERE m.user_id=$1 ORDER BY m.created_at,t.id").bind(user_id).fetch_all(&state.pool).await?;
+    Ok(Json(tenants))
 }
 
 async fn get_tenant(
@@ -145,9 +145,11 @@ async fn get_tenant_by_slug(
 
 async fn get_my_tenant(
     State(state): State<AppState>,
-    AuthUser(user_id): AuthUser,
+    tenant: crate::tenant::TenantContext,
 ) -> Result<Json<Option<Tenant>>, AppError> {
-    Ok(Json(state.db.get_tenant_for_user(user_id).await?))
+    Ok(Json(Some(
+        state.db.get_tenant_by_id(tenant.tenant_id).await?,
+    )))
 }
 
 async fn update_tenant(

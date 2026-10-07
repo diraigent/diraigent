@@ -301,6 +301,28 @@ impl DiraigentDb for CryptoDb {
     ) -> Result<Vec<Project>, AppError> {
         delegate!(self, list_projects_for_tenant, tenant_id, p)
     }
+    async fn list_projects_for_user(
+        &self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+        p: &Pagination,
+    ) -> Result<Vec<Project>, AppError> {
+        delegate!(self, list_projects_for_user, tenant_id, user_id, p)
+    }
+    async fn check_user_project_authority(
+        &self,
+        user_id: Uuid,
+        project_id: Uuid,
+        authority: &str,
+    ) -> Result<bool, AppError> {
+        delegate!(
+            self,
+            check_user_project_authority,
+            user_id,
+            project_id,
+            authority
+        )
+    }
     async fn update_project(&self, id: Uuid, req: &UpdateProject) -> Result<Project, AppError> {
         delegate!(self, update_project, id, req)
     }

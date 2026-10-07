@@ -119,6 +119,16 @@ pub async fn list_projects_for_tenant(
     Ok(projects)
 }
 
+pub async fn list_projects_for_user(
+    pool: &PgPool,
+    tenant_id: Uuid,
+    user_id: Uuid,
+    p: &Pagination,
+) -> Result<Vec<Project>, AppError> {
+    Ok(sqlx::query_as("SELECT p.* FROM diraigent.project p WHERE p.tenant_id=$1 AND diraigent.human_project_role($2,p.id) IS NOT NULL ORDER BY p.created_at DESC,p.id LIMIT $3 OFFSET $4")
+       .bind(tenant_id).bind(user_id).bind(p.limit.unwrap_or(50).clamp(1,100)).bind(p.offset.unwrap_or(0).max(0)).fetch_all(pool).await?)
+}
+
 pub async fn update_project(
     pool: &PgPool,
     id: Uuid,

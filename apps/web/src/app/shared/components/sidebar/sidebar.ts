@@ -1,3 +1,4 @@
+import { WorkspaceSwitcher } from '../workspace-switcher';
 import { Component, Signal, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
@@ -34,7 +35,7 @@ function isNavGroup(entry: NavEntry): entry is NavGroup {
 @Component({
   selector: 'app-sidebar',
   standalone: true,
-  imports: [RouterLink, RouterLinkActive, TranslocoModule, ThemeToggleComponent, ProjectSwitcherComponent, HealthIndicatorComponent, AgentIndicatorComponent],
+  imports: [WorkspaceSwitcher,RouterLink, RouterLinkActive, TranslocoModule, ThemeToggleComponent, ProjectSwitcherComponent, HealthIndicatorComponent, AgentIndicatorComponent],
   templateUrl: './sidebar.html',
 })
 export class SidebarComponent {

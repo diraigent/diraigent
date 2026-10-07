@@ -75,6 +75,18 @@ pub trait DiraigentDb: Send + Sync {
         tenant_id: Uuid,
         p: &Pagination,
     ) -> Result<Vec<Project>, AppError>;
+    async fn list_projects_for_user(
+        &self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+        p: &Pagination,
+    ) -> Result<Vec<Project>, AppError>;
+    async fn check_user_project_authority(
+        &self,
+        user_id: Uuid,
+        project_id: Uuid,
+        authority: &str,
+    ) -> Result<bool, AppError>;
     async fn update_project(&self, id: Uuid, req: &UpdateProject) -> Result<Project, AppError>;
     async fn delete_project(&self, id: Uuid) -> Result<(), AppError>;
 
