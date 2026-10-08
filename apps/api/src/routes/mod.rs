@@ -121,4 +121,7 @@ pub fn router() -> Router<AppState> {
         .merge(authentik_webhooks::routes())
         .merge(orchestra_sync::routes())
         .merge(ws::routes())
+        .layer(axum::middleware::from_fn(
+            crate::read_only_projection::redact_response,
+        ))
 }

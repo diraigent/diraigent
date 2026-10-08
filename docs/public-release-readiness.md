@@ -14,8 +14,8 @@ must have only the intended project grant. Review inherited manager grants after
 upgrading an existing installation; do not remove them without the owners' agreement.
 
 Review all content visible to the demo, including audit snapshots, stored diffs,
-logs, context, comments, reports and repository files. Read-only access is not
-redaction. Pattern scans can flag credentials and private infrastructure but
+logs, context, comments, reports and repository files. Read-only responses redact recognizable private data and credential fields;
+configure installation-specific redaction terms privately. Pattern scans can flag credentials and private infrastructure but
 cannot establish that arbitrary text is safe to publish. Repeat the review when
 real project data changes, or use a dedicated synthetic workspace.
 

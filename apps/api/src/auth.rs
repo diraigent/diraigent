@@ -45,9 +45,15 @@ async fn authorize_account(
     parts: &mut Parts,
     user_id: Uuid,
 ) -> Result<AuthUser, AppError> {
-    if is_read_only(state, user_id).await?
-        && !viewer_request_allowed(&parts.method, parts.uri.path())
+    let read_only = is_read_only(state, user_id).await?;
+    if read_only
+        && let Some(projection) = parts
+            .extensions
+            .get::<crate::read_only_projection::Projection>()
     {
+        projection.mark();
+    }
+    if read_only && !viewer_request_allowed(&parts.method, parts.uri.path()) {
         return Err(AppError::Forbidden("This account is read-only".into()));
     }
     crate::project_access::authorize_request(state, parts, user_id).await?;

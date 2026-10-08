@@ -334,6 +334,27 @@ async fn independent_users_enforce_viewer_editor_manager_and_revocation() {
                 StatusCode::FORBIDDEN
             }
         );
+        let own_workspace = app
+            .send_authenticated(
+                post_json("/v1/tenants", json!({"name":format!("Personal {role}")})),
+                &key,
+            )
+            .await;
+        assert_eq!(
+            own_workspace.status,
+            if role == "viewer" {
+                StatusCode::FORBIDDEN
+            } else {
+                StatusCode::OK
+            }
+        );
+        // Creating a personal workspace cannot grant access to other shared projects.
+        assert_eq!(
+            app.send_authenticated(get(&format!("/v1/{hidden}/tasks")), &key)
+                .await
+                .status,
+            StatusCode::FORBIDDEN
+        );
         users.push((user, key));
     }
     let (viewer, viewer_key) = &users[0];

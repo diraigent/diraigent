@@ -41,6 +41,11 @@ pub async fn authorize_request(
     }
     let read = matches!(parts.method, Method::GET | Method::HEAD);
     let first = segments.first().copied().unwrap_or("");
+    // Non-read-only users may create their own workspace. The account guard
+    // still prevents viewers from using a new workspace to escape restrictions.
+    if first == "tenants" && segments.len() == 1 && parts.method == Method::POST {
+        return Ok(());
+    }
     // Deployment-wide logs and paths are not owned by a newly created personal
     // workspace. Keep platform administration with the seeded primary workspace.
     if matches!(first, "logs" | "settings") || (first == "packages" && !read) {

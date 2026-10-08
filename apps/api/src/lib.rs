@@ -15,6 +15,7 @@ pub mod package_cache;
 pub mod project_access;
 pub mod quota;
 pub mod rate_limit;
+pub mod read_only_projection;
 pub mod repository;
 pub mod routes;
 pub mod scoring;

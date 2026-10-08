@@ -26,8 +26,15 @@ never stored in repository fixtures or documentation.
 
 For a demo of an existing project, add only its explicit `viewer` project grant
 as described in [Shared workspace access](workspace-access.md). Other projects
-in the workspace stay inaccessible. The demo still sees the selected project's
-normal data, so choose a project suitable for sharing.
+in the workspace stay inaccessible. The demo sees the selected project's normal
+views. Read-only responses redact
+credential fields and recognizable private data in nested content, audit snapshots,
+stored diffs, logs and source files. Original stored data and authorized editor/manager
+responses remain intact. Set `READ_ONLY_REDACT_TERMS` in private deployment
+configuration to cover private hostnames or other installation-specific identifiers.
+Encoded text source is decoded, redacted and re-encoded; binary source content is
+replaced with a notice. Responses larger than 16 MiB fail closed. This is a defense
+in depth, not proof that arbitrary free text is suitable for sharing.
 
 Migration 049 adds the role without modifying earlier migrations. It does not
 create a login, grant access, or publish projects. Existing spectator opt-ins
