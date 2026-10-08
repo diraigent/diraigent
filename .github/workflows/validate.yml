@@ -51,6 +51,8 @@ jobs:
       - run: npm run build:prod
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test e2e/human-project-access.spec.ts e2e/read-only-account.spec.ts e2e/audit-task-links.spec.ts --workers=2
+      - run: docker build -f Containerfile -t diraigent/web:log-check .
+      - run: python3 ../../scripts/check-web-log-privacy.py diraigent/web:log-check
 
   ios:
     runs-on: macos-latest
