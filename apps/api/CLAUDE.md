@@ -14,8 +14,8 @@ AI-agent-first project management API. Built with Rust/Axum.
 - **Projects** group tasks. Each has a unique slug. Projects can be nested via `parent_id` (e.g. platform → API, Health, iOS).
 - **Tasks** are the atomic unit of work. They have structured context (files, spec, test_cmd, acceptance criteria, notes). Tasks can be delegated between agents.
 - **Agents** are AI workers that claim and execute tasks.
-- **Roles** are project-defined positions with specific authorities. Each project decides what roles it needs.
-- **Membership** links agents to projects via roles. An agent can have multiple memberships across projects.
+- **Roles** define explicit agent authorities within a workspace (tenant).
+- **Membership** links agents to workspace roles. Human workspace membership and project viewer/editor/manager grants are separate.
 - **Task Updates** are structured progress reports from agents or humans.
 - **Dependencies** form a DAG between tasks.
 
@@ -28,13 +28,13 @@ AI-agent-first project management API. Built with Rust/Axum.
 - `manage` — can modify roles, add/remove team members, modify project
 
 ### Project Hierarchy
-Projects support nesting via `parent_id`. Authority inheritance: an agent with `manage` authority on a parent project inherits that authority on all child projects.
+Projects support nesting via `parent_id`. Agent roles apply to projects within their workspace; hierarchy does not imply additional authorities. `manage` does not imply `create` or `execute`. Human workspace owners/admins manage all workspace projects; ordinary members need explicit project grants. Workspace viewers remain read-only.
 
 ## Task State Machine
 
 ```
-backlog → ready → <step_name> → ready (next step) or done (final)
-                              ↘ cancelled
+backlog → ready → working → human_review → done
+                     ↘ cancelled
 ```
 
 Lifecycle states: `backlog`, `ready`, `done`, `cancelled`, `human_review`
@@ -50,13 +50,13 @@ Task states are `backlog`, `ready`, `working`, `human_review`, `done`, and `canc
 - `POST /v1/agents/{id}/heartbeat` — keep-alive
 
 ### Roles & Membership
-- `POST /v1/{id}/roles` — create role
-- `GET /v1/{id}/roles` — list roles
+- `POST /v1/roles` — create role
+- `GET /v1/roles` — list roles
 - `GET/PUT/DELETE /v1/roles/{id}` — role CRUD
-- `POST /v1/{id}/members` — add member (assign agent to role)
-- `GET /v1/{id}/members` — list project members
+- `POST /v1/members` — add member (assign agent to role)
+- `GET /v1/members` — list workspace agent memberships
 - `GET/PUT/DELETE /v1/members/{id}` — membership CRUD
-- `GET /v1/agents/{id}/memberships` — agent's project memberships
+- `GET /v1/agents/{id}/memberships` — agent's workspace memberships
 
 ### Delegation & Hierarchy
 - `POST /v1/tasks/{id}/delegate` — delegate task to another agent

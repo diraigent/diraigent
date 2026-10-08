@@ -1,0 +1,62 @@
+name: Validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: zivue
+          POSTGRES_PASSWORD: zivue
+          POSTGRES_DB: diraigent
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd "pg_isready -U zivue -d diraigent"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://zivue:zivue@localhost:5433/diraigent
+      REQUIRE_TEST_DATABASE: 'true'
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup component add rustfmt clippy
+      - run: cargo fmt -p diraigent-api -p shared-utils --check
+      # Existing macro-generated and test-module warnings are tracked separately.
+      - run: cargo clippy -p diraigent-api -p shared-utils --all-targets -- -D warnings -A clippy::double_must_use -A clippy::items_after_test_module
+      - run: cargo test -p diraigent-api -p shared-utils --features shared-utils/rest
+      - run: cargo test -p diraigent-api --test active_work_tasks --test pagination_ordering -- --ignored
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run build:prod
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test e2e/human-project-access.spec.ts e2e/read-only-account.spec.ts e2e/audit-task-links.spec.ts --workers=2
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build and run iOS unit tests without signing
+        run: |
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; print(next(d["udid"] for devices in json.load(sys.stdin)["devices"].values() for d in devices if d["name"].startswith("iPhone")))')
+          xcodebuild -project apps/ios/Diraigent/Diraigent.xcodeproj -scheme Diraigent -destination "platform=iOS Simulator,id=$DEVICE_ID" -only-testing:DiraigentTests CODE_SIGNING_ALLOWED=NO test

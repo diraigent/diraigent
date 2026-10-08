@@ -18,7 +18,7 @@ async fn tenant_crud() {
     let tenant_id = resp.json["id"].as_str().unwrap().to_string();
     assert_eq!(resp.json["name"], "Test Org");
     assert_eq!(resp.json["slug"], "test-org");
-    assert_eq!(resp.json["encryption_mode"], "none");
+    assert_eq!(resp.json["encryption_mode"], "login_derived");
 
     // Get tenant
     let resp = app.send(get(&format!("/v1/tenants/{tenant_id}"))).await;
@@ -80,6 +80,20 @@ async fn encryption_init_and_unlock() {
     assert_eq!(resp.status, StatusCode::OK);
     let tenant_id = resp.json["id"].as_str().unwrap().to_string();
 
+    // New workspaces are automatically encrypted; explicitly reset this isolated
+    // fixture to exercise manual initialization and unlock from the uninitialized state.
+    sqlx::query(
+        "UPDATE diraigent.tenant SET encryption_mode='none', key_salt=NULL WHERE id=$1::uuid",
+    )
+    .bind(&tenant_id)
+    .execute(&app.pool)
+    .await
+    .unwrap();
+    sqlx::query("DELETE FROM diraigent.wrapped_key WHERE tenant_id=$1::uuid")
+        .bind(&tenant_id)
+        .execute(&app.pool)
+        .await
+        .unwrap();
     // Verify it starts with no encryption
     let resp = app
         .send(get(&format!("/v1/tenants/{tenant_id}/encryption/salt")))
@@ -155,25 +169,12 @@ async fn encrypted_field_roundtrip() {
     assert_eq!(resp.status, StatusCode::OK);
     let tenant_id = resp.json["id"].as_str().unwrap().to_string();
 
-    let access_token = "roundtrip-test-token";
-    let resp = app
-        .send(post_json(
-            &format!("/v1/tenants/{tenant_id}/encryption/init"),
-            serde_json::json!({ "access_token": access_token }),
-        ))
-        .await;
-    assert_eq!(resp.status, StatusCode::OK);
-
-    // Create a project under this tenant
-    let resp = app
-        .send(post_json(
-            "/v1",
-            serde_json::json!({
-                "name": "Encrypted Project",
-                "tenant_id": tenant_id,
-            }),
-        ))
-        .await;
+    // Workspace selection is conveyed by the header, not an ignored JSON field.
+    let mut request = post_json("/v1", serde_json::json!({"name":"Encrypted Project"}));
+    request
+        .headers_mut()
+        .insert("X-Tenant-Id", tenant_id.parse().unwrap());
+    let resp = app.send(request).await;
     assert_eq!(resp.status, StatusCode::OK, "create project: {}", resp.json);
     let project_id = resp.json["id"].as_str().unwrap().to_string();
 

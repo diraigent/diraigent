@@ -110,7 +110,7 @@ async fn ready_tasks_ordered_by_composite_score() {
     let link_resp = app
         .send(post_json(
             &format!("/v1/work/{work_id}/tasks"),
-            serde_json::json!({ "task_ids": [task1_id] }),
+            serde_json::json!({ "task_id": task1_id }),
         ))
         .await;
     assert_eq!(

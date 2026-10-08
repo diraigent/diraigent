@@ -2,13 +2,13 @@ use crate::harness::*;
 use axum::http::StatusCode;
 use uuid::Uuid;
 
-/// Human user (no X-Agent-Id header) bypasses all authz checks.
+/// Workspace owners can create tasks without an agent membership.
 #[tokio::test]
-async fn human_user_can_access_without_membership() {
+async fn workspace_owner_can_access_without_agent_membership() {
     let app = require_db!();
     let project_id = app.create_project("authz-human").await;
 
-    // No X-Agent-Id → human user, should work
+    // The workspace owner does not need an agent identity.
     let task = app.create_task(project_id, "Human task").await;
     assert_eq!(task["title"].as_str().unwrap(), "Human task");
 
@@ -21,6 +21,7 @@ async fn agent_without_membership_is_rejected() {
     let app = require_db!();
     let project_id = app.create_project("authz-nomember").await;
     let agent_id = app.create_agent("outsider").await;
+    app.remove_agent_memberships(agent_id).await;
 
     let resp = app
         .send(with_agent(
@@ -86,7 +87,7 @@ async fn agent_without_execute_cannot_claim() {
     .await;
 
     // Agent with only review cannot claim a non-review step
-    // For a task without playbook, step is "working" which requires "execute"
+    // Claiming a ready task requires "execute".
     let resp = app
         .send(with_agent(
             post_json(
@@ -184,15 +185,17 @@ async fn agent_with_delegate_can_delegate() {
     app.cleanup().await;
 }
 
-/// Authority inheritance: agent with manage on parent project has authority on child.
+/// Explicit workspace authorities apply to projects in that workspace.
 #[tokio::test]
-async fn manage_authority_inherits_to_child_project() {
+async fn workspace_role_applies_to_child_project() {
     let app = require_db!();
     let parent_id = app.create_project("authz-parent").await;
     let agent_id = app.create_agent("manager").await;
 
-    // Create role with manage authority on parent
-    let role_id = app.create_role(parent_id, "Superadmin", &["manage"]).await;
+    // Explicit authorities belong to the parent project's workspace.
+    let role_id = app
+        .create_role(parent_id, "Superadmin", &["manage", "create"])
+        .await;
     app.add_member(parent_id, agent_id, role_id).await;
 
     // Create child project
@@ -208,7 +211,7 @@ async fn manage_authority_inherits_to_child_project() {
     assert_eq!(resp.status, StatusCode::OK);
     let child_id = resp.id();
 
-    // Agent should be able to create tasks in child (inherited manage authority)
+    // Agent should be able to create tasks in child (explicit workspace create authority)
     let resp = app
         .send(with_agent(
             post_json(
@@ -221,7 +224,7 @@ async fn manage_authority_inherits_to_child_project() {
     assert_eq!(
         resp.status,
         StatusCode::OK,
-        "inherited create failed: {}",
+        "workspace create failed: {}",
         resp.json
     );
 

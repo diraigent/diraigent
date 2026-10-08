@@ -42,7 +42,7 @@ async fn create_and_get_package() {
             }),
         ))
         .await;
-    assert_eq!(resp.status, StatusCode::OK, "create: {}", resp.json);
+    assert_eq!(resp.status, StatusCode::CREATED, "create: {}", resp.json);
     let id = resp.id();
     assert_eq!(resp.json["slug"].as_str().unwrap(), "test-pkg");
     assert!(!resp.json["is_builtin"].as_bool().unwrap());
@@ -70,7 +70,7 @@ async fn update_package_slug_allowed_for_custom() {
             }),
         ))
         .await;
-    assert_eq!(create.status, StatusCode::OK);
+    assert_eq!(create.status, StatusCode::CREATED);
     let id = create.id();
 
     let resp = app
@@ -156,7 +156,7 @@ async fn delete_custom_package_succeeds() {
             serde_json::json!({ "slug": "delete-me", "name": "Temp" }),
         ))
         .await;
-    assert_eq!(create.status, StatusCode::OK);
+    assert_eq!(create.status, StatusCode::CREATED);
     let id = create.id();
 
     let resp = app.send(delete(&format!("/v1/packages/{id}"))).await;

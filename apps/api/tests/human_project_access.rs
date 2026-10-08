@@ -250,3 +250,111 @@ async fn manager_grants_only_existing_workspace_members_and_revocation_is_immedi
     assert_eq!(remaining, 0);
     app.cleanup().await;
 }
+
+/// Distinct credentials exercise production authentication and immediate revocation.
+#[tokio::test]
+async fn independent_users_enforce_viewer_editor_manager_and_revocation() {
+    let app = TestApp::try_new().await.expect("requires PostgreSQL");
+    let project = app.create_project("Multi-user workspace").await;
+    let task = app.create_task(project, "Shared task").await;
+    let hidden = app.create_project("Another project").await;
+    let mut users = Vec::new();
+    for role in ["viewer", "editor", "manager"] {
+        let user = Uuid::new_v4();
+        sqlx::query("INSERT INTO diraigent.auth_user(user_id,auth_user_id) VALUES($1,$2)")
+            .bind(user)
+            .bind(format!("test-{role}"))
+            .execute(&app.pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO diraigent.tenant_member(tenant_id,user_id,role) VALUES('00000000-0000-0000-0000-000000000001',$1,'member')").bind(user).execute(&app.pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO diraigent.project_user_access(project_id,user_id,role) VALUES($1,$2,$3)",
+        )
+        .bind(project)
+        .bind(user)
+        .bind(role)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+        let (_, key) = diraigent_api::repository::register_agent(
+            &app.pool,
+            &diraigent_api::models::CreateAgent {
+                name: format!("credential-{role}"),
+                capabilities: None,
+                metadata: None,
+            },
+            user,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            app.send_authenticated(get(&format!("/v1/{project}/tasks")), &key)
+                .await
+                .status,
+            StatusCode::OK
+        );
+        assert_eq!(
+            app.send_authenticated(get(&format!("/v1/{hidden}/tasks")), &key)
+                .await
+                .status,
+            StatusCode::FORBIDDEN
+        );
+        let edit = app
+            .send_authenticated(
+                put_json(
+                    &format!("/v1/tasks/{}", task["id"].as_str().unwrap()),
+                    json!({"title":format!("Edited by {role}")}),
+                ),
+                &key,
+            )
+            .await;
+        assert_eq!(
+            edit.status,
+            if role == "viewer" {
+                StatusCode::FORBIDDEN
+            } else {
+                StatusCode::OK
+            }
+        );
+        let manage = app
+            .send_authenticated(
+                put_json(
+                    &format!("/v1/{project}"),
+                    json!({"name":format!("Managed by {role}")}),
+                ),
+                &key,
+            )
+            .await;
+        assert_eq!(
+            manage.status,
+            if role == "manager" {
+                StatusCode::OK
+            } else {
+                StatusCode::FORBIDDEN
+            }
+        );
+        users.push((user, key));
+    }
+    let (viewer, viewer_key) = &users[0];
+    let people = format!("/v1/{project}/people/{viewer}");
+    assert_eq!(
+        app.send_authenticated(delete(&people), &users[1].1)
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        app.send_authenticated(delete(&people), &users[2].1)
+            .await
+            .status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.send_authenticated(get(&format!("/v1/{project}/tasks")), viewer_key)
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
+    app.cleanup().await;
+}

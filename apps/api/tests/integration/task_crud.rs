@@ -197,17 +197,21 @@ async fn task_dependencies() {
         .await;
     assert_eq!(resp.status, StatusCode::OK);
 
-    // Transition both to ready
-    app.send(post_json(
-        &format!("/v1/tasks/{a_id}/transition"),
-        serde_json::json!({ "state": "ready" }),
-    ))
-    .await;
-    app.send(post_json(
-        &format!("/v1/tasks/{b_id}/transition"),
-        serde_json::json!({ "state": "ready" }),
-    ))
-    .await;
+    // Blocked tasks cannot become ready until the dependency is satisfied or removed.
+    let ready_a = app
+        .send(post_json(
+            &format!("/v1/tasks/{a_id}/transition"),
+            serde_json::json!({"state":"ready"}),
+        ))
+        .await;
+    assert_eq!(ready_a.status, StatusCode::OK);
+    let blocked_b = app
+        .send(post_json(
+            &format!("/v1/tasks/{b_id}/transition"),
+            serde_json::json!({"state":"ready"}),
+        ))
+        .await;
+    assert_eq!(blocked_b.status, StatusCode::UNPROCESSABLE_ENTITY);
 
     // B should NOT appear in ready tasks (A not done)
     let resp = app
@@ -224,6 +228,14 @@ async fn task_dependencies() {
         .send(delete(&format!("/v1/tasks/{b_id}/dependencies/{a_id}")))
         .await;
     assert_eq!(resp.status, StatusCode::OK);
+
+    let ready_b = app
+        .send(post_json(
+            &format!("/v1/tasks/{b_id}/transition"),
+            serde_json::json!({"state":"ready"}),
+        ))
+        .await;
+    assert_eq!(ready_b.status, StatusCode::OK);
 
     // Now B should appear in ready tasks
     let resp = app

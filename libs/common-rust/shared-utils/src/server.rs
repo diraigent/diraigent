@@ -18,14 +18,19 @@ pub fn standard_cors() -> CorsLayer {
     CorsLayer::new()
 }
 
-pub fn standard_trace()
--> TraceLayer<tower_http::classify::SharedClassifier<tower_http::classify::ServerErrorsAsFailures>>
-{
-    TraceLayer::new_for_http().make_span_with(
-        tower_http::trace::DefaultMakeSpan::new()
-            .level(tracing::Level::INFO)
-            .include_headers(false),
-    )
+/// Request spans deliberately exclude query strings, headers and bodies.
+fn request_span(request: &axum::http::Request<axum::body::Body>) -> tracing::Span {
+    tracing::info_span!("request", method = %request.method(), path = request.uri().path(), version = ?request.version())
+}
+
+type RequestTraceLayer = TraceLayer<
+    tower_http::classify::SharedClassifier<tower_http::classify::ServerErrorsAsFailures>,
+    fn(&axum::http::Request<axum::body::Body>) -> tracing::Span,
+>;
+
+pub fn standard_trace() -> RequestTraceLayer {
+    TraceLayer::new_for_http()
+        .make_span_with(request_span as fn(&axum::http::Request<axum::body::Body>) -> tracing::Span)
 }
 
 pub fn dev_cors() -> CorsLayer {
@@ -45,6 +50,11 @@ pub fn observability(
         .map_err(|e| anyhow::anyhow!("Failed to create OTLP exporter: {}", e))?;
 
     let meter_provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
+        .with_resource(
+            opentelemetry_sdk::Resource::builder()
+                .with_service_name(config.service_name.clone())
+                .build(),
+        )
         .with_periodic_exporter(exporter)
         .build();
 
@@ -171,4 +181,50 @@ pub fn init_server_stateless() -> anyhow::Result<(
     let (config, meter_provider, start_time) = init_config_and_observability()?;
 
     Ok((config, meter_provider, start_time))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone, Default)]
+    struct Capture(Arc<Mutex<Vec<u8>>>);
+    impl Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn request_span_does_not_record_callback_secrets() {
+        let capture = Capture::default();
+        let writer = capture.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_span_events(tracing_subscriber::fmt::format::FmtSpan::NEW)
+            .with_writer(move || writer.clone())
+            .finish();
+        let request = axum::http::Request::builder()
+            .uri("/auth/callback?code=PRIVATE_CODE&state=PRIVATE_STATE")
+            .header("referer", "https://example.test/?token=PRIVATE_REFERRER")
+            .header("authorization", "Bearer PRIVATE_TOKEN")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        tracing::subscriber::with_default(subscriber, || {
+            let _span = request_span(&request);
+        });
+        let output = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
+        assert!(output.contains("/auth/callback"));
+        assert!(output.contains("GET"));
+        assert!(
+            !output.contains("PRIVATE_"),
+            "request secrets leaked into tracing"
+        );
+    }
 }

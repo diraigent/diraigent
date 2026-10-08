@@ -9,7 +9,13 @@ concurrency:
   group: release-binaries-${{ github.ref }}
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
+  validate:
+    uses: ./.github/workflows/validate.yml
+
   check:
     name: Check for code changes
     if: github.server_url == 'https://github.com'
@@ -46,7 +52,7 @@ jobs:
 
   build:
     name: Build (${{ matrix.artifact }})
-    needs: check
+    needs: [check, validate]
     if: needs.check.outputs.has_changes == 'true'
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -114,7 +120,7 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [check, build]
+    needs: [check, validate, build]
     if: needs.check.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
     permissions:

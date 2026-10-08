@@ -40,7 +40,11 @@ macro_rules! require_db {
         match crate::harness::TestApp::try_new().await {
             Some(app) => app,
             None => {
-                eprintln!("SKIPPED: PostgreSQL not available on port 5433");
+                assert!(
+                    std::env::var("REQUIRE_TEST_DATABASE").as_deref() != Ok("true"),
+                    "required integration database unavailable"
+                );
+                eprintln!("SKIPPED: PostgreSQL not available");
                 return;
             }
         }
@@ -63,7 +67,7 @@ impl TestApp {
         let admin_pool = match PgPoolOptions::new()
             .max_connections(2)
             .acquire_timeout(Duration::from_secs(5))
-            .connect_with(admin_opts)
+            .connect_with(admin_opts.clone())
             .await
         {
             Ok(pool) => pool,
@@ -80,10 +84,8 @@ impl TestApp {
             .expect("Failed to create test database");
 
         // Connect to the test database with the same search_path as production
-        let connect_opts = format!("postgres://zivue:zivue@localhost:5433/{db_name}")
-            .parse::<sqlx::postgres::PgConnectOptions>()
-            .unwrap()
-            .ssl_mode(sqlx::postgres::PgSslMode::Disable)
+        let connect_opts = admin_opts
+            .database(&db_name)
             .options([("search_path", "public,diraigent")]);
 
         let pool = PgPoolOptions::new()
@@ -133,7 +135,7 @@ impl TestApp {
     }
 
     /// Build a fresh Router backed by this test database.
-    fn router(&self) -> Router {
+    fn router(&self, is_production: bool) -> Router {
         let dek_cache = diraigent_api::crypto::DekCache::new();
         let raw_db: Arc<dyn diraigent_api::db::DiraigentDb> =
             Arc::new(diraigent_api::db::PostgresDb(self.pool.clone()));
@@ -149,7 +151,7 @@ impl TestApp {
             user_cache: UserIdCache::default(),
             webhooks: WebhookDispatcher::new(db),
             repo_root: None,
-            is_production: false,
+            is_production,
             projects_path: None,
             loki_url: None,
             dek_cache,
@@ -166,13 +168,45 @@ impl TestApp {
 
     /// Send a request through the full router stack.
     pub async fn send(&self, req: Request<Body>) -> TestResponse {
-        let resp = self.router().oneshot(req).await.unwrap();
+        let resp = self.router(false).oneshot(req).await.unwrap();
         let status = resp.status();
         let body_bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
             .await
             .unwrap();
         let json: Value = serde_json::from_slice(&body_bytes).unwrap_or(Value::Null);
         TestResponse { status, json }
+    }
+
+    /// Exercise real credential authentication without the development-user bypass.
+    #[allow(dead_code)] // This shared harness also serves tests using the development fixture.
+    pub async fn send_authenticated(&self, mut req: Request<Body>, key: &str) -> TestResponse {
+        req.headers_mut()
+            .insert("authorization", format!("Bearer {key}").parse().unwrap());
+        let resp = self.router(true).oneshot(req).await.unwrap();
+        let status = resp.status();
+        let bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        TestResponse {
+            status,
+            json: serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        }
+    }
+
+    async fn project_workspace(&self, project: Uuid) -> Uuid {
+        sqlx::query_scalar("SELECT tenant_id FROM diraigent.project WHERE id=$1")
+            .bind(project)
+            .fetch_one(&self.pool)
+            .await
+            .unwrap()
+    }
+
+    pub async fn remove_agent_memberships(&self, agent: Uuid) {
+        sqlx::query("DELETE FROM diraigent.membership WHERE agent_id=$1")
+            .bind(agent)
+            .execute(&self.pool)
+            .await
+            .unwrap();
     }
 
     /// Drop the ephemeral database.
@@ -215,30 +249,32 @@ impl TestApp {
 
     /// Create a role with given authorities and return its ID.
     pub async fn create_role(&self, project_id: Uuid, name: &str, authorities: &[&str]) -> Uuid {
-        let resp = self
-            .send(post_json(
-                &format!("/v1/{project_id}/roles"),
-                serde_json::json!({
-                    "name": name,
-                    "authorities": authorities,
-                }),
-            ))
-            .await;
+        let tenant = self.project_workspace(project_id).await;
+        let mut request = post_json(
+            "/v1/roles",
+            serde_json::json!({"name":name,"authorities":authorities}),
+        );
+        request
+            .headers_mut()
+            .insert("X-Tenant-Id", tenant.to_string().parse().unwrap());
+        let resp = self.send(request).await;
         assert_eq!(resp.status, StatusCode::OK, "create role: {}", resp.json);
         resp.id()
     }
 
-    /// Add agent as member of project with given role.
+    /// Assign a workspace role, replacing the automatic full-access registration role.
     pub async fn add_member(&self, project_id: Uuid, agent_id: Uuid, role_id: Uuid) -> Uuid {
-        let resp = self
-            .send(post_json(
-                &format!("/v1/{project_id}/members"),
-                serde_json::json!({
-                    "agent_id": agent_id,
-                    "role_id": role_id,
-                }),
-            ))
-            .await;
+        sqlx::query("DELETE FROM diraigent.membership m USING diraigent.role r WHERE m.role_id=r.id AND m.agent_id=$1 AND r.name='main'")
+            .bind(agent_id).execute(&self.pool).await.unwrap();
+        let tenant = self.project_workspace(project_id).await;
+        let mut request = post_json(
+            "/v1/members",
+            serde_json::json!({"agent_id":agent_id,"role_id":role_id}),
+        );
+        request
+            .headers_mut()
+            .insert("X-Tenant-Id", tenant.to_string().parse().unwrap());
+        let resp = self.send(request).await;
         assert_eq!(resp.status, StatusCode::OK, "add member: {}", resp.json);
         resp.id()
     }

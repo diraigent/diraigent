@@ -527,7 +527,7 @@ pub async fn list_task_comments(
 pub async fn delegate_task(
     pool: &PgPool,
     task_id: Uuid,
-    delegated_by_agent_id: Uuid,
+    delegated_by_user_id: Uuid,
     to_agent_id: Uuid,
     role_id: Option<Uuid>,
 ) -> Result<Task, AppError> {
@@ -546,7 +546,7 @@ pub async fn delegate_task(
     .bind(task_id)
     .bind(to_agent_id)
     .bind(role_id)
-    .bind(delegated_by_agent_id)
+    .bind(delegated_by_user_id)
     .bind(step_name)
     .fetch_optional(pool)
     .await?

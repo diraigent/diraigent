@@ -719,7 +719,7 @@ async fn bulk_delegate_partial_failure() {
             }),
         ))
         .await;
-    assert_eq!(resp.status, StatusCode::OK);
+    assert_eq!(resp.status, StatusCode::MULTI_STATUS);
     let succeeded = resp.json["succeeded"].as_array().unwrap();
     let failed = resp.json["failed"].as_array().unwrap();
     assert_eq!(succeeded.len(), 1);
