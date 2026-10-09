@@ -17,8 +17,10 @@ containers = []
 
 
 def docker(*args):
-    return subprocess.run(['docker', *args], check=True, capture_output=True,
-                          text=True).stdout.strip()
+    result = subprocess.run(['docker', *args], capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip())
+    return result.stdout.strip()
 
 
 def backend(config, name):
@@ -45,6 +47,11 @@ def response(url, expected):
 
 try:
     docker('network', 'create', network)
+    # Linux Docker permits static addresses only with an explicitly configured
+    # subnet. Reuse Docker's allocated subnet instead of hard-coding a host range.
+    subnet = json.loads(docker('network', 'inspect', network))[0]['IPAM']['Config'][0]['Subnet']
+    docker('network', 'rm', network)
+    docker('network', 'create', '--subnet', subnet, network)
     with tempfile.TemporaryDirectory() as directory:
         configs = []
         for identity in ['first', 'replacement']:
