@@ -49,7 +49,7 @@ async fn create_changed_files(
         "execute",
     )
     .await?;
-    let files = state.db.create_changed_files(task_id, &req).await?;
+    let files = crate::project_content::create_files(&state, task_id, &req).await?;
     Ok(Json(files))
 }
 
@@ -61,9 +61,18 @@ async fn get_changed_file(
 ) -> Result<Json<ChangedFile>, AppError> {
     let task = state.db.get_task_by_id(task_id).await?;
     require_membership(state.db.as_ref(), agent_id, user_id, task.project_id).await?;
-    let file = state.db.get_changed_file_by_id(file_id).await?;
+    let mut file = state.db.get_changed_file_by_id(file_id).await?;
     if file.task_id != task_id {
         return Err(AppError::NotFound("Changed file not found".into()));
+    }
+    if let Some(v) = crate::project_content::get(
+        &state,
+        diraigent_types::project_content::ContentKind::Diff,
+        file_id,
+    )
+    .await?
+    {
+        file.diff = v["diff"].as_str().map(str::to_owned);
     }
     Ok(Json(file))
 }

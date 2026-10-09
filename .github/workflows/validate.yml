@@ -50,10 +50,20 @@ jobs:
       - run: npm ci
       - run: npm run build:prod
       - run: npx playwright install --with-deps chromium
-      - run: npx playwright test e2e/human-project-access.spec.ts e2e/read-only-account.spec.ts e2e/audit-task-links.spec.ts --workers=2
+      - run: npx playwright test e2e/human-project-access.spec.ts e2e/read-only-account.spec.ts e2e/audit-task-links.spec.ts e2e/chat-models.spec.ts e2e/project-storage.spec.ts --workers=2
       - run: docker build -f Containerfile -t diraigent/web:log-check .
       - run: python3 ../../scripts/check-web-log-privacy.py diraigent/web:log-check
       - run: python3 ../../scripts/check-web-api-routing.py diraigent/web:log-check
+
+  orchestra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup component add rustfmt clippy
+      - run: cargo fmt -p diraigent-orchestra -p diraigent-types --check
+      # Existing macro, test-module and CLI initialization warnings are tracked separately.
+      - run: cargo clippy -p diraigent-orchestra -p diraigent-types --all-targets -- -D warnings -A clippy::double_must_use -A clippy::items_after_test_module -A clippy::needless_late_init
+      - run: cargo test -p diraigent-orchestra -p diraigent-types
 
   ios:
     runs-on: macos-latest

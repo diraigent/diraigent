@@ -151,6 +151,9 @@ pub struct ChatStreamParams {
     pub project_id: Uuid,
     pub user_id: Uuid,
     pub messages: Vec<Message>,
+    pub history_revision: Option<i64>,
+    pub persist_history: bool,
+    pub content_store_id: Option<Uuid>,
     /// Optional model override from the client. Falls back to CHAT_MODEL env var, then "sonnet".
     pub model: Option<String>,
     /// Keep an explicitly selected model on the worker that supplied its catalog.
@@ -170,6 +173,9 @@ pub async fn run_chat_stream(p: ChatStreamParams) -> Option<String> {
         project_id,
         user_id,
         messages,
+        history_revision,
+        persist_history,
+        content_store_id,
         model: model_override,
         model_agent_id,
         tx,
@@ -293,6 +299,9 @@ pub async fn run_chat_stream(p: ChatStreamParams) -> Option<String> {
         project_id,
         user_id,
         messages,
+        history_revision,
+        persist_history,
+        content_store_id,
         system_prompt,
         model,
     };

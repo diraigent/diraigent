@@ -242,6 +242,11 @@ impl ProjectsApi {
         .await
     }
 
+    pub async fn content_owner(&self, project_id: &str) -> Result<Option<String>> {
+        let value = self.get(&format!("/{project_id}/storage")).await?;
+        Ok(value["agent_id"].as_str().map(str::to_owned))
+    }
+
     pub async fn post_changed_files(
         &self,
         task_id: &str,

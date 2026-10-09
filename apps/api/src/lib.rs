@@ -13,6 +13,7 @@ pub mod models;
 pub mod openapi;
 pub mod package_cache;
 pub mod project_access;
+pub mod project_content;
 pub mod quota;
 pub mod rate_limit;
 pub mod read_only_projection;

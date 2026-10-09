@@ -2,11 +2,15 @@ import { Injectable, inject, signal, computed, effect, untracked } from '@angula
 import { AuthService } from './auth.service';
 import { ProjectContext } from './project-context.service';
 import { environment } from '../../../environments/environment';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
 }
+
+interface ChatHistory { enabled: boolean; revision: number; messages: ChatMessage[]; busy: boolean; }
 
 interface ActiveTool {
   toolId: string;
@@ -29,6 +33,7 @@ const MODEL_STORAGE_KEY = STORAGE_KEYS.CHAT_MODEL;
 export class ChatService {
   private auth = inject(AuthService);
   private project = inject(ProjectContext);
+  private http = inject(HttpClient);
 
   readonly messages = signal<ChatMessage[]>([]);
   readonly streaming = signal(false);
@@ -37,7 +42,12 @@ export class ChatService {
   readonly activeTools = signal<ActiveTool[]>([]);
   readonly toolsCompleted = signal(0);
   readonly error = signal<string | null>(null);
-  readonly canSend = computed(() => !!this.project.projectId());
+  readonly hasProject = computed(() => !!this.project.projectId());
+  readonly historyLoading = signal(false);
+  private readonly historyUnavailable = signal(false);
+  private remoteHistory = false;
+  private historyRevision = 0;
+  readonly canSend = computed(() => !!this.project.projectId() && !this.historyLoading() && !this.historyUnavailable());
   readonly isOpen = signal(false);
   /** Emits true when the parent layout should scroll the chat panel into view (mobile). */
   readonly scrollToChat = signal(false);
@@ -103,25 +113,58 @@ export class ChatService {
       const pid = this.project.projectId();
       untracked(() => {
         this.cancel();
+        ++this.generation;
+        this.remoteHistory = false;
+        this.historyUnavailable.set(false);
         const stored = pid ? localStorage.getItem(STORAGE_PREFIX + pid) : null;
         let msgs: ChatMessage[] = [];
         if (stored) {
           try { msgs = JSON.parse(stored); } catch { /* ignore corrupt data */ }
         }
-        this.messages.set(msgs);
+        this.messages.set([]);
         this.streaming.set(false);
         this.streamingText.set('');
         this.thinkingText.set('');
         this.activeTools.set([]);
         this.toolsCompleted.set(0);
         this.error.set(null);
+        if (pid) void this.loadHistory(pid, this.generation, msgs);
       });
     });
   }
 
+  async reloadHistory(): Promise<void> {
+    const pid = this.project.projectId();
+    if (!pid || this.streaming()) return;
+    this.error.set(null);
+    await this.loadHistory(pid, this.generation);
+  }
+
+  private async loadHistory(pid: string, generation: number, legacyMessages?: ChatMessage[]): Promise<void> {
+    if (generation !== this.generation || pid !== this.project.projectId()) return;
+    this.historyLoading.set(true);
+    try {
+      const history = await firstValueFrom(this.http.get<ChatHistory>(`${environment.apiServer}/${pid}/chat/history`));
+      if (generation !== this.generation || pid !== this.project.projectId()) return;
+      this.remoteHistory = history.enabled === true;
+      this.historyRevision = history.revision;
+      if (this.remoteHistory) this.messages.set(history.messages);
+      else if (legacyMessages) this.messages.set(legacyMessages);
+      this.historyUnavailable.set(history.busy === true);
+      if (history.busy) this.error.set('A conversation is running on Orchestra. Reopen chat when it finishes.');
+    } catch (e) {
+      if (generation === this.generation) {
+        this.historyUnavailable.set(true);
+        this.error.set('Conversation storage unavailable. Reload conversation to retry.');
+      }
+    } finally {
+      if (generation === this.generation) this.historyLoading.set(false);
+    }
+  }
+
   private persist(): void {
     const pid = this.project.projectId();
-    if (!pid) return;
+    if (!pid || this.remoteHistory) return;
     const msgs = this.messages();
     if (msgs.length === 0) {
       localStorage.removeItem(STORAGE_PREFIX + pid);
@@ -132,7 +175,7 @@ export class ChatService {
 
   async send(text: string): Promise<void> {
     const projectId = this.project.projectId();
-    if (!projectId) return;
+    if (!projectId || !this.canSend() || this.streaming()) return;
     const token = this.auth.getAccessToken();
 
     const userMsg: ChatMessage = { role: 'user', content: text };
@@ -156,6 +199,7 @@ export class ChatService {
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
       const body: Record<string, unknown> = { messages: history };
+      if (this.remoteHistory) body['history_revision'] = this.historyRevision;
       const selectedModel = this.chatModel();
       if (selectedModel) body['model'] = selectedModel;
       if (selectedModel && this.catalog()) body['agent_id'] = this.catalog()!.agent_id;
@@ -179,6 +223,7 @@ export class ChatService {
       let buffer = '';
       let accumulated = '';
 
+      let terminal = false;
       const processEvent = (part: string) => {
         const lines = part.split('\n');
         const eventLine = lines.find(l => l.startsWith('event: '));
@@ -224,6 +269,7 @@ export class ChatService {
             break;
 
           case 'done':
+            terminal = true;
             this.messages.update(msgs => [
               ...msgs,
               {
@@ -237,6 +283,7 @@ export class ChatService {
             break;
 
           case 'error':
+            terminal = true;
             this.error.set(data['message'] as string);
             break;
         }
@@ -255,6 +302,7 @@ export class ChatService {
         for (const part of parts) {
           if (part.trim()) processEvent(part);
         }
+        if (terminal) { await reader.cancel(); break; }
       }
 
       // Process any remaining buffered event after stream ends
@@ -271,6 +319,8 @@ export class ChatService {
       // Guard: only clear streaming state if this is still the active generation
       // (prevents cancel+resend race where old finally clobbers new streaming flag)
       if (gen === this.generation) {
+        if (this.remoteHistory) await this.loadHistory(projectId, gen);
+        if (gen !== this.generation) return;
         if (this.streamingText() && !this.messages().some(m => m.content === this.streamingText())) {
           const text = this.streamingText();
           if (text) {
@@ -375,7 +425,19 @@ export class ChatService {
     this.abortController?.abort();
   }
 
-  clear(): void {
+  async clear(): Promise<void> {
+    if (this.remoteHistory) {
+      const pid = this.project.projectId();
+      if (!pid) return;
+      this.cancel();
+      const gen = ++this.generation;
+      try {
+        await firstValueFrom(this.http.post(`${environment.apiServer}/${pid}/chat/history/clear`, {revision: this.historyRevision}));
+        if (gen !== this.generation || pid !== this.project.projectId()) return;
+        await this.loadHistory(pid, gen);
+        if (gen !== this.generation || pid !== this.project.projectId()) return;
+      } catch { if (gen === this.generation) this.error.set('Conversation changed or is busy. Reload before clearing.'); return; }
+    }
     this.messages.set([]);
     this.persist();
     this.streaming.set(false);

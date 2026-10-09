@@ -39,7 +39,10 @@ async fn handle_socket(state: AppState, agent_id: Uuid, socket: WebSocket) {
     let (tx, mut rx) = mpsc::unbounded_channel::<WsMessage>();
 
     // Register this agent's connection
-    state.ws_registry.register(agent_id, tx);
+    if !state.ws_registry.try_register(agent_id, tx) {
+        tracing::warn!(%agent_id,"rejected duplicate Orchestra connection");
+        return;
+    }
 
     // Writer task: reads from channel, sends to WS
     let write_task = tokio::spawn(async move {
@@ -70,6 +73,9 @@ async fn handle_socket(state: AppState, agent_id: Uuid, socket: WebSocket) {
                 };
 
                 match ws_msg {
+                    WsMessage::ContentResponse { request_id, result } => state
+                        .ws_registry
+                        .complete_content_request(agent_id, &request_id, result),
                     WsMessage::ChatModelsResponse {
                         request_id,
                         catalog,

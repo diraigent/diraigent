@@ -1,6 +1,7 @@
 pub mod chat;
 pub mod chat_models;
 pub mod mcp;
+pub mod project_content;
 pub mod state_machine;
 pub mod sync;
 pub mod task_profile;

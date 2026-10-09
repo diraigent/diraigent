@@ -46,6 +46,7 @@ struct ChatView: View {
         }
         .onDisappear { isInputFocused = false }
         .task(id: appState.selectedProjectId) {
+            await appState.chatService.loadHistory(projectId: appState.selectedProjectId)
             await appState.chatService.loadModels(projectId: appState.selectedProjectId, provider: chatProvider)
         }
         .sheet(isPresented: $modelPickerOpen) { modelPicker }
@@ -206,7 +207,8 @@ struct ChatView: View {
     }
 
     private var canSend: Bool {
-        !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if appState.chatService.historyLoading || !appState.chatService.historyAvailable { return false }
+        return !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !appState.chatService.isStreaming
             && appState.selectedProjectId != nil
     }

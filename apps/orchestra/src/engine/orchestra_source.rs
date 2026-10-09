@@ -144,11 +144,31 @@ impl TaskSource for OrchestraTaskSource {
     // ── Task updates, comments, cost (LOCAL) ──
 
     async fn post_task_update(&self, task_id: &str, kind: &str, content: &str) -> Result<Value> {
+        if kind == "artifact" {
+            let task = self.api.get_task(task_id).await?;
+            if self
+                .api
+                .content_owner(task["project_id"].as_str().unwrap_or(""))
+                .await?
+                .is_some()
+            {
+                return self.api.post_task_update(task_id, kind, content).await;
+            }
+        }
         let id = db::task_updates::insert(&self.db, task_id, Some(self.agent_id()), kind, content)?;
         Ok(json!({"id": id, "kind": kind, "content": content}))
     }
 
     async fn get_task_updates(&self, task_id: &str) -> Result<Vec<Value>> {
+        let task = self.api.get_task(task_id).await?;
+        if self
+            .api
+            .content_owner(task["project_id"].as_str().unwrap_or(""))
+            .await?
+            .is_some()
+        {
+            return self.api.get_task_updates(task_id).await;
+        }
         db::task_updates::list_for_task(&self.db, task_id)
     }
 
@@ -173,6 +193,15 @@ impl TaskSource for OrchestraTaskSource {
     }
 
     async fn post_changed_files(&self, task_id: &str, files: &[ChangedFile]) -> Result<Value> {
+        let task = self.api.get_task(task_id).await?;
+        if self
+            .api
+            .content_owner(task["project_id"].as_str().unwrap_or(""))
+            .await?
+            .is_some()
+        {
+            return self.api.post_changed_files(task_id, files).await;
+        }
         for f in files {
             db::task_updates::insert_changed_file(&self.db, task_id, &f.path, &f.change_type)?;
         }

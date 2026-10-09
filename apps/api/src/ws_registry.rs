@@ -25,6 +25,13 @@ pub struct WsRegistry {
     /// Pending git requests: request_id -> oneshot sender
     pending_git: DashMap<String, oneshot::Sender<GitResponsePayload>>,
     pending_models: DashMap<String, PendingModelRequest>,
+    pending_content: DashMap<
+        String,
+        (
+            Uuid,
+            oneshot::Sender<diraigent_types::project_content::ContentResult>,
+        ),
+    >,
     /// Active chat sessions: session_id -> mpsc sender for SSE events
     active_chats: DashMap<String, ActiveChat>,
     /// Which agent handles each chat session: session_id -> agent_id
@@ -43,6 +50,7 @@ impl WsRegistry {
             connections: DashMap::new(),
             pending_git: DashMap::new(),
             pending_models: DashMap::new(),
+            pending_content: DashMap::new(),
             active_chats: DashMap::new(),
             session_agents: DashMap::new(),
         }
@@ -54,9 +62,20 @@ impl WsRegistry {
         tracing::info!(%agent_id, "agent connected via WebSocket");
     }
 
+    pub fn try_register(&self, agent_id: Uuid, tx: mpsc::UnboundedSender<WsMessage>) -> bool {
+        match self.connections.entry(agent_id) {
+            dashmap::mapref::entry::Entry::Vacant(entry) => {
+                entry.insert(tx);
+                true
+            }
+            dashmap::mapref::entry::Entry::Occupied(_) => false,
+        }
+    }
     /// Unregister a disconnected agent.
     pub fn unregister(&self, agent_id: Uuid) {
         self.connections.remove(&agent_id);
+        self.pending_content
+            .retain(|_, (owner, _)| *owner != agent_id);
         self.pending_models
             .retain(|_, (agent, _)| *agent != agent_id);
         tracing::info!(%agent_id, "agent disconnected from WebSocket");
@@ -80,6 +99,31 @@ impl WsRegistry {
             .copied()
     }
 
+    pub fn register_content_request(
+        &self,
+        id: String,
+        owner: Uuid,
+    ) -> oneshot::Receiver<diraigent_types::project_content::ContentResult> {
+        let (tx, rx) = oneshot::channel();
+        self.pending_content.insert(id, (owner, tx));
+        rx
+    }
+    pub fn remove_content_request(&self, id: &str) {
+        self.pending_content.remove(id);
+    }
+    pub fn complete_content_request(
+        &self,
+        owner: Uuid,
+        id: &str,
+        result: diraigent_types::project_content::ContentResult,
+    ) {
+        if let Some((_, (_, tx))) = self
+            .pending_content
+            .remove_if(id, |_, pending| pending.0 == owner)
+        {
+            let _ = tx.send(result);
+        }
+    }
     /// Register a model request bound to the selected worker.
     pub fn register_model_request(
         &self,
@@ -375,5 +419,35 @@ mod chat_idle_tests {
         );
         assert!(!registry.session_agents.contains_key("done"));
         assert!(!registry.expire_idle_chat("done", Duration::ZERO));
+    }
+}
+
+#[cfg(test)]
+mod content_tests {
+    use super::*;
+    #[tokio::test]
+    async fn content_reply_is_bound_to_owner_and_disconnect_releases_waiters() {
+        let r = WsRegistry::new();
+        let owner = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let mut rx = r.register_content_request("content".into(), owner);
+        r.complete_content_request(
+            other,
+            "content",
+            Ok(serde_json::json!({"private":"wrong-worker"})),
+        );
+        assert!(matches!(
+            rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        ));
+        r.complete_content_request(owner, "content", Ok(serde_json::json!("correct")));
+        assert_eq!(rx.await.unwrap().unwrap(), "correct");
+        let rx = r.register_content_request("disconnect".into(), owner);
+        r.unregister(owner);
+        assert!(rx.await.is_err());
+        let (tx, _) = mpsc::unbounded_channel();
+        assert!(r.try_register(owner, tx));
+        let (tx, _) = mpsc::unbounded_channel();
+        assert!(!r.try_register(owner, tx));
     }
 }

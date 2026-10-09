@@ -235,13 +235,16 @@ export class ChatMarkdownPipe implements PipeTransform {
             <!-- Messages -->
             <div #messageList class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 p-4" (scroll)="onScroll()">
               <div class="max-w-3xl mx-auto space-y-3 min-w-0">
-              @if (!chat.canSend()) {
+              @if (!chat.hasProject()) {
                 <div class="flex flex-col items-center justify-center h-full text-center px-6">
                   <div class="text-text-muted text-sm">
                     <p class="font-medium text-text-secondary mb-1">No project selected</p>
                     <p>Create or select a project to start chatting with the AI assistant.</p>
                   </div>
                 </div>
+              }
+              @if (chat.hasProject() && !chat.canSend() && !chat.streaming()) {
+                <button (click)="chat.reloadHistory()" [disabled]="chat.historyLoading()" class="text-sm text-accent mb-2">{{ chat.historyLoading() ? 'Loading conversation...' : 'Reload conversation' }}</button>
               }
               @if (chat.canSend() && !chat.orchestraConnected()) {
                 <div class="flex items-center gap-2 px-3 py-2 mb-2 text-xs text-ctp-peach bg-ctp-peach/10 rounded-lg">
@@ -336,7 +339,7 @@ export class ChatMarkdownPipe implements PipeTransform {
                   #inputEl
                   [(ngModel)]="inputText"
                   (keydown.enter)="onEnter($event)"
-                  [placeholder]="chat.canSend() ? 'Ask about your project...' : 'Select a project first'"
+                  [placeholder]="chat.hasProject() ? 'Ask about your project...' : 'Select a project first'"
                   [disabled]="!chat.canSend()"
                   [attr.rows]="isMobile() ? 2 : 1"
                   class="flex-1 min-w-0 resize-none rounded-xl border border-border bg-bg-subtle px-3 py-2

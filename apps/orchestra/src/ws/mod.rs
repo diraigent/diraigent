@@ -69,12 +69,22 @@ pub async fn run_ws_loop(
     api: ProjectsApi,
     projects_path: PathBuf,
     shutdown: Arc<AtomicBool>,
+    content_store: crate::content::ContentStore,
 ) {
     loop {
         if shutdown.load(Ordering::SeqCst) {
             break;
         }
-        match connect_and_run(api_url, agent_id, &api, &projects_path, &shutdown).await {
+        match connect_and_run(
+            api_url,
+            agent_id,
+            &api,
+            &projects_path,
+            &shutdown,
+            &content_store,
+        )
+        .await
+        {
             Ok(()) => {}
             Err(e) => {
                 warn!("WebSocket disconnected: {e:#}");
@@ -94,6 +104,7 @@ async fn connect_and_run(
     api: &ProjectsApi,
     projects_path: &Path,
     shutdown: &AtomicBool,
+    content_store: &crate::content::ContentStore,
 ) -> Result<()> {
     // Build WebSocket URL: http(s) -> ws(s)
     let ws_url = api_url
@@ -229,6 +240,23 @@ async fn connect_and_run(
                 };
 
                 match ws_msg {
+                    WsMessage::ContentRequest {
+                        request_id,
+                        project_id,
+                        request,
+                        expected_store_id,
+                    } => {
+                        let store = content_store.clone();
+                        let sender = tx.clone();
+                        tokio::task::spawn_blocking(move || {
+                            let result = if expected_store_id.is_some_and(|id| id != store.id()) {
+                                Err(diraigent_types::project_content::ContentError::Unavailable)
+                            } else {
+                                store.request(project_id, request)
+                            };
+                            let _ = sender.send(WsMessage::ContentResponse { request_id, result });
+                        });
+                    }
                     WsMessage::ChatModelsRequest {
                         request_id,
                         project_id,
@@ -261,18 +289,101 @@ async fn connect_and_run(
                     WsMessage::ChatRequest {
                         session_id,
                         project_id,
-                        user_id: _user_id,
+                        user_id,
+                        history_revision,
+                        persist_history,
+                        content_store_id,
                         messages,
                         system_prompt,
                         model,
                     } => {
                         let sender = tx.clone();
+                        let store = content_store.clone();
                         let api_clone = api.clone();
                         let pp = projects_path.to_path_buf();
                         let cancel_rx = chat_sessions.register(&session_id).await;
                         let sessions = chat_sessions.clone();
                         let sid = session_id.clone();
                         tokio::spawn(async move {
+                            let sender = if persist_history {
+                                let input = messages
+                                    .iter()
+                                    .map(|m| diraigent_types::project_content::HistoryMessage {
+                                        role: m.role.clone(),
+                                        content: m.content.clone(),
+                                    })
+                                    .collect();
+                                if content_store_id != Some(store.id()) {
+                                    let _=sender.send(WsMessage::ChatEvent {session_id:session_id.clone(),event:protocol::ChatSseEvent::Error {message:"Project content storage identity changed; restore its original data directory".into()}});
+                                    sessions.remove(&sid).await;
+                                    return;
+                                }
+                                match store.begin_chat(project_id, user_id, history_revision, input)
+                                {
+                                    Ok(revision) => {
+                                        let (forward, mut events) =
+                                            mpsc::unbounded_channel::<WsMessage>();
+                                        let sid = session_id.clone();
+                                        tokio::spawn(async move {
+                                            let mut text = String::new();
+                                            let mut finished = false;
+                                            while let Some(mut event) = events.recv().await {
+                                                if let WsMessage::ChatEvent {
+                                                    event: ref mut e,
+                                                    ..
+                                                } = event
+                                                {
+                                                    if let protocol::ChatSseEvent::Text {
+                                                        content,
+                                                    } = e
+                                                    {
+                                                        text.push_str(content);
+                                                    }
+                                                    if matches!(
+                                                        e,
+                                                        protocol::ChatSseEvent::Done { .. }
+                                                            | protocol::ChatSseEvent::Error { .. }
+                                                    ) {
+                                                        if let protocol::ChatSseEvent::Done {
+                                                            message,
+                                                        } = e
+                                                        {
+                                                            text = message.content.clone();
+                                                        }
+                                                        if store
+                                                            .finish_chat(
+                                                                project_id,
+                                                                user_id,
+                                                                revision,
+                                                                text.clone(),
+                                                            )
+                                                            .is_err()
+                                                        {
+                                                            *e=protocol::ChatSseEvent::Error{message:"Conversation could not be saved".into()};
+                                                        }
+                                                        finished = true;
+                                                    }
+                                                }
+                                                let _ = sender.send(event);
+                                            }
+                                            if !finished {
+                                                let _ = store.finish_chat(
+                                                    project_id, user_id, revision, text,
+                                                );
+                                            }
+                                            tracing::debug!(session_id=%sid,"conversation persisted");
+                                        });
+                                        forward
+                                    }
+                                    Err(_) => {
+                                        let _=sender.send(WsMessage::ChatEvent {session_id:session_id.clone(),event:protocol::ChatSseEvent::Error{message:"Conversation changed or is busy. Reload its history before sending.".into()}});
+                                        sessions.remove(&sid).await;
+                                        return;
+                                    }
+                                }
+                            } else {
+                                sender
+                            };
                             let chat_messages: Vec<chat::Message> = messages
                                 .into_iter()
                                 .map(|m| chat::Message {

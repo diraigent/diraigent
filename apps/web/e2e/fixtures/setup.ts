@@ -208,6 +208,8 @@ export async function setupMocks(page: Page) {
     }
 
     // Chat
+    if (path === `${PROJECT_ID}/chat/history`) return route.fulfill({json:{enabled:false,revision:0,messages:[],busy:false}});
+    if (path === `${PROJECT_ID}/storage`) return route.fulfill({json:{agent_id:null,content_protocol:1}});
     if (path.match(new RegExp(`^${PROJECT_ID}/chat`))) {
       return route.abort();
     }

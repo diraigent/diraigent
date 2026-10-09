@@ -172,6 +172,24 @@ struct AuthenticationTests {
         #expect(requests.all.count == 2)
     }
 
+    @Test func orchestraHistoryFailureBlocksSendingAndRecoversWithoutLogout() async throws {
+        AuthURLProtocol.handler = { _ in (503, #"{"error":"offline"}"#) }
+        let (_, api, _) = fixture()
+        let chat = ChatService(apiClient: api)
+        let project = UUID()
+        await chat.loadHistory(projectId: project)
+        #expect(!chat.historyAvailable)
+        chat.sendMessage("must not send", projectId: project)
+        #expect(chat.messages.isEmpty)
+        AuthURLProtocol.handler = { _ in (200, #"{"enabled":true,"revision":2,"busy":false,"messages":[{"role":"user","content":"saved"}]}"#) }
+        await chat.loadHistory(projectId: project)
+        #expect(chat.historyAvailable)
+        #expect(chat.messages.map(\.content) == ["saved"])
+        AuthURLProtocol.handler = { _ in (200, #"{"enabled":true,"revision":0,"busy":false,"messages":[]}"#) }
+        await chat.loadHistory(projectId: UUID())
+        #expect(chat.messages.isEmpty)
+    }
+
     @Test func chatRefreshesBeforeOpeningStream() async throws {
         let requests = Requests()
         AuthURLProtocol.handler = { request in

@@ -7,6 +7,43 @@ final class ChatService {
     private let apiClient: APIClient
 
     var messages: [ChatMessage] = []
+    var historyLoading = false
+    var historyAvailable = true
+    private var remoteHistory = false
+    private var historyRevision = 0
+    private var historyProjectId: UUID?
+    private var historyGeneration = UUID()
+
+    func loadHistory(projectId: UUID?) async {
+        let generation = UUID()
+        historyGeneration = generation
+        if historyProjectId != projectId {
+            cancelStreaming()
+            messages.removeAll()
+            remoteHistory = false
+            historyProjectId = projectId
+        }
+        guard let projectId else { historyLoading = false; return }
+        historyLoading = true
+        defer { if historyGeneration == generation { historyLoading = false } }
+        do {
+            let history: ChatHistory = try await apiClient.get(Endpoints.chat(projectId) + "/history")
+            guard historyGeneration == generation, !Task.isCancelled else { return }
+            remoteHistory = history.enabled
+            historyRevision = history.revision
+            historyAvailable = !history.busy
+            if error?.hasPrefix("Conversation storage unavailable.") == true || error?.hasPrefix("A conversation is running on Orchestra.") == true { error = nil }
+            if history.enabled { messages = history.messages.compactMap { message in
+                guard let role = ChatRole(rawValue: message.role) else { return nil }
+                return ChatMessage(role: role, content: message.content)
+            } }
+            if history.busy { error = "A conversation is running on Orchestra. Reopen chat when it finishes." }
+        } catch {
+            guard historyGeneration == generation, !Task.isCancelled else { return }
+            historyAvailable = false
+            self.error = "Conversation storage unavailable. Reopen chat to retry."
+        }
+    }
     var isStreaming = false
     var error: String?
     var modelCatalog: ChatModelCatalog?
@@ -74,6 +111,7 @@ final class ChatService {
 
     /// The current streaming task, kept so it can be cancelled.
     private var streamTask: Task<Void, Never>?
+    private var streamGeneration = UUID()
 
     init(apiClient: APIClient) {
         self.apiClient = apiClient
@@ -81,6 +119,7 @@ final class ChatService {
 
     /// Send a message and stream the assistant response via SSE.
     func sendMessage(_ content: String, projectId: UUID, model: String? = nil) {
+        guard historyAvailable, !historyLoading, !isStreaming else { return }
         let userMessage = ChatMessage(role: .user, content: content)
         messages.append(userMessage)
 
@@ -99,12 +138,14 @@ final class ChatService {
         let chosenModel = model ?? (selectedModel.isEmpty ? nil : selectedModel)
         let modelAgentId = chosenModel == nil ? nil : modelCatalog?.agentId
 
+        let generation = UUID()
+        streamGeneration = generation
         streamTask = Task { [weak self] in
             guard let self else { return }
             do {
                 let bytes = try await apiClient.stream(
                     Endpoints.chat(projectId),
-                    body: ChatRequest(messages: requestMessages, model: chosenModel, agentId: modelAgentId)
+                    body: ChatRequest(messages: requestMessages, model: chosenModel, agentId: modelAgentId, historyRevision: remoteHistory ? historyRevision : nil)
                 )
 
                 defer { bytes.task.cancel() }
@@ -113,7 +154,7 @@ final class ChatService {
                 var dataBuffer = ""
 
                 for try await line in bytes.lines {
-                    if Task.isCancelled { break }
+                    if Task.isCancelled || self.streamGeneration != generation { break }
 
                     if line.hasPrefix("event:") {
                         eventType = String(line.dropFirst(6)).trimmingCharacters(in: .whitespaces)
@@ -134,6 +175,7 @@ final class ChatService {
             } catch is CancellationError {
                 // Task was cancelled, do nothing
             } catch {
+                guard self.streamGeneration == generation else { return }
                 self.error = error.localizedDescription
                 // Remove empty assistant message if no content was received
                 if assistantIndex < self.messages.count,
@@ -143,12 +185,17 @@ final class ChatService {
                 print("[ChatService] streaming failed: \(error)")
             }
 
-            self.isStreaming = false
+            guard self.streamGeneration == generation else { return }
+            if self.remoteHistory, self.historyProjectId == projectId {
+                await self.loadHistory(projectId: projectId)
+            }
+            if self.streamGeneration == generation { self.isStreaming = false }
         }
     }
 
     /// Cancel any active streaming.
     func cancelStreaming() {
+        streamGeneration = UUID()
         streamTask?.cancel()
         streamTask = nil
         isStreaming = false
@@ -157,8 +204,18 @@ final class ChatService {
     /// Clear all messages.
     func clearMessages() {
         cancelStreaming()
-        messages.removeAll()
-        error = nil
+        if remoteHistory, let projectId = historyProjectId {
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let _: ChatHistory = try await apiClient.post(Endpoints.chat(projectId) + "/history/clear", body: ClearChatHistory(revision: historyRevision))
+                    if historyProjectId == projectId { await loadHistory(projectId: projectId) }
+                } catch { self.error = "Conversation changed or is busy. Reopen chat before clearing." }
+            }
+        } else {
+            messages.removeAll()
+            error = nil
+        }
     }
 
     // MARK: - Private Helpers
@@ -235,13 +292,11 @@ final class ChatService {
             if !content.isEmpty {
                 messages[assistantIndex].content = content
             }
-            isStreaming = false
         case .error(let message):
             error = message
             if messages[assistantIndex].content.isEmpty {
                 messages[assistantIndex].content = "Error: \(message)"
             }
-            isStreaming = false
         }
     }
 }

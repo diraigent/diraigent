@@ -738,7 +738,8 @@ async fn list_task_updates(
         state.db.get_task_by_id(task_id).await?,
     )
     .await?;
-    let updates = state.db.list_task_updates(task_id, &pagination).await?;
+    let mut updates = state.db.list_task_updates(task_id, &pagination).await?;
+    crate::project_content::hydrate_updates(&state, &mut updates).await?;
     Ok(Json(updates))
 }
 
@@ -761,10 +762,12 @@ async fn create_task_update(
     if req.agent_id.is_none() {
         req.agent_id = agent_id;
     }
-    let update = state
-        .db
-        .create_task_update(task_id, &req, Some(user_id))
-        .await?;
+    let update =
+        crate::project_content::create_update(&state, task_id, &req, Some(user_id)).await?;
+    let remote_artifact = update.kind == "artifact"
+        && crate::project_content::owner(&state, task.project_id)
+            .await?
+            .is_some();
 
     state.fire_event(
         task.project_id,
@@ -777,7 +780,7 @@ async fn create_task_update(
             "task_id": task_id,
             "update_id": update.id,
             "kind": update.kind,
-            "content": update.content,
+            "content": if remote_artifact { "" } else { &update.content },
         }),
     );
 

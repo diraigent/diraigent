@@ -6,6 +6,18 @@ use crate::chat::{ChatSseEvent, Message};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum WsMessage {
+    #[serde(rename = "content.request")]
+    ContentRequest {
+        request_id: String,
+        project_id: Uuid,
+        request: diraigent_types::project_content::ContentRequest,
+        expected_store_id: Option<Uuid>,
+    },
+    #[serde(rename = "content.response")]
+    ContentResponse {
+        request_id: String,
+        result: diraigent_types::project_content::ContentResult,
+    },
     #[serde(rename = "chat.models.request")]
     ChatModelsRequest {
         request_id: String,
@@ -25,6 +37,12 @@ pub enum WsMessage {
         project_id: Uuid,
         user_id: Uuid,
         messages: Vec<Message>,
+        #[serde(default)]
+        history_revision: Option<i64>,
+        #[serde(default)]
+        persist_history: bool,
+        #[serde(default)]
+        content_store_id: Option<Uuid>,
         system_prompt: String,
         model: String,
     },

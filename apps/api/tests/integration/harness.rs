@@ -31,6 +31,7 @@ pub struct TestApp {
     pub pool: PgPool,
     admin_pool: PgPool,
     pub db_name: String,
+    pub ws_registry: Arc<diraigent_api::ws_registry::WsRegistry>,
 }
 
 /// Macro to skip a test when PostgreSQL is not available.
@@ -131,6 +132,7 @@ impl TestApp {
             pool,
             admin_pool,
             db_name,
+            ws_registry: Arc::new(diraigent_api::ws_registry::WsRegistry::new()),
         })
     }
 
@@ -159,7 +161,7 @@ impl TestApp {
             review_tx,
             agent_tx,
             sse_tickets: diraigent_api::SseTicketStore::default(),
-            ws_registry: Arc::new(diraigent_api::ws_registry::WsRegistry::new()),
+            ws_registry: self.ws_registry.clone(),
         };
         Router::new()
             .nest("/v1", routes::router())

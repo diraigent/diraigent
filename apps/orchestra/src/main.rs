@@ -4,6 +4,7 @@
 
 mod config;
 mod constants;
+mod content;
 mod crypto;
 mod db;
 mod engine;
@@ -124,6 +125,7 @@ async fn main() -> Result<()> {
 
     // Instance lock
     lockfile::acquire_lock(&config.lockfile)?;
+    let content_store = content::ContentStore::open(&config.data_dir)?;
 
     // Shutdown flag — set by signal handler, checked by main loop
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -163,8 +165,13 @@ async fn main() -> Result<()> {
                 let mut meta = agent["metadata"].clone();
                 if let Some(obj) = meta.as_object_mut() {
                     obj.insert("version".into(), serde_json::json!(version));
+                    obj.insert("content_protocol".into(), serde_json::json!(1));
+                    obj.insert(
+                        "content_store_id".into(),
+                        serde_json::json!(content_store.id()),
+                    );
                 } else {
-                    meta = serde_json::json!({"runtime": "orchestra", "version": version});
+                    meta = serde_json::json!({"runtime": "orchestra", "version": version,"content_protocol":1,"content_store_id":content_store.id()});
                 }
                 if let Err(e) = api
                     .update_agent(&config.agent_id, &serde_json::json!({"metadata": meta}))
@@ -190,7 +197,15 @@ async fn main() -> Result<()> {
         let ws_pp = config.projects_path.clone();
         let ws_shutdown = shutdown.clone();
         tokio::spawn(async move {
-            ws::run_ws_loop(&api_url, &agent_id, ws_api, ws_pp, ws_shutdown).await;
+            ws::run_ws_loop(
+                &api_url,
+                &agent_id,
+                ws_api,
+                ws_pp,
+                ws_shutdown,
+                content_store,
+            )
+            .await;
         });
     }
 

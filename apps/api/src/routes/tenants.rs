@@ -159,7 +159,28 @@ async fn update_tenant(
     Json(req): Json<UpdateTenant>,
 ) -> Result<Json<Tenant>, AppError> {
     require_owner(&state, tenant_id, user_id).await?;
+    if req
+        .encryption_mode
+        .as_deref()
+        .is_some_and(|mode| mode != "none")
+    {
+        require_central_storage_for_encryption(&state, tenant_id).await?;
+    }
     Ok(Json(state.db.update_tenant(tenant_id, &req).await?))
+}
+
+async fn require_central_storage_for_encryption(
+    state: &AppState,
+    tenant_id: Uuid,
+) -> Result<(), AppError> {
+    let has_external_content: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM diraigent.project_content_owner o JOIN diraigent.project p ON p.id=o.project_id WHERE p.tenant_id=$1)")
+        .bind(tenant_id).fetch_one(&state.pool).await?;
+    if has_external_content {
+        return Err(AppError::Conflict(
+            "Orchestra content storage does not yet support workspace encryption".into(),
+        ));
+    }
+    Ok(())
 }
 
 async fn delete_tenant(
@@ -297,6 +318,7 @@ async fn init_encryption(
 ) -> Result<Json<InitEncryptionResponse>, AppError> {
     require_owner(&state, tenant_id, user_id).await?;
     let tenant = state.db.get_tenant_by_id(tenant_id).await?;
+    require_central_storage_for_encryption(&state, tenant_id).await?;
     if tenant.encryption_mode != "none" {
         return Err(AppError::Conflict(
             "Encryption already initialized for this tenant".into(),

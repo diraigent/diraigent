@@ -93,6 +93,13 @@ src/
 - `ws_protocol.rs` — shared message types, `ws_registry.rs` — connection registry
 - Events (audit + webhooks) are dispatched inline via `AppState::fire_event()`
 
+## Project content storage
+
+`project_content.rs` selects central storage or the project's explicit Orchestra
+owner. Authorization runs before remote reads and writes. Read
+`../../docs/orchestra-project-storage.md` when changing the protocol, retention,
+migration or owner assignment. Tasks and permissions remain central.
+
 ## Running Locally
 
 ```bash

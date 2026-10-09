@@ -83,6 +83,28 @@ async fn receive_sync(
         )
         .await?;
     }
+    // Legacy local-mode sync must not reintroduce artifact payloads centrally.
+    for raw in batch
+        .task_updates
+        .iter()
+        .filter(|u| u.kind == "artifact")
+        .map(|u| &u.task_id)
+        .chain(batch.changed_files.iter().map(|f| &f.task_id))
+    {
+        let task = state
+            .db
+            .get_task_by_id(
+                raw.parse()
+                    .map_err(|_| AppError::Validation("Invalid task ID".into()))?,
+            )
+            .await?;
+        if crate::project_content::owner(&state, task.project_id)
+            .await?
+            .is_some()
+        {
+            return Err(AppError::Conflict("Use the task artifact and changed-files endpoints for Orchestra-owned content; update this worker".into()));
+        }
+    }
     let pool = &state.pool;
     let mut synced_tasks = 0u32;
     let mut synced_updates = 0u32;

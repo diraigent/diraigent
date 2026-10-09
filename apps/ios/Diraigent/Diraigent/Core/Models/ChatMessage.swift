@@ -26,6 +26,7 @@ struct ChatRequest: Encodable, Sendable {
     let messages: [ChatRequestMessage]
     let model: String?
     var agentId: UUID? = nil
+    var historyRevision: Int? = nil
 }
 
 struct ChatModelCatalog: Decodable, Sendable {
@@ -50,3 +51,11 @@ enum ChatSseEvent {
     case done(role: String, content: String)
     case error(String)
 }
+
+struct ChatHistory: Decodable, Sendable {
+    let enabled: Bool
+    let revision: Int
+    let messages: [ChatRequestMessage]
+    let busy: Bool
+}
+struct ClearChatHistory: Encodable, Sendable { let revision: Int }

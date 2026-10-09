@@ -49,7 +49,13 @@ async fn chat_models(
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
     let project = state.db.get_project_by_id(project_id).await?;
-    let candidates = state.db.list_tenant_agent_ids(project.tenant_id).await?;
+    let candidates = match crate::project_content::owner(&state, project_id).await? {
+        Some(id) => {
+            crate::project_content::require_active_owner(&state, project_id, id).await?;
+            vec![id]
+        }
+        None => state.db.list_tenant_agent_ids(project.tenant_id).await?,
+    };
     // Same candidate list and selection as project chat.
     let worker = state
         .ws_registry
@@ -97,6 +103,8 @@ async fn chat_models(
 struct ChatRequest {
     messages: Vec<Message>,
     #[serde(default)]
+    history_revision: Option<i64>,
+    #[serde(default)]
     model: Option<String>,
     #[serde(default)]
     agent_id: Option<Uuid>,
@@ -111,6 +119,22 @@ async fn chat_handler(
     Json(req): Json<ChatRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>>, AppError> {
     require_membership(state.db.as_ref(), agent_id, user_id, project_id).await?;
+
+    let storage_owner = crate::project_content::owner(&state, project_id).await?;
+    if let Some(owner) = storage_owner {
+        crate::project_content::require_active_owner(&state, project_id, owner).await?;
+    }
+    let content_store_id = crate::project_content::store_id(&state, project_id).await?;
+    if storage_owner.is_some() && req.agent_id.is_some_and(|id| Some(id) != storage_owner) {
+        return Err(AppError::Conflict(
+            "Refresh models from the project storage owner".into(),
+        ));
+    }
+    if storage_owner.is_some() && req.history_revision.is_none() {
+        return Err(AppError::Conflict(
+            "Load the Orchestra conversation history before sending".into(),
+        ));
+    }
 
     // Derive the API base URL from the incoming request so the chat agent
     // knows the correct address even when the API is running remotely.
@@ -148,7 +172,10 @@ async fn chat_handler(
             user_id,
             messages: req.messages,
             model: req.model,
-            model_agent_id: req.agent_id,
+            model_agent_id: storage_owner.or(req.agent_id),
+            history_revision: req.history_revision,
+            persist_history: storage_owner.is_some(),
+            content_store_id,
             tx,
             api_base,
             auth_header,

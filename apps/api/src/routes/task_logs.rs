@@ -24,7 +24,7 @@ async fn create(
     Json(req): Json<CreateTaskLog>,
 ) -> Result<Json<TaskLogSummary>, AppError> {
     require_authority(state.db.as_ref(), agent_id, user_id, project_id, "execute").await?;
-    let log = state.db.create_task_log(project_id, agent_id, &req).await?;
+    let log = crate::project_content::create_log(&state, project_id, agent_id, &req).await?;
     // Return summary (without content) to avoid echoing the large log body back.
     Ok(Json(TaskLogSummary {
         id: log.id,
@@ -62,7 +62,17 @@ async fn get_one(
     OptionalAgentId(agent_id): OptionalAgentId,
     Path(id): Path<Uuid>,
 ) -> Result<Json<TaskLog>, AppError> {
-    let log = state.db.get_task_log_by_id(id).await?;
+    let mut log = state.db.get_task_log_by_id(id).await?;
     require_membership(state.db.as_ref(), agent_id, user_id, log.project_id).await?;
+    if let Some(v) = crate::project_content::get(
+        &state,
+        diraigent_types::project_content::ContentKind::Log,
+        id,
+    )
+    .await?
+    {
+        log.content = v["content"].as_str().unwrap_or_default().into();
+        log.metadata = v["metadata"].clone();
+    }
     Ok(Json(log))
 }
