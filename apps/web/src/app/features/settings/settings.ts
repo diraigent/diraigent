@@ -6,7 +6,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { TranslocoModule } from '@jsverse/transloco';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { forkJoin, timer, switchMap } from 'rxjs';
+import { catchError, forkJoin, of, timer, switchMap } from 'rxjs';
 import { DiraigentApiService, DgProject, DgProjectUpdate, DgPackage, DgGitMode } from '../../core/services/diraigent-api.service';
 import { ProjectContext } from '../../core/services/project-context.service';
 import { TeamApiService, SpRole, SpMember, SpRoleCreate, SpMemberCreate } from '../../core/services/team-api.service';
@@ -462,9 +462,9 @@ type SettingsTab = 'general' | 'agents' | 'team' | 'integrations' | 'providers' 
 
         <!-- ── AGENTS TAB ── -->
         @if (activeTab() === 'agents') {
-          @if (teamLoading()) {
+          @if (agentsLoading()) {
             <p class="text-text-secondary">{{ t('common.loading') }}</p>
-          } @else if (teamError()) {
+          } @else if (agentsError()) {
             <p class="text-error">{{ t('common.error') }}</p>
           } @else {
             <div class="flex flex-col lg:flex-row gap-4 lg:gap-6">
@@ -1290,6 +1290,8 @@ export class SettingsPage implements OnInit, OnDestroy {
   teamError = signal(false);
 
   // Agent tab state
+  agentsLoading = signal(true);
+  agentsError = signal(false);
   selectedAgent = signal<SpAgent | null>(null);
   agentTasks = signal<SpAgentTask[]>([]);
   tasksLoading = signal(false);
@@ -1357,11 +1359,21 @@ export class SettingsPage implements OnInit, OnDestroy {
     // Poll agents every 10s
     timer(0, 10_000)
       .pipe(
-        switchMap(() => this.agentsApi.getAgents()),
+        switchMap(() => this.agentsApi.getAgents().pipe(
+          // Handle each request inside the timer so a failure cannot stop polling.
+          catchError(() => {
+            this.agentsLoading.set(false);
+            this.agentsError.set(true);
+            return of(null);
+          }),
+        )),
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe({
         next: (agents) => {
+          if (agents === null) return;
+          this.agentsLoading.set(false);
+          this.agentsError.set(false);
           this.agents.set(agents);
           // Update selected agent if it still exists
           const sel = this.selectedAgent();
