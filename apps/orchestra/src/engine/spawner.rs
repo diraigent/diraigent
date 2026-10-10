@@ -120,10 +120,47 @@ pub async fn spawn_worker(
 
     // Fetch task for title, per-task model override, and step resolution
     let task_data = match api.get_task(task_id).await {
-        Ok(data) => Some(data),
+        Ok(mut data) => {
+            match data["state"].as_str() {
+                Some("ready") => match api.claim_task(task_id).await {
+                    Ok(claimed) => {
+                        if claimed["state"] != "working" {
+                            warn!(
+                                "spawn {tid}: claim did not return a working task — skipping spawn"
+                            );
+                            return;
+                        }
+                        // Local sources return execution fields only. Preserve the spec.
+                        if let (Some(task), Some(claimed)) =
+                            (data.as_object_mut(), claimed.as_object())
+                        {
+                            task.extend(claimed.clone());
+                        }
+                    }
+                    Err(e) => {
+                        info!("spawn {tid}: could not claim task: {e} — skipping spawn");
+                        return;
+                    }
+                },
+                Some("working") => {
+                    if data["assigned_agent_id"]
+                        .as_str()
+                        .is_some_and(|id| id != api.agent_id())
+                    {
+                        info!("spawn {tid}: task belongs to another agent — skipping spawn");
+                        return;
+                    }
+                }
+                state => {
+                    info!("spawn {tid}: task is in state {state:?} — skipping spawn");
+                    return;
+                }
+            }
+            Some(data)
+        }
         Err(e) => {
-            warn!("spawn {tid}: failed to fetch task data: {e} — proceeding with defaults");
-            None
+            warn!("spawn {tid}: failed to fetch task data: {e} — skipping spawn");
+            return;
         }
     };
     let title = task_data
@@ -253,7 +290,18 @@ pub async fn spawn_worker(
                     );
                 } else {
                     warn!("spawn {tid}: failed to acquire file locks: {msg} — skipping spawn");
+                    let _ = api
+                        .post_task_update(
+                            task_id,
+                            "blocker",
+                            &format!("File lock acquisition failed: {msg}"),
+                        )
+                        .await;
+                    let _ = api.transition_task(task_id, "human_review").await;
+                    return;
                 }
+                // Release our claim; the lock queue prevents an immediate retry.
+                let _ = api.transition_task(task_id, "ready").await;
                 return;
             }
         }
@@ -462,6 +510,90 @@ mod tests {
             orchestration_mode: crate::config::OrchestrationMode::Api,
             data_dir: std::env::temp_dir(),
         }
+    }
+
+    #[tokio::test]
+    async fn unsuccessful_claim_never_starts_or_changes_the_task() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/tasks/task-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id":"task-1", "state":"ready", "context":{}
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/tasks/task-1/claim"))
+            .respond_with(ResponseTemplate::new(409))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/tasks/task-1/transition"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(0)
+            .mount(&server)
+            .await;
+        let api: Arc<dyn TaskSource> = Arc::new(ProjectsApi::new(&server.uri(), "test-agent"));
+        let active = Arc::new(Mutex::new(HashMap::new()));
+        spawn_worker(
+            &api,
+            &test_config(&server.uri(), 1),
+            &active,
+            "task-1",
+            "proj-1",
+            &new_lock_queue(),
+        )
+        .await;
+        assert!(active.lock().await.is_empty());
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn ready_task_is_claimed_before_execution_checks() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/tasks/task-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "task-1", "project_id": "proj-1", "state": "ready", "context": {}
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/tasks/task-1/claim"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "task-1", "project_id": "proj-1", "state": "working", "context": {}
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        mount_project_mock(&server, None).await;
+        Mock::given(method("GET"))
+            .and(path("/tasks/task-1/updates"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                {"kind": "blocker", "agent_id": "test-agent"}
+            ])))
+            .mount(&server)
+            .await;
+        // Stop at loop detection so the test never launches a real provider.
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .with_priority(10)
+            .mount(&server)
+            .await;
+        let api: Arc<dyn TaskSource> = Arc::new(ProjectsApi::new(&server.uri(), "test-agent"));
+        let active = Arc::new(Mutex::new(HashMap::new()));
+        spawn_worker(
+            &api,
+            &test_config(&server.uri(), 1),
+            &active,
+            "task-1",
+            "proj-1",
+            &new_lock_queue(),
+        )
+        .await;
+        assert!(active.lock().await.is_empty());
+        server.verify().await;
     }
 
     #[tokio::test]

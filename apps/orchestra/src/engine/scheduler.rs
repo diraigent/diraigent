@@ -98,10 +98,6 @@ async fn process_reaped_task(
     let release_lock_project_id: Option<String>;
 
     match outcome {
-        TaskOutcome::Retry { project_id } => {
-            release_lock_project_id = Some(project_id);
-            tracing::debug!("task {tid} released for retry");
-        }
         TaskOutcome::Done {
             project_id,
             git_strategy,
@@ -236,6 +232,12 @@ async fn process_reaped_task(
             if let Err(comment_err) = api.post_comment(&task_id, &msg).await {
                 warn!("failed to post unexpected-state comment for {tid}: {comment_err}");
             }
+            if state == "ready" || state == "working" {
+                let _ = api.post_task_update(&task_id, "blocker", &msg).await;
+                if let Err(e) = api.transition_task(&task_id, "human_review").await {
+                    warn!("failed to hold incomplete task {tid} for review: {e}");
+                }
+            }
             // Fetch task to get project_id for lock release
             release_lock_project_id = api
                 .get_task(&task_id)
@@ -278,9 +280,6 @@ async fn process_reaped_task(
 
 #[derive(Debug, PartialEq)]
 enum TaskOutcome {
-    Retry {
-        project_id: String,
-    },
     Done {
         project_id: String,
         git_strategy: GitStrategy,
@@ -312,7 +311,6 @@ async fn check_task_outcome(api: &dyn TaskSource, task_id: &str) -> anyhow::Resu
         }
         "cancelled" => Ok(TaskOutcome::Cancelled { project_id }),
         "human_review" | "backlog" => Ok(TaskOutcome::AwaitingReview { project_id }),
-        "ready" => Ok(TaskOutcome::Retry { project_id }),
         other => Ok(TaskOutcome::UnexpectedState(other.to_owned())),
     }
 }
@@ -391,6 +389,45 @@ mod tests {
     use tokio::sync::Mutex;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn incomplete_execution_is_held_for_review_instead_of_retried() {
+        for state in ["ready", "working"] {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/tasks/task-1"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "id":"task-1", "project_id":"proj-1", "state":state
+                })))
+                .mount(&server)
+                .await;
+            Mock::given(method("POST"))
+                .and(path("/tasks/task-1/transition"))
+                .and(wiremock::matchers::body_json(
+                    serde_json::json!({"state":"human_review"}),
+                ))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+                .expect(1)
+                .mount(&server)
+                .await;
+            Mock::given(method("POST"))
+                .and(path("/tasks/task-1/updates"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+                .expect(1)
+                .mount(&server)
+                .await;
+            let api = ProjectsApi::new(&server.uri(), "test-agent");
+            process_reaped_task(
+                &api,
+                &std::env::temp_dir(),
+                "task-1".into(),
+                tokio::spawn(async {}),
+                &new_lock_queue(),
+            )
+            .await;
+            server.verify().await;
+        }
+    }
 
     #[tokio::test]
     async fn human_review_is_held_without_loading_a_git_policy() {

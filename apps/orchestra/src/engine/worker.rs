@@ -274,7 +274,7 @@ pub async fn run_worker(
     let provider_name = task_config.provider.as_deref().unwrap_or("opencode");
     let start = std::time::Instant::now();
 
-    let (result, cost_usd, input_tokens, output_tokens, api_turns, stop_reason, is_error) =
+    let (result, cost_usd, input_tokens, output_tokens, api_turns, mut stop_reason, mut is_error) =
         execute_via_provider(
             api,
             provider_name,
@@ -287,6 +287,14 @@ pub async fn run_worker(
             &log_file,
         )
         .await;
+
+    // A successful CLI exit only finishes the conversation. The agent must also
+    // finish or explicitly defer the assigned task before we report success.
+    if !is_error && let Err(e) = verify_task_finished(api, task_id).await {
+        warn!("worker {tid}: {e:#}");
+        stop_reason = "incomplete_task".into();
+        is_error = true;
+    }
 
     let duration = start.elapsed();
 
@@ -470,6 +478,16 @@ pub async fn run_worker(
         stop_reason,
         is_error,
     })
+}
+
+async fn verify_task_finished(api: &dyn TaskSource, task_id: &str) -> Result<()> {
+    let task = api.get_task(task_id).await?;
+    match task["state"].as_str() {
+        Some("done" | "human_review" | "backlog" | "cancelled") => Ok(()),
+        state => {
+            anyhow::bail!("Worker stopped without completing or deferring task (state={state:?})")
+        }
+    }
 }
 
 /// Build and post a structured worker event to the API.
@@ -717,6 +735,33 @@ mod tests {
     use crate::ProjectsApi;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn successful_conversation_requires_a_finished_or_deferred_task() {
+        for state in [
+            "ready",
+            "working",
+            "done",
+            "human_review",
+            "backlog",
+            "cancelled",
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/tasks/task-1"))
+                .respond_with(
+                    ResponseTemplate::new(200).set_body_json(serde_json::json!({"state":state})),
+                )
+                .mount(&server)
+                .await;
+            let api = ProjectsApi::new(&server.uri(), "test-agent");
+            assert_eq!(
+                verify_task_finished(&api, "task-1").await.is_ok(),
+                !matches!(state, "ready" | "working"),
+                "state={state}"
+            );
+        }
+    }
 
     /// Helper: create temp worktree and log file paths for provider routing tests.
     fn test_paths() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {

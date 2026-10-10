@@ -565,25 +565,25 @@ async fn handle_chat_via_opencode(
     } else {
         format!("{system_prompt}\n\n{user_prompt}")
     };
-    let mut cmd = match crate::providers::opencode_run_command(Path::new("opencode")).await {
-        Ok(command) => command,
-        Err(error) => {
-            send_chat_event(
-                &sender,
-                session_id,
-                ChatSseEvent::Error {
-                    message: format!("Failed to inspect OpenCode CLI: {error}"),
-                },
-            )
-            .await;
-            return;
-        }
-    };
+    let mut cmd =
+        match crate::providers::opencode_run_command(Path::new("opencode"), working_dir).await {
+            Ok(command) => command,
+            Err(error) => {
+                send_chat_event(
+                    &sender,
+                    session_id,
+                    ChatSseEvent::Error {
+                        message: format!("Failed to inspect OpenCode CLI: {error}"),
+                    },
+                )
+                .await;
+                return;
+            }
+        };
     if let Some(token) = api_token {
         cmd.env("DIRAIGENT_CHAT_TOKEN", token);
     }
     cmd.args(["--agent", "build"])
-        .current_dir(working_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

@@ -12,7 +12,7 @@ use super::{ProviderConfig, ResolvedTask, TaskContext, TaskOutput, TaskProvider}
 pub struct OpenCodeProvider;
 
 /// V2 uses a private server and `--auto`; V1 uses the legacy permission flag.
-pub(crate) async fn run_command(binary: &Path) -> anyhow::Result<Command> {
+pub(crate) async fn run_command(binary: &Path, working_dir: &Path) -> anyhow::Result<Command> {
     let help = Command::new(binary)
         .args(["run", "--help"])
         .output()
@@ -20,6 +20,12 @@ pub(crate) async fn run_command(binary: &Path) -> anyhow::Result<Command> {
         .context("inspect OpenCode CLI options")?;
     let options = String::from_utf8_lossy(&help.stdout);
     let mut command = Command::new(binary);
+    // V2 resolves the session location from PWD before process.cwd(). Updating
+    // cwd alone leaves a worker's inherited PWD pointing at Orchestra's root.
+    let directory = working_dir
+        .canonicalize()
+        .context("resolve OpenCode working directory")?;
+    command.current_dir(&directory).env("PWD", &directory);
     command.args(["run", "--format", "json"]);
     if options.contains("--standalone") && options.contains("--auto") {
         command.args(["--standalone", "--auto"]);
@@ -66,12 +72,11 @@ async fn execute_with_binary(
         _ => user_prompt.to_string(),
     };
 
-    let mut command = run_command(binary).await?;
+    let mut command = run_command(binary, worktree).await?;
     command
         .arg("--agent")
         .arg(agent)
-        .current_dir(worktree)
-        .envs(&step.env)
+        .envs(step.env.iter().filter(|(key, _)| key.as_str() != "PWD"))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -185,6 +190,29 @@ fn parse_events(stdout: &[u8]) -> anyhow::Result<TaskOutput> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cli_receives_worktree_as_pwd() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let worktree = dir.path().canonicalize().unwrap();
+        let binary = worktree.join("fake-opencode");
+        std::fs::write(&binary, "#!/bin/sh\necho '--standalone --auto'\n").unwrap();
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let command = run_command(&binary, &worktree).await.unwrap();
+        assert_eq!(command.as_std().get_current_dir(), Some(worktree.as_path()));
+        let pwd = command
+            .as_std()
+            .get_envs()
+            .find(|(key, _)| *key == "PWD")
+            .and_then(|(_, value)| value);
+        assert_eq!(
+            pwd,
+            Some(worktree.as_os_str()),
+            "OpenCode selects PWD ahead of process cwd"
+        );
+    }
 
     #[test]
     fn parses_text_and_usage() {
