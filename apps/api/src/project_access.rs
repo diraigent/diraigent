@@ -41,6 +41,15 @@ pub async fn authorize_request(
     }
     let read = matches!(parts.method, Method::GET | Method::HEAD);
     let first = segments.first().copied().unwrap_or("");
+    // Agent discovery is read access, not workspace administration. The list
+    // handler validates workspace membership and filters agents by workspace/owner;
+    // status events recheck visibility for every event. Keep all other agent
+    // operations subject to the existing owner/administration checks below.
+    if (read && segments.as_slice() == ["agents"])
+        || (parts.method == Method::POST && segments.as_slice() == ["agents", "stream", "ticket"])
+    {
+        return Ok(());
+    }
     // Non-read-only users may create their own workspace. The account guard
     // still prevents viewers from using a new workspace to escape restrictions.
     if first == "tenants" && segments.len() == 1 && parts.method == Method::POST {

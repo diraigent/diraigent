@@ -258,6 +258,20 @@ async fn independent_users_enforce_viewer_editor_manager_and_revocation() {
     let project = app.create_project("Multi-user workspace").await;
     let task = app.create_task(project, "Shared task").await;
     let hidden = app.create_project("Another project").await;
+    let shared_agent = app.create_agent("Shared workspace worker").await;
+    let account = app.send(get("/v1/account")).await;
+    let owner = account.json["user_id"].as_str().unwrap().parse().unwrap();
+    let (hidden_agent, _) = diraigent_api::repository::register_agent(
+        &app.pool,
+        &diraigent_api::models::CreateAgent {
+            name: "Worker outside the shared workspace".into(),
+            capabilities: None,
+            metadata: None,
+        },
+        owner,
+    )
+    .await
+    .unwrap();
     let mut users = Vec::new();
     for role in ["viewer", "editor", "manager"] {
         let user = Uuid::new_v4();
@@ -293,6 +307,63 @@ async fn independent_users_enforce_viewer_editor_manager_and_revocation() {
                 .await
                 .status,
             StatusCode::OK
+        );
+        // Workspace members must discover workers without receiving administrative access.
+        let agents = app.send_authenticated(get("/v1/agents"), &key).await;
+        assert_eq!(
+            agents.status,
+            StatusCode::OK,
+            "agent discovery for {role}: {}",
+            agents.json
+        );
+        assert!(
+            agents
+                .json
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|a| a["name"] == format!("credential-{role}"))
+        );
+        assert!(
+            !agents
+                .json
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|a| a["id"] == hidden_agent.id.to_string())
+        );
+        assert!(
+            agents
+                .json
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|a| a["id"] == shared_agent.to_string())
+        );
+        assert_eq!(
+            app.send_authenticated(workspace(get("/v1/agents"), Uuid::new_v4()), &key)
+                .await
+                .status,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            app.send_authenticated(post_json("/v1/agents/stream/ticket", json!(null)), &key)
+                .await
+                .status,
+            if role == "viewer" {
+                StatusCode::FORBIDDEN
+            } else {
+                StatusCode::OK
+            }
+        );
+        assert_eq!(
+            app.send_authenticated(
+                post_json("/v1/agents", json!({"name":"Unauthorized worker"})),
+                &key
+            )
+            .await
+            .status,
+            StatusCode::FORBIDDEN
         );
         assert_eq!(
             app.send_authenticated(get(&format!("/v1/{hidden}/tasks")), &key)

@@ -98,6 +98,7 @@ async fn review_stream(
 async fn issue_agent_ticket(
     State(state): State<AppState>,
     AuthUser(user_id): AuthUser,
+    _tenant: crate::tenant::TenantContext,
 ) -> Result<Json<TicketResponse>, StatusCode> {
     let ticket = state.sse_tickets.issue(user_id).await;
     Ok(Json(TicketResponse { ticket }))
@@ -126,7 +127,7 @@ async fn agent_stream(
             Ok(event) => {
                 // Agents are workspace resources. Recheck access on every event,
                 // including after membership revocation on an already open stream.
-                let visible: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM diraigent.agent a JOIN diraigent.tenant_member m ON m.user_id=a.owner_id JOIN diraigent.tenant_member caller ON caller.tenant_id=m.tenant_id WHERE a.id=$1 AND caller.user_id=$2 AND caller.role IN ('owner','admin'))")
+                let visible: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM diraigent.agent a WHERE a.id=$1 AND ((a.owner_id=$2 AND EXISTS(SELECT 1 FROM diraigent.tenant_member WHERE user_id=$2)) OR EXISTS(SELECT 1 FROM diraigent.membership m JOIN diraigent.tenant_member caller ON caller.tenant_id=m.tenant_id WHERE m.agent_id=a.id AND caller.user_id=$2)))")
                     .bind(event.agent_id).bind(user).fetch_one(&state.pool).await.ok()?;
                 if !visible { return None; }
                 let data = serde_json::to_string(&event).ok()?;
