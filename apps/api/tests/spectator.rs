@@ -23,7 +23,7 @@ use uuid::Uuid;
 
 fn router(pool: PgPool) -> Router {
     let dek_cache = diraigent_api::crypto::DekCache::new();
-    let raw: Arc<dyn DiraigentDb> = Arc::new(PostgresDb(pool.clone()));
+    let raw: Arc<dyn DiraigentDb> = Arc::new(PostgresDb::new(pool.clone()));
     let db: Arc<dyn DiraigentDb> = Arc::new(CryptoDb::new(raw, dek_cache.clone()));
     let (review_tx, _) = tokio::sync::broadcast::channel(16);
     let (agent_tx, _) = tokio::sync::broadcast::channel(16);

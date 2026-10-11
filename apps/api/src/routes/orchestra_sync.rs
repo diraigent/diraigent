@@ -105,6 +105,31 @@ async fn receive_sync(
             return Err(AppError::Conflict("Use the task artifact and changed-files endpoints for Orchestra-owned content; update this worker".into()));
         }
     }
+    // Local-mode progress sync also goes through full-content storage. Prepare
+    // all payloads before applying any state writes; never fall back centrally.
+    let store =
+        crate::content_fields::FieldStore::new(state.pool.clone(), state.ws_registry.clone());
+    let mut update_content = Vec::with_capacity(batch.task_updates.len());
+    for update in &batch.task_updates {
+        let task_id = update
+            .task_id
+            .parse()
+            .map_err(|_| AppError::Validation("Invalid task ID".into()))?;
+        let project = store.parent_project("task", task_id).await?;
+        let prepared = store
+            .prepare(
+                project,
+                "task_update",
+                &serde_json::json!({"content":update.content}),
+            )
+            .await?;
+        update_content.push(
+            prepared["content"]
+                .as_str()
+                .ok_or_else(|| AppError::Internal("Invalid prepared update".into()))?
+                .to_owned(),
+        );
+    }
     let pool = &state.pool;
     let mut synced_tasks = 0u32;
     let mut synced_updates = 0u32;
@@ -154,7 +179,7 @@ async fn receive_sync(
     }
 
     // 2. Insert task updates (idempotent via ON CONFLICT)
-    for tu in &batch.task_updates {
+    for (tu, content) in batch.task_updates.iter().zip(&update_content) {
         let update_id: uuid::Uuid = tu
             .id
             .parse()
@@ -179,7 +204,7 @@ async fn receive_sync(
         .bind(task_id)
         .bind(agent_id)
         .bind(&tu.kind)
-        .bind(&tu.content)
+        .bind(content)
         .bind(&tu.created_at)
         .execute(pool)
         .await?;

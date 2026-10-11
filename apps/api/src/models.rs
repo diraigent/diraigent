@@ -492,56 +492,83 @@ pub struct CreateProject {
     pub project_root: Option<String>,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct UpdateProject {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub repo_url: Option<Option<String>>,
     /// Legacy path field — prefer `git_root` for new projects.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub repo_path: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub default_branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub service_name: Option<Option<String>>,
     /// Package slug to switch the project to (e.g. "researcher").
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub package_slug: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
     /// Git topology mode: "monorepo" | "standalone" | "none".
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub git_mode: Option<String>,
     /// Path to the git repository root (where .git lives), relative to PROJECTS_PATH. Use None to clear.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub git_root: Option<Option<String>>,
     /// Subpath within git_root for the project directory (monorepo only). Use None to clear.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub project_root: Option<Option<String>>,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateTask {
     pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub urgent: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub required_capabilities: Option<Vec<String>>,
     /// Optional FK to the decision that originated this task.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub decision_id: Option<Uuid>,
     /// Optional work item to link the new task to (inserts into task_work join table).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub work_id: Option<Uuid>,
     /// File paths this task intends to modify (for branch overlap detection).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub file_scope: Option<Vec<String>>,
     /// Optional parent task ID for plan decomposition (self-referencing FK).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_id: Option<Uuid>,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct UpdateTask {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub urgent: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub required_capabilities: Option<Vec<String>>,
     /// User-toggleable flag (bookmark).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub flagged: Option<bool>,
     /// File paths this task intends to modify (for branch overlap detection).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub file_scope: Option<Vec<String>>,
     /// Double-Option: None = don't change, Some(None) = clear, Some(Some(id)) = set parent.
     #[serde(default, deserialize_with = "deserialize_double_option")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_id: Option<Option<Uuid>>,
 }
 
@@ -570,18 +597,23 @@ pub struct UpdateAgent {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateTaskUpdate {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateTaskComment {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<Uuid>,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
 }
 
@@ -721,31 +753,48 @@ pub struct Event {
 
 // ── New Request DTOs ──
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateWork {
     pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub work_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_work_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_status: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub intent_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub success_criteria: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct UpdateWork {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub work_type: Option<String>,
     #[serde(default, deserialize_with = "deserialize_double_option")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_work_id: Option<Option<Uuid>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_status: Option<bool>,
     #[serde(default, deserialize_with = "deserialize_double_option")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub intent_type: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub success_criteria: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sort_order: Option<i32>,
 }
 
@@ -764,10 +813,12 @@ pub struct BulkLinkTasks {
     pub task_ids: Vec<Uuid>,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateWorkComment {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<Uuid>,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
 }
 
@@ -777,82 +828,125 @@ pub struct ReorderWorkTasks {
     pub task_ids: Vec<Uuid>,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateKnowledge {
     pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct UpdateKnowledge {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateDecision {
     pub title: String,
     pub context: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub decision: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rationale: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub alternatives: Option<Vec<DecisionAlternative>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub consequences: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct UpdateDecision {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub decision: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rationale: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub alternatives: Option<Vec<DecisionAlternative>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub consequences: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub superseded_by: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub decided_by: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateObservation {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
     pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub severity: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source_task_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub evidence: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct UpdateObservation {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub severity: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub evidence: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resolved_task_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateEvent {
     pub kind: String,
     pub source: String,
     pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub severity: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub related_task_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<Uuid>,
 }
 
@@ -1283,7 +1377,7 @@ pub struct SearchQuery {
     pub offset: Option<i64>,
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct SearchResult {
     pub entity_type: String,
     pub id: Uuid,
@@ -1434,20 +1528,27 @@ pub struct Verification {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateVerification {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub task_id: Option<Uuid>,
     pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
     pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub evidence: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct UpdateVerification {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub evidence: Option<serde_json::Value>,
 }
 
@@ -1604,20 +1705,26 @@ pub struct Report {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateReport {
     pub title: String,
     pub kind: String,
     pub prompt: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct UpdateReport {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub task_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
 }
 

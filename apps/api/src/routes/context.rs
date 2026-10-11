@@ -51,6 +51,7 @@ async fn get_context(
     // with the top-k entries most relevant to the task spec.
     if let Some(task_id) = query.task_id
         && let Ok(task) = state.db.get_task_by_id(task_id).await
+        && task.project_id == project_id
     {
         // Build text to embed from the task spec (fall back to title).
         let spec_text = task
@@ -61,6 +62,26 @@ async fn get_context(
             .unwrap_or_else(|| task.title.clone());
 
         if let Ok(Some(query_vec)) = state.embedder.embed(&spec_text).await {
+            let store = crate::content_fields::FieldStore::new(
+                state.pool.clone(),
+                state.ws_registry.clone(),
+            );
+            if let Some(ids) = store
+                .rank(
+                    project_id,
+                    &ctx.role.knowledge_scope,
+                    query_vec.clone(),
+                    top_k_from_env(),
+                )
+                .await?
+            {
+                let mut knowledge = Vec::new();
+                for id in ids {
+                    knowledge.push(state.db.get_knowledge_by_id(id).await?);
+                }
+                ctx.knowledge = knowledge;
+                return Ok(Json(ctx));
+            }
             // Fetch knowledge entries that have embeddings.
             let candidates = state
                 .db
@@ -74,6 +95,10 @@ async fn get_context(
                 // Score and rank by cosine similarity.
                 let mut scored: Vec<(f64, _)> = candidates
                     .into_iter()
+                    .filter(|k| {
+                        ctx.role.knowledge_scope.is_empty()
+                            || ctx.role.knowledge_scope.contains(&k.category)
+                    })
                     .filter_map(|k| {
                         let score = k
                             .embedding

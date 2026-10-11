@@ -115,6 +115,7 @@ pub async fn promote_observation(
     id: Uuid,
     req: &PromoteObservation,
     created_by: Uuid,
+    description: Option<&str>,
 ) -> Result<(Observation, Work, Task), AppError> {
     let obs = get_observation_by_id(pool, id).await?;
     if obs.status == "acted_on" {
@@ -146,7 +147,7 @@ pub async fn promote_observation(
     )
     .bind(obs.project_id)
     .bind(&title)
-    .bind(&obs.description)
+    .bind(description)
     .bind(&success_criteria)
     .bind(&metadata)
     .bind(created_by)

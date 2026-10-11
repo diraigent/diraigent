@@ -77,7 +77,7 @@ where
     }))
 }
 
-pub fn router() -> Router<AppState> {
+fn route_handlers() -> Router<AppState> {
     Router::new()
         .merge(spectator::routes())
         .merge(people::routes())
@@ -123,6 +123,22 @@ pub fn router() -> Router<AppState> {
         .merge(authentik_webhooks::routes())
         .merge(orchestra_sync::routes())
         .merge(ws::routes())
+}
+
+pub fn router() -> Router<AppState> {
+    route_handlers().layer(axum::middleware::from_fn(
+        crate::read_only_projection::redact_response,
+    ))
+}
+
+/// Install projection tracking before authentication caches its extracted user.
+/// Hydration then checks the caller before contacting storage.
+pub fn router_with_content_scope(state: AppState) -> Router<AppState> {
+    route_handlers()
+        .layer(axum::middleware::from_fn_with_state(
+            state,
+            crate::content_fields::caller_scope,
+        ))
         .layer(axum::middleware::from_fn(
             crate::read_only_projection::redact_response,
         ))

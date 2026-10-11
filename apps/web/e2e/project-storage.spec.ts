@@ -45,10 +45,13 @@ test('offline content blocks sending and recovers after owner reconnects', async
 test('manager assigns an updated owner and runs bounded migration', async ({ page }) => {
   let owner: string | null = null;
   let migrated = false;
-  await page.route(`${API}/agents`, route => route.fulfill({json:[{id:worker,name:'Project Orchestra',status:'idle',metadata:{content_protocol:1}}]}));
+  await page.route(`${API}/agents`, route => route.fulfill({json:[{id:worker,name:'Project Orchestra',status:'idle',metadata:{content_protocol:2}}]}));
   await page.route(`${API}/${PROJECT_ID}/storage`, route => {
-    if (route.request().method() === 'PUT') owner = route.request().postDataJSON().agent_id;
-    return route.fulfill({json:{agent_id:owner,content_protocol:1}});
+    if (route.request().method() === 'PUT') {
+      expect(route.request().postDataJSON().heavy_content).toBe(true);
+      owner = route.request().postDataJSON().agent_id;
+    }
+    return route.fulfill({json:{agent_id:owner,content_protocol:2,heavy_content:!!owner}});
   });
   await page.route(`${API}/${PROJECT_ID}/storage/migrate`, route => {
     const moved = migrated ? 0 : 3; migrated = true;
@@ -59,5 +62,5 @@ test('manager assigns an updated owner and runs bounded migration', async ({ pag
   await page.getByRole('button', {name:'Use Orchestra storage',exact:true}).click();
   await expect(page.getByText('Storage owner: Project Orchestra', {exact:true})).toBeVisible();
   await page.getByRole('button', {name:'Move existing content to Orchestra',exact:true}).click();
-  await expect(page.getByRole('status').filter({hasText:'Migration complete. Moved 3 records'})).toBeVisible();
+  await expect(page.getByRole('status').filter({hasText:'Migration complete. Moved 3 content items'})).toBeVisible();
 });

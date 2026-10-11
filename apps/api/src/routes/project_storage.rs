@@ -33,12 +33,14 @@ async fn status(
 ) -> Result<Json<Value>, AppError> {
     require_membership(s.db.as_ref(), a, u, p).await?;
     Ok(Json(
-        json!({"agent_id":project_content::owner(&s,p).await?,"content_protocol":1}),
+        json!({"agent_id":project_content::owner(&s,p).await?,"content_protocol":2,"heavy_content":sqlx::query_scalar::<_,bool>("SELECT heavy_content FROM diraigent.project_content_owner WHERE project_id=$1").bind(p).fetch_optional(&s.pool).await?.unwrap_or(false)}),
     ))
 }
 #[derive(Deserialize)]
 struct Assignment {
     agent_id: Uuid,
+    #[serde(default)]
+    heavy_content: bool,
 }
 async fn assign(
     State(s): State<AppState>,
@@ -72,27 +74,36 @@ async fn assign(
         ));
     }
     let probe = project_content::request(&s, p, req.agent_id, ContentRequest::Probe).await?;
-    if probe["protocol"] != 1 {
+    if probe["protocol"].as_u64().unwrap_or(0) < if req.heavy_content { 2 } else { 1 } {
         return Err(AppError::Validation(
             "Unsupported Orchestra content protocol".into(),
         ));
     }
     let store_id: Uuid = serde_json::from_value(probe["store_id"].clone())
         .map_err(|_| AppError::Validation("Missing Orchestra store identity".into()))?;
-    sqlx::query(
-        "INSERT INTO diraigent.project_content_owner VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
+    let updated = sqlx::query(
+        "INSERT INTO diraigent.project_content_owner (project_id,agent_id,store_id,heavy_content) VALUES ($1,$2,$3,$4) ON CONFLICT (project_id) DO UPDATE SET heavy_content=diraigent.project_content_owner.heavy_content OR EXCLUDED.heavy_content WHERE diraigent.project_content_owner.agent_id=EXCLUDED.agent_id AND diraigent.project_content_owner.store_id=EXCLUDED.store_id",
     )
     .bind(p)
     .bind(req.agent_id)
     .bind(store_id)
+    .bind(req.heavy_content)
     .execute(&s.pool)
     .await?;
-    if project_content::owner(&s, p).await? != Some(req.agent_id) {
+    if updated.rows_affected() == 0 {
         return Err(AppError::Conflict(
             "Storage owner changed concurrently".into(),
         ));
     }
-    Ok(Json(json!({"agent_id":req.agent_id,"content_protocol":1})))
+    let heavy: bool = sqlx::query_scalar(
+        "SELECT heavy_content FROM diraigent.project_content_owner WHERE project_id=$1",
+    )
+    .bind(p)
+    .fetch_one(&s.pool)
+    .await?;
+    Ok(Json(
+        json!({"agent_id":req.agent_id,"content_protocol":2,"heavy_content":heavy}),
+    ))
 }
 async fn migrate(
     State(s): State<AppState>,

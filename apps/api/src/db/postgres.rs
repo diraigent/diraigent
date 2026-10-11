@@ -9,11 +9,63 @@ use crate::error::AppError;
 use crate::models::*;
 use crate::repository;
 
-pub struct PostgresDb(pub PgPool);
+pub struct PostgresDb {
+    pool: PgPool,
+    content: Option<crate::content_fields::FieldStore>,
+}
 
 impl PostgresDb {
+    pub fn new(pool: PgPool) -> Self {
+        Self {
+            pool,
+            content: None,
+        }
+    }
+    pub fn with_content(
+        mut self,
+        registry: std::sync::Arc<crate::ws_registry::WsRegistry>,
+    ) -> Self {
+        self.content = Some(crate::content_fields::FieldStore::new(
+            self.pool.clone(),
+            registry,
+        ));
+        self
+    }
+    async fn hydrate<T: serde::Serialize + serde::de::DeserializeOwned>(
+        &self,
+        kind: &str,
+        value: T,
+    ) -> Result<T, AppError> {
+        match &self.content {
+            Some(store) => store.hydrate(kind, value).await,
+            None => Ok(value),
+        }
+    }
+    async fn prepare<T: serde::Serialize + serde::de::DeserializeOwned>(
+        &self,
+        project: Uuid,
+        kind: &str,
+        req: &T,
+    ) -> Result<T, AppError> {
+        match &self.content {
+            Some(store) => store.prepare(project, kind, req).await,
+            None => serde_json::from_value(
+                serde_json::to_value(req).map_err(|e| AppError::Internal(e.to_string()))?,
+            )
+            .map_err(|e| AppError::Internal(e.to_string())),
+        }
+    }
+    async fn parent_project(&self, kind: &str, id: Uuid) -> Result<Uuid, AppError> {
+        crate::content_fields::FieldStore::new(
+            self.pool.clone(),
+            std::sync::Arc::new(crate::ws_registry::WsRegistry::new()),
+        )
+        .parent_project(kind, id)
+        .await
+    }
+
     pub fn pool(&self) -> &PgPool {
-        &self.0
+        &self.pool
     }
 }
 
@@ -21,7 +73,7 @@ impl PostgresDb {
 impl DiraigentDb for PostgresDb {
     // Approved project MCP registry
     async fn get_mcp_server(&self, project_id: Uuid, id: Uuid) -> Result<McpServer, AppError> {
-        repository::get_mcp_server(&self.0, project_id, id).await
+        repository::get_mcp_server(&self.pool, project_id, id).await
     }
     async fn resolve_mcp_credentials(
         &self,
@@ -29,17 +81,17 @@ impl DiraigentDb for PostgresDb {
         id: Uuid,
         revision: i64,
     ) -> Result<McpSecret, AppError> {
-        repository::resolve_mcp_credentials(&self.0, project_id, id, revision).await
+        repository::resolve_mcp_credentials(&self.pool, project_id, id, revision).await
     }
     async fn list_mcp_servers(&self, project_id: Uuid) -> Result<Vec<McpServer>, AppError> {
-        repository::list_mcp_servers(&self.0, project_id).await
+        repository::list_mcp_servers(&self.pool, project_id).await
     }
     async fn create_mcp_server(
         &self,
         project_id: Uuid,
         configuration: &McpConfiguration,
     ) -> Result<McpServer, AppError> {
-        repository::create_mcp_server(&self.0, project_id, configuration).await
+        repository::create_mcp_server(&self.pool, project_id, configuration).await
     }
     async fn update_mcp_server(
         &self,
@@ -47,7 +99,7 @@ impl DiraigentDb for PostgresDb {
         id: Uuid,
         req: &McpServerUpdate,
     ) -> Result<McpServer, AppError> {
-        repository::update_mcp_server(&self.0, project_id, id, req).await
+        repository::update_mcp_server(&self.pool, project_id, id, req).await
     }
     async fn write_mcp_credentials(
         &self,
@@ -57,7 +109,7 @@ impl DiraigentDb for PostgresDb {
         keys: &[String],
         secret: &McpSecret,
     ) -> Result<McpServer, AppError> {
-        repository::write_mcp_credentials(&self.0, project_id, id, revision, keys, secret).await
+        repository::write_mcp_credentials(&self.pool, project_id, id, revision, keys, secret).await
     }
     async fn set_mcp_approval(
         &self,
@@ -66,13 +118,13 @@ impl DiraigentDb for PostgresDb {
         revision: i64,
         actor: Option<Uuid>,
     ) -> Result<McpServer, AppError> {
-        repository::set_mcp_approval(&self.0, project_id, id, revision, actor).await
+        repository::set_mcp_approval(&self.pool, project_id, id, revision, actor).await
     }
     async fn delete_mcp_server(&self, project_id: Uuid, id: Uuid) -> Result<(), AppError> {
-        repository::delete_mcp_server(&self.0, project_id, id).await
+        repository::delete_mcp_server(&self.pool, project_id, id).await
     }
     async fn health_check(&self) -> bool {
-        sqlx::query("SELECT 1").execute(&self.0).await.is_ok()
+        sqlx::query("SELECT 1").execute(&self.pool).await.is_ok()
     }
 
     // Projects
@@ -81,23 +133,27 @@ impl DiraigentDb for PostgresDb {
         req: &CreateProject,
         owner_id: Uuid,
     ) -> Result<Project, AppError> {
-        repository::create_project(&self.0, req, owner_id).await
+        repository::create_project(&self.pool, req, owner_id).await
     }
     async fn get_project_by_id(&self, id: Uuid) -> Result<Project, AppError> {
-        repository::get_project_by_id(&self.0, id).await
+        let value = repository::get_project_by_id(&self.pool, id).await?;
+        self.hydrate("project", value).await
     }
     async fn get_project_by_slug(&self, slug: &str) -> Result<Project, AppError> {
-        repository::get_project_by_slug(&self.0, slug).await
+        let value = repository::get_project_by_slug(&self.pool, slug).await?;
+        self.hydrate("project", value).await
     }
     async fn list_projects(&self, p: &Pagination) -> Result<Vec<Project>, AppError> {
-        repository::list_projects(&self.0, p).await
+        let value = repository::list_projects(&self.pool, p).await?;
+        self.hydrate("project", value).await
     }
     async fn list_projects_for_tenant(
         &self,
         tenant_id: Uuid,
         p: &Pagination,
     ) -> Result<Vec<Project>, AppError> {
-        repository::list_projects_for_tenant(&self.0, tenant_id, p).await
+        let value = repository::list_projects_for_tenant(&self.pool, tenant_id, p).await?;
+        self.hydrate("project", value).await
     }
     async fn list_projects_for_user(
         &self,
@@ -105,7 +161,8 @@ impl DiraigentDb for PostgresDb {
         user_id: Uuid,
         p: &Pagination,
     ) -> Result<Vec<Project>, AppError> {
-        repository::list_projects_for_user(&self.0, tenant_id, user_id, p).await
+        let value = repository::list_projects_for_user(&self.pool, tenant_id, user_id, p).await?;
+        self.hydrate("project", value).await
     }
     async fn check_user_project_authority(
         &self,
@@ -113,15 +170,17 @@ impl DiraigentDb for PostgresDb {
         project_id: Uuid,
         authority: &str,
     ) -> Result<bool, AppError> {
-        Ok(crate::project_access::role(&self.0, user_id, project_id)
+        Ok(crate::project_access::role(&self.pool, user_id, project_id)
             .await?
             .is_some_and(|r| crate::project_access::permits(&r, authority)))
     }
     async fn update_project(&self, id: Uuid, req: &UpdateProject) -> Result<Project, AppError> {
-        repository::update_project(&self.0, id, req).await
+        let prepared = self.prepare(id, "project", req).await?;
+        let value = repository::update_project(&self.pool, id, &prepared).await?;
+        self.hydrate("project", value).await
     }
     async fn delete_project(&self, id: Uuid) -> Result<(), AppError> {
-        repository::delete_project(&self.0, id).await
+        repository::delete_project(&self.pool, id).await
     }
 
     // Tasks
@@ -131,20 +190,25 @@ impl DiraigentDb for PostgresDb {
         req: &CreateTask,
         created_by: Uuid,
     ) -> Result<Task, AppError> {
-        repository::create_task(&self.0, project_id, req, created_by).await
+        let prepared = self.prepare(project_id, "task", req).await?;
+        let value = repository::create_task(&self.pool, project_id, &prepared, created_by).await?;
+        self.hydrate("task", value).await
     }
     async fn get_task_by_id(&self, task_id: Uuid) -> Result<Task, AppError> {
-        repository::get_task_by_id(&self.0, task_id).await
+        let value = repository::get_task_by_id(&self.pool, task_id).await?;
+        self.hydrate("task", value).await
     }
     async fn get_tasks_by_ids(&self, ids: &[Uuid]) -> Result<Vec<Task>, AppError> {
-        repository::get_tasks_by_ids(&self.0, ids).await
+        let value = repository::get_tasks_by_ids(&self.pool, ids).await?;
+        self.hydrate("task", value).await
     }
     async fn list_tasks(
         &self,
         project_id: Uuid,
         filters: &TaskFilters,
     ) -> Result<Vec<Task>, AppError> {
-        repository::list_tasks(&self.0, project_id, filters).await
+        let value = repository::list_tasks(&self.pool, project_id, filters).await?;
+        self.hydrate("task", value).await
     }
     async fn list_ready_tasks(
         &self,
@@ -152,25 +216,32 @@ impl DiraigentDb for PostgresDb {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<Task>, AppError> {
-        repository::list_ready_tasks(&self.0, project_id, limit, offset).await
+        let value = repository::list_ready_tasks(&self.pool, project_id, limit, offset).await?;
+        self.hydrate("task", value).await
     }
     async fn update_task(&self, task_id: Uuid, req: &UpdateTask) -> Result<Task, AppError> {
-        repository::update_task(&self.0, task_id, req).await
+        let project_id = self.parent_project("task", task_id).await?;
+        let prepared = self.prepare(project_id, "task", req).await?;
+        let value = repository::update_task(&self.pool, task_id, &prepared).await?;
+        self.hydrate("task", value).await
     }
     async fn transition_task(&self, task_id: Uuid, target_state: &str) -> Result<Task, AppError> {
-        repository::transition_task(&self.0, task_id, target_state).await
+        let value = repository::transition_task(&self.pool, task_id, target_state).await?;
+        self.hydrate("task", value).await
     }
     async fn claim_task(&self, task_id: Uuid, agent_id: Uuid) -> Result<Task, AppError> {
-        repository::claim_task(&self.0, task_id, agent_id).await
+        let value = repository::claim_task(&self.pool, task_id, agent_id).await?;
+        self.hydrate("task", value).await
     }
     async fn resolve_task_mode(&self, task: &Task) -> Result<String, AppError> {
-        repository::resolve_task_mode(&self.0, task).await
+        repository::resolve_task_mode(&self.pool, task).await
     }
     async fn release_task(&self, task_id: Uuid) -> Result<Task, AppError> {
-        repository::release_task(&self.0, task_id).await
+        let value = repository::release_task(&self.pool, task_id).await?;
+        self.hydrate("task", value).await
     }
     async fn delete_task(&self, task_id: Uuid) -> Result<(), AppError> {
-        repository::delete_task(&self.0, task_id).await
+        repository::delete_task(&self.pool, task_id).await
     }
     async fn update_task_cost(
         &self,
@@ -179,7 +250,15 @@ impl DiraigentDb for PostgresDb {
         output_tokens: i64,
         cost_usd: f64,
     ) -> Result<Task, AppError> {
-        repository::update_task_cost(&self.0, task_id, input_tokens, output_tokens, cost_usd).await
+        let value = repository::update_task_cost(
+            &self.pool,
+            task_id,
+            input_tokens,
+            output_tokens,
+            cost_usd,
+        )
+        .await?;
+        self.hydrate("task", value).await
     }
 
     // Dependencies
@@ -188,31 +267,33 @@ impl DiraigentDb for PostgresDb {
         task_id: Uuid,
         depends_on: Uuid,
     ) -> Result<TaskDependency, AppError> {
-        repository::add_dependency(&self.0, task_id, depends_on).await
+        repository::add_dependency(&self.pool, task_id, depends_on).await
     }
     async fn remove_dependency(&self, task_id: Uuid, depends_on: Uuid) -> Result<(), AppError> {
-        repository::remove_dependency(&self.0, task_id, depends_on).await
+        repository::remove_dependency(&self.pool, task_id, depends_on).await
     }
     async fn list_dependencies(&self, task_id: Uuid) -> Result<TaskDependencies, AppError> {
-        repository::list_dependencies(&self.0, task_id).await
+        repository::list_dependencies(&self.pool, task_id).await
     }
     async fn list_blocked_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError> {
-        repository::list_blocked_task_ids(&self.0, project_id).await
+        repository::list_blocked_task_ids(&self.pool, project_id).await
     }
     async fn list_flagged_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError> {
-        repository::list_flagged_task_ids(&self.0, project_id).await
+        repository::list_flagged_task_ids(&self.pool, project_id).await
     }
     async fn list_work_linked_task_ids(&self, project_id: Uuid) -> Result<Vec<Uuid>, AppError> {
-        repository::list_work_linked_task_ids(&self.0, project_id).await
+        repository::list_work_linked_task_ids(&self.pool, project_id).await
     }
     async fn list_tasks_with_blocker_updates(
         &self,
         project_id: Uuid,
     ) -> Result<Vec<Task>, AppError> {
-        repository::list_tasks_with_blocker_updates(&self.0, project_id).await
+        let value = repository::list_tasks_with_blocker_updates(&self.pool, project_id).await?;
+        self.hydrate("task", value).await
     }
     async fn list_task_children(&self, parent_id: Uuid) -> Result<Vec<Task>, AppError> {
-        repository::list_task_children(&self.0, parent_id).await
+        let value = repository::list_task_children(&self.pool, parent_id).await?;
+        self.hydrate("task", value).await
     }
 
     // Task Updates
@@ -222,14 +303,18 @@ impl DiraigentDb for PostgresDb {
         req: &CreateTaskUpdate,
         user_id: Option<Uuid>,
     ) -> Result<TaskUpdate, AppError> {
-        repository::create_task_update(&self.0, task_id, req, user_id).await
+        let project_id = self.parent_project("task", task_id).await?;
+        let prepared = self.prepare(project_id, "task_update", req).await?;
+        let value = repository::create_task_update(&self.pool, task_id, &prepared, user_id).await?;
+        self.hydrate("task_update", value).await
     }
     async fn list_task_updates(
         &self,
         task_id: Uuid,
         p: &Pagination,
     ) -> Result<Vec<TaskUpdate>, AppError> {
-        repository::list_task_updates(&self.0, task_id, p).await
+        let value = repository::list_task_updates(&self.pool, task_id, p).await?;
+        self.hydrate("task_update", value).await
     }
 
     // Task Comments
@@ -239,14 +324,19 @@ impl DiraigentDb for PostgresDb {
         req: &CreateTaskComment,
         user_id: Option<Uuid>,
     ) -> Result<TaskComment, AppError> {
-        repository::create_task_comment(&self.0, task_id, req, user_id).await
+        let project_id = self.parent_project("task", task_id).await?;
+        let prepared = self.prepare(project_id, "task_comment", req).await?;
+        let value =
+            repository::create_task_comment(&self.pool, task_id, &prepared, user_id).await?;
+        self.hydrate("task_comment", value).await
     }
     async fn list_task_comments(
         &self,
         task_id: Uuid,
         p: &Pagination,
     ) -> Result<Vec<TaskComment>, AppError> {
-        repository::list_task_comments(&self.0, task_id, p).await
+        let value = repository::list_task_comments(&self.pool, task_id, p).await?;
+        self.hydrate("task_comment", value).await
     }
 
     // Agents
@@ -255,16 +345,16 @@ impl DiraigentDb for PostgresDb {
         req: &CreateAgent,
         owner_id: Uuid,
     ) -> Result<(Agent, String), AppError> {
-        repository::register_agent(&self.0, req, owner_id).await
+        repository::register_agent(&self.pool, req, owner_id).await
     }
     async fn authenticate_agent_key(
         &self,
         key_hash: &str,
     ) -> Result<Option<(Uuid, Uuid)>, AppError> {
-        repository::authenticate_agent_key(&self.0, key_hash).await
+        repository::authenticate_agent_key(&self.pool, key_hash).await
     }
     async fn get_agent_by_id(&self, id: Uuid) -> Result<Agent, AppError> {
-        repository::get_agent_by_id(&self.0, id).await
+        repository::get_agent_by_id(&self.pool, id).await
     }
     async fn list_tenant_agents(
         &self,
@@ -272,23 +362,24 @@ impl DiraigentDb for PostgresDb {
         user_id: Uuid,
         p: &Pagination,
     ) -> Result<Vec<Agent>, AppError> {
-        repository::list_tenant_agents(&self.0, tenant_id, user_id, p).await
+        repository::list_tenant_agents(&self.pool, tenant_id, user_id, p).await
     }
     async fn update_agent(&self, id: Uuid, req: &UpdateAgent) -> Result<Agent, AppError> {
-        repository::update_agent(&self.0, id, req).await
+        repository::update_agent(&self.pool, id, req).await
     }
     async fn agent_heartbeat(&self, id: Uuid, status: Option<&str>) -> Result<Agent, AppError> {
-        repository::agent_heartbeat(&self.0, id, status).await
+        repository::agent_heartbeat(&self.pool, id, status).await
     }
     async fn list_agent_tasks(
         &self,
         agent_id: Uuid,
         p: &Pagination,
     ) -> Result<Vec<Task>, AppError> {
-        repository::list_agent_tasks(&self.0, agent_id, p).await
+        let value = repository::list_agent_tasks(&self.pool, agent_id, p).await?;
+        self.hydrate("task", value).await
     }
     async fn verify_agent_owner(&self, agent_id: Uuid, user_id: Uuid) -> Result<bool, AppError> {
-        repository::verify_agent_owner(&self.0, agent_id, user_id).await
+        repository::verify_agent_owner(&self.pool, agent_id, user_id).await
     }
 
     // Work
@@ -298,35 +389,43 @@ impl DiraigentDb for PostgresDb {
         req: &CreateWork,
         created_by: Uuid,
     ) -> Result<Work, AppError> {
-        repository::create_work(&self.0, project_id, req, created_by).await
+        let prepared = self.prepare(project_id, "work", req).await?;
+        let value = repository::create_work(&self.pool, project_id, &prepared, created_by).await?;
+        self.hydrate("work", value).await
     }
     async fn get_work_by_id(&self, id: Uuid) -> Result<Work, AppError> {
-        repository::get_work_by_id(&self.0, id).await
+        let value = repository::get_work_by_id(&self.pool, id).await?;
+        self.hydrate("work", value).await
     }
     async fn list_works(
         &self,
         project_id: Uuid,
         filters: &WorkFilters,
     ) -> Result<Vec<Work>, AppError> {
-        repository::list_works(&self.0, project_id, filters).await
+        let value = repository::list_works(&self.pool, project_id, filters).await?;
+        self.hydrate("work", value).await
     }
     async fn activate_work(&self, work_id: Uuid) -> Result<Work, AppError> {
-        repository::activate_work(&self.0, work_id).await
+        let value = repository::activate_work(&self.pool, work_id).await?;
+        self.hydrate("work", value).await
     }
     async fn update_work(&self, id: Uuid, req: &UpdateWork) -> Result<Work, AppError> {
-        repository::update_work(&self.0, id, req).await
+        let project_id = self.parent_project("work", id).await?;
+        let prepared = self.prepare(project_id, "work", req).await?;
+        let value = repository::update_work(&self.pool, id, &prepared).await?;
+        self.hydrate("work", value).await
     }
     async fn delete_work(&self, id: Uuid) -> Result<(), AppError> {
-        repository::delete_work(&self.0, id).await
+        repository::delete_work(&self.pool, id).await
     }
     async fn link_task_work(&self, work_id: Uuid, task_id: Uuid) -> Result<TaskWork, AppError> {
-        repository::link_task_work(&self.0, work_id, task_id).await
+        repository::link_task_work(&self.pool, work_id, task_id).await
     }
     async fn unlink_task_work(&self, work_id: Uuid, task_id: Uuid) -> Result<(), AppError> {
-        repository::unlink_task_work(&self.0, work_id, task_id).await
+        repository::unlink_task_work(&self.pool, work_id, task_id).await
     }
     async fn get_work_progress(&self, work_id: Uuid) -> Result<WorkProgress, AppError> {
-        repository::get_work_progress(&self.0, work_id).await
+        repository::get_work_progress(&self.pool, work_id).await
     }
     async fn list_work_tasks(
         &self,
@@ -334,32 +433,34 @@ impl DiraigentDb for PostgresDb {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<Task>, AppError> {
-        repository::list_work_tasks(&self.0, work_id, limit, offset).await
+        let value = repository::list_work_tasks(&self.pool, work_id, limit, offset).await?;
+        self.hydrate("task", value).await
     }
     async fn bulk_link_tasks(&self, work_id: Uuid, task_ids: &[Uuid]) -> Result<i64, AppError> {
-        repository::bulk_link_tasks(&self.0, work_id, task_ids).await
+        repository::bulk_link_tasks(&self.pool, work_id, task_ids).await
     }
     async fn get_work_stats(&self, work_id: Uuid) -> Result<WorkStats, AppError> {
-        repository::get_work_stats(&self.0, work_id).await
+        repository::get_work_stats(&self.pool, work_id).await
     }
     async fn compute_auto_status(&self, work_id: Uuid) -> Result<Option<String>, AppError> {
-        repository::compute_auto_status(&self.0, work_id).await
+        repository::compute_auto_status(&self.pool, work_id).await
     }
     async fn list_auto_status_work_ids_for_task(
         &self,
         task_id: Uuid,
     ) -> Result<Vec<Uuid>, AppError> {
-        repository::list_auto_status_work_ids_for_task(&self.0, task_id).await
+        repository::list_auto_status_work_ids_for_task(&self.pool, task_id).await
     }
     async fn reorder_works(
         &self,
         project_id: Uuid,
         work_ids: &[Uuid],
     ) -> Result<Vec<Work>, AppError> {
-        repository::reorder_works(&self.0, project_id, work_ids).await
+        let value = repository::reorder_works(&self.pool, project_id, work_ids).await?;
+        self.hydrate("work", value).await
     }
     async fn get_work_ids_for_task(&self, task_id: Uuid) -> Result<Vec<Uuid>, AppError> {
-        repository::get_work_ids_for_task(&self.0, task_id).await
+        repository::get_work_ids_for_task(&self.pool, task_id).await
     }
     async fn get_agent_inherited_work_ids(
         &self,
@@ -367,17 +468,17 @@ impl DiraigentDb for PostgresDb {
         project_id: Uuid,
         exclude_task_id: Uuid,
     ) -> Result<Vec<Uuid>, AppError> {
-        repository::get_agent_inherited_work_ids(&self.0, agent_id, project_id, exclude_task_id)
+        repository::get_agent_inherited_work_ids(&self.pool, agent_id, project_id, exclude_task_id)
             .await
     }
     async fn work_status_counts(&self, project_id: Uuid) -> Result<Vec<(String, i64)>, AppError> {
-        repository::work_status_counts(&self.0, project_id).await
+        repository::work_status_counts(&self.pool, project_id).await
     }
     async fn get_bulk_work_summaries(
         &self,
         project_id: Uuid,
     ) -> Result<Vec<WorkSummary>, AppError> {
-        repository::get_bulk_work_summaries(&self.0, project_id).await
+        repository::get_bulk_work_summaries(&self.pool, project_id).await
     }
 
     // Work Comments
@@ -387,14 +488,19 @@ impl DiraigentDb for PostgresDb {
         req: &CreateWorkComment,
         user_id: Option<Uuid>,
     ) -> Result<WorkComment, AppError> {
-        repository::create_work_comment(&self.0, work_id, req, user_id).await
+        let project_id = self.parent_project("work", work_id).await?;
+        let prepared = self.prepare(project_id, "work_comment", req).await?;
+        let value =
+            repository::create_work_comment(&self.pool, work_id, &prepared, user_id).await?;
+        self.hydrate("work_comment", value).await
     }
     async fn list_work_comments(
         &self,
         work_id: Uuid,
         p: &Pagination,
     ) -> Result<Vec<WorkComment>, AppError> {
-        repository::list_work_comments(&self.0, work_id, p).await
+        let value = repository::list_work_comments(&self.pool, work_id, p).await?;
+        self.hydrate("work_comment", value).await
     }
 
     // Knowledge
@@ -404,47 +510,78 @@ impl DiraigentDb for PostgresDb {
         req: &CreateKnowledge,
         created_by: Uuid,
     ) -> Result<Knowledge, AppError> {
-        repository::create_knowledge(&self.0, project_id, req, created_by).await
+        let prepared = self.prepare(project_id, "knowledge", req).await?;
+        let value =
+            repository::create_knowledge(&self.pool, project_id, &prepared, created_by).await?;
+        self.hydrate("knowledge", value).await
     }
     async fn get_knowledge_by_id(&self, id: Uuid) -> Result<Knowledge, AppError> {
-        repository::get_knowledge_by_id(&self.0, id).await
+        let value = repository::get_knowledge_by_id(&self.pool, id).await?;
+        self.hydrate("knowledge", value).await
     }
     async fn list_knowledge(
         &self,
         project_id: Uuid,
         filters: &KnowledgeFilters,
     ) -> Result<Vec<Knowledge>, AppError> {
-        repository::list_knowledge(&self.0, project_id, filters).await
+        let value = repository::list_knowledge(&self.pool, project_id, filters).await?;
+        self.hydrate("knowledge", value).await
     }
     async fn update_knowledge(
         &self,
         id: Uuid,
         req: &UpdateKnowledge,
     ) -> Result<Knowledge, AppError> {
-        repository::update_knowledge(&self.0, id, req).await
+        let project_id = self.parent_project("knowledge", id).await?;
+        let prepared = self.prepare(project_id, "knowledge", req).await?;
+        let value = repository::update_knowledge(&self.pool, id, &prepared).await?;
+        self.hydrate("knowledge", value).await
     }
     async fn delete_knowledge(&self, id: Uuid) -> Result<(), AppError> {
-        repository::delete_knowledge(&self.0, id).await
+        repository::delete_knowledge(&self.pool, id).await
     }
     async fn count_knowledge(
         &self,
         project_id: Uuid,
         filters: &KnowledgeFilters,
     ) -> Result<i64, AppError> {
-        repository::count_knowledge(&self.0, project_id, filters).await
+        repository::count_knowledge(&self.pool, project_id, filters).await
     }
     async fn update_knowledge_embedding(
         &self,
         id: Uuid,
         embedding: &[f64],
     ) -> Result<(), AppError> {
-        repository::update_knowledge_embedding(&self.0, id, embedding).await
+        if let Some(store) = &self.content
+            && store.store_embedding(id, embedding).await?
+        {
+            return Ok(());
+        }
+        repository::update_knowledge_embedding(&self.pool, id, embedding).await
     }
     async fn list_knowledge_with_embeddings(
         &self,
         project_id: Uuid,
     ) -> Result<Vec<Knowledge>, AppError> {
-        repository::list_knowledge_with_embeddings(&self.0, project_id).await
+        let mut values = repository::list_knowledge(
+            &self.pool,
+            project_id,
+            &KnowledgeFilters {
+                limit: Some(10000),
+                ..Default::default()
+            },
+        )
+        .await?;
+        for value in &mut values {
+            let legacy = value.embedding.take();
+            *value = self.hydrate("knowledge", value.clone()).await?;
+            value.embedding = match &self.content {
+                Some(store) => store.embedding(project_id, value.id).await?.or(legacy),
+                None => legacy,
+            };
+        }
+        values.retain(|value| value.embedding.is_some());
+        Ok(values)
     }
 
     // Decisions
@@ -454,36 +591,44 @@ impl DiraigentDb for PostgresDb {
         req: &CreateDecision,
         created_by: Uuid,
     ) -> Result<Decision, AppError> {
-        repository::create_decision(&self.0, project_id, req, created_by).await
+        let prepared = self.prepare(project_id, "decision", req).await?;
+        let value =
+            repository::create_decision(&self.pool, project_id, &prepared, created_by).await?;
+        self.hydrate("decision", value).await
     }
     async fn get_decision_by_id(&self, id: Uuid) -> Result<Decision, AppError> {
-        repository::get_decision_by_id(&self.0, id).await
+        let value = repository::get_decision_by_id(&self.pool, id).await?;
+        self.hydrate("decision", value).await
     }
     async fn list_decisions(
         &self,
         project_id: Uuid,
         filters: &DecisionFilters,
     ) -> Result<Vec<Decision>, AppError> {
-        repository::list_decisions(&self.0, project_id, filters).await
+        let value = repository::list_decisions(&self.pool, project_id, filters).await?;
+        self.hydrate("decision", value).await
     }
     async fn update_decision(&self, id: Uuid, req: &UpdateDecision) -> Result<Decision, AppError> {
-        repository::update_decision(&self.0, id, req).await
+        let project_id = self.parent_project("decision", id).await?;
+        let prepared = self.prepare(project_id, "decision", req).await?;
+        let value = repository::update_decision(&self.pool, id, &prepared).await?;
+        self.hydrate("decision", value).await
     }
     async fn delete_decision(&self, id: Uuid) -> Result<(), AppError> {
-        repository::delete_decision(&self.0, id).await
+        repository::delete_decision(&self.pool, id).await
     }
     async fn count_decisions(
         &self,
         project_id: Uuid,
         filters: &DecisionFilters,
     ) -> Result<i64, AppError> {
-        repository::count_decisions(&self.0, project_id, filters).await
+        repository::count_decisions(&self.pool, project_id, filters).await
     }
     async fn list_tasks_by_decision(
         &self,
         decision_id: Uuid,
     ) -> Result<Vec<TaskSummaryForDecision>, AppError> {
-        repository::list_tasks_by_decision(&self.0, decision_id).await
+        repository::list_tasks_by_decision(&self.pool, decision_id).await
     }
 
     // Observations
@@ -492,27 +637,35 @@ impl DiraigentDb for PostgresDb {
         project_id: Uuid,
         req: &CreateObservation,
     ) -> Result<Observation, AppError> {
-        repository::create_observation(&self.0, project_id, req).await
+        let prepared = self.prepare(project_id, "observation", req).await?;
+        let value = repository::create_observation(&self.pool, project_id, &prepared).await?;
+        self.hydrate("observation", value).await
     }
     async fn get_observation_by_id(&self, id: Uuid) -> Result<Observation, AppError> {
-        repository::get_observation_by_id(&self.0, id).await
+        let value = repository::get_observation_by_id(&self.pool, id).await?;
+        self.hydrate("observation", value).await
     }
     async fn list_observations(
         &self,
         project_id: Uuid,
         filters: &ObservationFilters,
     ) -> Result<Vec<Observation>, AppError> {
-        repository::list_observations(&self.0, project_id, filters).await
+        let value = repository::list_observations(&self.pool, project_id, filters).await?;
+        self.hydrate("observation", value).await
     }
     async fn update_observation(
         &self,
         id: Uuid,
         req: &UpdateObservation,
     ) -> Result<Observation, AppError> {
-        repository::update_observation(&self.0, id, req).await
+        let project_id = self.parent_project("observation", id).await?;
+        let prepared = self.prepare(project_id, "observation", req).await?;
+        let value = repository::update_observation(&self.pool, id, &prepared).await?;
+        self.hydrate("observation", value).await
     }
     async fn dismiss_observation(&self, id: Uuid) -> Result<Observation, AppError> {
-        repository::dismiss_observation(&self.0, id).await
+        let value = repository::dismiss_observation(&self.pool, id).await?;
+        self.hydrate("observation", value).await
     }
     async fn promote_observation(
         &self,
@@ -520,29 +673,49 @@ impl DiraigentDb for PostgresDb {
         req: &PromoteObservation,
         created_by: Uuid,
     ) -> Result<(Observation, Work, Task), AppError> {
-        repository::promote_observation(&self.0, obs_id, req, created_by).await
+        let obs = self.get_observation_by_id(obs_id).await?;
+        let prepared = self
+            .prepare(
+                obs.project_id,
+                "work",
+                &serde_json::json!({"description":obs.description}),
+            )
+            .await?;
+        let (observation, work, task) = repository::promote_observation(
+            &self.pool,
+            obs_id,
+            req,
+            created_by,
+            prepared["description"].as_str(),
+        )
+        .await?;
+        Ok((
+            self.hydrate("observation", observation).await?,
+            self.hydrate("work", work).await?,
+            self.hydrate("task", task).await?,
+        ))
     }
     async fn count_observations(
         &self,
         project_id: Uuid,
         filters: &ObservationFilters,
     ) -> Result<i64, AppError> {
-        repository::count_observations(&self.0, project_id, filters).await
+        repository::count_observations(&self.pool, project_id, filters).await
     }
     async fn delete_observation(&self, id: Uuid) -> Result<(), AppError> {
-        repository::delete_observation(&self.0, id).await
+        repository::delete_observation(&self.pool, id).await
     }
     async fn cleanup_observations(
         &self,
         project_id: Uuid,
     ) -> Result<CleanupObservationsResult, AppError> {
-        repository::cleanup_observations(&self.0, project_id).await
+        repository::cleanup_observations(&self.pool, project_id).await
     }
     async fn delete_old_observations_all_projects(
         &self,
         default_retention_days: i32,
     ) -> Result<u64, AppError> {
-        repository::delete_old_observations_all_projects(&self.0, default_retention_days).await
+        repository::delete_old_observations_all_projects(&self.pool, default_retention_days).await
     }
 
     // Work task reordering
@@ -551,36 +724,42 @@ impl DiraigentDb for PostgresDb {
         work_id: Uuid,
         task_ids: &[Uuid],
     ) -> Result<Vec<Task>, AppError> {
-        repository::reorder_work_tasks(&self.0, work_id, task_ids).await
+        let value = repository::reorder_work_tasks(&self.pool, work_id, task_ids).await?;
+        self.hydrate("task", value).await
     }
 
     // Events
     async fn create_event(&self, project_id: Uuid, req: &CreateEvent) -> Result<Event, AppError> {
-        repository::create_event(&self.0, project_id, req).await
+        let prepared = self.prepare(project_id, "event", req).await?;
+        let value = repository::create_event(&self.pool, project_id, &prepared).await?;
+        self.hydrate("event", value).await
     }
     async fn get_event_by_id(&self, id: Uuid) -> Result<Event, AppError> {
-        repository::get_event_by_id(&self.0, id).await
+        let value = repository::get_event_by_id(&self.pool, id).await?;
+        self.hydrate("event", value).await
     }
     async fn list_events(
         &self,
         project_id: Uuid,
         filters: &EventFilters,
     ) -> Result<Vec<Event>, AppError> {
-        repository::list_events(&self.0, project_id, filters).await
+        let value = repository::list_events(&self.pool, project_id, filters).await?;
+        self.hydrate("event", value).await
     }
     async fn list_recent_events(
         &self,
         project_id: Uuid,
         limit: i64,
     ) -> Result<Vec<Event>, AppError> {
-        repository::list_recent_events(&self.0, project_id, limit).await
+        let value = repository::list_recent_events(&self.pool, project_id, limit).await?;
+        self.hydrate("event", value).await
     }
     async fn count_events(
         &self,
         project_id: Uuid,
         filters: &EventFilters,
     ) -> Result<i64, AppError> {
-        repository::count_events(&self.0, project_id, filters).await
+        repository::count_events(&self.pool, project_id, filters).await
     }
 
     // Integrations
@@ -589,27 +768,27 @@ impl DiraigentDb for PostgresDb {
         project_id: Uuid,
         req: &CreateIntegration,
     ) -> Result<Integration, AppError> {
-        repository::create_integration(&self.0, project_id, req).await
+        repository::create_integration(&self.pool, project_id, req).await
     }
     async fn get_integration(&self, id: Uuid) -> Result<Integration, AppError> {
-        repository::get_integration(&self.0, id).await
+        repository::get_integration(&self.pool, id).await
     }
     async fn list_integrations(
         &self,
         project_id: Uuid,
         filters: &IntegrationFilters,
     ) -> Result<Vec<Integration>, AppError> {
-        repository::list_integrations(&self.0, project_id, filters).await
+        repository::list_integrations(&self.pool, project_id, filters).await
     }
     async fn update_integration(
         &self,
         id: Uuid,
         req: &UpdateIntegration,
     ) -> Result<Integration, AppError> {
-        repository::update_integration(&self.0, id, req).await
+        repository::update_integration(&self.pool, id, req).await
     }
     async fn delete_integration(&self, id: Uuid) -> Result<(), AppError> {
-        repository::delete_integration(&self.0, id).await
+        repository::delete_integration(&self.pool, id).await
     }
     async fn grant_agent_access(
         &self,
@@ -617,40 +796,41 @@ impl DiraigentDb for PostgresDb {
         agent_id: Uuid,
         permissions: Vec<String>,
     ) -> Result<AgentIntegration, AppError> {
-        repository::grant_agent_access(&self.0, integration_id, agent_id, &permissions, None).await
+        repository::grant_agent_access(&self.pool, integration_id, agent_id, &permissions, None)
+            .await
     }
     async fn revoke_agent_access(
         &self,
         integration_id: Uuid,
         agent_id: Uuid,
     ) -> Result<(), AppError> {
-        repository::revoke_agent_access(&self.0, integration_id, agent_id).await
+        repository::revoke_agent_access(&self.pool, integration_id, agent_id).await
     }
     async fn list_agent_integrations(&self, agent_id: Uuid) -> Result<Vec<Integration>, AppError> {
-        repository::list_agent_integrations(&self.0, agent_id).await
+        repository::list_agent_integrations(&self.pool, agent_id).await
     }
     async fn list_integration_agents(
         &self,
         integration_id: Uuid,
     ) -> Result<Vec<AgentIntegration>, AppError> {
-        repository::list_integration_agents(&self.0, integration_id).await
+        repository::list_integration_agents(&self.pool, integration_id).await
     }
 
     // Roles
     async fn create_role(&self, tenant_id: Uuid, req: &CreateRole) -> Result<Role, AppError> {
-        repository::create_role(&self.0, tenant_id, req).await
+        repository::create_role(&self.pool, tenant_id, req).await
     }
     async fn get_role(&self, id: Uuid) -> Result<Role, AppError> {
-        repository::get_role(&self.0, id).await
+        repository::get_role(&self.pool, id).await
     }
     async fn list_roles(&self, tenant_id: Uuid) -> Result<Vec<Role>, AppError> {
-        repository::list_roles(&self.0, tenant_id).await
+        repository::list_roles(&self.pool, tenant_id).await
     }
     async fn update_role(&self, id: Uuid, req: &UpdateRole) -> Result<Role, AppError> {
-        repository::update_role(&self.0, id, req).await
+        repository::update_role(&self.pool, id, req).await
     }
     async fn delete_role(&self, id: Uuid) -> Result<(), AppError> {
-        repository::delete_role(&self.0, id).await
+        repository::delete_role(&self.pool, id).await
     }
 
     // Members
@@ -659,23 +839,23 @@ impl DiraigentDb for PostgresDb {
         tenant_id: Uuid,
         req: &CreateMembership,
     ) -> Result<Membership, AppError> {
-        repository::create_membership(&self.0, tenant_id, req).await
+        repository::create_membership(&self.pool, tenant_id, req).await
     }
     async fn get_membership(&self, id: Uuid) -> Result<Membership, AppError> {
-        repository::get_membership(&self.0, id).await
+        repository::get_membership(&self.pool, id).await
     }
     async fn list_members(&self, tenant_id: Uuid) -> Result<Vec<Membership>, AppError> {
-        repository::list_members(&self.0, tenant_id).await
+        repository::list_members(&self.pool, tenant_id).await
     }
     async fn list_tenant_agent_ids(&self, tenant_id: Uuid) -> Result<Vec<Uuid>, AppError> {
-        repository::list_tenant_agent_ids(&self.0, tenant_id).await
+        repository::list_tenant_agent_ids(&self.pool, tenant_id).await
     }
     async fn list_agent_memberships(
         &self,
         agent_id: Uuid,
         tenant_id: Option<Uuid>,
     ) -> Result<Vec<Membership>, AppError> {
-        repository::list_agent_memberships(&self.0, agent_id, tenant_id).await
+        repository::list_agent_memberships(&self.pool, agent_id, tenant_id).await
     }
     async fn get_active_membership_by_agent(
         &self,
@@ -685,7 +865,7 @@ impl DiraigentDb for PostgresDb {
             "SELECT * FROM diraigent.membership WHERE agent_id = $1 AND status = 'active' LIMIT 1",
         )
         .bind(agent_id)
-        .fetch_optional(&self.0)
+        .fetch_optional(&self.pool)
         .await?;
         Ok(m)
     }
@@ -694,18 +874,20 @@ impl DiraigentDb for PostgresDb {
         id: Uuid,
         req: &UpdateMembership,
     ) -> Result<Membership, AppError> {
-        repository::update_membership(&self.0, id, req).await
+        repository::update_membership(&self.pool, id, req).await
     }
     async fn remove_membership(&self, id: Uuid) -> Result<(), AppError> {
-        repository::remove_membership(&self.0, id).await
+        repository::remove_membership(&self.pool, id).await
     }
 
     // Hierarchy
     async fn get_project_children(&self, parent_id: Uuid) -> Result<Vec<Project>, AppError> {
-        repository::get_project_children(&self.0, parent_id).await
+        let value = repository::get_project_children(&self.pool, parent_id).await?;
+        self.hydrate("project", value).await
     }
     async fn get_project_tree(&self, root_id: Uuid) -> Result<Vec<Project>, AppError> {
-        repository::get_project_tree(&self.0, root_id).await
+        let value = repository::get_project_tree(&self.pool, root_id).await?;
+        self.hydrate("project", value).await
     }
 
     // Delegation
@@ -716,7 +898,10 @@ impl DiraigentDb for PostgresDb {
         to_agent_id: Uuid,
         role_id: Option<Uuid>,
     ) -> Result<Task, AppError> {
-        repository::delegate_task(&self.0, task_id, delegated_by, to_agent_id, role_id).await
+        let value =
+            repository::delegate_task(&self.pool, task_id, delegated_by, to_agent_id, role_id)
+                .await?;
+        self.hydrate("task", value).await
     }
 
     // Auth
@@ -726,21 +911,21 @@ impl DiraigentDb for PostgresDb {
         project_id: Uuid,
         required_authority: &str,
     ) -> Result<bool, AppError> {
-        repository::check_authority(&self.0, agent_id, project_id, required_authority).await
+        repository::check_authority(&self.pool, agent_id, project_id, required_authority).await
     }
     async fn check_membership_for_agent(
         &self,
         agent_id: Uuid,
         project_id: Uuid,
     ) -> Result<bool, AppError> {
-        repository::check_membership(&self.0, agent_id, project_id).await
+        repository::check_membership(&self.pool, agent_id, project_id).await
     }
     async fn check_tenant_manage_authority(
         &self,
         agent_id: Uuid,
         tenant_id: Uuid,
     ) -> Result<bool, AppError> {
-        repository::check_tenant_manage_authority(&self.0, agent_id, tenant_id).await
+        repository::check_tenant_manage_authority(&self.pool, agent_id, tenant_id).await
     }
 
     // Audit
@@ -756,8 +941,18 @@ impl DiraigentDb for PostgresDb {
         before_state: Option<&serde_json::Value>,
         after_state: Option<&serde_json::Value>,
     ) -> Result<AuditEntry, AppError> {
-        repository::create_audit_entry(
-            &self.0,
+        let prepared = self
+            .prepare(
+                project_id,
+                "audit_log",
+                &serde_json::json!({"before_state":before_state,"after_state":after_state}),
+            )
+            .await?;
+        let before_state = prepared.get("before_state").filter(|v| !v.is_null());
+        let after_state = prepared.get("after_state").filter(|v| !v.is_null());
+
+        let value = repository::create_audit_entry(
+            &self.pool,
             project_id,
             actor_agent_id,
             actor_user_id,
@@ -768,14 +963,16 @@ impl DiraigentDb for PostgresDb {
             before_state,
             after_state,
         )
-        .await
+        .await?;
+        self.hydrate("audit_log", value).await
     }
     async fn list_audit_log(
         &self,
         project_id: Uuid,
         filters: &AuditFilters,
     ) -> Result<Vec<AuditEntry>, AppError> {
-        repository::list_audit_log(&self.0, project_id, filters).await
+        let value = repository::list_audit_log(&self.pool, project_id, filters).await?;
+        self.hydrate("audit_log", value).await
     }
     async fn get_entity_history(
         &self,
@@ -783,14 +980,16 @@ impl DiraigentDb for PostgresDb {
         entity_id: Uuid,
         limit: i64,
     ) -> Result<Vec<AuditEntry>, AppError> {
-        repository::get_entity_history(&self.0, entity_type, entity_id, limit).await
+        let value =
+            repository::get_entity_history(&self.pool, entity_type, entity_id, limit).await?;
+        self.hydrate("audit_log", value).await
     }
     async fn count_audit_log(
         &self,
         project_id: Uuid,
         filters: &AuditFilters,
     ) -> Result<i64, AppError> {
-        repository::count_audit_log(&self.0, project_id, filters).await
+        repository::count_audit_log(&self.pool, project_id, filters).await
     }
 
     // Agent Context
@@ -799,12 +998,26 @@ impl DiraigentDb for PostgresDb {
         agent_id: Uuid,
         project_id: Uuid,
     ) -> Result<Option<AgentContext>, AppError> {
-        repository::get_agent_context(&self.0, agent_id, project_id).await
+        let Some(mut context) =
+            repository::get_agent_context(&self.pool, agent_id, project_id).await?
+        else {
+            return Ok(None);
+        };
+        context.project = self.hydrate("project", context.project).await?;
+        context.knowledge = self.hydrate("knowledge", context.knowledge).await?;
+        context.decisions = self.hydrate("decision", context.decisions).await?;
+        context.ready_tasks = self.hydrate("task", context.ready_tasks).await?;
+        context.my_tasks = self.hydrate("task", context.my_tasks).await?;
+        context.open_observations = self
+            .hydrate("observation", context.open_observations)
+            .await?;
+        context.recent_events = self.hydrate("event", context.recent_events).await?;
+        Ok(Some(context))
     }
 
     // Counts
     async fn count_tasks(&self, project_id: Uuid, filters: &TaskFilters) -> Result<i64, AppError> {
-        repository::count_tasks(&self.0, project_id, filters).await
+        repository::count_tasks(&self.pool, project_id, filters).await
     }
 
     // Webhooks
@@ -813,33 +1026,35 @@ impl DiraigentDb for PostgresDb {
         project_id: Uuid,
         req: &CreateWebhook,
     ) -> Result<Webhook, AppError> {
-        repository::create_webhook(&self.0, project_id, req).await
+        repository::create_webhook(&self.pool, project_id, req).await
     }
     async fn get_webhook(&self, id: Uuid) -> Result<Webhook, AppError> {
-        repository::get_webhook(&self.0, id).await
+        repository::get_webhook(&self.pool, id).await
     }
     async fn list_webhooks(&self, project_id: Uuid) -> Result<Vec<Webhook>, AppError> {
-        repository::list_webhooks(&self.0, project_id).await
+        repository::list_webhooks(&self.pool, project_id).await
     }
     async fn update_webhook(&self, id: Uuid, req: &UpdateWebhook) -> Result<Webhook, AppError> {
-        repository::update_webhook(&self.0, id, req).await
+        repository::update_webhook(&self.pool, id, req).await
     }
     async fn delete_webhook(&self, id: Uuid) -> Result<(), AppError> {
-        repository::delete_webhook(&self.0, id).await
+        repository::delete_webhook(&self.pool, id).await
     }
     async fn list_webhook_deliveries(
         &self,
         webhook_id: Uuid,
         limit: i64,
     ) -> Result<Vec<WebhookDelivery>, AppError> {
-        repository::list_webhook_deliveries(&self.0, webhook_id, limit).await
+        let value = repository::list_webhook_deliveries(&self.pool, webhook_id, limit).await?;
+        self.hydrate("webhook_delivery", value).await
     }
     async fn list_webhook_dead_letters(
         &self,
         webhook_id: Uuid,
         limit: i64,
     ) -> Result<Vec<WebhookDeadLetter>, AppError> {
-        repository::list_webhook_dead_letters(&self.0, webhook_id, limit).await
+        let value = repository::list_webhook_dead_letters(&self.pool, webhook_id, limit).await?;
+        self.hydrate("webhook_dead_letter", value).await
     }
 
     // Metrics
@@ -848,7 +1063,7 @@ impl DiraigentDb for PostgresDb {
         project_id: Uuid,
         days: i32,
     ) -> Result<ProjectMetrics, AppError> {
-        repository::get_project_metrics(&self.0, project_id, days).await
+        repository::get_project_metrics(&self.pool, project_id, days).await
     }
 
     // Search
@@ -860,12 +1075,19 @@ impl DiraigentDb for PostgresDb {
         limit: i64,
         offset: i64,
     ) -> Result<(Vec<SearchResult>, i64), AppError> {
-        repository::search(&self.0, project_id, query, entity_types, limit, offset).await
+        if let Some(store) = &self.content
+            && store.enabled(project_id).await?
+        {
+            return store
+                .search(project_id, query, entity_types, limit, offset)
+                .await;
+        }
+        repository::search(&self.pool, project_id, query, entity_types, limit, offset).await
     }
 
     // File Locks
     async fn list_file_locks(&self, project_id: Uuid) -> Result<Vec<FileLock>, AppError> {
-        repository::list_file_locks(&self.0, project_id).await
+        repository::list_file_locks(&self.pool, project_id).await
     }
     async fn acquire_file_locks(
         &self,
@@ -874,13 +1096,13 @@ impl DiraigentDb for PostgresDb {
         paths: &[String],
         agent_id: Uuid,
     ) -> Result<Vec<FileLock>, AppError> {
-        repository::acquire_file_locks(&self.0, project_id, task_id, paths, agent_id).await
+        repository::acquire_file_locks(&self.pool, project_id, task_id, paths, agent_id).await
     }
     async fn release_file_locks(&self, project_id: Uuid, task_id: Uuid) -> Result<u64, AppError> {
-        repository::release_file_locks(&self.0, project_id, task_id).await
+        repository::release_file_locks(&self.pool, project_id, task_id).await
     }
     async fn release_file_locks_for_task(&self, task_id: Uuid) -> Result<u64, AppError> {
-        repository::release_file_locks_for_task(&self.0, task_id).await
+        repository::release_file_locks_for_task(&self.pool, task_id).await
     }
 
     // Verifications
@@ -891,31 +1113,40 @@ impl DiraigentDb for PostgresDb {
         agent_id: Option<Uuid>,
         user_id: Option<Uuid>,
     ) -> Result<Verification, AppError> {
-        repository::create_verification(&self.0, project_id, agent_id, user_id, req).await
+        let prepared = self.prepare(project_id, "verification", req).await?;
+        let value =
+            repository::create_verification(&self.pool, project_id, agent_id, user_id, &prepared)
+                .await?;
+        self.hydrate("verification", value).await
     }
     async fn list_verifications(
         &self,
         project_id: Uuid,
         filters: &VerificationFilters,
     ) -> Result<Vec<Verification>, AppError> {
-        repository::list_verifications(&self.0, project_id, filters).await
+        let value = repository::list_verifications(&self.pool, project_id, filters).await?;
+        self.hydrate("verification", value).await
     }
     async fn count_verifications(
         &self,
         project_id: Uuid,
         filters: &VerificationFilters,
     ) -> Result<i64, AppError> {
-        repository::count_verifications(&self.0, project_id, filters).await
+        repository::count_verifications(&self.pool, project_id, filters).await
     }
     async fn get_verification_by_id(&self, id: Uuid) -> Result<Verification, AppError> {
-        repository::get_verification_by_id(&self.0, id).await
+        let value = repository::get_verification_by_id(&self.pool, id).await?;
+        self.hydrate("verification", value).await
     }
     async fn update_verification(
         &self,
         id: Uuid,
         req: &UpdateVerification,
     ) -> Result<Verification, AppError> {
-        repository::update_verification(&self.0, id, req).await
+        let project_id = self.parent_project("verification", id).await?;
+        let prepared = self.prepare(project_id, "verification", req).await?;
+        let value = repository::update_verification(&self.pool, id, &prepared).await?;
+        self.hydrate("verification", value).await
     }
 
     // Changed Files
@@ -924,13 +1155,13 @@ impl DiraigentDb for PostgresDb {
         task_id: Uuid,
         req: &CreateChangedFiles,
     ) -> Result<Vec<ChangedFileSummary>, AppError> {
-        repository::create_changed_files(&self.0, task_id, req).await
+        repository::create_changed_files(&self.pool, task_id, req).await
     }
     async fn list_changed_files(&self, task_id: Uuid) -> Result<Vec<ChangedFileSummary>, AppError> {
-        repository::list_changed_files(&self.0, task_id).await
+        repository::list_changed_files(&self.pool, task_id).await
     }
     async fn get_changed_file_by_id(&self, id: Uuid) -> Result<ChangedFile, AppError> {
-        repository::get_changed_file_by_id(&self.0, id).await
+        repository::get_changed_file_by_id(&self.pool, id).await
     }
 
     // Stale detector support
@@ -966,7 +1197,7 @@ impl DiraigentDb for PostgresDb {
                AND a.last_seen_at < now() - make_interval(secs => COALESCE((p.metadata->'heartbeat_timeout_seconds')::double precision, $1::double precision))",
         )
         .bind(default_timeout as f64)
-        .fetch_all(&self.0)
+        .fetch_all(&self.pool)
         .await?;
         Ok(rows
             .into_iter()
@@ -992,7 +1223,7 @@ impl DiraigentDb for PostgresDb {
              RETURNING id",
         )
         .bind(task_id)
-        .fetch_optional(&self.0)
+        .fetch_optional(&self.pool)
         .await?;
         Ok(row.is_some())
     }
@@ -1002,7 +1233,7 @@ impl DiraigentDb for PostgresDb {
             "UPDATE diraigent.agent SET status = 'offline' WHERE id = $1 AND status != 'offline'",
         )
         .bind(agent_id)
-        .execute(&self.0)
+        .execute(&self.pool)
         .await?;
         Ok(())
     }
@@ -1011,7 +1242,7 @@ impl DiraigentDb for PostgresDb {
         let result: Option<(serde_json::Value,)> =
             sqlx::query_as("SELECT metadata FROM diraigent.project WHERE id = $1")
                 .bind(project_id)
-                .fetch_optional(&self.0)
+                .fetch_optional(&self.pool)
                 .await
                 .ok()
                 .flatten();
@@ -1037,7 +1268,7 @@ impl DiraigentDb for PostgresDb {
              RETURNING id",
         )
         .bind(threshold_seconds)
-        .fetch_all(&self.0)
+        .fetch_all(&self.pool)
         .await?;
 
         Ok(rows.into_iter().map(|(id,)| id).collect())
@@ -1054,7 +1285,7 @@ impl DiraigentDb for PostgresDb {
              RETURNING id",
         )
         .bind(threshold_days)
-        .fetch_all(&self.0)
+        .fetch_all(&self.pool)
         .await?;
 
         Ok(rows.into_iter().map(|(id,)| id).collect())
@@ -1066,7 +1297,7 @@ impl DiraigentDb for PostgresDb {
             "SELECT * FROM diraigent.webhook WHERE project_id = $1 AND enabled = true",
         )
         .bind(project_id)
-        .fetch_all(&self.0)
+        .fetch_all(&self.pool)
         .await?;
         Ok(hooks)
     }
@@ -1081,6 +1312,26 @@ impl DiraigentDb for PostgresDb {
         success: bool,
         attempt: i32,
     ) {
+        let prepared = async {
+            let project = self.parent_project("webhook", webhook_id).await?;
+            self.prepare(
+                project,
+                "webhook_delivery",
+                &serde_json::json!({"payload":payload,"response_body":response_body}),
+            )
+            .await
+        }
+        .await;
+        let prepared = match prepared {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!(error=%e, "Webhook history storage unavailable");
+                return;
+            }
+        };
+        let payload = &prepared["payload"];
+        let response_body = prepared["response_body"].as_str();
+
         let _ = sqlx::query(
             "INSERT INTO diraigent.webhook_delivery (webhook_id, event_type, payload, response_status, response_body, success, attempt_number)
              VALUES ($1, $2, $3, $4, $5, $6, $7)",
@@ -1092,7 +1343,7 @@ impl DiraigentDb for PostgresDb {
         .bind(response_body)
         .bind(success)
         .bind(attempt)
-        .execute(&self.0)
+        .execute(&self.pool)
         .await;
     }
 
@@ -1105,6 +1356,26 @@ impl DiraigentDb for PostgresDb {
         last_body: Option<&str>,
         attempts: i32,
     ) {
+        let prepared = async {
+            let project = self.parent_project("webhook", webhook_id).await?;
+            self.prepare(
+                project,
+                "webhook_dead_letter",
+                &serde_json::json!({"payload":payload,"last_response_body":last_body}),
+            )
+            .await
+        }
+        .await;
+        let prepared = match prepared {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!(error=%e, "Webhook history storage unavailable");
+                return;
+            }
+        };
+        let payload = &prepared["payload"];
+        let last_body = prepared["last_response_body"].as_str();
+
         let _ = sqlx::query(
             "INSERT INTO diraigent.webhook_dead_letter (webhook_id, event_type, payload, last_response_status, last_response_body, attempts)
              VALUES ($1, $2, $3, $4, $5, $6)",
@@ -1115,7 +1386,7 @@ impl DiraigentDb for PostgresDb {
         .bind(last_status)
         .bind(last_body)
         .bind(attempts)
-        .execute(&self.0)
+        .execute(&self.pool)
         .await;
     }
     // ── Auth User ─────────────────────────────────────────────────────────────
@@ -1127,7 +1398,7 @@ impl DiraigentDb for PostgresDb {
              RETURNING user_id",
         )
         .bind(auth_user_id)
-        .fetch_one(&self.0)
+        .fetch_one(&self.pool)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
@@ -1145,7 +1416,7 @@ impl DiraigentDb for PostgresDb {
             )
             .bind(user_id)
             .bind(crate::constants::DEFAULT_TENANT_ID)
-            .execute(&self.0)
+            .execute(&self.pool)
             .await
         {
             tracing::warn!(
@@ -1170,38 +1441,38 @@ impl DiraigentDb for PostgresDb {
         )
         .bind(user_id)
         .bind(user_id.to_string())
-        .execute(&self.0)
+        .execute(&self.pool)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(())
     }
 
     async fn delete_user_account(&self, user_id: Uuid) -> Result<(), AppError> {
-        repository::delete_user_account(&self.0, user_id).await
+        repository::delete_user_account(&self.pool, user_id).await
     }
 
     async fn get_user_id_by_auth_id(&self, auth_user_id: &str) -> Result<Option<Uuid>, AppError> {
-        repository::get_user_id_by_auth_id(&self.0, auth_user_id).await
+        repository::get_user_id_by_auth_id(&self.pool, auth_user_id).await
     }
 
     // ── Tenants ───────────────────────────────────────────────────────────────
     async fn create_tenant(&self, req: &CreateTenant) -> Result<Tenant, AppError> {
-        repository::create_tenant(&self.0, req).await
+        repository::create_tenant(&self.pool, req).await
     }
     async fn get_tenant_by_id(&self, id: Uuid) -> Result<Tenant, AppError> {
-        repository::get_tenant_by_id(&self.0, id).await
+        repository::get_tenant_by_id(&self.pool, id).await
     }
     async fn get_tenant_by_slug(&self, slug: &str) -> Result<Tenant, AppError> {
-        repository::get_tenant_by_slug(&self.0, slug).await
+        repository::get_tenant_by_slug(&self.pool, slug).await
     }
     async fn list_tenants(&self, filters: &TenantFilters) -> Result<Vec<Tenant>, AppError> {
-        repository::list_tenants(&self.0, filters).await
+        repository::list_tenants(&self.pool, filters).await
     }
     async fn update_tenant(&self, id: Uuid, req: &UpdateTenant) -> Result<Tenant, AppError> {
-        repository::update_tenant(&self.0, id, req).await
+        repository::update_tenant(&self.pool, id, req).await
     }
     async fn delete_tenant(&self, id: Uuid) -> Result<(), AppError> {
-        repository::delete_tenant(&self.0, id).await
+        repository::delete_tenant(&self.pool, id).await
     }
 
     // Tenant Members
@@ -1210,37 +1481,37 @@ impl DiraigentDb for PostgresDb {
         tenant_id: Uuid,
         req: &AddTenantMember,
     ) -> Result<TenantMember, AppError> {
-        repository::add_tenant_member(&self.0, tenant_id, req).await
+        repository::add_tenant_member(&self.pool, tenant_id, req).await
     }
     async fn list_tenant_members(&self, tenant_id: Uuid) -> Result<Vec<TenantMember>, AppError> {
-        repository::list_tenant_members(&self.0, tenant_id).await
+        repository::list_tenant_members(&self.pool, tenant_id).await
     }
     async fn update_tenant_member(
         &self,
         member_id: Uuid,
         req: &UpdateTenantMember,
     ) -> Result<TenantMember, AppError> {
-        repository::update_tenant_member(&self.0, member_id, req).await
+        repository::update_tenant_member(&self.pool, member_id, req).await
     }
     async fn remove_tenant_member(&self, member_id: Uuid) -> Result<(), AppError> {
-        repository::remove_tenant_member(&self.0, member_id).await
+        repository::remove_tenant_member(&self.pool, member_id).await
     }
     async fn get_tenant_member_for_user(
         &self,
         tenant_id: Uuid,
         user_id: Uuid,
     ) -> Result<Option<TenantMember>, AppError> {
-        repository::get_tenant_member_for_user(&self.0, tenant_id, user_id).await
+        repository::get_tenant_member_for_user(&self.pool, tenant_id, user_id).await
     }
     async fn get_tenant_for_user(&self, user_id: Uuid) -> Result<Option<Tenant>, AppError> {
-        repository::get_tenant_for_user(&self.0, user_id).await
+        repository::get_tenant_for_user(&self.pool, user_id).await
     }
     async fn check_user_project_tenant(
         &self,
         user_id: Uuid,
         project_id: Uuid,
     ) -> Result<bool, AppError> {
-        repository::check_user_project_tenant(&self.0, user_id, project_id).await
+        repository::check_user_project_tenant(&self.pool, user_id, project_id).await
     }
 
     // Wrapped Keys
@@ -1250,52 +1521,52 @@ impl DiraigentDb for PostgresDb {
         user_id: Uuid,
         req: &CreateWrappedKey,
     ) -> Result<WrappedKey, AppError> {
-        repository::create_wrapped_key(&self.0, tenant_id, user_id, req).await
+        repository::create_wrapped_key(&self.pool, tenant_id, user_id, req).await
     }
     async fn list_wrapped_keys(
         &self,
         tenant_id: Uuid,
         user_id: Uuid,
     ) -> Result<Vec<WrappedKey>, AppError> {
-        repository::list_wrapped_keys(&self.0, tenant_id, user_id).await
+        repository::list_wrapped_keys(&self.pool, tenant_id, user_id).await
     }
     async fn get_any_login_derived_key(
         &self,
         tenant_id: Uuid,
     ) -> Result<Option<WrappedKey>, AppError> {
-        repository::get_any_login_derived_key(&self.0, tenant_id).await
+        repository::get_any_login_derived_key(&self.pool, tenant_id).await
     }
     async fn delete_wrapped_key(&self, key_id: Uuid) -> Result<(), AppError> {
-        repository::delete_wrapped_key(&self.0, key_id).await
+        repository::delete_wrapped_key(&self.pool, key_id).await
     }
 
     // ── Packages ──────────────────────────────────────────────────────────────
     async fn get_package_for_project(&self, project_id: Uuid) -> Result<Option<Package>, AppError> {
-        repository::get_package_for_project(&self.0, project_id).await
+        repository::get_package_for_project(&self.pool, project_id).await
     }
 
     async fn list_packages(&self) -> Result<Vec<Package>, AppError> {
-        repository::list_packages(&self.0).await
+        repository::list_packages(&self.pool).await
     }
 
     async fn get_package_by_id(&self, id: Uuid) -> Result<Package, AppError> {
-        repository::get_package_by_id(&self.0, id).await
+        repository::get_package_by_id(&self.pool, id).await
     }
 
     async fn get_package_by_slug(&self, slug: &str) -> Result<Package, AppError> {
-        repository::get_package_by_slug(&self.0, slug).await
+        repository::get_package_by_slug(&self.pool, slug).await
     }
 
     async fn create_package(&self, req: &CreatePackage) -> Result<Package, AppError> {
-        repository::create_package(&self.0, req).await
+        repository::create_package(&self.pool, req).await
     }
 
     async fn update_package(&self, id: Uuid, req: &UpdatePackage) -> Result<Package, AppError> {
-        repository::update_package(&self.0, id, req).await
+        repository::update_package(&self.pool, id, req).await
     }
 
     async fn delete_package(&self, id: Uuid) -> Result<(), AppError> {
-        repository::delete_package(&self.0, id).await
+        repository::delete_package(&self.pool, id).await
     }
 
     // ── Reports ──────────────────────────────────────────────────────────────
@@ -1305,33 +1576,42 @@ impl DiraigentDb for PostgresDb {
         req: &CreateReport,
         created_by: Uuid,
     ) -> Result<Report, AppError> {
-        repository::create_report(&self.0, project_id, req, created_by).await
+        let prepared = self.prepare(project_id, "report", req).await?;
+        let value =
+            repository::create_report(&self.pool, project_id, &prepared, created_by).await?;
+        self.hydrate("report", value).await
     }
     async fn get_report_by_id(&self, id: Uuid) -> Result<Report, AppError> {
-        repository::get_report_by_id(&self.0, id).await
+        let value = repository::get_report_by_id(&self.pool, id).await?;
+        self.hydrate("report", value).await
     }
     async fn list_reports(
         &self,
         project_id: Uuid,
         filters: &ReportFilters,
     ) -> Result<Vec<Report>, AppError> {
-        repository::list_reports(&self.0, project_id, filters).await
+        let value = repository::list_reports(&self.pool, project_id, filters).await?;
+        self.hydrate("report", value).await
     }
     async fn count_reports(
         &self,
         project_id: Uuid,
         filters: &ReportFilters,
     ) -> Result<i64, AppError> {
-        repository::count_reports(&self.0, project_id, filters).await
+        repository::count_reports(&self.pool, project_id, filters).await
     }
     async fn update_report(&self, id: Uuid, req: &UpdateReport) -> Result<Report, AppError> {
-        repository::update_report(&self.0, id, req).await
+        let project_id = self.parent_project("report", id).await?;
+        let prepared = self.prepare(project_id, "report", req).await?;
+        let value = repository::update_report(&self.pool, id, &prepared).await?;
+        self.hydrate("report", value).await
     }
     async fn get_report_by_task_id(&self, task_id: Uuid) -> Result<Option<Report>, AppError> {
-        repository::get_report_by_task_id(&self.0, task_id).await
+        let value = repository::get_report_by_task_id(&self.pool, task_id).await?;
+        self.hydrate("report", value).await
     }
     async fn delete_report(&self, id: Uuid) -> Result<(), AppError> {
-        repository::delete_report(&self.0, id).await
+        repository::delete_report(&self.pool, id).await
     }
 
     // ── Task Logs ──────────────────────────────────────────────────────────
@@ -1341,24 +1621,24 @@ impl DiraigentDb for PostgresDb {
         agent_id: Option<Uuid>,
         req: &CreateTaskLog,
     ) -> Result<TaskLog, AppError> {
-        repository::create_task_log(&self.0, project_id, agent_id, req).await
+        repository::create_task_log(&self.pool, project_id, agent_id, req).await
     }
     async fn list_task_logs(
         &self,
         project_id: Uuid,
         filters: &TaskLogFilters,
     ) -> Result<Vec<TaskLogSummary>, AppError> {
-        repository::list_task_logs(&self.0, project_id, filters).await
+        repository::list_task_logs(&self.pool, project_id, filters).await
     }
     async fn count_task_logs(
         &self,
         project_id: Uuid,
         filters: &TaskLogFilters,
     ) -> Result<i64, AppError> {
-        repository::count_task_logs(&self.0, project_id, filters).await
+        repository::count_task_logs(&self.pool, project_id, filters).await
     }
     async fn get_task_log_by_id(&self, id: Uuid) -> Result<TaskLog, AppError> {
-        repository::get_task_log_by_id(&self.0, id).await
+        repository::get_task_log_by_id(&self.pool, id).await
     }
 
     // Event Observation Rules
@@ -1367,27 +1647,27 @@ impl DiraigentDb for PostgresDb {
         project_id: Uuid,
         req: &CreateEventObservationRule,
     ) -> Result<EventObservationRule, AppError> {
-        repository::create_event_observation_rule(&self.0, project_id, req).await
+        repository::create_event_observation_rule(&self.pool, project_id, req).await
     }
     async fn get_event_observation_rule(&self, id: Uuid) -> Result<EventObservationRule, AppError> {
-        repository::get_event_observation_rule(&self.0, id).await
+        repository::get_event_observation_rule(&self.pool, id).await
     }
     async fn list_event_observation_rules(
         &self,
         project_id: Uuid,
         filters: &EventObservationRuleFilters,
     ) -> Result<Vec<EventObservationRule>, AppError> {
-        repository::list_event_observation_rules(&self.0, project_id, filters).await
+        repository::list_event_observation_rules(&self.pool, project_id, filters).await
     }
     async fn update_event_observation_rule(
         &self,
         id: Uuid,
         req: &UpdateEventObservationRule,
     ) -> Result<EventObservationRule, AppError> {
-        repository::update_event_observation_rule(&self.0, id, req).await
+        repository::update_event_observation_rule(&self.pool, id, req).await
     }
     async fn delete_event_observation_rule(&self, id: Uuid) -> Result<(), AppError> {
-        repository::delete_event_observation_rule(&self.0, id).await
+        repository::delete_event_observation_rule(&self.pool, id).await
     }
     async fn find_matching_event_rules(
         &self,
@@ -1397,7 +1677,7 @@ impl DiraigentDb for PostgresDb {
         event_severity: Option<&str>,
     ) -> Result<Vec<EventObservationRule>, AppError> {
         repository::find_matching_rules(
-            &self.0,
+            &self.pool,
             project_id,
             event_kind,
             event_source,
@@ -1413,10 +1693,10 @@ impl DiraigentDb for PostgresDb {
         project_id: Option<Uuid>,
         req: &CreateProviderConfig,
     ) -> Result<ProviderConfig, AppError> {
-        repository::create_provider_config(&self.0, tenant_id, project_id, req).await
+        repository::create_provider_config(&self.pool, tenant_id, project_id, req).await
     }
     async fn get_provider_config(&self, id: Uuid) -> Result<ProviderConfig, AppError> {
-        repository::get_provider_config(&self.0, id).await
+        repository::get_provider_config(&self.pool, id).await
     }
     async fn list_provider_configs(
         &self,
@@ -1424,7 +1704,7 @@ impl DiraigentDb for PostgresDb {
         project_id: Option<Uuid>,
         filters: &ProviderConfigFilters,
     ) -> Result<Vec<ProviderConfig>, AppError> {
-        repository::list_provider_configs(&self.0, tenant_id, project_id, filters).await
+        repository::list_provider_configs(&self.pool, tenant_id, project_id, filters).await
     }
     async fn count_provider_configs(
         &self,
@@ -1432,28 +1712,28 @@ impl DiraigentDb for PostgresDb {
         project_id: Option<Uuid>,
         filters: &ProviderConfigFilters,
     ) -> Result<i64, AppError> {
-        repository::count_provider_configs(&self.0, tenant_id, project_id, filters).await
+        repository::count_provider_configs(&self.pool, tenant_id, project_id, filters).await
     }
     async fn update_provider_config(
         &self,
         id: Uuid,
         req: &UpdateProviderConfig,
     ) -> Result<ProviderConfig, AppError> {
-        repository::update_provider_config(&self.0, id, req).await
+        repository::update_provider_config(&self.pool, id, req).await
     }
     async fn delete_provider_config(&self, id: Uuid) -> Result<(), AppError> {
-        repository::delete_provider_config(&self.0, id).await
+        repository::delete_provider_config(&self.pool, id).await
     }
 
     // Forgejo CI
     async fn get_forgejo_integration(&self, id: Uuid) -> Result<ForgejoIntegration, AppError> {
-        repository::get_forgejo_integration(&self.0, id).await
+        repository::get_forgejo_integration(&self.pool, id).await
     }
     async fn get_forgejo_integration_by_project(
         &self,
         project_id: Uuid,
     ) -> Result<ForgejoIntegration, AppError> {
-        repository::get_forgejo_integration_by_project(&self.0, project_id).await
+        repository::get_forgejo_integration_by_project(&self.pool, project_id).await
     }
     async fn upsert_ci_run(
         &self,
@@ -1469,7 +1749,7 @@ impl DiraigentDb for PostgresDb {
         provider: &str,
     ) -> Result<CiRun, AppError> {
         repository::upsert_ci_run(
-            &self.0,
+            &self.pool,
             project_id,
             external_id,
             workflow_name,
@@ -1489,7 +1769,7 @@ impl DiraigentDb for PostgresDb {
         provider: &str,
         external_id: i64,
     ) -> Result<Option<CiRun>, AppError> {
-        repository::get_ci_run_by_external_id(&self.0, project_id, provider, external_id).await
+        repository::get_ci_run_by_external_id(&self.pool, project_id, provider, external_id).await
     }
     async fn upsert_ci_job_by_name(
         &self,
@@ -1501,7 +1781,7 @@ impl DiraigentDb for PostgresDb {
         finished_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<CiJob, AppError> {
         repository::upsert_ci_job_by_name(
-            &self.0,
+            &self.pool,
             ci_run_id,
             name,
             status,
@@ -1512,7 +1792,7 @@ impl DiraigentDb for PostgresDb {
         .await
     }
     async fn delete_steps_for_job(&self, ci_job_id: Uuid) -> Result<(), AppError> {
-        repository::delete_steps_for_job(&self.0, ci_job_id).await
+        repository::delete_steps_for_job(&self.pool, ci_job_id).await
     }
     async fn insert_ci_step(
         &self,
@@ -1524,7 +1804,7 @@ impl DiraigentDb for PostgresDb {
         finished_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<CiStep, AppError> {
         repository::insert_ci_step(
-            &self.0,
+            &self.pool,
             ci_job_id,
             name,
             status,
@@ -1545,7 +1825,7 @@ impl DiraigentDb for PostgresDb {
         offset: i64,
     ) -> Result<Vec<CiRun>, AppError> {
         repository::list_ci_runs(
-            &self.0,
+            &self.pool,
             project_id,
             branch,
             status,
@@ -1564,20 +1844,27 @@ impl DiraigentDb for PostgresDb {
         workflow_name: Option<&str>,
         provider: Option<&str>,
     ) -> Result<i64, AppError> {
-        repository::count_ci_runs(&self.0, project_id, branch, status, workflow_name, provider)
-            .await
+        repository::count_ci_runs(
+            &self.pool,
+            project_id,
+            branch,
+            status,
+            workflow_name,
+            provider,
+        )
+        .await
     }
     async fn get_ci_run(&self, id: Uuid) -> Result<CiRun, AppError> {
-        repository::get_ci_run(&self.0, id).await
+        repository::get_ci_run(&self.pool, id).await
     }
     async fn list_ci_jobs_for_run(&self, ci_run_id: Uuid) -> Result<Vec<CiJob>, AppError> {
-        repository::list_ci_jobs_for_run(&self.0, ci_run_id).await
+        repository::list_ci_jobs_for_run(&self.pool, ci_run_id).await
     }
     async fn get_ci_job(&self, id: Uuid) -> Result<CiJob, AppError> {
-        repository::get_ci_job(&self.0, id).await
+        repository::get_ci_job(&self.pool, id).await
     }
     async fn list_ci_steps_for_job(&self, ci_job_id: Uuid) -> Result<Vec<CiStep>, AppError> {
-        repository::list_ci_steps_for_job(&self.0, ci_job_id).await
+        repository::list_ci_steps_for_job(&self.pool, ci_job_id).await
     }
     async fn create_forgejo_integration(
         &self,
@@ -1586,19 +1873,25 @@ impl DiraigentDb for PostgresDb {
         token: Option<&str>,
         webhook_secret: &str,
     ) -> Result<ForgejoIntegration, AppError> {
-        repository::create_forgejo_integration(&self.0, project_id, base_url, token, webhook_secret)
-            .await
+        repository::create_forgejo_integration(
+            &self.pool,
+            project_id,
+            base_url,
+            token,
+            webhook_secret,
+        )
+        .await
     }
 
     // GitHub CI
     async fn get_github_integration(&self, id: Uuid) -> Result<GitHubIntegration, AppError> {
-        repository::get_github_integration(&self.0, id).await
+        repository::get_github_integration(&self.pool, id).await
     }
     async fn get_github_integration_by_project(
         &self,
         project_id: Uuid,
     ) -> Result<GitHubIntegration, AppError> {
-        repository::get_github_integration_by_project(&self.0, project_id).await
+        repository::get_github_integration_by_project(&self.pool, project_id).await
     }
     async fn create_github_integration(
         &self,
@@ -1607,7 +1900,13 @@ impl DiraigentDb for PostgresDb {
         token: Option<&str>,
         webhook_secret: &str,
     ) -> Result<GitHubIntegration, AppError> {
-        repository::create_github_integration(&self.0, project_id, base_url, token, webhook_secret)
-            .await
+        repository::create_github_integration(
+            &self.pool,
+            project_id,
+            base_url,
+            token,
+            webhook_secret,
+        )
+        .await
     }
 }

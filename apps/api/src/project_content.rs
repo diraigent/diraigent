@@ -36,17 +36,30 @@ pub async fn request(
     agent: Uuid,
     request: ContentRequest,
 ) -> Result<Value, AppError> {
-    require_active_owner(state, project, agent).await?;
-    let expected_store_id = store_id(state, project).await?;
+    request_parts(&state.pool, &state.ws_registry, project, agent, request).await
+}
+
+pub(crate) async fn request_parts(
+    pool: &sqlx::PgPool,
+    registry: &std::sync::Arc<crate::ws_registry::WsRegistry>,
+    project: Uuid,
+    agent: Uuid,
+    request: ContentRequest,
+) -> Result<Value, AppError> {
+    require_active_owner_pool(pool, project, agent).await?;
+    let expected_store_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT store_id FROM diraigent.project_content_owner WHERE project_id=$1",
+    )
+    .bind(project)
+    .fetch_optional(pool)
+    .await?;
     let id = Uuid::now_v7().to_string();
-    let rx = state
-        .ws_registry
-        .register_content_request(id.clone(), agent);
+    let rx = registry.register_content_request(id.clone(), agent);
     let _pending = Pending {
-        registry: state.ws_registry.clone(),
+        registry: registry.clone(),
         id: id.clone(),
     };
-    if !state.ws_registry.send_to_agent(
+    if !registry.send_to_agent(
         agent,
         WsMessage::ContentRequest {
             request_id: id,
@@ -81,8 +94,15 @@ pub async fn require_active_owner(
     project: Uuid,
     agent: Uuid,
 ) -> Result<(), AppError> {
+    require_active_owner_pool(&state.pool, project, agent).await
+}
+async fn require_active_owner_pool(
+    pool: &sqlx::PgPool,
+    project: Uuid,
+    agent: Uuid,
+) -> Result<(), AppError> {
     let active: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM diraigent.agent a JOIN diraigent.membership m ON m.agent_id=a.id AND m.status='active' JOIN diraigent.project p ON p.tenant_id=m.tenant_id WHERE a.id=$1 AND p.id=$2 AND a.status<>'revoked')")
-        .bind(agent).bind(project).fetch_one(&state.pool).await?;
+        .bind(agent).bind(project).fetch_one(pool).await?;
     if !active {
         return Err(AppError::ServiceUnavailable(
             "Project storage owner no longer has workspace access".into(),
@@ -255,6 +275,7 @@ pub async fn migrate(state: &AppState, project: Uuid) -> Result<Value, AppError>
     let mut moved = 0;
     for kind in [ContentKind::Log, ContentKind::Diff, ContentKind::Artifact] {
         let query = match kind {
+            ContentKind::Field => unreachable!("fields use the record migration"),
             ContentKind::Log => {
                 "SELECT l.id FROM diraigent.task_log l WHERE l.project_id=$1 AND NOT EXISTS(SELECT 1 FROM diraigent.project_content_ref r WHERE r.object_id=l.id AND r.kind='log') ORDER BY l.id LIMIT 20"
             }
@@ -271,6 +292,7 @@ pub async fn migrate(state: &AppState, project: Uuid) -> Result<Value, AppError>
             .await?;
         for id in ids {
             let value = match kind {
+                ContentKind::Field => unreachable!("fields use the record migration"),
                 ContentKind::Log => {
                     let l = state.db.get_task_log_by_id(id).await?;
                     json!({"content":l.content,"metadata":l.metadata})
@@ -320,6 +342,7 @@ pub async fn migrate(state: &AppState, project: Uuid) -> Result<Value, AppError>
             }
             let mut tx = state.pool.begin().await?;
             let clear = match kind {
+                ContentKind::Field => unreachable!("fields use the record migration"),
                 ContentKind::Log => {
                     "UPDATE diraigent.task_log SET content='',metadata='{}' WHERE id=$1"
                 }
@@ -334,5 +357,6 @@ pub async fn migrate(state: &AppState, project: Uuid) -> Result<Value, AppError>
             moved += 1;
         }
     }
+    moved += crate::content_fields::migrate(state, project).await?;
     Ok(json!({"moved":moved,"batch_limit_per_kind":20}))
 }

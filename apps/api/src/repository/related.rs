@@ -23,7 +23,7 @@ const STOP_WORDS: &[&str] = &[
 /// Extract significant keywords from text fragments.
 /// Splits on whitespace and punctuation, lowercases, filters out words < 3 chars
 /// and common stop words.
-fn extract_keywords(texts: &[&str]) -> Vec<String> {
+pub fn extract_keywords(texts: &[&str]) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut keywords = Vec::new();
 

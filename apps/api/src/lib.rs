@@ -2,6 +2,7 @@ pub mod auth;
 pub mod authz;
 pub mod chat;
 pub mod constants;
+pub mod content_fields;
 pub mod crypto;
 pub mod csrf;
 pub mod db;

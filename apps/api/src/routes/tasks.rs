@@ -342,8 +342,13 @@ async fn get_related_items(
 
     let limit = params.limit.unwrap_or(5).clamp(1, 20) as usize;
 
-    let mut related =
-        crate::repository::find_related_for_task(&state.pool, task.project_id, &task).await?;
+    let store =
+        crate::content_fields::FieldStore::new(state.pool.clone(), state.ws_registry.clone());
+    let mut related = if store.enabled(task.project_id).await? {
+        store.related(&task, limit).await?
+    } else {
+        crate::repository::find_related_for_task(&state.pool, task.project_id, &task).await?
+    };
 
     // Cap each entity-type list to the requested limit.
     related.knowledge.truncate(limit);

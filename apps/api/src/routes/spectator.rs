@@ -123,8 +123,12 @@ async fn project(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<PublicProject>, AppError> {
-    let db = PostgresDb(state.pool);
-    Ok(Json(PublicProject::from(&access(&db, id).await?)))
+    let db = PostgresDb::new(state.pool.clone());
+    let record = access(&db, id).await?;
+    let record = crate::content_fields::FieldStore::new(state.pool, state.ws_registry)
+        .hydrate_published(id, "project", record)
+        .await?;
+    Ok(Json(PublicProject::from(&record)))
 }
 
 async fn tasks(
@@ -132,7 +136,7 @@ async fn tasks(
     Path(id): Path<Uuid>,
     Query(query): Query<PageQuery>,
 ) -> Result<Json<PaginatedResponse<PublicTask>>, AppError> {
-    let db = PostgresDb(state.pool);
+    let db = PostgresDb::new(state.pool.clone());
     access(&db, id).await?;
     let (limit, offset) = query.bounds()?;
     let filters = TaskFilters {
@@ -157,10 +161,13 @@ async fn task(
     State(state): State<AppState>,
     Path((project_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<PublicTaskDetail>, AppError> {
-    let db = PostgresDb(state.pool);
+    let db = PostgresDb::new(state.pool.clone());
     access(&db, project_id).await?;
     let row = db.get_task_by_id(id).await.map_err(hide_missing)?;
     scoped(row.project_id, project_id)?;
+    let row = crate::content_fields::FieldStore::new(state.pool, state.ws_registry)
+        .hydrate_published(project_id, "task", row)
+        .await?;
     Ok(Json(PublicTaskDetail::from(&row)))
 }
 
@@ -169,7 +176,7 @@ async fn work_list(
     Path(id): Path<Uuid>,
     Query(query): Query<PageQuery>,
 ) -> Result<Json<PaginatedResponse<PublicWork>>, AppError> {
-    let db = PostgresDb(state.pool);
+    let db = PostgresDb::new(state.pool.clone());
     access(&db, id).await?;
     let (limit, offset) = query.bounds()?;
     let filters = WorkFilters {
@@ -181,6 +188,9 @@ async fn work_list(
     for row in &rows {
         scoped(row.project_id, id)?;
     }
+    let rows = crate::content_fields::FieldStore::new(state.pool, state.ws_registry)
+        .hydrate_published(id, "work", rows)
+        .await?;
     Ok(page(
         rows.iter().map(PublicWork::from).collect(),
         counts.iter().map(|(_, count)| count).sum(),
@@ -193,10 +203,13 @@ async fn work(
     State(state): State<AppState>,
     Path((project_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<PublicWork>, AppError> {
-    let db = PostgresDb(state.pool);
+    let db = PostgresDb::new(state.pool.clone());
     access(&db, project_id).await?;
     let row = db.get_work_by_id(id).await.map_err(hide_missing)?;
     scoped(row.project_id, project_id)?;
+    let row = crate::content_fields::FieldStore::new(state.pool, state.ws_registry)
+        .hydrate_published(project_id, "work", row)
+        .await?;
     Ok(Json(PublicWork::from(&row)))
 }
 
@@ -205,7 +218,7 @@ async fn knowledge_list(
     Path(id): Path<Uuid>,
     Query(query): Query<PageQuery>,
 ) -> Result<Json<PaginatedResponse<PublicKnowledge>>, AppError> {
-    let db = PostgresDb(state.pool);
+    let db = PostgresDb::new(state.pool.clone());
     access(&db, id).await?;
     let (limit, offset) = query.bounds()?;
     let filters = KnowledgeFilters {
@@ -220,6 +233,9 @@ async fn knowledge_list(
     for row in &rows {
         scoped(row.project_id, id)?;
     }
+    let rows = crate::content_fields::FieldStore::new(state.pool, state.ws_registry)
+        .hydrate_published(id, "knowledge", rows)
+        .await?;
     Ok(page(
         rows.iter().map(PublicKnowledge::from).collect(),
         total,
@@ -232,10 +248,13 @@ async fn knowledge(
     State(state): State<AppState>,
     Path((project_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<PublicKnowledge>, AppError> {
-    let db = PostgresDb(state.pool);
+    let db = PostgresDb::new(state.pool.clone());
     access(&db, project_id).await?;
     let row = db.get_knowledge_by_id(id).await.map_err(hide_missing)?;
     scoped(row.project_id, project_id)?;
+    let row = crate::content_fields::FieldStore::new(state.pool, state.ws_registry)
+        .hydrate_published(project_id, "knowledge", row)
+        .await?;
     Ok(Json(PublicKnowledge::from(&row)))
 }
 
@@ -244,7 +263,7 @@ async fn decisions(
     Path(id): Path<Uuid>,
     Query(query): Query<PageQuery>,
 ) -> Result<Json<PaginatedResponse<PublicDecision>>, AppError> {
-    let db = PostgresDb(state.pool);
+    let db = PostgresDb::new(state.pool.clone());
     access(&db, id).await?;
     let (limit, offset) = query.bounds()?;
     let filters = DecisionFilters {
@@ -259,6 +278,9 @@ async fn decisions(
     for row in &rows {
         scoped(row.project_id, id)?;
     }
+    let rows = crate::content_fields::FieldStore::new(state.pool, state.ws_registry)
+        .hydrate_published(id, "decision", rows)
+        .await?;
     Ok(page(
         rows.iter().map(PublicDecision::from).collect(),
         total,
@@ -271,10 +293,13 @@ async fn decision(
     State(state): State<AppState>,
     Path((project_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<PublicDecision>, AppError> {
-    let db = PostgresDb(state.pool);
+    let db = PostgresDb::new(state.pool.clone());
     access(&db, project_id).await?;
     let row = db.get_decision_by_id(id).await.map_err(hide_missing)?;
     scoped(row.project_id, project_id)?;
+    let row = crate::content_fields::FieldStore::new(state.pool, state.ws_registry)
+        .hydrate_published(project_id, "decision", row)
+        .await?;
     Ok(Json(PublicDecision::from(&row)))
 }
 

@@ -100,7 +100,9 @@ async fn main() -> anyhow::Result<()> {
     diraigent_api::migration_runner::run(&pool).await?;
     tracing::info!("PostgreSQL migrations applied");
     let dek_cache = crypto::DekCache::new();
-    let raw_db: Arc<dyn db::DiraigentDb> = Arc::new(db::PostgresDb(pool.clone()));
+    let content_registry = Arc::new(ws_registry::WsRegistry::new());
+    let raw_db: Arc<dyn db::DiraigentDb> =
+        Arc::new(db::PostgresDb::new(pool.clone()).with_content(content_registry.clone()));
     let database: Arc<dyn db::DiraigentDb> = Arc::new(db::CryptoDb::new(raw_db, dek_cache.clone()));
 
     if env::var("DEV_USER_ID").is_ok() {
@@ -187,7 +189,7 @@ async fn main() -> anyhow::Result<()> {
         review_tx,
         agent_tx,
         sse_tickets: diraigent_api::SseTicketStore::default(),
-        ws_registry: Arc::new(ws_registry::WsRegistry::new()),
+        ws_registry: content_registry,
     };
 
     stale_detector::spawn_stale_detector(database.clone(), webhook_dispatcher);
@@ -242,7 +244,7 @@ async fn main() -> anyhow::Result<()> {
                 }
             }),
         )
-        .nest("/v1", routes::router())
+        .nest("/v1", routes::router_with_content_scope(state.clone()))
         .merge(
             utoipa_swagger_ui::SwaggerUi::new("/swagger-ui")
                 .url("/api-docs/openapi.json", openapi::ApiDoc::openapi()),

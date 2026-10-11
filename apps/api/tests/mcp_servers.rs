@@ -32,7 +32,7 @@ async fn unauthenticated_registry_requests_are_rejected_before_database_access()
         .connect_lazy("postgres://localhost:1/unused")
         .unwrap();
     let dek_cache = diraigent_api::crypto::DekCache::new();
-    let raw: Arc<dyn DiraigentDb> = Arc::new(PostgresDb(pool.clone()));
+    let raw: Arc<dyn DiraigentDb> = Arc::new(PostgresDb::new(pool.clone()));
     let db: Arc<dyn DiraigentDb> = Arc::new(CryptoDb::new(raw, dek_cache.clone()));
     let (review_tx, _) = tokio::sync::broadcast::channel(16);
     let (agent_tx, _) = tokio::sync::broadcast::channel(16);
@@ -433,7 +433,7 @@ async fn configured_tenant_encryption_protects_separate_credentials() {
         .fetch_one(&app.pool)
         .await
         .unwrap();
-    let raw = Arc::new(PostgresDb(app.pool.clone()));
+    let raw = Arc::new(PostgresDb::new(app.pool.clone()));
     let cache = diraigent_api::crypto::DekCache::new();
     cache
         .put(tenant, diraigent_api::crypto::Dek::generate())

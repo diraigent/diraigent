@@ -139,8 +139,10 @@ impl TestApp {
     /// Build a fresh Router backed by this test database.
     fn router(&self, is_production: bool) -> Router {
         let dek_cache = diraigent_api::crypto::DekCache::new();
-        let raw_db: Arc<dyn diraigent_api::db::DiraigentDb> =
-            Arc::new(diraigent_api::db::PostgresDb(self.pool.clone()));
+        let raw_db: Arc<dyn diraigent_api::db::DiraigentDb> = Arc::new(
+            diraigent_api::db::PostgresDb::new(self.pool.clone())
+                .with_content(self.ws_registry.clone()),
+        );
         let db: Arc<dyn diraigent_api::db::DiraigentDb> =
             Arc::new(diraigent_api::db::CryptoDb::new(raw_db, dek_cache.clone()));
         let (review_tx, _) = tokio::sync::broadcast::channel(16);
@@ -164,7 +166,7 @@ impl TestApp {
             ws_registry: self.ws_registry.clone(),
         };
         Router::new()
-            .nest("/v1", routes::router())
+            .nest("/v1", routes::router_with_content_scope(state.clone()))
             .with_state(state)
     }
 
