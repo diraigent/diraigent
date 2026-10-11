@@ -23,7 +23,7 @@ services:
   orchestra:
     image: diraigent/orchestra:local
     build: *orchestra-build
-    env_file: .env
+    env_file: ${ORCHESTRA_ENV_FILE:-.env}
     environment:
       DIRAIGENT_API_URL: ${DIRAIGENT_API_URL:-https://api.diraigent.com/v1}
       MAX_WORKERS: ${MAX_WORKERS:-3}

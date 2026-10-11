@@ -17,7 +17,7 @@ jobs:
       - run: bash -n startup/start.sh apps/orchestra/onboard.sh
       - run: python3 scripts/test-startup.py
       - run: docker compose -f startup/docker-compose.yml --env-file startup/.env.example config --quiet
-      - run: docker compose -f startup/orchestra.yml --env-file startup/.env.example config --no-env-resolution --quiet
+      - run: ORCHESTRA_ENV_FILE=.env.example docker compose -f startup/orchestra.yml --env-file startup/.env.example config --quiet
       - name: Check custom web port uses the matching API origin
         run: |
           WEB_PORT=4201 docker compose -f startup/docker-compose.yml --env-file startup/.env.example config --format json | python3 -c "import json,sys; c=json.load(sys.stdin); assert c['services']['api']['environment']['CORS_ORIGINS']=='http://localhost:4201'"
