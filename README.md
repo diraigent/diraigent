@@ -1,47 +1,27 @@
 # Diraigent
 
-**Your codebase deserves a system, not a suggestion.**
+**A self-hosted platform for coordinating AI-assisted software development.**
 
-A self-hosted software factory — define goals, agents decompose and execute them in isolated worktrees, with humans in the loop where it matters.
+Diraigent brings projects, tasks, project knowledge, chat and human review into one shared workspace. Orchestra workers run coding agents in isolated Git worktrees and manage task execution and Git delivery. OpenCode is the default execution provider; Codex and Claude Code are optional alternatives.
 
-![Diraigent demo](apps/landing/public/assets/images/demo.gif)
+The API is the authenticated control plane. With full Orchestra storage enabled, durable workers also hold detailed project content, repositories and execution output, and perform content search. Web and iOS clients access that content through the API under the same project permissions.
 
-## Why Diraigent?
+![Diraigent demo](apps/web/public/landing/demo.gif)
 
-Most AI coding tools fall into one of three traps:
+## What Diraigent provides
 
-- **Black-box SaaS** — cloud agents you can't inspect, audit, or self-host. Your code leaves your network.
-- **Single-agent copilots** — great for autocomplete, but they don't orchestrate work, manage releases, or enforce quality gates.
-- **Unstructured swarms** — agents without enforced workflows, no state machines, no audit trail.
+- **Shared workspaces** — people collaborate on projects with viewer, editor or manager access. Read-only demo accounts use these permissions.
+- **Task execution and Git delivery** — Orchestra claims ready tasks, runs the selected provider in isolated worktrees, and follows the project's merge or branch policy.
+- **Human review** — tasks can enter `human_review` when intervention is needed. Repository instructions and skills guide agents; configurable playbook pipelines have been retired.
+- **Persistent project context** — knowledge, decisions, observations, comments and evidence stay associated with the project across tasks.
+- **Worker-owned storage** — an assigned Orchestra can store detailed content and run search while PostgreSQL retains access control, task state and routing references.
+- **Tools and operations** — MCP integration, release support, audit history and optional telemetry support the development workflow.
 
-Diraigent is none of these. It's a structured, self-hosted platform where:
-
-- **Agents execute tasks directly** — repository guidance and skills guide the work, with isolated worktrees and optional human review.
-- **Goals decompose into parallel tasks** — describe what you want at any level, Diraigent breaks it into concrete tasks and dispatches agents in parallel.
-- **Humans decide what matters** — merge conflicts, ambiguous requirements, and quality gate failures surface in a review queue. Agents handle the routine; you handle the judgment calls.
-- **Your project gets smarter over time** — knowledge entries, architectural decisions, and observations accumulate as agents work. The next task starts with everything the last one learned.
-- **Different agents, different permissions** — define roles with scoped authority. One agent writes code, another reviews, another handles releases.
-- **Releases are a first-class concept** — built-in release workflows with configurable merge strategies, branch management, and release tagging.
-
-## How Diraigent Compares
-
-| Capability | IDE Copilots | SaaS Agents | Open-Source Agents | Agent Orchestrators | **Diraigent** |
-|---|---|---|---|---|---|
-| Multi-agent parallel execution | — | ✓ | — | ✓ | **✓** |
-| Task ownership and Git delivery | — | — | — | — | **✓** |
-| Goal-to-task decomposition | — | ~ | — | — | **✓** |
-| Persistent project knowledge | — | — | — | — | **✓** |
-| Human-in-the-loop review queue | — | — | — | — | **✓** |
-| Role-based agent authority | — | — | — | — | **✓** |
-| Release management | — | ~ | — | — | **✓** |
-| Self-hosted / data sovereignty | — | — | ✓ | ✓ | **✓** |
-| Full audit trail | — | — | ~ | ~ | **✓** |
-
-*Categories represent tool archetypes, not specific products.*
+Self-hosting controls where Diraigent stores its data. The chosen AI provider and MCP tools determine where prompts and tool data are processed.
 
 ## Quickstart
 
-Prerequisites: Docker, Docker Compose, and model-provider credentials for OpenCode (the default agent). Claude Code and Codex are optional providers.
+Prerequisites: Docker and Docker Compose. The legacy `startup/start.sh` helper additionally requires macOS, Python 3 and Claude Code credentials in the Keychain. OpenCode deployments need their provider authentication configured separately. For worker configuration, see [the Orchestra environment example](apps/orchestra/.env.example).
 
 ```bash
 curl -LO https://raw.githubusercontent.com/diraigent/diraigent/main/startup/docker-compose.yml
@@ -71,9 +51,9 @@ Images are published on Docker Hub: [`diraigent/api`](https://hub.docker.com/r/d
 ### First steps after startup
 
 1. **Create a project** — in the dashboard, create a new project and point it at your git repo's default branch
-2. **Chat with the assistant** — open the project chat and verify Claude responds
+2. **Chat with the assistant** — open the project chat and verify the configured provider responds
 3. **Create a task** — fill in spec and acceptance criteria
-5. The orchestra picks it up and starts working
+4. **Make the task ready** — an authorized, connected Orchestra picks it up and starts working
 
 ### Git credentials
 
@@ -87,24 +67,32 @@ Without credentials, agents can still work locally but push/merge to the remote 
 
 ## Architecture
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  Web (4200) │────▶│  API (8082) │◀────│  Orchestra  │
-│  Angular 21 │     │  Rust/Axum  │     │  Rust + CC  │
-└─────────────┘     └──────┬──────┘     └─────────────┘
-                           │
-                    ┌──────┴──────┐
-                    │  PostgreSQL │
-                    │    (5433)   │
-                    └─────────────┘
+```mermaid
+flowchart LR
+    Web[Web dashboard] --> API[API: authentication, permissions and coordination]
+    iOS[iOS app] --> API
+    API --> DB[(PostgreSQL: shared state and content references)]
+    Orchestra[Orchestra worker] <-->|Authenticated WebSocket| API
+    Orchestra --> Store[(Local durable content store)]
+    Orchestra --> Repos[Repositories and task worktrees]
+    Orchestra --> Agent[OpenCode / Codex / Claude Code]
 ```
 
 | Component | Description |
 |-----------|-------------|
-| **API** | Rust/Axum REST API. PostgreSQL backend (sqlx). JWT JWKS auth. WebSocket agent communication. |
-| **Orchestra** | Polls API for ready tasks, runs OpenCode by default in isolated git worktrees, coordinates task completion and Git delivery. |
-| **Web** | Angular 21 + Tailwind CSS 4 + Catppuccin themes. Full project management dashboard. |
+| **API** | Rust/Axum REST API with PostgreSQL (sqlx), JWT/JWKS authentication, project authorization and authenticated worker communication. Relays authorized content requests to the assigned storage owner. |
+| **Orchestra** | Runs on a host or in a container. Executes tasks, manages repositories and worktrees, and can own durable project content and content search. |
+| **Web** | Angular 21 + Tailwind CSS 4 + Catppuccin themes. Project management dashboard. |
+| **iOS** | Native client for projects, tasks and chat. Uses the same API permissions; workspace switching and access-management screens currently live in the web app. |
 | **TUI** | Ratatui terminal interface (experimental). |
+
+### Durable project storage
+
+Full storage is opt-in per project and requires a protocol-2 Orchestra owner. Detailed content includes task specifications, comments, knowledge and embeddings, decisions, evidence, audit snapshots and webhook history. Logs, diffs, artifacts, personal chat and repository files also live on Orchestra. The API retains authentication, authorization, shared state, verified references and small operational metadata.
+
+The owner's `DATA_DIR` must persist across restarts and upgrades. Detailed reads require that owner to be online; automatic storage failover is not implemented. Back up both PostgreSQL and the worker content database. Encrypted workspaces cannot enable this storage mode yet.
+
+See [Orchestra project storage](docs/orchestra-project-storage.md) for migration, backup and recovery details.
 
 ## Core Concepts
 
@@ -133,6 +121,8 @@ Stop all workers before upgrading the API and worker together. Migration 047 rem
 Projects nest hierarchically — agents at a parent level inherit authority over all children. Agents are assigned to projects through roles, each granting a combination of six authorities: `execute`, `delegate`, `review`, `create`, `decide`, `manage`.
 
 The platform also tracks structured knowledge (architecture docs, conventions, patterns), ADR-style decisions, observations (things agents notice that may become tasks), integrations (external tools with per-agent access control), and events (CI results, deploys, errors).
+
+Human access is separate from agent roles. Workspace members receive explicit project viewer, editor or manager grants; human project grants do not inherit from parent projects. See [shared workspace access](docs/workspace-access.md) and [demo accounts](docs/demo-account.md).
 
 ## Configuration
 
@@ -164,11 +154,20 @@ requires authentication configuration before sign-in can work.
 | `LOKI_ENV` | No | Environment label for Loki (default: `dev`) |
 | `AGENT_ID` | Orchestra | Agent UUID (register via `POST /agents`) |
 | `GIT_REPO_URL` | Orchestra | Git repo URL cloned into the worker volume |
-| `MAX_WORKERS` | No | Concurrent Claude Code workers (default: `3`) |
+| `MAX_WORKERS` | No | Concurrent task workers (default: `3`) |
+| `DATA_DIR` | Orchestra | Durable local runtime and content storage directory; persist and back it up |
 
 ## API Reference
 
 The OpenAPI spec is served at runtime: `GET /v1/openapi.json`
+
+## Further documentation
+
+- [Orchestra project storage](docs/orchestra-project-storage.md)
+- [Shared workspaces and project permissions](docs/workspace-access.md)
+- [Read-only demo accounts](docs/demo-account.md)
+- [MCP worker integration](docs/mcp-workers.md)
+- [Public release checks](docs/public-release-readiness.md)
 
 ## Development
 
