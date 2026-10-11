@@ -11,6 +11,7 @@
 #            in the web dashboard (web.diraigent.com/agents).
 
 set -euo pipefail
+umask 077
 cd "$(dirname "$0")"
 
 # ── Defaults ──────────────────────────────────────────────────────
@@ -54,7 +55,7 @@ if [ -n "$EXISTING_KEY" ] && [ -n "$EXISTING_AGENT_ID" ]; then
   AGENT_ID="$EXISTING_AGENT_ID"
   API_KEY="$EXISTING_KEY"
   echo "Using existing agent: $AGENT_ID"
-  echo "API Key:  ${API_KEY:0:12}..."
+  echo "Agent credential received; value not shown."
 else
   # Interactive registration
   if [ -z "$AGENT_NAME" ]; then
@@ -68,15 +69,14 @@ else
     -H 'Content-Type: application/json' -H "$AUTH" \
     -d "{
       \"name\": \"$AGENT_NAME\",
-      \"kind\": \"claude\",
       \"capabilities\": [\"rust\",\"typescript\",\"angular\",\"sql\",\"docker\",\"code-review\"],
-      \"metadata\": {\"model\": \"claude-opus-4-6\", \"runtime\": \"orchestra\"}
+      \"metadata\": {\"provider\": \"opencode\", \"runtime\": \"orchestra\"}
     }")
 
   AGENT_ID=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
   API_KEY=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['api_key'])")
   echo "Agent ID: $AGENT_ID"
-  echo "API Key:  ${API_KEY:0:12}..."
+  echo "Agent credential received; value not shown."
 fi
 
 # ── Pick project (optional) ───────────────────────────────────────
@@ -132,14 +132,32 @@ for i, r in enumerate(json.load(sys.stdin)):
 fi
 
 # ── Write .env ────────────────────────────────────────────────────
-ENV=".env"
-{
-  echo "DIRAIGENT_API_URL=$API"
-  echo "DIRAIGENT_API_TOKEN=$API_KEY"
-  echo "AGENT_ID=$AGENT_ID"
-} > "$ENV"
+export ONBOARD_API_URL="$API" ONBOARD_AGENT_ID="$AGENT_ID" ONBOARD_API_KEY="$API_KEY"
+python3 - <<'PYENV'
+import os, re, shlex, tempfile
+from pathlib import Path
+path = Path('.env')
+if path.is_symlink():
+    raise SystemExit('Use a regular .env file to save credentials.')
+values = {'DIRAIGENT_API_URL': os.environ['ONBOARD_API_URL'],
+          'AGENT_ID': os.environ['ONBOARD_AGENT_ID'],
+          'DIRAIGENT_API_TOKEN': os.environ['ONBOARD_API_KEY']}
+lines = []
+for line in path.read_text().splitlines() if path.exists() else []:
+    match = re.match(r'\s*(?:export\s+)?(DIRAIGENT_API_URL|AGENT_ID|DIRAIGENT_API_TOKEN)\s*=', line)
+    if not match:
+        lines.append(line)
+lines.extend(k + '=' + shlex.quote(v) for k, v in values.items())
+fd, name = tempfile.mkstemp(prefix='.env-', dir='.')
+try:
+    with os.fdopen(fd, 'w') as f:
+        f.write('\n'.join(lines) + '\n'); f.flush(); os.fsync(f.fileno())
+    os.replace(name, path)
+finally:
+    if os.path.exists(name): os.unlink(name)
+PYENV
 
 echo ""
-echo "Written to $ENV"
+echo "Credentials saved privately in .env; existing provider settings preserved."
 echo ""
 echo "Start: cargo run -p diraigent-orchestra --bin orchestra"

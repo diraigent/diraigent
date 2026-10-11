@@ -21,12 +21,11 @@ Self-hosting controls where Diraigent stores its data. The chosen AI provider an
 
 ## Quickstart
 
-Prerequisites: Docker and Docker Compose. The legacy `startup/start.sh` helper additionally requires macOS, Python 3 and Claude Code credentials in the Keychain. OpenCode deployments need their provider authentication configured separately. For worker configuration, see [the Orchestra environment example](apps/orchestra/.env.example).
+Prerequisites: Git, Docker with Compose, Bash, curl and Python 3 on Linux or macOS. OpenCode is the default; Claude Code and Codex are optional. See [onboarding](docs/onboarding.md) for authentication and persistent worker storage.
 
 ```bash
-curl -LO https://raw.githubusercontent.com/diraigent/diraigent/main/startup/docker-compose.yml
-curl -LO https://raw.githubusercontent.com/diraigent/diraigent/main/startup/start.sh
-curl -LO https://raw.githubusercontent.com/diraigent/diraigent/main/startup/.env.example
+git clone https://github.com/diraigent/diraigent.git
+cd diraigent/startup
 cp .env.example .env
 chmod +x start.sh
 ```
@@ -34,19 +33,26 @@ chmod +x start.sh
 Edit `.env` before starting:
 
 ```bash
-# Required — the git repo the orchestra will clone and work on
-GIT_REPO_URL=https://github.com/your-org/your-repo.git
+# Choose a model your provider account can use.
+OPENCODE_MODEL=openai/your-model-id
+OPENAI_API_KEY=your-provider-api-key
 ```
 
-`start.sh` reads your Claude Code credentials from the macOS Keychain, registers an agent with the API, and brings up all containers:
+For the first run, build the images with `./start.sh --build`.
+Alternatively, run `./start.sh --build --login` for interactive OpenCode authentication.
+Run `./start.sh --models` to find model IDs and set `OPENCODE_MODEL`.
+
+`start.sh` checks the provider connection, registers an agent, privately saves its
+API key, and starts the containers. Repositories, Orchestra content and OpenCode
+accounts use persistent volumes:
 
 ```bash
-./start.sh
+./start.sh --build
 ```
 
 Once running, open the dashboard at **http://localhost:4200**.
 
-Images are published on Docker Hub: [`diraigent/api`](https://hub.docker.com/r/diraigent/api), [`diraigent/web`](https://hub.docker.com/r/diraigent/web), [`diraigent/orchestra`](https://hub.docker.com/r/diraigent/orchestra).
+The quickstart builds local images from this checkout. Run `./start.sh --build` after updating the source; restart normally with `./start.sh`.
 
 ### First steps after startup
 
@@ -153,7 +159,7 @@ requires authentication configuration before sign-in can work.
 | `LOKI_URL` | No | Loki push endpoint for log shipping |
 | `LOKI_ENV` | No | Environment label for Loki (default: `dev`) |
 | `AGENT_ID` | Orchestra | Agent UUID (register via `POST /agents`) |
-| `GIT_REPO_URL` | Orchestra | Git repo URL cloned into the worker volume |
+| `OPENCODE_MODEL` | Startup | Explicit `provider/model` ID for the default OpenCode worker |
 | `MAX_WORKERS` | No | Concurrent task workers (default: `3`) |
 | `DATA_DIR` | Orchestra | Durable local runtime and content storage directory; persist and back it up |
 
@@ -163,6 +169,7 @@ The OpenAPI spec is served at runtime: `GET /v1/openapi.json`
 
 ## Further documentation
 
+- [OpenCode onboarding](docs/onboarding.md)
 - [Orchestra project storage](docs/orchestra-project-storage.md)
 - [Shared workspaces and project permissions](docs/workspace-access.md)
 - [Read-only demo accounts](docs/demo-account.md)

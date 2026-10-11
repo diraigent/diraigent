@@ -243,15 +243,16 @@
       <a href="https://github.com/diraigent/diraigent" target="_blank" rel="noopener" class="btn btn-primary">view on github</a>
       <a href="https://discord.gg/tfaYmvTw" target="_blank" rel="noopener" class="btn btn-secondary">join discord</a>
     </div>
-    <p class="section-intro">The legacy startup helper below requires macOS and Claude Code credentials in the Keychain. Configure OpenCode provider authentication separately; see the repository documentation for worker settings and durable storage.</p>
+    <p class="section-intro">Requires Git, Docker Compose, Bash, curl and Python 3 on Linux or macOS. Set a provider API key or use the OpenCode login helper, then choose an explicit provider/model. Worker content and provider accounts use persistent volumes.</p>
     <div class="get-started-steps">
       <pre><code>
-curl -LO https://raw.githubusercontent.com/diraigent/diraigent/main/startup/docker-compose.yml
-curl -LO https://raw.githubusercontent.com/diraigent/diraigent/main/startup/start.sh
-curl -LO https://raw.githubusercontent.com/diraigent/diraigent/main/startup/.env.example
+git clone https://github.com/diraigent/diraigent.git
+cd diraigent/startup
 cp .env.example .env    # edit .env for your setup
 chmod +x start.sh
-./start.sh              # registers agent and starts everything
+./start.sh --build --login  # optional: build and connect a provider
+./start.sh --models     # choose OPENCODE_MODEL in .env
+./start.sh --build      # builds images, registers agent, starts services
       </code></pre>
     </div>
 

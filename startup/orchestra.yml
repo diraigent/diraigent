@@ -1,22 +1,40 @@
-# Orchestra agent — connects to a hosted Diraigent instance.
-#
-# Usage:
-#   1. Create an agent at web.diraigent.com/agents and copy the API key
-#   2. Create a .env file:
-#        DIRAIGENT_API_TOKEN=dak_...
-#        AGENT_ID=<uuid from web UI>
-#   3. docker compose -f orchestra.yml up -d
+# Connect a worker to an existing Diraigent API. See docs/onboarding.md.
+# Set AGENT_ID, DIRAIGENT_API_TOKEN, OPENCODE_MODEL and provider credentials in .env.
+x-worker-volumes: &worker-volumes
+  - projects:/projects
+  - orchestra-data:/var/lib/diraigent-orchestra
+  - opencode-data:/home/appuser/.local/share/opencode
 
 services:
+  orchestra-init:
+    image: diraigent/orchestra:local
+    build: &orchestra-build
+      context: ..
+      dockerfile: apps/orchestra/Containerfile
+      args:
+        DIRAIGENT_VERSION: ${DIRAIGENT_VERSION:-local}
+    user: "0:0"
+    entrypoint: [sh, -c]
+    command:
+      - >-
+        chown 1001:1001 /projects /var/lib/diraigent-orchestra /home/appuser/.local/share/opencode &&
+        chmod 700 /var/lib/diraigent-orchestra /home/appuser/.local/share/opencode
+    volumes: *worker-volumes
   orchestra:
-    image: diraigent/orchestra:latest
+    image: diraigent/orchestra:local
+    build: *orchestra-build
     env_file: .env
     environment:
       DIRAIGENT_API_URL: ${DIRAIGENT_API_URL:-https://api.diraigent.com/v1}
       MAX_WORKERS: ${MAX_WORKERS:-3}
       PROJECTS_PATH: /projects
-    volumes:
-      - projects:/projects
+      DATA_DIR: /var/lib/diraigent-orchestra
+    volumes: *worker-volumes
+    depends_on:
+      orchestra-init:
+        condition: service_completed_successfully
 
 volumes:
   projects:
+  orchestra-data:
+  opencode-data:

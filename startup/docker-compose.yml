@@ -1,6 +1,9 @@
-services:
-  # ── Infrastructure ────────────────────────────────────────────────
+x-worker-volumes: &worker-volumes
+  - projects:/projects
+  - orchestra-data:/var/lib/diraigent-orchestra
+  - opencode-data:/home/appuser/.local/share/opencode
 
+services:
   postgres:
     image: postgres:18-alpine
     environment:
@@ -8,25 +11,28 @@ services:
       POSTGRES_USER: diraigent
       POSTGRES_PASSWORD: diraigent
     ports:
-      - "5433:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U diraigent"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  # ── Diraigent ─────────────────────────────────────────────────────
-
   api:
-    image: diraigent/api:latest
+    image: diraigent/api:local
+    build:
+      context: ..
+      dockerfile: apps/api/Containerfile
+      target: runtime
+      args:
+        DIRAIGENT_VERSION: ${DIRAIGENT_VERSION:-local}
     networks:
       default:
-        aliases:
-          - diraigent-api
+        aliases: [diraigent-api]
     ports:
-      - "3000:3000"
+      - "127.0.0.1:${API_PORT:-3000}:3000"
     environment:
       HOST: 0.0.0.0
       PORT: 3000
@@ -37,25 +43,27 @@ services:
       SERVICE_NAME: diraigent-api
       LOKI_URL: ${LOKI_URL:-}
       LOKI_ENV: ${LOKI_ENV:-dev}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4200}
-      PROJECTS_PATH: /projects
-    volumes:
-      - ${PROJECTS_PATH:-~/diraigent/projects}:/projects
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:${WEB_PORT:-4200}}
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health/live"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health/ready"]
       interval: 10s
       timeout: 5s
       retries: 3
 
   web:
-    image: diraigent/web:latest
+    image: diraigent/web:local
+    build:
+      context: ../apps/web
+      dockerfile: Containerfile
+      args:
+        DIRAIGENT_VERSION: ${DIRAIGENT_VERSION:-local}
     ports:
-      - "4200:80"
+      - "127.0.0.1:${WEB_PORT:-4200}:80"
     environment:
-      API_SERVER: ${API_SERVER:-http://localhost:3000/v1}
+      API_SERVER: ${API_SERVER:-/v1}
       AUTH_PROVIDER_BASE: ${AUTH_PROVIDER_BASE:-}
       AUTH_ISSUER: ${AUTH_ISSUER:-}
       AUTH_CLIENT_ID: ${AUTH_CLIENT_ID:-}
@@ -63,24 +71,48 @@ services:
       api:
         condition: service_healthy
 
+  orchestra-init:
+    image: diraigent/orchestra:local
+    build: &orchestra-build
+      context: ..
+      dockerfile: apps/orchestra/Containerfile
+      args:
+        DIRAIGENT_VERSION: ${DIRAIGENT_VERSION:-local}
+    user: "0:0"
+    entrypoint: [sh, -c]
+    command:
+      - >-
+        chown 1001:1001 /projects /var/lib/diraigent-orchestra /home/appuser/.local/share/opencode &&
+        chmod 700 /var/lib/diraigent-orchestra /home/appuser/.local/share/opencode
+    volumes: *worker-volumes
+
   orchestra:
-    image: diraigent/orchestra:latest
+    image: diraigent/orchestra:local
+    build: *orchestra-build
     environment:
       AGENT_ID: ${AGENT_ID:-}
       DIRAIGENT_API_URL: http://api:3000/v1
       DIRAIGENT_API_TOKEN: ${DIRAIGENT_API_TOKEN:-}
-      DIRAIGENT_DEV_USER_ID: ${DEV_USER_ID:-}
       MAX_WORKERS: ${MAX_WORKERS:-3}
       PROJECTS_PATH: /projects
+      DATA_DIR: /var/lib/diraigent-orchestra
+      OPENCODE_MODEL: ${OPENCODE_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENCODE_API_KEY: ${OPENCODE_API_KEY:-}
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       CODEX_API_KEY: ${CODEX_API_KEY:-}
       CODEX_ACCESS_TOKEN: ${CODEX_ACCESS_TOKEN:-}
-    volumes:
-      - ${PROJECTS_PATH:-~/diraigent/projects}:/projects
+    volumes: *worker-volumes
     depends_on:
       api:
         condition: service_healthy
+      orchestra-init:
+        condition: service_completed_successfully
 
 volumes:
   pgdata:
+  projects:
+  orchestra-data:
+  opencode-data:
