@@ -36,6 +36,22 @@ Encoded text source is decoded, redacted and re-encoded; binary source content i
 replaced with a notice. Responses larger than 16 MiB fail closed. This is a defense
 in depth, not proof that arbitrary free text is suitable for sharing.
 
+The web and iOS clients display read-only status and omit chat and editing
+controls. iOS verifies both account and selected-project access, stays read-only
+if permission discovery fails, and clears cached content on logout. The Logs
+view shows the selected project's stored execution logs to viewers; deployment-wide
+Loki queries remain restricted to workspace administrators. Source, audit, diffs
+and execution logs keep their normal views with API-redacted content. The default
+redaction also covers local hostnames, private IPv6 and Tailscale address ranges,
+and quoted credentials containing spaces.
+
+Regression coverage lives in `apps/api/tests/read_only_account.rs`,
+`apps/web/e2e/read-only-account.spec.ts`, and the iOS authentication and demo UI
+tests. API tests use isolated PostgreSQL databases and real worker-key authentication
+to check project isolation and prevent a viewer's previously issued key from
+executing tools. Browser and simulator UI fixtures use synthetic, already-redacted
+content; they validate rendering and controls, while API tests validate redaction.
+
 Migration 049 adds the role without modifying earlier migrations. It does not
 create a login, grant access, or publish projects. Existing spectator opt-ins
 remain explicit and independent of this account.

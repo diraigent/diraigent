@@ -79,6 +79,7 @@ struct ObservationListView: View {
                             } label: {
                                 Label("Dismiss", systemImage: "xmark.circle")
                             }
+                            .requiresWriteAccess()
                         }
                         .swipeActions(edge: .leading, allowsFullSwipe: false) {
                             Button {
@@ -87,6 +88,7 @@ struct ObservationListView: View {
                                 Label("Promote", systemImage: "arrow.up.circle")
                             }
                             .tint(.blue)
+                            .requiresWriteAccess()
                         }
                     }
                     .refreshable {

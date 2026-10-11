@@ -46,14 +46,17 @@ struct MoreMenuView: View {
                     Label("Search", systemImage: "magnifyingglass")
                 }
 
-                NavigationLink {
-                    ChatView()
-                } label: {
-                    Label("Chat", systemImage: "bubble.left.and.bubble.right")
+                if appState.accountAccess.canWrite {
+                    NavigationLink {
+                        ChatView()
+                    } label: {
+                        Label("Chat", systemImage: "bubble.left.and.bubble.right")
+                    }
                 }
 
                 NavigationLink {
-                    LogsView()
+                    if appState.accountAccess.canWrite { LogsView() }
+                    else { ProjectLogsView() }
                 } label: {
                     Label("Logs", systemImage: "terminal")
                 }
@@ -85,12 +88,14 @@ struct MoreMenuView: View {
                 } label: {
                     Label("Integrations", systemImage: "puzzlepiece")
                 }
+                .requiresWriteAccess()
 
                 NavigationLink {
                     WebhookListView()
                 } label: {
                     Label("Webhooks", systemImage: "antenna.radiowaves.left.and.right")
                 }
+                .requiresWriteAccess()
             }
 
             Section("Settings") {

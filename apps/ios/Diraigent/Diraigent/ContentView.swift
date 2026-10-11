@@ -11,21 +11,23 @@ struct ContentView: View {
                 // Show a brief loading state while checking for existing session
                 ProgressView("Loading\u{2026}")
                     .task {
-                        await appState.authService.restoreSession()
+                        if !DemoUITestFixture.isEnabled { await appState.authService.restoreSession() }
                         hasAttemptedRestore = true
                     }
-            } else if appState.authService.isAuthenticated {
+            } else if appState.authService.isAuthenticated || DemoUITestFixture.isEnabled {
                 MainTabView()
-                    .task {
+                    .task(id: appState.selectedProjectId) {
+                        await appState.accountAccess.refresh(projectId: appState.selectedProjectId)
                         await appState.projectService.fetchProjects()
                         // Auto-select first project if none persisted
-                        if appState.selectedProjectId == nil,
+                        if !appState.projectService.projects.contains(where: { $0.id == appState.selectedProjectId }),
                            let first = appState.projectService.projects.first {
                             appState.selectProject(first.id)
                         }
                     }
             } else {
                 LoginView()
+                    .onAppear { appState.accountAccess.reset() }
             }
         }
     }

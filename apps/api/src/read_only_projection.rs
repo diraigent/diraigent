@@ -40,9 +40,12 @@ impl Policy {
                 r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b",
                 r#"(?i)(?:postgres(?:ql)?|mysql|redis|mongodb(?:\+srv)?|https?)://[^/\s:@]+:[^@\s/]+@[^\s\"'<>]+"#,
                 r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+",
-                r#"(?i)(?:password|passwd|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|secret[_-]?key|secret|token|authorization)\s*[\"']?\s*[:=]\s*[\"']?[^\s\"',;<>}]+"#,
+                r#"(?i)(?:password|passwd|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|secret[_-]?key|secret|token|authorization)\s*[\"']?\s*[:=]\s*(?:\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s\"',;<>}]+)"#,
                 r#"(?:/Users/|/home/|/mnt/user/)[^\s\"'<>]+"#,
                 r"\b(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|127(?:\.\d{1,3}){3}|169\.254(?:\.\d{1,3}){2})\b",
+                r"\b100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])(?:\.\d{1,3}){2}\b",
+                r"(?i)\b(?:f[cd][0-9a-f]{2}|fe[89ab][0-9a-f])(?::[0-9a-f]{0,4}){2,7}\b",
+                r"(?i)\b(?:[a-z0-9-]+\.)+local\b",
                 r"(?i)\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
             ].into_iter().map(|p| Regex::new(p).expect("static redaction pattern")).collect(),
             private_terms: terms.into_iter().filter(|s| !s.trim().is_empty())
@@ -199,6 +202,31 @@ pub async fn redact_response(mut request: Request, next: Next) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn private_networks_and_quoted_credentials_are_redacted() {
+        let policy = Policy::new([]);
+        for text in [
+            "ssh worker@100.100.1.2",
+            "https://[fd7a:115c:a1e0::12]:8082",
+            "http://[fe80::1]/",
+            "worker.demo.local",
+            r#"password="two words with spaces""#,
+            "client_secret='two words with spaces'",
+        ] {
+            let clean = policy.text(text);
+            assert!(clean.contains(REDACTED), "{text}");
+            assert!(!clean.contains("with spaces"), "{clean}");
+        }
+        for public in [
+            "100.63.1.2",
+            "100.128.1.2",
+            "https://github.com/example/repo",
+            "src/app.rs",
+        ] {
+            assert_eq!(policy.text(public), public);
+        }
+    }
+
     #[test]
     fn nested_snapshots_diffs_and_encoded_source_are_redacted() {
         let policy = Policy::new(["git.private.example".to_owned()]);

@@ -1,13 +1,18 @@
-import { Component, inject, signal, computed } from '@angular/core';
+import { Component, inject, signal, computed, effect } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
 import { LogsApiService, LogEntry } from '../../core/services/logs-api.service';
+import { AuthService } from '../../core/services/auth.service';
+import { ProjectLogs } from './project-logs';
 
 @Component({
   selector: 'app-logs',
   standalone: true,
-  imports: [FormsModule, DatePipe],
+  imports: [FormsModule, DatePipe, ProjectLogs],
   template: `
+    @if (auth.readOnly()) {
+      <app-project-logs />
+    } @else {
     <div class="p-3 sm:p-6 h-full flex flex-col">
       <!-- Header -->
       <div class="flex items-center justify-between mb-4">
@@ -143,9 +148,11 @@ import { LogsApiService, LogEntry } from '../../core/services/logs-api.service';
         }
       </div>
     </div>
+    }
   `,
 })
 export class LogsPage {
+  readonly auth = inject(AuthService);
   private api = inject(LogsApiService);
 
   queryText = '{app=~".+"}';
@@ -171,7 +178,7 @@ export class LogsPage {
   });
 
   constructor() {
-    this.loadLabels();
+    effect(() => { if (!this.auth.readOnly()) this.loadLabels(); });
   }
 
   loadLabels(): void {
@@ -181,6 +188,7 @@ export class LogsPage {
           this.availableLabels.set(resp.data.filter(l => l !== '__name__'));
         }
       },
+      error: () => { this.availableLabels.set([]); },
     });
   }
 

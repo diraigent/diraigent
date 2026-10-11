@@ -82,6 +82,7 @@ struct WorkListView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .requiresWriteAccess()
             }
         }
         .sheet(isPresented: $showingCreateSheet) {

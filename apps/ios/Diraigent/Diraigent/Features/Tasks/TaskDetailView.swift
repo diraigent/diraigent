@@ -260,6 +260,7 @@ struct TaskDetailView: View {
                 }
                 .disabled(newComment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmittingComment)
             }
+            .requiresWriteAccess()
         }
     }
 

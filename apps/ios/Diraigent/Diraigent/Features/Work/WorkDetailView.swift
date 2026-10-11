@@ -26,9 +26,11 @@ struct WorkDetailView: View {
 
                 // Status actions
                 statusActionsSection
+                    .requiresWriteAccess()
 
                 // Execute actions
                 executeButtons
+                    .requiresWriteAccess()
 
                 // Progress indicator
                 if let progress {
@@ -60,6 +62,7 @@ struct WorkDetailView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 statusMenu
+                    .requiresWriteAccess()
             }
         }
         .alert("Change Status", isPresented: $showStatusConfirmation) {

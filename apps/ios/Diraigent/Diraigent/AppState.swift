@@ -6,6 +6,7 @@ import SwiftUI
 @MainActor
 final class AppState {
     let apiClient: APIClient
+    let accountAccess: AccountAccessService
     let authService: AuthService
     let projectService: ProjectService
     let dashboardService: DashboardService
@@ -27,6 +28,7 @@ final class AppState {
 
     var selectedProjectId: UUID? {
         didSet {
+            if selectedProjectId != oldValue { accountAccess.reset() }
             // Persist selection
             if let id = selectedProjectId {
                 UserDefaults.standard.set(id.uuidString, forKey: Self.selectedProjectKey)
@@ -38,10 +40,15 @@ final class AppState {
 
     private static let selectedProjectKey = "selectedProjectId"
 
-    init() {
+    init(apiClient suppliedClient: APIClient? = nil) {
         let config = AppConfig.current
-        let apiClient = APIClient(baseURL: config.apiBaseURL)
+        let apiClient = suppliedClient ?? APIClient(baseURL: config.apiBaseURL, writesAllowedByDefault: false)
         self.apiClient = apiClient
+        let accountAccess = AccountAccessService(apiClient: apiClient)
+        self.accountAccess = accountAccess
+        Task {
+            await apiClient.setWritePermission { [weak accountAccess] in await accountAccess?.canWrite ?? false }
+        }
 
         self.authService = AuthService(
             config: AuthService.Config(

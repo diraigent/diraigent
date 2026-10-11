@@ -43,6 +43,7 @@ struct ReportListView: View {
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
+                        .requiresWriteAccess()
                     }
                 }
                 .refreshable {
@@ -63,6 +64,7 @@ struct ReportListView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .requiresWriteAccess()
             }
         }
         .sheet(isPresented: $showingCreateSheet) {

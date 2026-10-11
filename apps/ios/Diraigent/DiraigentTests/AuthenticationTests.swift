@@ -48,6 +48,63 @@ private final class Requests: @unchecked Sendable {
 @Suite(.serialized)
 @MainActor
 struct AuthenticationTests {
+    @Test func readOnlyClientBrowsesButNeverSendsMutationsOrChat() async throws {
+        let requests = Requests()
+        AuthURLProtocol.handler = { request in
+            requests.add(request)
+            return (200, "{}")
+        }
+        let (_, api, _) = fixture()
+        await api.setWritePermission { false }
+        let _: EmptyResponse = try await api.get("/account")
+        for method in [HTTPMethod.post, .put, .patch, .delete] {
+            do {
+                switch method {
+                case .post: try await api.post("/tasks")
+                case .put: let _: EmptyResponse = try await api.put("/tasks", body: ["title": "changed"])
+                case .patch: let _: EmptyResponse = try await api.patch("/tasks", body: ["title": "changed"])
+                case .delete: try await api.delete("/tasks")
+                default: break
+                }
+                Issue.record("Expected read-only rejection")
+            } catch { guard case APIError.readOnly = error else { Issue.record("Unexpected error: \(error)"); continue } }
+        }
+        do {
+            _ = try await api.stream("/chat", body: ["message": "hello"])
+            Issue.record("Expected read-only rejection")
+        } catch { guard case APIError.readOnly = error else { Issue.record("Unexpected error: \(error)"); return } }
+        #expect(requests.all.count == 1)
+        #expect(requests.all[0].httpMethod == "GET")
+        await api.setWritePermission { true }
+        try await api.post("/tasks")
+        #expect(requests.all.count == 2)
+    }
+
+    @Test func accessUsesBothAccountAndProjectAndFailsClosed() async {
+        let (_, api, _) = fixture()
+        let access = AccountAccessService(apiClient: api)
+        #expect(!access.canWrite)
+        AuthURLProtocol.handler = { request in
+            (200, request.url!.path == "/account" ? #"{"read_only":false}"# : #"{"read_only":true}"#)
+        }
+        await access.refresh(projectId: UUID())
+        #expect(!access.canWrite)
+        #expect(!access.isLoading)
+        AuthURLProtocol.handler = { _ in (200, #"{"read_only":false}"#) }
+        await access.refresh(projectId: UUID())
+        #expect(access.canWrite)
+        access.reset()
+        #expect(!access.canWrite)
+        for response in [(200, "{}"), (503, "{}"), (200, #"{"read_only":true}"#)] {
+            AuthURLProtocol.handler = { _ in response }
+            await access.refresh(projectId: UUID())
+            #expect(!access.canWrite)
+        }
+        AuthURLProtocol.handler = { _ in (200, #"{"read_only":false}"#) }
+        await access.refresh(projectId: nil)
+        #expect(!access.canWrite)
+    }
+
     private let config = AuthService.Config(issuer: "https://auth.example/application/o/diraigent/",
         clientId: "ios", redirectURI: "diraigent://auth/callback")
 

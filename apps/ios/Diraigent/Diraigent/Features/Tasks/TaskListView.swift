@@ -36,7 +36,7 @@ struct TaskListView: View {
                     icon: "checklist",
                     title: "No Tasks",
                     subtitle: "No tasks have been created yet.",
-                    actionTitle: "Create Task"
+                    actionTitle: appState.accountAccess.canWrite ? "Create Task" : nil
                 ) {
                     showCreateTask = true
                 }
@@ -77,6 +77,7 @@ struct TaskListView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .requiresWriteAccess()
             }
             ToolbarItem(placement: .topBarLeading) {
                 ProjectSelectorButton()

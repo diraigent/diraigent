@@ -19,14 +19,18 @@ public actor APIClient {
     private let encoder: JSONEncoder
     private var accessToken: String?
     private var onUnauthorized: (@Sendable () async -> Void)?
+    private let writesAllowedByDefault: Bool
+    private var writePermission: (@Sendable () async -> Bool)?
 
     public init(
         baseURL: String,
         session: URLSession = .shared,
         streamSession: URLSession? = nil,
-        onUnauthorized: (@Sendable () async -> Void)? = nil
+        onUnauthorized: (@Sendable () async -> Void)? = nil,
+        writesAllowedByDefault: Bool = true
     ) {
         self.baseURL = baseURL
+        self.writesAllowedByDefault = writesAllowedByDefault
         self.session = session
         let streamConfig = session.configuration
         // SSE keep-alives arrive every 15 seconds. Allow long tool/thinking gaps;
@@ -49,6 +53,15 @@ public actor APIClient {
 
     public func setToken(_ token: String?) {
         self.accessToken = token
+    }
+
+    func setWritePermission(_ permission: @Sendable @escaping () async -> Bool) {
+        writePermission = permission
+    }
+
+    private func requireWriteAccess() async throws {
+        let allowed = if let writePermission { await writePermission() } else { writesAllowedByDefault }
+        guard allowed else { throw APIError.readOnly }
     }
 
     public func setOnUnauthorized(_ handler: @Sendable @escaping () async -> Void) {
@@ -90,6 +103,7 @@ public actor APIClient {
 
     /// Retry only an initial authentication rejection, never an accepted stream.
     func stream<B: Encodable & Sendable>(_ path: String, body: B) async throws -> URLSession.AsyncBytes {
+        try await requireWriteAccess()
         guard let url = URL(string: baseURL + path) else { throw APIError.invalidURL }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -98,6 +112,7 @@ public actor APIClient {
         request.timeoutInterval = streamSession.configuration.timeoutIntervalForRequest
         request.httpBody = try encoder.encode(body)
         for attempt in 0...1 {
+            try await requireWriteAccess()
             let (authorized, token) = await authorize(request)
             let (bytes, response) = try await streamSession.bytes(for: authorized)
             guard let http = response as? HTTPURLResponse else { throw APIError.serverError(0, "Invalid response") }
@@ -177,6 +192,7 @@ public actor APIClient {
         var data = Data()
         var httpResponse: HTTPURLResponse!
         for attempt in 0...1 {
+            if method != .get { try await requireWriteAccess() }
             let (authorized, token) = await authorize(urlRequest)
             let response: URLResponse
             do {

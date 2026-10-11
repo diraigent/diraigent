@@ -97,7 +97,7 @@ struct DecisionDetailView: View {
             }
 
             // MARK: - Actions
-            if decision.status != "accepted" || decision.status != "rejected" {
+            if appState.accountAccess.canWrite {
                 Section("Actions") {
                     statusTransitionButtons
                 }

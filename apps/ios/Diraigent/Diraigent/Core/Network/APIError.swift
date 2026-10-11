@@ -3,6 +3,7 @@ import Foundation
 /// API error cases.
 public enum APIError: Error, LocalizedError, Sendable {
     case unauthorized
+    case readOnly
     case notFound
     case badRequest(String)
     case conflict(String)
@@ -14,6 +15,7 @@ public enum APIError: Error, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .unauthorized: "Authentication required"
+        case .readOnly: "This account or project is read-only"
         case .notFound: "Resource not found"
         case .badRequest(let msg): "Bad request: \(msg)"
         case .conflict(let msg): "Conflict: \(msg)"

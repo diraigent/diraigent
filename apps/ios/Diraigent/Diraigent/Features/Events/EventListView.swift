@@ -77,6 +77,7 @@ struct EventListView: View {
                         .onDelete { offsets in
                             Task { await deleteEvents(at: offsets) }
                         }
+                        .deleteDisabled(!appState.accountAccess.canWrite)
                     }
                 }
                 .refreshable {
@@ -97,6 +98,7 @@ struct EventListView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .requiresWriteAccess()
             }
         }
         .sheet(isPresented: $showingCreateSheet) {

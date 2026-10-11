@@ -84,7 +84,7 @@ struct ObservationDetailView: View {
             }
 
             // MARK: - Actions
-            if observation.status == "open" {
+            if appState.accountAccess.canWrite && observation.status == "open" {
                 Section("Actions") {
                     Button {
                         Task { await dismissObservation() }
