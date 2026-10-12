@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "diraigent-types"
 version = "0.1.0"
 edition = "2024"

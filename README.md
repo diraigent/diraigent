@@ -210,4 +210,4 @@ DATABASE_URL=postgres://diraigent:diraigent@localhost:5433/diraigent cargo run -
 
 ## License
 
-SSPL. See [LICENSE](LICENSE.md) for terms.
+Apache License 2.0. See [LICENSE](LICENSE.md) for terms and [NOTICE](NOTICE) for attribution.
